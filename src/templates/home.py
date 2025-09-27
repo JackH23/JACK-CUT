@@ -897,8 +897,41 @@ HOME_HTML = '''
             }
         }
 
+        function getTimelineItemDurationKey(timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+            const fileType = timelineItem.dataset.fileType || '';
+            if (fileType.startsWith('image/')) {
+                return 'imageDuration';
+            }
+            if (fileType.startsWith('video/')) {
+                return 'videoDuration';
+            }
+            return null;
+        }
+
+        function getTimelineItemMinimumDuration(timelineItem) {
+            if (!timelineItem) {
+                return MIN_IMAGE_DURATION;
+            }
+            const fileType = timelineItem.dataset.fileType || '';
+            if (fileType.startsWith('video/')) {
+                const minimum = Number(timelineItem.dataset.minVideoDuration);
+                if (Number.isFinite(minimum) && minimum > 0) {
+                    return minimum;
+                }
+            }
+            return MIN_IMAGE_DURATION;
+        }
+
         function startTimelineItemResize(event, timelineItem) {
-            if (!timelineItem || !(timelineItem.dataset.fileType || '').startsWith('image/')) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const durationKey = getTimelineItemDurationKey(timelineItem);
+            if (!durationKey) {
                 return;
             }
 
@@ -940,8 +973,10 @@ HOME_HTML = '''
                 const scrollDelta = currentScrollLeft - initialScrollLeft;
                 const deltaX = moveEvent.clientX - startX + scrollDelta;
                 const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
-                const nextDuration = widthToDuration(tentativeWidth);
-                timelineItem.dataset.imageDuration = String(nextDuration);
+                const minimumDuration = getTimelineItemMinimumDuration(timelineItem);
+                const nextDuration = Math.max(minimumDuration, widthToDuration(tentativeWidth));
+                timelineItem.dataset[durationKey] = String(nextDuration);
+                timelineItem.dataset.customDuration = '1';
                 applyTimelineItemDurationStyles(timelineItem, nextDuration);
                 updateActiveTimelineIndicators();
             };
@@ -1005,7 +1040,8 @@ HOME_HTML = '''
                 return;
             }
             enableTimelineItemDragging(timelineItem);
-            if ((timelineItem.dataset.fileType || '').startsWith('image/')) {
+            const fileType = timelineItem.dataset.fileType || '';
+            if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
                 attachResizeHandles(timelineItem);
             }
         }
@@ -1308,13 +1344,18 @@ HOME_HTML = '''
                 videoThumb.playsInline = true;
                 videoThumb.autoplay = true;
                 timelineItem.dataset.videoDuration = String(DEFAULT_VIDEO_DURATION);
+                timelineItem.dataset.minVideoDuration = String(DEFAULT_VIDEO_DURATION);
                 videoThumb.addEventListener('loadedmetadata', () => {
                     if (Number.isFinite(videoThumb.duration) && videoThumb.duration > 0) {
-                        timelineItem.dataset.videoDuration = String(Math.round(videoThumb.duration * 1000));
-                        applyTimelineItemDurationStyles(
-                            timelineItem,
-                            Number(timelineItem.dataset.videoDuration),
-                        );
+                        const intrinsicDuration = Math.round(videoThumb.duration * 1000);
+                        timelineItem.dataset.minVideoDuration = String(intrinsicDuration);
+                        const currentDuration = Number(timelineItem.dataset.videoDuration);
+                        const hasCustomDuration = timelineItem.dataset.customDuration === '1';
+                        const nextDuration = hasCustomDuration && Number.isFinite(currentDuration) && currentDuration > 0
+                            ? Math.max(currentDuration, intrinsicDuration)
+                            : intrinsicDuration;
+                        timelineItem.dataset.videoDuration = String(nextDuration);
+                        applyTimelineItemDurationStyles(timelineItem, nextDuration);
                         updateActiveTimelineIndicators();
                     }
                 });
@@ -1379,11 +1420,21 @@ HOME_HTML = '''
 
                 await new Promise((resolve) => {
                     let resolved = false;
+                    let timeoutId = 0;
+                    let onEnded = null;
+                    let onError = null;
+                    let onLoaded = null;
 
                     const cleanup = () => {
-                        previewVideo.removeEventListener('ended', onEnded);
-                        previewVideo.removeEventListener('loadeddata', onLoaded);
-                        previewVideo.removeEventListener('error', onError);
+                        if (onEnded) {
+                            previewVideo.removeEventListener('ended', onEnded);
+                        }
+                        if (onLoaded) {
+                            previewVideo.removeEventListener('loadeddata', onLoaded);
+                        }
+                        if (onError) {
+                            previewVideo.removeEventListener('error', onError);
+                        }
                     };
 
                     const finalize = () => {
@@ -1391,28 +1442,54 @@ HOME_HTML = '''
                             return;
                         }
                         resolved = true;
+                        window.clearTimeout(timeoutId);
                         cleanup();
+                        previewVideo.pause();
+                        previewVideo.loop = false;
+                        previewVideo.currentTime = 0;
                         if (timelinePlaybackAbort === abortPlayback) {
                             timelinePlaybackAbort = null;
                         }
                         resolve();
                     };
 
-                    const onEnded = () => {
-                        finalize();
+                    const ensureVideoDuration = () => {
+                        const intrinsic = Number.isFinite(previewVideo.duration)
+                            && previewVideo.duration > 0
+                            ? Math.round(previewVideo.duration * 1000)
+                            : 0;
+                        if (intrinsic > 0) {
+                            timelineItem.dataset.minVideoDuration = String(intrinsic);
+                        }
+                        const minimum = getTimelineItemMinimumDuration(timelineItem);
+                        const currentDuration = Number(timelineItem.dataset.videoDuration);
+                        const nextDuration = Number.isFinite(currentDuration) && currentDuration > 0
+                            ? Math.max(currentDuration, minimum)
+                            : minimum;
+                        if (nextDuration !== currentDuration) {
+                            timelineItem.dataset.videoDuration = String(nextDuration);
+                            applyTimelineItemDurationStyles(timelineItem, nextDuration);
+                            updateActiveTimelineIndicators();
+                        }
+                        return {
+                            intrinsicDuration: intrinsic,
+                            targetDuration: nextDuration,
+                        };
                     };
 
-                    const onLoaded = () => {
-                        previewVideo.removeEventListener('loadeddata', onLoaded);
+                    const beginPlayback = () => {
                         if (!isTimelinePlaying) {
                             finalize();
                             return;
                         }
-                        if (Number.isFinite(previewVideo.duration) && previewVideo.duration > 0) {
-                            const durationMs = Math.round(previewVideo.duration * 1000);
-                            timelineItem.dataset.videoDuration = String(durationMs);
-                            applyTimelineItemDurationStyles(timelineItem, durationMs);
-                            updateActiveTimelineIndicators();
+                        const { intrinsicDuration, targetDuration } = ensureVideoDuration();
+                        const shouldLoop = intrinsicDuration > 0 && targetDuration > intrinsicDuration + 50;
+                        previewVideo.loop = shouldLoop;
+                        window.clearTimeout(timeoutId);
+                        if (targetDuration > 0) {
+                            timeoutId = window.setTimeout(() => {
+                                finalize();
+                            }, targetDuration);
                         }
                         previewVideo.currentTime = 0;
                         const playPromise = previewVideo.play();
@@ -1421,20 +1498,29 @@ HOME_HTML = '''
                         }
                     };
 
-                    const onError = () => {
+                    onEnded = () => {
+                        if (!previewVideo.loop) {
+                            finalize();
+                        }
+                    };
+
+                    onLoaded = () => {
+                        previewVideo.removeEventListener('loadeddata', onLoaded);
+                        onLoaded = null;
+                        beginPlayback();
+                    };
+
+                    onError = () => {
                         finalize();
                     };
 
                     const abortPlayback = () => {
-                        cleanup();
-                        previewVideo.pause();
-                        previewVideo.currentTime = 0;
                         finalize();
                     };
 
                     timelinePlaybackAbort = abortPlayback;
 
-                    previewVideo.addEventListener('ended', onEnded, { once: true });
+                    previewVideo.addEventListener('ended', onEnded);
                     previewVideo.addEventListener('error', onError, { once: true });
                     previewVideo.addEventListener('loadeddata', onLoaded, { once: true });
 
@@ -1443,7 +1529,7 @@ HOME_HTML = '''
                         previewVideo.src = objectURL;
                         previewVideo.load();
                     } else if (previewVideo.readyState >= 2) {
-                        onLoaded();
+                        beginPlayback();
                     } else {
                         previewVideo.load();
                     }
