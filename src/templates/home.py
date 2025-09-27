@@ -183,13 +183,11 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
-        .content-grid {
+        .editor-layout {
             display: grid;
-            grid-template-columns: repeat(3, minmax(260px, 1fr));
+            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(220px, 260px);
             gap: 24px;
-            grid-template-areas:
-                "upload preview settings"
-                "timeline timeline timeline";
+            grid-template-areas: "upload preview settings";
             align-items: start;
         }
 
@@ -197,16 +195,16 @@ HOME_HTML = '''
             grid-area: upload;
         }
 
-        .settings-card {
-            grid-area: settings;
-        }
-
         .preview-card {
             grid-area: preview;
         }
 
-        .timeline-card {
-            grid-area: timeline;
+        .settings-card {
+            grid-area: settings;
+        }
+
+        .timeline-footer {
+            margin-top: 12px;
         }
 
         .panel {
@@ -271,10 +269,6 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
-        .preview-card {
-            grid-column: span 2;
-        }
-
         .preview-area {
             aspect-ratio: 16 / 9;
             border-radius: 20px;
@@ -288,7 +282,6 @@ HOME_HTML = '''
         }
 
         .timeline-card {
-            grid-column: span 2;
             position: relative;
             overflow: hidden;
         }
@@ -345,12 +338,11 @@ HOME_HTML = '''
         }
 
         @media (max-width: 960px) {
-            .content-grid {
+            .editor-layout {
                 grid-template-columns: repeat(2, minmax(220px, 1fr));
                 grid-template-areas:
                     "upload preview"
-                    "settings settings"
-                    "timeline timeline";
+                    "settings preview";
             }
         }
 
@@ -378,13 +370,12 @@ HOME_HTML = '''
                 flex: 1;
                 text-align: center;
             }
-            .content-grid {
+            .editor-layout {
                 grid-template-columns: 1fr;
                 grid-template-areas:
                     "preview"
                     "upload"
-                    "settings"
-                    "timeline";
+                    "settings";
             }
         }
     </style>
@@ -407,7 +398,7 @@ HOME_HTML = '''
             </nav>
         </header>
 
-        <section id="features" class="content-grid">
+        <section id="features" class="editor-layout">
             <article class="panel upload-card">
                 <h2>Upload footage</h2>
                 <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
@@ -415,6 +406,13 @@ HOME_HTML = '''
                 <input type="file" id="video-upload" name="video-upload" accept="video/*">
                 <button type="button">Upload file</button>
                 <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
+            </article>
+
+            <article class="panel preview-card">
+                <h2>Preview window</h2>
+                <div class="preview-area">
+                    <span>Drop clips here to preview your edit</span>
+                </div>
             </article>
 
             <article class="panel settings-card">
@@ -452,24 +450,17 @@ HOME_HTML = '''
                     </div>
                 </div>
             </article>
+        </section>
 
-            <article class="panel preview-card">
-                <h2>Preview window</h2>
-                <div class="preview-area">
-                    <span>Drop clips here to preview your edit</span>
-                </div>
-            </article>
-
-            <article class="panel timeline-card">
-                <h2>Timeline overview</h2>
-                <div class="timeline-track">
-                    <span>Intro clip</span>
-                    <span>Scene 1</span>
-                    <span>Scene 2</span>
-                    <span>B-roll</span>
-                    <span>Outro</span>
-                </div>
-            </article>
+        <section class="panel timeline-card timeline-footer">
+            <h2>Timeline overview</h2>
+            <div class="timeline-track">
+                <span>Intro clip</span>
+                <span>Scene 1</span>
+                <span>Scene 2</span>
+                <span>B-roll</span>
+                <span>Outro</span>
+            </div>
         </section>
 
         <footer class="footer">
