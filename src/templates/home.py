@@ -314,9 +314,7 @@ HOME_HTML = '''
         }
 
         .preview-area {
-            --preview-aspect-ratio: 16 / 9;
             position: relative;
-            aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -329,27 +327,53 @@ HOME_HTML = '''
             padding: 16px;
             min-height: 260px;
             overflow: hidden;
+        }
+
+        .preview-viewport {
+            --preview-aspect-ratio: 16 / 9;
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            aspect-ratio: var(--preview-aspect-ratio);
+            border-radius: 16px;
+            background: rgba(2, 6, 23, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
             transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area.has-image {
+        .preview-area.has-image .preview-viewport,
+        .preview-area.has-video .preview-viewport {
+            background: #000;
+            border-color: rgba(148, 163, 184, 0.24);
+            box-shadow: inset 0 0 0 1px rgba(8, 12, 24, 0.6);
+        }
+
+        .preview-viewport video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 16px;
+        }
+
+        .preview-viewport img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 16px;
+            display: block;
+        }
+
+        #preview-placeholder {
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-        }
-
-        .preview-area video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
-        }
-
-        .preview-area img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
-            display: block;
+            text-align: center;
+            padding: 0 24px;
         }
 
         .timeline-card {
@@ -456,19 +480,27 @@ HOME_HTML = '''
             background: rgba(148, 163, 184, 0.45);
             border: 1px solid rgba(148, 163, 184, 0.6);
             box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
-            cursor: ew-resize;
+            cursor: pointer;
             backdrop-filter: blur(4px);
             pointer-events: auto;
+            touch-action: none;
         }
 
         .timeline-resize-handle.top-right {
             top: 6px;
             right: 6px;
+            cursor: nesw-resize;
         }
 
         .timeline-resize-handle.bottom-right {
             bottom: 6px;
             right: 6px;
+            cursor: nwse-resize;
+        }
+
+        .timeline-thumbnail[data-corner-resize='1'] {
+            cursor: nwse-resize;
+            touch-action: none;
         }
 
         #timeline-empty-state {
@@ -646,9 +678,11 @@ HOME_HTML = '''
             <article class="panel preview-card">
                 <h2>Preview window</h2>
                 <div class="preview-area">
-                    <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                    <video id="preview-video" controls hidden></video>
-                    <img id="preview-image" alt="Preview" hidden>
+                    <div class="preview-viewport">
+                        <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                        <video id="preview-video" controls hidden></video>
+                        <img id="preview-image" alt="Preview" hidden>
+                    </div>
                 </div>
                 <div class="preview-toolbar">
                     <label for="preview-aspect">Aspect ratio</label>
@@ -719,6 +753,7 @@ HOME_HTML = '''
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
         const previewArea = document.querySelector('.preview-area');
+        const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -738,6 +773,7 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const IMAGE_CORNER_RESIZE_THRESHOLD = 18;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -896,7 +932,7 @@ HOME_HTML = '''
             }
         }
 
-        function startTimelineItemResize(event, timelineItem) {
+        function startTimelineItemResize(event, timelineItem, options = {}) {
             if (!timelineItem || !(timelineItem.dataset.fileType || '').startsWith('image/')) {
                 return;
             }
@@ -914,13 +950,18 @@ HOME_HTML = '''
             const initialWidth = initialRect.width;
             const startX = event.clientX;
             const previousDraggable = timelineItem.draggable;
+            const direction = options.direction === 'left' ? 'left' : 'right';
+            const directionMultiplier = direction === 'right' ? 1 : -1;
 
             timelineItem.classList.add('is-resizing');
             timelineItem.draggable = false;
 
             const onPointerMove = (moveEvent) => {
                 const deltaX = moveEvent.clientX - startX;
-                const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
+                const tentativeWidth = Math.max(
+                    MIN_TIMELINE_ITEM_WIDTH,
+                    initialWidth + directionMultiplier * deltaX,
+                );
                 const nextDuration = widthToDuration(tentativeWidth);
                 timelineItem.dataset.imageDuration = String(nextDuration);
                 applyTimelineItemDurationStyles(timelineItem, nextDuration);
@@ -942,6 +983,41 @@ HOME_HTML = '''
             document.addEventListener('pointercancel', finishResize);
         }
 
+        function isPointerInImageResizeCorner(event, thumbnail) {
+            if (!thumbnail) {
+                return false;
+            }
+            const rect = thumbnail.getBoundingClientRect();
+            const pointerX = event.clientX;
+            const pointerY = event.clientY;
+            const withinRightEdge = pointerX >= rect.right - IMAGE_CORNER_RESIZE_THRESHOLD
+                && pointerX <= rect.right;
+            if (!withinRightEdge) {
+                return false;
+            }
+            const withinTopCorner = pointerY >= rect.top
+                && pointerY <= rect.top + IMAGE_CORNER_RESIZE_THRESHOLD;
+            const withinBottomCorner = pointerY <= rect.bottom
+                && pointerY >= rect.bottom - IMAGE_CORNER_RESIZE_THRESHOLD;
+            return withinTopCorner || withinBottomCorner;
+        }
+
+        function attachImageCornerResizing(timelineItem) {
+            const thumbnail = timelineItem?.querySelector('.timeline-thumbnail');
+            if (!thumbnail || thumbnail.dataset.cornerResizeAttached === '1') {
+                return;
+            }
+
+            thumbnail.dataset.cornerResizeAttached = '1';
+            thumbnail.dataset.cornerResize = '1';
+            thumbnail.addEventListener('pointerdown', (event) => {
+                if (!isPointerInImageResizeCorner(event, thumbnail)) {
+                    return;
+                }
+                startTimelineItemResize(event, timelineItem, { direction: 'right' });
+            });
+        }
+
         function attachResizeHandles(timelineItem) {
             if (!timelineItem || timelineItem.querySelector('.timeline-resize-handle')) {
                 return;
@@ -952,7 +1028,10 @@ HOME_HTML = '''
                 handle.className = `timeline-resize-handle ${position}`;
                 handle.setAttribute('aria-hidden', 'true');
                 handle.title = 'Drag to adjust image duration';
-                handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem));
+                handle.dataset.resizeHandle = position;
+                handle.addEventListener('pointerdown', (event) => (
+                    startTimelineItemResize(event, timelineItem, { direction: 'right' })
+                ));
                 timelineItem.appendChild(handle);
             });
         }
@@ -988,6 +1067,7 @@ HOME_HTML = '''
             enableTimelineItemDragging(timelineItem);
             if ((timelineItem.dataset.fileType || '').startsWith('image/')) {
                 attachResizeHandles(timelineItem);
+                attachImageCornerResizing(timelineItem);
             }
         }
 
@@ -1039,6 +1119,10 @@ HOME_HTML = '''
             }
             previewArea.scrollTop = 0;
             previewArea.scrollLeft = 0;
+            if (previewViewport) {
+                previewViewport.scrollTop = 0;
+                previewViewport.scrollLeft = 0;
+            }
         }
 
         if (previewImage) {
@@ -1048,12 +1132,13 @@ HOME_HTML = '''
         }
 
         function setPreviewAspect(aspectValue) {
-            if (!previewArea) {
+            const target = previewViewport || previewArea;
+            if (!target) {
                 return;
             }
 
             const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
-            previewArea.style.setProperty('--preview-aspect-ratio', normalized);
+            target.style.setProperty('--preview-aspect-ratio', normalized);
         }
 
         if (previewAspectSelect) {
