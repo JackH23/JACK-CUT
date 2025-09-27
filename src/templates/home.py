@@ -448,6 +448,22 @@ HOME_HTML = '''
             background: #000;
         }
 
+        .timeline-item-duration {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
+        }
+
         .timeline-resize-handle {
             position: absolute;
             width: 14px;
@@ -824,6 +840,81 @@ HOME_HTML = '''
             timelineItem.style.flexBasis = `${width}px`;
         }
 
+        function ensureTimelineItemDurationBadge(timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+            let badge = timelineItem.querySelector('.timeline-item-duration');
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'timeline-item-duration';
+                badge.setAttribute('aria-hidden', 'true');
+                timelineItem.appendChild(badge);
+            }
+            return badge;
+        }
+
+        function formatDurationBadgeLabel(durationMs) {
+            const safeMs = Math.max(0, Math.round(Number(durationMs) || 0));
+            if (safeMs >= 3600000) {
+                let hours = Math.floor(safeMs / 3600000);
+                let minutes = Math.round((safeMs % 3600000) / 60000);
+                if (minutes === 60) {
+                    hours += 1;
+                    minutes = 0;
+                }
+                return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+            }
+            if (safeMs >= 60000) {
+                const minutes = Math.floor(safeMs / 60000);
+                let seconds = Math.round((safeMs % 60000) / 1000);
+                if (seconds === 60) {
+                    return `${minutes + 1}m 00s`;
+                }
+                return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+            }
+            if (safeMs >= 1000) {
+                const seconds = safeMs / 1000;
+                const decimals = seconds >= 10 ? 0 : 1;
+                return `${seconds.toFixed(decimals)}s`;
+            }
+            return `${safeMs}ms`;
+        }
+
+        function updateTimelineItemDurationBadge(timelineItem, durationMs) {
+            const badge = ensureTimelineItemDurationBadge(timelineItem);
+            if (!badge) {
+                return;
+            }
+            const safeMs = Math.max(0, Math.round(Number(durationMs) || 0));
+            badge.dataset.duration = String(safeMs);
+            badge.textContent = formatDurationBadgeLabel(safeMs);
+        }
+
+        function setTimelineItemDuration(timelineItem, durationKey, durationMs, options = {}) {
+            if (!timelineItem || !durationKey) {
+                return 0;
+            }
+
+            const minimum = getTimelineItemMinimumDuration(timelineItem);
+            const desired = Math.round(Number(durationMs) || 0);
+            const applied = Math.max(minimum, desired);
+
+            timelineItem.dataset[durationKey] = String(applied);
+
+            if (Object.prototype.hasOwnProperty.call(options, 'markCustom')) {
+                if (options.markCustom) {
+                    timelineItem.dataset.customDuration = '1';
+                } else {
+                    delete timelineItem.dataset.customDuration;
+                }
+            }
+
+            applyTimelineItemDurationStyles(timelineItem, applied);
+            updateTimelineItemDurationBadge(timelineItem, applied);
+            return applied;
+        }
+
         function getTimelineItems() {
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
@@ -973,11 +1064,8 @@ HOME_HTML = '''
                 const scrollDelta = currentScrollLeft - initialScrollLeft;
                 const deltaX = moveEvent.clientX - startX + scrollDelta;
                 const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
-                const minimumDuration = getTimelineItemMinimumDuration(timelineItem);
-                const nextDuration = Math.max(minimumDuration, widthToDuration(tentativeWidth));
-                timelineItem.dataset[durationKey] = String(nextDuration);
-                timelineItem.dataset.customDuration = '1';
-                applyTimelineItemDurationStyles(timelineItem, nextDuration);
+                const nextDuration = widthToDuration(tentativeWidth);
+                setTimelineItemDuration(timelineItem, durationKey, nextDuration, { markCustom: true });
                 updateActiveTimelineIndicators();
             };
 
@@ -1005,7 +1093,7 @@ HOME_HTML = '''
                 const handle = document.createElement('span');
                 handle.className = `timeline-resize-handle ${position}`;
                 handle.setAttribute('aria-hidden', 'true');
-                handle.title = 'Drag to adjust image duration';
+                handle.title = 'Drag corner to adjust clip duration';
                 handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem));
                 timelineItem.appendChild(handle);
             });
@@ -1038,6 +1126,11 @@ HOME_HTML = '''
         function initializeTimelineItem(timelineItem) {
             if (!timelineItem) {
                 return;
+            }
+            const durationKey = getTimelineItemDurationKey(timelineItem);
+            if (durationKey) {
+                const duration = getTimelineItemPlaybackDuration(timelineItem);
+                updateTimelineItemDurationBadge(timelineItem, duration);
             }
             enableTimelineItemDragging(timelineItem);
             const fileType = timelineItem.dataset.fileType || '';
@@ -1343,20 +1436,32 @@ HOME_HTML = '''
                 videoThumb.loop = true;
                 videoThumb.playsInline = true;
                 videoThumb.autoplay = true;
-                timelineItem.dataset.videoDuration = String(DEFAULT_VIDEO_DURATION);
                 timelineItem.dataset.minVideoDuration = String(DEFAULT_VIDEO_DURATION);
+                setTimelineItemDuration(
+                    timelineItem,
+                    'videoDuration',
+                    DEFAULT_VIDEO_DURATION,
+                    { markCustom: false },
+                );
                 videoThumb.addEventListener('loadedmetadata', () => {
                     if (Number.isFinite(videoThumb.duration) && videoThumb.duration > 0) {
                         const intrinsicDuration = Math.round(videoThumb.duration * 1000);
                         timelineItem.dataset.minVideoDuration = String(intrinsicDuration);
                         const currentDuration = Number(timelineItem.dataset.videoDuration);
                         const hasCustomDuration = timelineItem.dataset.customDuration === '1';
-                        const nextDuration = hasCustomDuration && Number.isFinite(currentDuration) && currentDuration > 0
-                            ? Math.max(currentDuration, intrinsicDuration)
-                            : intrinsicDuration;
-                        timelineItem.dataset.videoDuration = String(nextDuration);
-                        applyTimelineItemDurationStyles(timelineItem, nextDuration);
-                        updateActiveTimelineIndicators();
+                        const nextDuration = hasCustomDuration && Number.isFinite(currentDuration)
+                            && currentDuration > 0
+                                ? Math.max(currentDuration, intrinsicDuration)
+                                : intrinsicDuration;
+                        const appliedDuration = setTimelineItemDuration(
+                            timelineItem,
+                            'videoDuration',
+                            nextDuration,
+                            { markCustom: hasCustomDuration },
+                        );
+                        if (appliedDuration !== currentDuration) {
+                            updateActiveTimelineIndicators();
+                        }
                     }
                 });
                 timelineItem.appendChild(videoThumb);
@@ -1366,13 +1471,15 @@ HOME_HTML = '''
                 imageThumb.src = await generateImageThumbnail(objectURL);
                 imageThumb.alt = file.name;
                 timelineItem.appendChild(imageThumb);
-                timelineItem.dataset.imageDuration = String(IMAGE_FRAME_DURATION);
+                setTimelineItemDuration(
+                    timelineItem,
+                    'imageDuration',
+                    IMAGE_FRAME_DURATION,
+                    { markCustom: false },
+                );
             }
 
             timelineItem.appendChild(label);
-            const initialDuration = getTimelineItemPlaybackDuration(timelineItem)
-                || (file.type.startsWith('video/') ? DEFAULT_VIDEO_DURATION : IMAGE_FRAME_DURATION);
-            applyTimelineItemDurationStyles(timelineItem, initialDuration);
             timelineTrack.appendChild(timelineItem);
             initializeTimelineItem(timelineItem);
 
@@ -1467,9 +1574,10 @@ HOME_HTML = '''
                             ? Math.max(currentDuration, minimum)
                             : minimum;
                         if (nextDuration !== currentDuration) {
-                            timelineItem.dataset.videoDuration = String(nextDuration);
-                            applyTimelineItemDurationStyles(timelineItem, nextDuration);
+                            setTimelineItemDuration(timelineItem, 'videoDuration', nextDuration);
                             updateActiveTimelineIndicators();
+                        } else {
+                            updateTimelineItemDurationBadge(timelineItem, nextDuration);
                         }
                         return {
                             intrinsicDuration: intrinsic,
