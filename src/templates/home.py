@@ -296,6 +296,15 @@ HOME_HTML = '''
             place-items: center;
             color: var(--text-secondary);
             font-size: 1.1rem;
+            overflow: hidden;
+        }
+
+        .preview-area video,
+        .preview-area img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 20px;
         }
 
         .timeline-card {
@@ -314,18 +323,37 @@ HOME_HTML = '''
             color: var(--text-secondary);
             text-align: center;
             font-size: 0.95rem;
+            min-height: 140px;
         }
 
-        .timeline-track span {
-            padding: 14px;
-            border-radius: 10px;
+        .timeline-item {
+            padding: 12px;
+            border-radius: 12px;
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(148, 163, 184, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        .timeline-item img,
+        .timeline-item video {
+            width: 100%;
+            border-radius: 8px;
+            object-fit: cover;
+            max-height: 80px;
+        }
+
+        .timeline-item video {
+            background: #000;
         }
 
         .timeline-progress {
             margin-top: 12px;
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: 12px;
             padding: 12px 16px;
@@ -343,6 +371,23 @@ HOME_HTML = '''
         .timeline-progress input[type="range"] {
             flex: 1;
             accent-color: rgba(124, 58, 237, 0.9);
+            min-width: 140px;
+        }
+
+        .timeline-progress button {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.9));
+            color: #0b1020;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 12px 26px rgba(124, 58, 237, 0.25);
+            transition: transform 0.2s ease;
+        }
+
+        .timeline-progress button:hover {
+            transform: translateY(-2px);
         }
 
         .info-list {
@@ -442,15 +487,17 @@ HOME_HTML = '''
                 <h2>Upload footage</h2>
                 <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
                 <label for="video-upload">Select a video file</label>
-                <input type="file" id="video-upload" name="video-upload" accept="video/*">
-                <button type="button">Upload file</button>
+                <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple>
+                <button type="button" id="upload-button">Upload file</button>
                 <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
             </article>
 
             <article class="panel preview-card">
                 <h2>Preview window</h2>
                 <div class="preview-area">
-                    <span>Drop clips here to preview your edit</span>
+                    <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                    <video id="preview-video" controls hidden></video>
+                    <img id="preview-image" alt="Preview" hidden>
                 </div>
             </article>
 
@@ -494,16 +541,13 @@ HOME_HTML = '''
 
         <section class="panel timeline-card timeline-footer">
             <h2>Timeline overview</h2>
-            <div class="timeline-track">
-                <span>Intro clip</span>
-                <span>Scene 1</span>
-                <span>Scene 2</span>
-                <span>B-roll</span>
-                <span>Outro</span>
+            <div class="timeline-track" id="timeline-track">
+                <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
-                <input type="range" id="timeline-progress" min="0" max="100" value="35">
+                <input type="range" id="timeline-progress" min="0" max="100" value="0">
+                <button type="button" id="play-video-button">Progress video</button>
             </div>
         </section>
 
@@ -511,6 +555,116 @@ HOME_HTML = '''
             © {{ 2024 }} Video Editor Pro. Crafted for creators.
         </footer>
     </div>
+    <script>
+        const uploadInput = document.getElementById('video-upload');
+        const uploadButton = document.getElementById('upload-button');
+        const previewVideo = document.getElementById('preview-video');
+        const previewImage = document.getElementById('preview-image');
+        const previewPlaceholder = document.getElementById('preview-placeholder');
+        const timelineTrack = document.getElementById('timeline-track');
+        const timelineEmptyState = document.getElementById('timeline-empty-state');
+        const playVideoButton = document.getElementById('play-video-button');
+
+        function clearPreview() {
+            previewVideo.hidden = true;
+            previewVideo.removeAttribute('src');
+            previewVideo.load();
+            previewImage.hidden = true;
+            previewImage.removeAttribute('src');
+            previewPlaceholder.hidden = false;
+            playVideoButton.textContent = 'Progress video';
+        }
+
+        function showPreview(file) {
+            const objectURL = URL.createObjectURL(file);
+            previewPlaceholder.hidden = true;
+
+            if (file.type.startsWith('video/')) {
+                previewImage.hidden = true;
+                previewImage.removeAttribute('src');
+                previewVideo.hidden = false;
+                previewVideo.src = objectURL;
+                previewVideo.load();
+                playVideoButton.textContent = 'Progress video';
+            } else if (file.type.startsWith('image/')) {
+                previewVideo.pause();
+                previewVideo.hidden = true;
+                previewVideo.removeAttribute('src');
+                previewImage.hidden = false;
+                previewImage.src = objectURL;
+                playVideoButton.textContent = 'Progress video';
+            } else {
+                clearPreview();
+                alert('Unsupported file type. Please upload an image or video file.');
+                return;
+            }
+
+            addToTimeline(file, objectURL);
+        }
+
+        function addToTimeline(file, objectURL) {
+            if (timelineEmptyState) {
+                timelineEmptyState.remove();
+            }
+
+            const timelineItem = document.createElement('div');
+            timelineItem.className = 'timeline-item';
+
+            const label = document.createElement('span');
+            label.textContent = file.name;
+
+            if (file.type.startsWith('video/')) {
+                const videoThumb = document.createElement('video');
+                videoThumb.src = objectURL;
+                videoThumb.muted = true;
+                videoThumb.loop = true;
+                videoThumb.playsInline = true;
+                videoThumb.autoplay = true;
+                timelineItem.appendChild(videoThumb);
+            } else if (file.type.startsWith('image/')) {
+                const imageThumb = document.createElement('img');
+                imageThumb.src = objectURL;
+                imageThumb.alt = file.name;
+                timelineItem.appendChild(imageThumb);
+            }
+
+            timelineItem.appendChild(label);
+            timelineTrack.appendChild(timelineItem);
+        }
+
+        uploadInput.addEventListener('change', (event) => {
+            const files = Array.from(event.target.files || []);
+            if (!files.length) {
+                return;
+            }
+
+            files.forEach((file, index) => {
+                setTimeout(() => showPreview(file), index * 200);
+            });
+        });
+
+        uploadButton.addEventListener('click', () => uploadInput.click());
+
+        playVideoButton.addEventListener('click', () => {
+            if (previewVideo.hidden || !previewVideo.src) {
+                alert('Upload a video file to preview playback.');
+                return;
+            }
+
+            if (previewVideo.paused) {
+                previewVideo.play();
+                playVideoButton.textContent = 'Pause video';
+            } else {
+                previewVideo.pause();
+                playVideoButton.textContent = 'Progress video';
+            }
+        });
+
+        previewVideo.addEventListener('ended', () => {
+            playVideoButton.textContent = 'Progress video';
+            previewVideo.currentTime = 0;
+        });
+    </script>
 </body>
 </html>
 '''
