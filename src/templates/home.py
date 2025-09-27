@@ -466,25 +466,43 @@ HOME_HTML = '''
 
         .timeline-resize-handle {
             position: absolute;
-            width: 14px;
-            height: 14px;
-            border-radius: 4px;
-            background: rgba(148, 163, 184, 0.45);
-            border: 1px solid rgba(148, 163, 184, 0.6);
-            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+            top: 8px;
+            bottom: 8px;
+            width: 12px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.35);
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.4);
             cursor: ew-resize;
             backdrop-filter: blur(4px);
             pointer-events: auto;
+            opacity: 0;
+            transition: opacity 0.2s ease, background 0.2s ease;
         }
 
-        .timeline-resize-handle.top-right {
-            top: 6px;
-            right: 6px;
+        .timeline-item:hover .timeline-resize-handle,
+        .timeline-item.is-resizing .timeline-resize-handle {
+            opacity: 1;
         }
 
-        .timeline-resize-handle.bottom-right {
-            bottom: 6px;
-            right: 6px;
+        .timeline-resize-handle::before {
+            content: '';
+            display: block;
+            width: 2px;
+            height: 50%;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.75);
+            margin: auto;
+        }
+
+        .timeline-resize-handle.left {
+            left: 4px;
+            cursor: w-resize;
+        }
+
+        .timeline-resize-handle.right {
+            right: 4px;
+            cursor: e-resize;
         }
 
         #timeline-empty-state {
@@ -1035,6 +1053,9 @@ HOME_HTML = '''
             const handle = event.currentTarget;
             handle?.setPointerCapture?.(event.pointerId);
 
+            const resizeEdge = handle?.dataset?.resizeEdge || 'right';
+            const isLeftResize = resizeEdge === 'left';
+
             const initialRect = timelineItem.getBoundingClientRect();
             const initialWidth = initialRect.width;
             const startX = event.clientX;
@@ -1062,7 +1083,10 @@ HOME_HTML = '''
 
                 const currentScrollLeft = timelineTrack ? timelineTrack.scrollLeft : initialScrollLeft;
                 const scrollDelta = currentScrollLeft - initialScrollLeft;
-                const deltaX = moveEvent.clientX - startX + scrollDelta;
+                let deltaX = moveEvent.clientX - startX + scrollDelta;
+                if (isLeftResize) {
+                    deltaX = -deltaX;
+                }
                 const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
                 const nextDuration = widthToDuration(tentativeWidth);
                 setTimelineItemDuration(timelineItem, durationKey, nextDuration, { markCustom: true });
@@ -1085,15 +1109,18 @@ HOME_HTML = '''
         }
 
         function attachResizeHandles(timelineItem) {
-            if (!timelineItem || timelineItem.querySelector('.timeline-resize-handle')) {
+            if (!timelineItem || timelineItem.dataset.resizeHandlesAttached === '1') {
                 return;
             }
 
-            ['top-right', 'bottom-right'].forEach((position) => {
+            timelineItem.dataset.resizeHandlesAttached = '1';
+
+            ['left', 'right'].forEach((position) => {
                 const handle = document.createElement('span');
                 handle.className = `timeline-resize-handle ${position}`;
                 handle.setAttribute('aria-hidden', 'true');
-                handle.title = 'Drag corner to adjust clip duration';
+                handle.dataset.resizeEdge = position;
+                handle.title = 'Drag side to adjust clip duration';
                 handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem));
                 timelineItem.appendChild(handle);
             });
