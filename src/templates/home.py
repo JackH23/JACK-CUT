@@ -288,7 +288,8 @@ HOME_HTML = '''
 
         .preview-area {
             position: relative;
-            aspect-ratio: 16 / 9;
+            --preview-aspect-ratio: 16 / 9;
+            aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -302,6 +303,10 @@ HOME_HTML = '''
             min-height: 260px;
             overflow: hidden;
             transition: aspect-ratio 0.2s ease;
+        }
+
+        .preview-area[data-aspect='9:16'] {
+            --preview-aspect-ratio: 9 / 16;
         }
 
         .preview-area.has-image {
@@ -332,7 +337,7 @@ HOME_HTML = '''
         .timeline-track {
             position: relative;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            grid-template-columns: 1fr;
             gap: 10px;
             padding: 16px;
             border-radius: 14px;
@@ -342,6 +347,9 @@ HOME_HTML = '''
             text-align: center;
             font-size: 0.95rem;
             min-height: 120px;
+            max-height: 320px;
+            overflow-y: auto;
+            align-content: start;
         }
 
         .timeline-item {
@@ -541,7 +549,7 @@ HOME_HTML = '''
 
             <article class="panel preview-card">
                 <h2>Preview window</h2>
-                <div class="preview-area">
+                <div class="preview-area" data-aspect="16:9">
                     <span id="preview-placeholder">Drop clips here to preview your edit</span>
                     <video id="preview-video" controls hidden></video>
                     <img id="preview-image" alt="Preview" hidden>
@@ -567,6 +575,16 @@ HOME_HTML = '''
                                 <option value="1" selected>1x (default)</option>
                                 <option value="1.5">1.5x</option>
                                 <option value="2">2x</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-icon">🖼️</div>
+                        <div>
+                            <label for="preview-aspect-ratio">Preview aspect ratio</label>
+                            <select id="preview-aspect-ratio">
+                                <option value="16:9" selected>16:9 (landscape)</option>
+                                <option value="9:16">9:16 (portrait)</option>
                             </select>
                         </div>
                     </div>
@@ -615,6 +633,7 @@ HOME_HTML = '''
         const playVideoButton = document.getElementById('play-video-button');
         const timelineProgressLine = document.getElementById('timeline-progress-line');
         const timelineProgressInput = document.getElementById('timeline-progress');
+        const previewAspectRatioSelect = document.getElementById('preview-aspect-ratio');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
@@ -637,6 +656,14 @@ HOME_HTML = '''
             }
             previewArea.scrollTop = 0;
             previewArea.scrollLeft = 0;
+        }
+
+        function setPreviewAspectRatio(aspectRatio) {
+            if (!previewArea) {
+                return;
+            }
+            const normalizedAspectRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
+            previewArea.dataset.aspect = normalizedAspectRatio;
         }
 
         if (previewImage) {
@@ -921,6 +948,15 @@ HOME_HTML = '''
         });
 
         uploadButton.addEventListener('click', () => uploadInput.click());
+
+        if (previewAspectRatioSelect) {
+            setPreviewAspectRatio(previewAspectRatioSelect.value);
+            previewAspectRatioSelect.addEventListener('change', (event) => {
+                setPreviewAspectRatio(event.target.value);
+            });
+        } else {
+            setPreviewAspectRatio('16:9');
+        }
 
         async function playTimelineItem(timelineItem) {
             const fileType = timelineItem.dataset.fileType || '';
