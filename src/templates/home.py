@@ -346,9 +346,10 @@ HOME_HTML = '''
         }
 
         .timeline-item img,
-        .timeline-item video {
+        .timeline-item video,
+        .timeline-thumbnail {
             width: 100%;
-            height: 56px;
+            height: 48px;
             border-radius: 8px;
             object-fit: cover;
         }
@@ -572,8 +573,39 @@ HOME_HTML = '''
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
         let activeTimelineItem = null;
+        let isTimelinePlaying = false;
+        let timelinePlaybackAbort = null;
+
+        const IMAGE_FRAME_DURATION = 1000;
+
+        function stopTimelinePlayback(resetButton = true) {
+            const abort = timelinePlaybackAbort;
+            timelinePlaybackAbort = null;
+
+            if (typeof abort === 'function') {
+                abort();
+            }
+
+            if (!isTimelinePlaying) {
+                if (resetButton) {
+                    playVideoButton.textContent = 'Progress video';
+                }
+                return;
+            }
+
+            isTimelinePlaying = false;
+            if (!previewVideo.paused) {
+                previewVideo.pause();
+            }
+            previewVideo.currentTime = 0;
+
+            if (resetButton) {
+                playVideoButton.textContent = 'Progress video';
+            }
+        }
 
         function clearPreview() {
+            stopTimelinePlayback();
             previewVideo.pause();
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
@@ -610,6 +642,10 @@ HOME_HTML = '''
 
             previewPlaceholder.hidden = true;
 
+            if (isTimelinePlaying) {
+                stopTimelinePlayback();
+            }
+
             if (fileType.startsWith('video/')) {
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
@@ -632,7 +668,7 @@ HOME_HTML = '''
             }
         }
 
-        function showPreview(file) {
+        async function showPreview(file) {
             const isVideo = file.type.startsWith('video/');
             const isImage = file.type.startsWith('image/');
 
@@ -642,10 +678,34 @@ HOME_HTML = '''
             }
 
             const objectURL = URL.createObjectURL(file);
-            addToTimeline(file, objectURL);
+            await addToTimeline(file, objectURL);
         }
 
-        function addToTimeline(file, objectURL) {
+        async function generateImageThumbnail(objectURL, maxWidth = 120, maxHeight = 80) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+                    const width = Math.max(1, Math.round(img.width * scale));
+                    const height = Math.max(1, Math.round(img.height * scale));
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        resolve(objectURL);
+                        return;
+                    }
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                img.onerror = () => resolve(objectURL);
+                img.src = objectURL;
+            });
+        }
+
+        async function addToTimeline(file, objectURL) {
             if (timelineEmptyState) {
                 timelineEmptyState.remove();
             }
@@ -668,7 +728,8 @@ HOME_HTML = '''
                 timelineItem.appendChild(videoThumb);
             } else if (file.type.startsWith('image/')) {
                 const imageThumb = document.createElement('img');
-                imageThumb.src = objectURL;
+                imageThumb.className = 'timeline-thumbnail';
+                imageThumb.src = await generateImageThumbnail(objectURL);
                 imageThumb.alt = file.name;
                 timelineItem.appendChild(imageThumb);
             }
@@ -677,6 +738,7 @@ HOME_HTML = '''
             timelineTrack.appendChild(timelineItem);
 
             timelineItem.addEventListener('click', () => {
+                stopTimelinePlayback();
                 setActiveTimelineItem(timelineItem);
                 loadPreviewFromTimeline(timelineItem);
             });
@@ -685,35 +747,184 @@ HOME_HTML = '''
             loadPreviewFromTimeline(timelineItem);
         }
 
-        uploadInput.addEventListener('change', (event) => {
+        uploadInput.addEventListener('change', async (event) => {
             const files = Array.from(event.target.files || []);
             if (!files.length) {
                 return;
             }
 
-            files.forEach((file, index) => {
-                setTimeout(() => showPreview(file), index * 200);
-            });
+            for (const file of files) {
+                // eslint-disable-next-line no-await-in-loop
+                await showPreview(file);
+            }
         });
 
         uploadButton.addEventListener('click', () => uploadInput.click());
 
-        playVideoButton.addEventListener('click', () => {
-            if (previewVideo.hidden || !previewVideo.src) {
-                alert('Upload a video file to preview playback.');
+        async function playTimelineItem(timelineItem) {
+            const fileType = timelineItem.dataset.fileType || '';
+            const objectURL = timelineItem.dataset.objectUrl;
+
+            if (!objectURL) {
                 return;
             }
 
-            if (previewVideo.paused) {
-                previewVideo.play();
-                playVideoButton.textContent = 'Pause video';
-            } else {
+            setActiveTimelineItem(timelineItem);
+
+            if (fileType.startsWith('video/')) {
+                previewImage.hidden = true;
+                previewImage.removeAttribute('src');
+                previewVideo.hidden = false;
+                previewPlaceholder.hidden = true;
+
+                await new Promise((resolve) => {
+                    let resolved = false;
+
+                    const cleanup = () => {
+                        previewVideo.removeEventListener('ended', onEnded);
+                        previewVideo.removeEventListener('loadeddata', onLoaded);
+                        previewVideo.removeEventListener('error', onError);
+                    };
+
+                    const finalize = () => {
+                        if (resolved) {
+                            return;
+                        }
+                        resolved = true;
+                        cleanup();
+                        if (timelinePlaybackAbort === abortPlayback) {
+                            timelinePlaybackAbort = null;
+                        }
+                        resolve();
+                    };
+
+                    const onEnded = () => {
+                        finalize();
+                    };
+
+                    const onLoaded = () => {
+                        previewVideo.removeEventListener('loadeddata', onLoaded);
+                        if (!isTimelinePlaying) {
+                            finalize();
+                            return;
+                        }
+                        previewVideo.currentTime = 0;
+                        const playPromise = previewVideo.play();
+                        if (playPromise && typeof playPromise.then === 'function') {
+                            playPromise.catch(() => finalize());
+                        }
+                    };
+
+                    const onError = () => {
+                        finalize();
+                    };
+
+                    const abortPlayback = () => {
+                        cleanup();
+                        previewVideo.pause();
+                        previewVideo.currentTime = 0;
+                        finalize();
+                    };
+
+                    timelinePlaybackAbort = abortPlayback;
+
+                    previewVideo.addEventListener('ended', onEnded, { once: true });
+                    previewVideo.addEventListener('error', onError, { once: true });
+                    previewVideo.addEventListener('loadeddata', onLoaded, { once: true });
+
+                    if (previewVideo.src !== objectURL) {
+                        previewVideo.pause();
+                        previewVideo.src = objectURL;
+                        previewVideo.load();
+                    } else if (previewVideo.readyState >= 2) {
+                        onLoaded();
+                    } else {
+                        previewVideo.load();
+                    }
+                });
+            } else if (fileType.startsWith('image/')) {
                 previewVideo.pause();
-                playVideoButton.textContent = 'Progress video';
+                previewVideo.hidden = true;
+                previewVideo.removeAttribute('src');
+                previewImage.hidden = false;
+                previewPlaceholder.hidden = true;
+                if (previewImage.src !== objectURL) {
+                    previewImage.src = objectURL;
+                }
+
+                await new Promise((resolve) => {
+                    let resolved = false;
+                    const timeoutId = window.setTimeout(() => {
+                        if (resolved) {
+                            return;
+                        }
+                        resolved = true;
+                        if (timelinePlaybackAbort === abortPlayback) {
+                            timelinePlaybackAbort = null;
+                        }
+                        resolve();
+                    }, Number(timelineItem.dataset.imageDuration) || IMAGE_FRAME_DURATION);
+
+                    const abortPlayback = () => {
+                        if (resolved) {
+                            return;
+                        }
+                        resolved = true;
+                        window.clearTimeout(timeoutId);
+                        timelinePlaybackAbort = null;
+                        resolve();
+                    };
+
+                    timelinePlaybackAbort = abortPlayback;
+                });
             }
+        }
+
+        async function playTimelineSequence(startIndex = 0) {
+            const timelineItems = Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline.');
+                return;
+            }
+
+            const initialIndex = Math.max(0, startIndex);
+
+            isTimelinePlaying = true;
+            playVideoButton.textContent = 'Pause playback';
+
+            try {
+                for (let index = initialIndex; index < timelineItems.length; index += 1) {
+                    if (!isTimelinePlaying) {
+                        break;
+                    }
+                    // eslint-disable-next-line no-await-in-loop
+                    await playTimelineItem(timelineItems[index]);
+                }
+            } finally {
+                stopTimelinePlayback();
+            }
+        }
+
+        playVideoButton.addEventListener('click', () => {
+            if (isTimelinePlaying) {
+                stopTimelinePlayback();
+                return;
+            }
+
+            const timelineItems = Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline.');
+                return;
+            }
+
+            const startIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : 0;
+            playTimelineSequence(startIndex >= 0 ? startIndex : 0);
         });
 
         previewVideo.addEventListener('ended', () => {
+            if (isTimelinePlaying) {
+                return;
+            }
             playVideoButton.textContent = 'Progress video';
             previewVideo.currentTime = 0;
         });
