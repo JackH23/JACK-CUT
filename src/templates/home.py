@@ -313,9 +313,10 @@ HOME_HTML = '''
         }
 
         .timeline-track {
+            position: relative;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            gap: 10px;
             padding: 16px;
             border-radius: 14px;
             background: rgba(8, 12, 24, 0.75);
@@ -323,18 +324,18 @@ HOME_HTML = '''
             color: var(--text-secondary);
             text-align: center;
             font-size: 0.95rem;
-            min-height: 140px;
+            min-height: 120px;
         }
 
         .timeline-item {
-            padding: 10px;
+            padding: 8px;
             border-radius: 12px;
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(148, 163, 184, 0.2);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             overflow: hidden;
             cursor: pointer;
             transition: border 0.2s ease, box-shadow 0.2s ease;
@@ -349,9 +350,15 @@ HOME_HTML = '''
         .timeline-item video,
         .timeline-thumbnail {
             width: 100%;
-            height: 48px;
+            height: 40px;
             border-radius: 8px;
             object-fit: cover;
+        }
+
+        .timeline-item span {
+            font-size: 0.8rem;
+            line-height: 1.3;
+            word-break: break-word;
         }
 
         .timeline-item video {
@@ -392,6 +399,21 @@ HOME_HTML = '''
             cursor: pointer;
             box-shadow: 0 12px 26px rgba(124, 58, 237, 0.25);
             transition: transform 0.2s ease;
+        }
+
+        .timeline-progress-line {
+            position: absolute;
+            top: 6px;
+            left: 16px;
+            right: 16px;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(124, 58, 237, 0.9));
+            border-radius: 999px;
+            transform-origin: left center;
+            transform: scaleX(0);
+            pointer-events: none;
+            transition: transform 0.2s linear;
+            opacity: 0.85;
         }
 
         .timeline-progress button:hover {
@@ -550,12 +572,13 @@ HOME_HTML = '''
         <section class="panel timeline-card timeline-footer">
             <h2>Timeline overview</h2>
             <div class="timeline-track" id="timeline-track">
+                <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
                 <input type="range" id="timeline-progress" min="0" max="100" value="0">
-                <button type="button" id="play-video-button">Progress video</button>
+                <button type="button" id="play-video-button">Play Back</button>
             </div>
         </section>
 
@@ -572,13 +595,82 @@ HOME_HTML = '''
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
+        const timelineProgressLine = document.getElementById('timeline-progress-line');
+        const timelineProgressInput = document.getElementById('timeline-progress');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
 
         const IMAGE_FRAME_DURATION = 1000;
 
-        function stopTimelinePlayback(resetButton = true) {
+        function clampProgress(value) {
+            return Math.min(Math.max(value, 0), 1);
+        }
+
+        function updateTimelineProgressInput(fraction) {
+            if (!timelineProgressInput) {
+                return;
+            }
+            timelineProgressInput.value = String(Math.round(clampProgress(fraction) * 100));
+        }
+
+        function resetTimelineProgressLine(fraction = 0) {
+            if (!timelineProgressLine) {
+                updateTimelineProgressInput(0);
+                return;
+            }
+            const clamped = clampProgress(fraction);
+            timelineProgressLine.dataset.progress = String(clamped);
+            timelineProgressLine.style.transition = 'none';
+            timelineProgressLine.style.transform = `scaleX(${clamped})`;
+            updateTimelineProgressInput(clamped);
+        }
+
+        function animateTimelineProgress(startFraction, endFraction, durationMs) {
+            if (!timelineProgressLine) {
+                updateTimelineProgressInput(endFraction);
+                return;
+            }
+            const start = clampProgress(startFraction);
+            const end = clampProgress(endFraction);
+            timelineProgressLine.dataset.progress = String(end);
+            timelineProgressLine.style.transition = 'none';
+            timelineProgressLine.style.transform = `scaleX(${start})`;
+            void timelineProgressLine.offsetWidth;
+            if (durationMs > 0) {
+                timelineProgressLine.style.transition = `transform ${durationMs}ms linear`;
+            } else {
+                timelineProgressLine.style.transition = 'none';
+            }
+            timelineProgressLine.style.transform = `scaleX(${end})`;
+            updateTimelineProgressInput(end);
+        }
+
+        function getTimelineItems() {
+            return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+        }
+
+        function getTimelineItemPlaybackDuration(timelineItem) {
+            const fileType = timelineItem.dataset.fileType || '';
+            if (fileType.startsWith('image/')) {
+                const duration = Number(timelineItem.dataset.imageDuration);
+                if (Number.isFinite(duration) && duration > 0) {
+                    return duration;
+                }
+                return IMAGE_FRAME_DURATION;
+            }
+            if (fileType.startsWith('video/')) {
+                const duration = Number(timelineItem.dataset.videoDuration);
+                if (Number.isFinite(duration) && duration > 0) {
+                    return duration;
+                }
+            }
+            return 0;
+        }
+
+        resetTimelineProgressLine();
+
+        function stopTimelinePlayback(resetButton = true, resetProgress = true) {
             const abort = timelinePlaybackAbort;
             timelinePlaybackAbort = null;
 
@@ -586,9 +678,13 @@ HOME_HTML = '''
                 abort();
             }
 
+            if (resetProgress) {
+                resetTimelineProgressLine();
+            }
+
             if (!isTimelinePlaying) {
                 if (resetButton) {
-                    playVideoButton.textContent = 'Progress video';
+                    playVideoButton.textContent = 'Play Back';
                 }
                 return;
             }
@@ -600,7 +696,7 @@ HOME_HTML = '''
             previewVideo.currentTime = 0;
 
             if (resetButton) {
-                playVideoButton.textContent = 'Progress video';
+                playVideoButton.textContent = 'Play Back';
             }
         }
 
@@ -613,7 +709,7 @@ HOME_HTML = '''
             previewImage.hidden = true;
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
-            playVideoButton.textContent = 'Progress video';
+            playVideoButton.textContent = 'Play Back';
             setActiveTimelineItem(null);
         }
 
@@ -624,6 +720,17 @@ HOME_HTML = '''
             activeTimelineItem = item;
             if (activeTimelineItem) {
                 activeTimelineItem.classList.add('active');
+            }
+            if (!isTimelinePlaying) {
+                if (activeTimelineItem) {
+                    const items = getTimelineItems();
+                    const index = items.indexOf(activeTimelineItem);
+                    if (index >= 0 && items.length) {
+                        resetTimelineProgressLine(index / items.length);
+                    }
+                } else {
+                    resetTimelineProgressLine();
+                }
             }
         }
 
@@ -655,7 +762,7 @@ HOME_HTML = '''
                     previewVideo.src = objectURL;
                     previewVideo.load();
                 }
-                playVideoButton.textContent = 'Progress video';
+                playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
                 previewVideo.pause();
                 previewVideo.hidden = true;
@@ -664,7 +771,7 @@ HOME_HTML = '''
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
                 }
-                playVideoButton.textContent = 'Progress video';
+                playVideoButton.textContent = 'Play Back';
             }
         }
 
@@ -681,7 +788,7 @@ HOME_HTML = '''
             await addToTimeline(file, objectURL);
         }
 
-        async function generateImageThumbnail(objectURL, maxWidth = 120, maxHeight = 80) {
+        async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
             return new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => {
@@ -725,6 +832,11 @@ HOME_HTML = '''
                 videoThumb.loop = true;
                 videoThumb.playsInline = true;
                 videoThumb.autoplay = true;
+                videoThumb.addEventListener('loadedmetadata', () => {
+                    if (Number.isFinite(videoThumb.duration) && videoThumb.duration > 0) {
+                        timelineItem.dataset.videoDuration = String(Math.round(videoThumb.duration * 1000));
+                    }
+                });
                 timelineItem.appendChild(videoThumb);
             } else if (file.type.startsWith('image/')) {
                 const imageThumb = document.createElement('img');
@@ -732,6 +844,7 @@ HOME_HTML = '''
                 imageThumb.src = await generateImageThumbnail(objectURL);
                 imageThumb.alt = file.name;
                 timelineItem.appendChild(imageThumb);
+                timelineItem.dataset.imageDuration = String(IMAGE_FRAME_DURATION);
             }
 
             timelineItem.appendChild(label);
@@ -808,6 +921,9 @@ HOME_HTML = '''
                             finalize();
                             return;
                         }
+                        if (Number.isFinite(previewVideo.duration) && previewVideo.duration > 0) {
+                            timelineItem.dataset.videoDuration = String(Math.round(previewVideo.duration * 1000));
+                        }
                         previewVideo.currentTime = 0;
                         const playPromise = previewVideo.play();
                         if (playPromise && typeof playPromise.then === 'function') {
@@ -881,27 +997,33 @@ HOME_HTML = '''
         }
 
         async function playTimelineSequence(startIndex = 0) {
-            const timelineItems = Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+            const timelineItems = getTimelineItems();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return;
             }
 
             const initialIndex = Math.max(0, startIndex);
+            const totalItems = timelineItems.length;
+            const startFraction = totalItems ? initialIndex / totalItems : 0;
 
             isTimelinePlaying = true;
             playVideoButton.textContent = 'Pause playback';
+            resetTimelineProgressLine(startFraction);
 
             try {
-                for (let index = initialIndex; index < timelineItems.length; index += 1) {
+                for (let index = initialIndex; index < totalItems; index += 1) {
                     if (!isTimelinePlaying) {
                         break;
                     }
+                    const timelineItem = timelineItems[index];
+                    const duration = getTimelineItemPlaybackDuration(timelineItem);
+                    animateTimelineProgress(index / totalItems, (index + 1) / totalItems, duration);
                     // eslint-disable-next-line no-await-in-loop
-                    await playTimelineItem(timelineItems[index]);
+                    await playTimelineItem(timelineItem);
                 }
             } finally {
-                stopTimelinePlayback();
+                stopTimelinePlayback(true, false);
             }
         }
 
@@ -911,7 +1033,7 @@ HOME_HTML = '''
                 return;
             }
 
-            const timelineItems = Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+            const timelineItems = getTimelineItems();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return;
@@ -925,7 +1047,7 @@ HOME_HTML = '''
             if (isTimelinePlaying) {
                 return;
             }
-            playVideoButton.textContent = 'Progress video';
+            playVideoButton.textContent = 'Play Back';
             previewVideo.currentTime = 0;
         });
     </script>
