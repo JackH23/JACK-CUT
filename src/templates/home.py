@@ -199,6 +199,31 @@ HOME_HTML = '''
             grid-area: preview;
         }
 
+        .preview-toolbar {
+            margin-top: 12px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .preview-toolbar label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .preview-toolbar select {
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            width: auto;
+            min-width: 120px;
+        }
+
         .settings-card {
             grid-area: settings;
         }
@@ -234,7 +259,8 @@ HOME_HTML = '''
 
         .upload-card input[type="file"],
         .settings-card input,
-        .settings-card select {
+        .settings-card select,
+        .preview-toolbar select {
             width: 100%;
             padding: 12px 14px;
             border-radius: 12px;
@@ -247,7 +273,8 @@ HOME_HTML = '''
 
         .upload-card input[type="file"]:focus,
         .settings-card input:focus,
-        .settings-card select:focus {
+        .settings-card select:focus,
+        .preview-toolbar select:focus {
             outline: none;
             border-color: rgba(56, 189, 248, 0.6);
             box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
@@ -287,8 +314,9 @@ HOME_HTML = '''
         }
 
         .preview-area {
+            --preview-aspect-ratio: 16 / 9;
             position: relative;
-            aspect-ratio: 16 / 9;
+            aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -331,8 +359,9 @@ HOME_HTML = '''
 
         .timeline-track {
             position: relative;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: stretch;
             gap: 10px;
             padding: 16px;
             border-radius: 14px;
@@ -341,10 +370,28 @@ HOME_HTML = '''
             color: var(--text-secondary);
             text-align: center;
             font-size: 0.95rem;
-            min-height: 120px;
+            min-height: 140px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            scroll-snap-type: x proximity;
+        }
+
+        .timeline-track::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .timeline-track::-webkit-scrollbar-thumb {
+            background: rgba(124, 58, 237, 0.4);
+            border-radius: 999px;
+        }
+
+        .timeline-track::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
         }
 
         .timeline-item {
+            position: relative;
             padding: 8px;
             border-radius: 12px;
             background: rgba(30, 41, 59, 0.7);
@@ -354,8 +401,26 @@ HOME_HTML = '''
             align-items: center;
             gap: 6px;
             overflow: hidden;
-            cursor: pointer;
-            transition: border 0.2s ease, box-shadow 0.2s ease;
+            flex: 0 0 auto;
+            min-width: 96px;
+            width: 120px;
+            cursor: grab;
+            user-select: none;
+            transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+            scroll-snap-align: start;
+        }
+
+        .timeline-item:active {
+            cursor: grabbing;
+        }
+
+        .timeline-item.dragging {
+            opacity: 0.6;
+            transform: scale(0.98);
+        }
+
+        .timeline-item.is-resizing {
+            cursor: ew-resize;
         }
 
         .timeline-item.active {
@@ -376,10 +441,49 @@ HOME_HTML = '''
             font-size: 0.8rem;
             line-height: 1.3;
             word-break: break-word;
+            pointer-events: none;
         }
 
         .timeline-item video {
             background: #000;
+        }
+
+        .timeline-resize-handle {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 4px;
+            background: rgba(148, 163, 184, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+            cursor: ew-resize;
+            backdrop-filter: blur(4px);
+            pointer-events: auto;
+        }
+
+        .timeline-resize-handle.top-right {
+            top: 6px;
+            right: 6px;
+        }
+
+        .timeline-resize-handle.bottom-right {
+            bottom: 6px;
+            right: 6px;
+        }
+
+        #timeline-empty-state {
+            margin: auto;
+            pointer-events: none;
+        }
+
+        .playback-time {
+            font-variant-numeric: tabular-nums;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding: 6px 10px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.2);
         }
 
         .timeline-progress {
@@ -546,6 +650,13 @@ HOME_HTML = '''
                     <video id="preview-video" controls hidden></video>
                     <img id="preview-image" alt="Preview" hidden>
                 </div>
+                <div class="preview-toolbar">
+                    <label for="preview-aspect">Aspect ratio</label>
+                    <select id="preview-aspect">
+                        <option value="16:9" selected>16:9 (Landscape)</option>
+                        <option value="9:16">9:16 (Portrait)</option>
+                    </select>
+                </div>
             </article>
 
             <article class="panel settings-card">
@@ -595,6 +706,7 @@ HOME_HTML = '''
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
                 <input type="range" id="timeline-progress" min="0" max="100" value="0">
+                <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
                 <button type="button" id="play-video-button">Play Back</button>
             </div>
         </section>
@@ -615,11 +727,301 @@ HOME_HTML = '''
         const playVideoButton = document.getElementById('play-video-button');
         const timelineProgressLine = document.getElementById('timeline-progress-line');
         const timelineProgressInput = document.getElementById('timeline-progress');
+        const previewAspectSelect = document.getElementById('preview-aspect');
+        const playbackTimeDisplay = document.getElementById('playback-time');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
 
         const IMAGE_FRAME_DURATION = 1000;
+        const DEFAULT_VIDEO_DURATION = 3000;
+        const MIN_IMAGE_DURATION = 400;
+        const TIMELINE_DURATION_PER_PIXEL = 12;
+        const MIN_TIMELINE_ITEM_WIDTH = 96;
+
+        let playbackClockAnimationFrame = null;
+        let playbackClockStartTimestamp = 0;
+        let playbackClockBaseElapsed = 0;
+        let playbackClockTotalDuration = 0;
+        let playbackDisplayCurrentMs = 0;
+        let playbackDisplayTotalMs = 0;
+
+        function formatTime(milliseconds) {
+            const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
+            const totalSeconds = Math.floor(safeMs / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function updatePlaybackTimeDisplay(currentMs, totalMs) {
+            playbackDisplayCurrentMs = Math.max(0, Math.floor(Number(currentMs) || 0));
+            playbackDisplayTotalMs = Math.max(0, Math.floor(Number(totalMs) || 0));
+
+            if (!playbackTimeDisplay) {
+                return;
+            }
+
+            const clampedCurrent = Math.min(playbackDisplayCurrentMs, playbackDisplayTotalMs);
+            playbackTimeDisplay.textContent = `${formatTime(clampedCurrent)} / ${formatTime(playbackDisplayTotalMs)}`;
+            playbackTimeDisplay.dataset.current = String(clampedCurrent);
+            playbackTimeDisplay.dataset.total = String(playbackDisplayTotalMs);
+        }
+
+        function startPlaybackClock(startElapsed, totalDuration) {
+            playbackClockBaseElapsed = Math.max(0, Number(startElapsed) || 0);
+            playbackClockTotalDuration = Math.max(0, Number(totalDuration) || 0);
+            playbackClockStartTimestamp = performance.now();
+
+            if (playbackClockAnimationFrame) {
+                window.cancelAnimationFrame(playbackClockAnimationFrame);
+            }
+
+            const tick = () => {
+                if (!isTimelinePlaying) {
+                    return;
+                }
+                const now = performance.now();
+                const elapsed = Math.min(
+                    playbackClockTotalDuration,
+                    playbackClockBaseElapsed + Math.max(0, now - playbackClockStartTimestamp),
+                );
+                updatePlaybackTimeDisplay(elapsed, playbackClockTotalDuration);
+                playbackClockAnimationFrame = window.requestAnimationFrame(tick);
+            };
+
+            tick();
+        }
+
+        function stopPlaybackClock(resetDisplay = true) {
+            if (playbackClockAnimationFrame) {
+                window.cancelAnimationFrame(playbackClockAnimationFrame);
+                playbackClockAnimationFrame = null;
+            }
+
+            if (resetDisplay) {
+                updateActiveTimelineIndicators();
+            }
+        }
+
+        function durationToWidth(durationMs) {
+            if (!Number.isFinite(durationMs) || durationMs <= 0) {
+                return MIN_TIMELINE_ITEM_WIDTH;
+            }
+            return Math.max(MIN_TIMELINE_ITEM_WIDTH, Math.round(durationMs / TIMELINE_DURATION_PER_PIXEL));
+        }
+
+        function widthToDuration(widthPx) {
+            if (!Number.isFinite(widthPx) || widthPx <= 0) {
+                return MIN_IMAGE_DURATION;
+            }
+            return Math.max(MIN_IMAGE_DURATION, Math.round(widthPx * TIMELINE_DURATION_PER_PIXEL));
+        }
+
+        function applyTimelineItemDurationStyles(timelineItem, durationMs) {
+            const width = durationToWidth(durationMs);
+            timelineItem.style.width = `${width}px`;
+        }
+
+        function getTimelineItems() {
+            return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+        }
+
+        function getTotalTimelineDuration() {
+            return getTimelineItems().reduce(
+                (total, item) => total + getTimelineItemPlaybackDuration(item),
+                0,
+            );
+        }
+
+        function getTimelineItemStartTime(timelineItem) {
+            const items = getTimelineItems();
+            let elapsed = 0;
+            for (const item of items) {
+                if (item === timelineItem) {
+                    return elapsed;
+                }
+                elapsed += getTimelineItemPlaybackDuration(item);
+            }
+            return 0;
+        }
+
+        function getTimelineFractionForTime(timeMs) {
+            const total = getTotalTimelineDuration();
+            if (!total) {
+                return 0;
+            }
+            return clampProgress(Math.max(0, timeMs) / total);
+        }
+
+        function scrollTimelineItemIntoView(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+            timelineItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+
+        function getDragAfterElement(container, clientX) {
+            const siblings = Array.from(
+                container.querySelectorAll('.timeline-item:not(.dragging)'),
+            );
+
+            return siblings.reduce(
+                (closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = clientX - box.left - box.width / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset, element: child };
+                    }
+                    return closest;
+                },
+                { offset: Number.NEGATIVE_INFINITY, element: null },
+            ).element;
+        }
+
+        function updateActiveTimelineIndicators() {
+            if (isTimelinePlaying) {
+                updatePlaybackTimeDisplay(playbackDisplayCurrentMs, getTotalTimelineDuration());
+                return;
+            }
+
+            if (activeTimelineItem) {
+                const startTime = getTimelineItemStartTime(activeTimelineItem);
+                const total = getTotalTimelineDuration();
+                resetTimelineProgressLine(getTimelineFractionForTime(startTime));
+                updatePlaybackTimeDisplay(startTime, total);
+            } else {
+                resetTimelineProgressLine();
+                updatePlaybackTimeDisplay(0, getTotalTimelineDuration());
+            }
+        }
+
+        function startTimelineItemResize(event, timelineItem) {
+            if (!timelineItem || !(timelineItem.dataset.fileType || '').startsWith('image/')) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            stopTimelinePlayback();
+            setActiveTimelineItem(timelineItem);
+
+            const handle = event.currentTarget;
+            handle?.setPointerCapture?.(event.pointerId);
+
+            const initialRect = timelineItem.getBoundingClientRect();
+            const initialWidth = initialRect.width;
+            const startX = event.clientX;
+            const previousDraggable = timelineItem.draggable;
+
+            timelineItem.classList.add('is-resizing');
+            timelineItem.draggable = false;
+
+            const onPointerMove = (moveEvent) => {
+                const deltaX = moveEvent.clientX - startX;
+                const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
+                const nextDuration = widthToDuration(tentativeWidth);
+                timelineItem.dataset.imageDuration = String(nextDuration);
+                applyTimelineItemDurationStyles(timelineItem, nextDuration);
+                updateActiveTimelineIndicators();
+            };
+
+            const finishResize = () => {
+                handle?.releasePointerCapture?.(event.pointerId);
+                document.removeEventListener('pointermove', onPointerMove);
+                document.removeEventListener('pointerup', finishResize);
+                document.removeEventListener('pointercancel', finishResize);
+                timelineItem.classList.remove('is-resizing');
+                timelineItem.draggable = previousDraggable;
+                updateActiveTimelineIndicators();
+            };
+
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', finishResize);
+            document.addEventListener('pointercancel', finishResize);
+        }
+
+        function attachResizeHandles(timelineItem) {
+            if (!timelineItem || timelineItem.querySelector('.timeline-resize-handle')) {
+                return;
+            }
+
+            ['top-right', 'bottom-right'].forEach((position) => {
+                const handle = document.createElement('span');
+                handle.className = `timeline-resize-handle ${position}`;
+                handle.setAttribute('aria-hidden', 'true');
+                handle.title = 'Drag to adjust image duration';
+                handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem));
+                timelineItem.appendChild(handle);
+            });
+        }
+
+        function enableTimelineItemDragging(timelineItem) {
+            if (!timelineItem || timelineItem.dataset.draggingInitialized === '1') {
+                return;
+            }
+            timelineItem.dataset.draggingInitialized = '1';
+            timelineItem.setAttribute('draggable', 'true');
+
+            timelineItem.addEventListener('dragstart', (event) => {
+                stopTimelinePlayback();
+                timelineItem.classList.add('dragging');
+                const transfer = event.dataTransfer;
+                if (transfer) {
+                    transfer.effectAllowed = 'move';
+                    transfer.setData('text/plain', timelineItem.dataset.objectUrl || 'timeline-item');
+                }
+            });
+
+            timelineItem.addEventListener('dragend', () => {
+                timelineItem.classList.remove('dragging');
+                timelineItem.draggable = true;
+                updateActiveTimelineIndicators();
+            });
+        }
+
+        function initializeTimelineItem(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+            enableTimelineItemDragging(timelineItem);
+            if ((timelineItem.dataset.fileType || '').startsWith('image/')) {
+                attachResizeHandles(timelineItem);
+            }
+        }
+
+        if (timelineTrack) {
+            timelineTrack.addEventListener('dragenter', (event) => {
+                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+                if (draggingItem) {
+                    event.preventDefault();
+                }
+            });
+
+            timelineTrack.addEventListener('dragover', (event) => {
+                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+                if (!draggingItem) {
+                    return;
+                }
+                event.preventDefault();
+                const afterElement = getDragAfterElement(timelineTrack, event.clientX);
+                if (!afterElement) {
+                    timelineTrack.appendChild(draggingItem);
+                } else if (afterElement !== draggingItem) {
+                    timelineTrack.insertBefore(draggingItem, afterElement);
+                }
+            });
+
+            timelineTrack.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+                if (draggingItem) {
+                    draggingItem.classList.remove('dragging');
+                }
+                updateActiveTimelineIndicators();
+            });
+        }
 
         function setPreviewMode(mode) {
             if (!previewArea) {
@@ -643,6 +1045,24 @@ HOME_HTML = '''
             previewImage.addEventListener('load', () => {
                 resetPreviewScroll();
             });
+        }
+
+        function setPreviewAspect(aspectValue) {
+            if (!previewArea) {
+                return;
+            }
+
+            const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
+            previewArea.style.setProperty('--preview-aspect-ratio', normalized);
+        }
+
+        if (previewAspectSelect) {
+            previewAspectSelect.addEventListener('change', (event) => {
+                setPreviewAspect(event.target.value);
+            });
+            setPreviewAspect(previewAspectSelect.value);
+        } else {
+            setPreviewAspect('16:9');
         }
 
         function clampProgress(value) {
@@ -688,10 +1108,6 @@ HOME_HTML = '''
             updateTimelineProgressInput(end);
         }
 
-        function getTimelineItems() {
-            return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
-        }
-
         function getTimelineItemPlaybackDuration(timelineItem) {
             const fileType = timelineItem.dataset.fileType || '';
             if (fileType.startsWith('image/')) {
@@ -711,6 +1127,7 @@ HOME_HTML = '''
         }
 
         resetTimelineProgressLine();
+        updateActiveTimelineIndicators();
 
         function stopTimelinePlayback(resetButton = true, resetProgress = true) {
             const abort = timelinePlaybackAbort;
@@ -720,22 +1137,22 @@ HOME_HTML = '''
                 abort();
             }
 
+            const wasPlaying = isTimelinePlaying;
+            isTimelinePlaying = false;
+
+            stopPlaybackClock(resetProgress);
+
             if (resetProgress) {
                 resetTimelineProgressLine();
             }
 
-            if (!isTimelinePlaying) {
-                if (resetButton) {
-                    playVideoButton.textContent = 'Play Back';
-                }
-                return;
-            }
-
-            isTimelinePlaying = false;
             if (!previewVideo.paused) {
                 previewVideo.pause();
             }
-            previewVideo.currentTime = 0;
+
+            if (resetProgress) {
+                previewVideo.currentTime = 0;
+            }
 
             if (resetButton) {
                 playVideoButton.textContent = 'Play Back';
@@ -761,21 +1178,12 @@ HOME_HTML = '''
             if (activeTimelineItem) {
                 activeTimelineItem.classList.remove('active');
             }
-            activeTimelineItem = item;
+            activeTimelineItem = item || null;
             if (activeTimelineItem) {
                 activeTimelineItem.classList.add('active');
+                scrollTimelineItemIntoView(activeTimelineItem);
             }
-            if (!isTimelinePlaying) {
-                if (activeTimelineItem) {
-                    const items = getTimelineItems();
-                    const index = items.indexOf(activeTimelineItem);
-                    if (index >= 0 && items.length) {
-                        resetTimelineProgressLine(index / items.length);
-                    }
-                } else {
-                    resetTimelineProgressLine();
-                }
-            }
+            updateActiveTimelineIndicators();
         }
 
         function loadPreviewFromTimeline(timelineItem) {
@@ -880,9 +1288,15 @@ HOME_HTML = '''
                 videoThumb.loop = true;
                 videoThumb.playsInline = true;
                 videoThumb.autoplay = true;
+                timelineItem.dataset.videoDuration = String(DEFAULT_VIDEO_DURATION);
                 videoThumb.addEventListener('loadedmetadata', () => {
                     if (Number.isFinite(videoThumb.duration) && videoThumb.duration > 0) {
                         timelineItem.dataset.videoDuration = String(Math.round(videoThumb.duration * 1000));
+                        applyTimelineItemDurationStyles(
+                            timelineItem,
+                            Number(timelineItem.dataset.videoDuration),
+                        );
+                        updateActiveTimelineIndicators();
                     }
                 });
                 timelineItem.appendChild(videoThumb);
@@ -896,7 +1310,11 @@ HOME_HTML = '''
             }
 
             timelineItem.appendChild(label);
+            const initialDuration = getTimelineItemPlaybackDuration(timelineItem)
+                || (file.type.startsWith('video/') ? DEFAULT_VIDEO_DURATION : IMAGE_FRAME_DURATION);
+            applyTimelineItemDurationStyles(timelineItem, initialDuration);
             timelineTrack.appendChild(timelineItem);
+            initializeTimelineItem(timelineItem);
 
             timelineItem.addEventListener('click', () => {
                 stopTimelinePlayback();
@@ -972,7 +1390,10 @@ HOME_HTML = '''
                             return;
                         }
                         if (Number.isFinite(previewVideo.duration) && previewVideo.duration > 0) {
-                            timelineItem.dataset.videoDuration = String(Math.round(previewVideo.duration * 1000));
+                            const durationMs = Math.round(previewVideo.duration * 1000);
+                            timelineItem.dataset.videoDuration = String(durationMs);
+                            applyTimelineItemDurationStyles(timelineItem, durationMs);
+                            updateActiveTimelineIndicators();
                         }
                         previewVideo.currentTime = 0;
                         const playPromise = previewVideo.play();
@@ -1055,27 +1476,43 @@ HOME_HTML = '''
                 return;
             }
 
-            const initialIndex = Math.max(0, startIndex);
-            const totalItems = timelineItems.length;
-            const startFraction = totalItems ? initialIndex / totalItems : 0;
+            const initialIndex = Math.min(Math.max(0, startIndex), timelineItems.length - 1);
+            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+            const initialItem = timelineItems[initialIndex];
+            const startElapsed = initialItem ? getTimelineItemStartTime(initialItem) : 0;
 
             isTimelinePlaying = true;
             playVideoButton.textContent = 'Pause playback';
-            resetTimelineProgressLine(startFraction);
+            resetTimelineProgressLine(getTimelineFractionForTime(startElapsed));
+            updatePlaybackTimeDisplay(startElapsed, totalDuration);
+            startPlaybackClock(startElapsed, totalDuration);
+
+            let timelineOffset = startElapsed;
+            let completedNaturally = true;
 
             try {
-                for (let index = initialIndex; index < totalItems; index += 1) {
+                for (let index = initialIndex; index < timelineItems.length; index += 1) {
                     if (!isTimelinePlaying) {
+                        completedNaturally = false;
                         break;
                     }
                     const timelineItem = timelineItems[index];
                     const duration = getTimelineItemPlaybackDuration(timelineItem);
-                    animateTimelineProgress(index / totalItems, (index + 1) / totalItems, duration);
+                    const startFraction = getTimelineFractionForTime(timelineOffset);
+                    const endFraction = getTimelineFractionForTime(timelineOffset + duration);
+                    animateTimelineProgress(startFraction, endFraction, duration);
                     // eslint-disable-next-line no-await-in-loop
                     await playTimelineItem(timelineItem);
+                    timelineOffset += duration;
                 }
             } finally {
                 stopTimelinePlayback(true, false);
+                if (completedNaturally) {
+                    resetTimelineProgressLine(1);
+                    updatePlaybackTimeDisplay(totalDuration, totalDuration);
+                } else {
+                    updateActiveTimelineIndicators();
+                }
             }
         }
 
