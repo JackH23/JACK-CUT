@@ -305,8 +305,6 @@ HOME_HTML = '''
         }
 
         .preview-area.has-image {
-            aspect-ratio: auto;
-            min-height: 0;
             align-items: center;
             justify-content: center;
         }
@@ -319,8 +317,8 @@ HOME_HTML = '''
         }
 
         .preview-area img {
-            max-width: 100%;
-            max-height: 100%;
+            width: 100%;
+            height: 100%;
             object-fit: contain;
             border-radius: 20px;
             display: block;
