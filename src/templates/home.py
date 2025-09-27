@@ -821,6 +821,7 @@ HOME_HTML = '''
         function applyTimelineItemDurationStyles(timelineItem, durationMs) {
             const width = durationToWidth(durationMs);
             timelineItem.style.width = `${width}px`;
+            timelineItem.style.flexBasis = `${width}px`;
         }
 
         function getTimelineItems() {
@@ -914,12 +915,30 @@ HOME_HTML = '''
             const initialWidth = initialRect.width;
             const startX = event.clientX;
             const previousDraggable = timelineItem.draggable;
+            const initialScrollLeft = timelineTrack ? timelineTrack.scrollLeft : 0;
+
+            const autoScrollMargin = 60;
+            const autoScrollSpeed = 16;
 
             timelineItem.classList.add('is-resizing');
             timelineItem.draggable = false;
 
             const onPointerMove = (moveEvent) => {
-                const deltaX = moveEvent.clientX - startX;
+                if (timelineTrack) {
+                    const trackRect = timelineTrack.getBoundingClientRect();
+                    if (moveEvent.clientX > trackRect.right - autoScrollMargin) {
+                        timelineTrack.scrollLeft += autoScrollSpeed;
+                    } else if (moveEvent.clientX < trackRect.left + autoScrollMargin) {
+                        timelineTrack.scrollLeft = Math.max(
+                            0,
+                            timelineTrack.scrollLeft - autoScrollSpeed,
+                        );
+                    }
+                }
+
+                const currentScrollLeft = timelineTrack ? timelineTrack.scrollLeft : initialScrollLeft;
+                const scrollDelta = currentScrollLeft - initialScrollLeft;
+                const deltaX = moveEvent.clientX - startX + scrollDelta;
                 const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
                 const nextDuration = widthToDuration(tentativeWidth);
                 timelineItem.dataset.imageDuration = String(nextDuration);
