@@ -410,6 +410,11 @@ HOME_HTML = '''
             scroll-snap-align: start;
         }
 
+        .timeline-item[data-resize-cursor="left"],
+        .timeline-item[data-resize-cursor="right"] {
+            cursor: ew-resize;
+        }
+
         .timeline-item:active {
             cursor: grabbing;
         }
@@ -1034,7 +1039,34 @@ HOME_HTML = '''
             return MIN_IMAGE_DURATION;
         }
 
-        function startTimelineItemResize(event, timelineItem) {
+        function getTimelineItemResizeEdgeFromEvent(event, timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+
+            const rect = timelineItem.getBoundingClientRect();
+            if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) {
+                return null;
+            }
+
+            const threshold = Math.min(Math.max(rect.width * 0.25, 10), 22);
+            const offsetX = event.clientX - rect.left;
+            if (!Number.isFinite(offsetX)) {
+                return null;
+            }
+
+            if (offsetX <= threshold) {
+                return 'left';
+            }
+
+            if (offsetX >= rect.width - threshold) {
+                return 'right';
+            }
+
+            return null;
+        }
+
+        function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null) {
             if (!timelineItem) {
                 return;
             }
@@ -1051,9 +1083,10 @@ HOME_HTML = '''
             setActiveTimelineItem(timelineItem);
 
             const handle = event.currentTarget;
-            handle?.setPointerCapture?.(event.pointerId);
-
-            const resizeEdge = handle?.dataset?.resizeEdge || 'right';
+            const resizeEdge = resizeEdgeOverride
+                || handle?.dataset?.resizeEdge
+                || getTimelineItemResizeEdgeFromEvent(event, timelineItem)
+                || 'right';
             const isLeftResize = resizeEdge === 'left';
 
             const initialRect = timelineItem.getBoundingClientRect();
@@ -1067,6 +1100,12 @@ HOME_HTML = '''
 
             timelineItem.classList.add('is-resizing');
             timelineItem.draggable = false;
+            timelineItem.dataset.resizeCursor = resizeEdge;
+
+            const captureTarget = handle instanceof HTMLElement && handle !== timelineItem
+                ? handle
+                : timelineItem;
+            captureTarget?.setPointerCapture?.(event.pointerId);
 
             const onPointerMove = (moveEvent) => {
                 if (timelineTrack) {
@@ -1094,12 +1133,13 @@ HOME_HTML = '''
             };
 
             const finishResize = () => {
-                handle?.releasePointerCapture?.(event.pointerId);
+                captureTarget?.releasePointerCapture?.(event.pointerId);
                 document.removeEventListener('pointermove', onPointerMove);
                 document.removeEventListener('pointerup', finishResize);
                 document.removeEventListener('pointercancel', finishResize);
                 timelineItem.classList.remove('is-resizing');
                 timelineItem.draggable = previousDraggable;
+                delete timelineItem.dataset.resizeCursor;
                 updateActiveTimelineIndicators();
             };
 
@@ -1121,8 +1161,47 @@ HOME_HTML = '''
                 handle.setAttribute('aria-hidden', 'true');
                 handle.dataset.resizeEdge = position;
                 handle.title = 'Drag side to adjust clip duration';
-                handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem));
+                handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem, position));
                 timelineItem.appendChild(handle);
+            });
+        }
+
+        function enableTimelineItemEdgeResizing(timelineItem) {
+            if (!timelineItem || timelineItem.dataset.edgeResizeInitialized === '1') {
+                return;
+            }
+
+            timelineItem.dataset.edgeResizeInitialized = '1';
+
+            const clearCursor = () => {
+                if (!timelineItem.classList.contains('is-resizing')) {
+                    delete timelineItem.dataset.resizeCursor;
+                }
+            };
+
+            timelineItem.addEventListener('pointermove', (event) => {
+                if (timelineItem.classList.contains('is-resizing')) {
+                    return;
+                }
+                const edge = getTimelineItemResizeEdgeFromEvent(event, timelineItem);
+                if (edge) {
+                    timelineItem.dataset.resizeCursor = edge;
+                } else {
+                    delete timelineItem.dataset.resizeCursor;
+                }
+            });
+
+            timelineItem.addEventListener('pointerleave', clearCursor);
+
+            timelineItem.addEventListener('pointerdown', (event) => {
+                if (event.button && event.button !== 0) {
+                    return;
+                }
+                const edge = getTimelineItemResizeEdgeFromEvent(event, timelineItem);
+                if (!edge) {
+                    return;
+                }
+                startTimelineItemResize(event, timelineItem, edge);
             });
         }
 
@@ -1163,6 +1242,7 @@ HOME_HTML = '''
             const fileType = timelineItem.dataset.fileType || '';
             if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
                 attachResizeHandles(timelineItem);
+                enableTimelineItemEdgeResizing(timelineItem);
             }
         }
 
