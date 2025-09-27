@@ -269,6 +269,23 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
+        .export-button {
+            margin-top: 8px;
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(244, 114, 182, 0.9));
+            color: #0b1020;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 16px 30px rgba(124, 58, 237, 0.25);
+            transition: transform 0.2s ease;
+        }
+
+        .export-button:hover {
+            transform: translateY(-2px);
+        }
+
         .preview-area {
             aspect-ratio: 16 / 9;
             border-radius: 20px;
@@ -304,6 +321,28 @@ HOME_HTML = '''
             border-radius: 10px;
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .timeline-progress {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 14px;
+            background: rgba(8, 12, 24, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        .timeline-progress label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .timeline-progress input[type="range"] {
+            flex: 1;
+            accent-color: rgba(124, 58, 237, 0.9);
         }
 
         .info-list {
@@ -449,6 +488,7 @@ HOME_HTML = '''
                         </div>
                     </div>
                 </div>
+                <button type="button" class="export-button">Export video</button>
             </article>
         </section>
 
@@ -460,6 +500,10 @@ HOME_HTML = '''
                 <span>Scene 2</span>
                 <span>B-roll</span>
                 <span>Outro</span>
+            </div>
+            <div class="timeline-progress">
+                <label for="timeline-progress">Progress</label>
+                <input type="range" id="timeline-progress" min="0" max="100" value="35">
             </div>
         </section>
 
