@@ -428,13 +428,76 @@ HOME_HTML = '''
             box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
         }
 
-        .timeline-item img,
-        .timeline-item video,
-        .timeline-thumbnail {
+        .timeline-thumbnail-wrapper {
+            position: relative;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+        }
+
+        .timeline-item video {
             width: 100%;
             height: 40px;
             border-radius: 8px;
             object-fit: cover;
+            background: #000;
+        }
+
+        .timeline-thumbnail {
+            display: block;
+            border-radius: 9px;
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+            transition: width 0.15s ease, height 0.15s ease, box-shadow 0.2s ease;
+            max-width: 100%;
+        }
+
+        .timeline-thumbnail-wrapper.is-resizing .timeline-thumbnail {
+            box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.55);
+        }
+
+        .thumbnail-resize-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(124, 58, 237, 0.85);
+            border: 2px solid rgba(15, 23, 42, 0.85);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.45);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            cursor: nwse-resize;
+            touch-action: none;
+        }
+
+        .timeline-thumbnail-wrapper:hover .thumbnail-resize-handle,
+        .timeline-thumbnail-wrapper.is-resizing .thumbnail-resize-handle {
+            opacity: 1;
+        }
+
+        .thumbnail-resize-handle.top-left {
+            top: 4px;
+            left: 4px;
+            cursor: nwse-resize;
+        }
+
+        .thumbnail-resize-handle.top-right {
+            top: 4px;
+            right: 4px;
+            cursor: nesw-resize;
+        }
+
+        .thumbnail-resize-handle.bottom-right {
+            bottom: 4px;
+            right: 4px;
+            cursor: nwse-resize;
+        }
+
+        .thumbnail-resize-handle.bottom-left {
+            bottom: 4px;
+            left: 4px;
+            cursor: nesw-resize;
         }
 
         .timeline-item span {
@@ -442,10 +505,6 @@ HOME_HTML = '''
             line-height: 1.3;
             word-break: break-word;
             pointer-events: none;
-        }
-
-        .timeline-item video {
-            background: #000;
         }
 
         .timeline-resize-handle {
@@ -738,6 +797,11 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const DEFAULT_THUMBNAIL_HEIGHT = 56;
+        const MIN_THUMBNAIL_HEIGHT = 36;
+        const MAX_THUMBNAIL_HEIGHT = 160;
+        const MIN_THUMBNAIL_WIDTH = 48;
+        const MAX_THUMBNAIL_WIDTH = 320;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -821,6 +885,260 @@ HOME_HTML = '''
         function applyTimelineItemDurationStyles(timelineItem, durationMs) {
             const width = durationToWidth(durationMs);
             timelineItem.style.width = `${width}px`;
+            constrainTimelineThumbnailSize(timelineItem);
+        }
+
+        function constrainTimelineThumbnailSize(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const width = Number(timelineItem.dataset.thumbnailWidth);
+            const height = Number(timelineItem.dataset.thumbnailHeight);
+            if (!(width > 0 && height > 0)) {
+                return;
+            }
+
+            const applySize = () => {
+                applyTimelineThumbnailSize(timelineItem, width, height);
+            };
+
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(applySize);
+            } else {
+                setTimeout(applySize, 0);
+            }
+        }
+
+        function applyTimelineThumbnailSize(timelineItem, width, height) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const wrapper = timelineItem.querySelector('.timeline-thumbnail-wrapper');
+            const thumbnail = wrapper?.querySelector('.timeline-thumbnail');
+            if (!wrapper || !thumbnail) {
+                return;
+            }
+
+            const aspectRaw = Number(wrapper.dataset.aspectRatio);
+            const naturalAspect = (thumbnail.naturalWidth > 0 && thumbnail.naturalHeight > 0)
+                ? thumbnail.naturalWidth / thumbnail.naturalHeight
+                : null;
+            const aspect = Number.isFinite(aspectRaw) && aspectRaw > 0
+                ? aspectRaw
+                : (naturalAspect && naturalAspect > 0 ? naturalAspect : 16 / 9);
+
+            const availableWidth = Math.min(
+                Math.max(MIN_THUMBNAIL_WIDTH, timelineItem.clientWidth - 16),
+                MAX_THUMBNAIL_WIDTH,
+            );
+
+            const minHeight = MIN_THUMBNAIL_HEIGHT;
+            const maxHeight = MAX_THUMBNAIL_HEIGHT;
+
+            let nextHeight = Number(height);
+            let nextWidth = Number(width);
+
+            if (!(nextWidth > 0) || !(nextHeight > 0)) {
+                nextHeight = DEFAULT_THUMBNAIL_HEIGHT;
+                nextWidth = nextHeight * aspect;
+            }
+
+            nextHeight = Math.min(Math.max(nextHeight, minHeight), maxHeight);
+            nextWidth = nextHeight * aspect;
+
+            if (nextWidth < MIN_THUMBNAIL_WIDTH) {
+                nextWidth = MIN_THUMBNAIL_WIDTH;
+                nextHeight = Math.max(minHeight, Math.min(maxHeight, nextWidth / aspect));
+            }
+
+            if (nextWidth > availableWidth) {
+                nextWidth = availableWidth;
+                nextHeight = Math.max(minHeight, Math.min(maxHeight, nextWidth / aspect));
+            }
+
+            thumbnail.style.width = `${nextWidth}px`;
+            thumbnail.style.height = `${nextHeight}px`;
+
+            timelineItem.dataset.thumbnailWidth = String(nextWidth);
+            timelineItem.dataset.thumbnailHeight = String(nextHeight);
+        }
+
+        function startThumbnailResize(event, timelineItem, corner) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const wrapper = timelineItem.querySelector('.timeline-thumbnail-wrapper');
+            const thumbnail = wrapper?.querySelector('.timeline-thumbnail');
+
+            if (!wrapper || !thumbnail) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            stopTimelinePlayback();
+            setActiveTimelineItem(timelineItem);
+
+            const handle = event.currentTarget;
+            handle?.setPointerCapture?.(event.pointerId);
+
+            const rect = thumbnail.getBoundingClientRect();
+            if (!(rect.width > 0 && rect.height > 0)) {
+                return;
+            }
+
+            const anchor = {
+                x: corner.includes('left') ? rect.right : rect.left,
+                y: corner.includes('top') ? rect.bottom : rect.top,
+            };
+
+            const initialWidth = rect.width;
+            const initialHeight = rect.height;
+            const availableWidth = Math.min(
+                Math.max(MIN_THUMBNAIL_WIDTH, timelineItem.clientWidth - 16),
+                MAX_THUMBNAIL_WIDTH,
+            );
+
+            const minScale = Math.max(
+                MIN_THUMBNAIL_WIDTH / initialWidth,
+                MIN_THUMBNAIL_HEIGHT / initialHeight,
+                0.2,
+            );
+
+            const maxScale = Math.max(
+                Math.min(
+                    availableWidth / initialWidth,
+                    MAX_THUMBNAIL_HEIGHT / initialHeight,
+                    MAX_THUMBNAIL_WIDTH / initialWidth,
+                ),
+                minScale,
+            );
+
+            const previousDraggable = timelineItem.draggable;
+            timelineItem.draggable = false;
+            wrapper.classList.add('is-resizing');
+
+            const onPointerMove = (moveEvent) => {
+                const rawWidth = Math.abs(moveEvent.clientX - anchor.x);
+                const rawHeight = Math.abs(moveEvent.clientY - anchor.y);
+                let widthScale = rawWidth / initialWidth;
+                let heightScale = rawHeight / initialHeight;
+
+                if (!Number.isFinite(widthScale) || widthScale <= 0) {
+                    widthScale = minScale;
+                }
+                if (!Number.isFinite(heightScale) || heightScale <= 0) {
+                    heightScale = minScale;
+                }
+
+                let scale = Math.min(widthScale, heightScale);
+                scale = Math.max(Math.min(scale, maxScale), minScale);
+
+                const nextWidth = initialWidth * scale;
+                const nextHeight = initialHeight * scale;
+                applyTimelineThumbnailSize(timelineItem, nextWidth, nextHeight);
+            };
+
+            const finishResize = () => {
+                handle?.releasePointerCapture?.(event.pointerId);
+                document.removeEventListener('pointermove', onPointerMove);
+                document.removeEventListener('pointerup', finishResize);
+                document.removeEventListener('pointercancel', finishResize);
+                wrapper.classList.remove('is-resizing');
+                timelineItem.draggable = previousDraggable;
+                updateActiveTimelineIndicators();
+            };
+
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', finishResize);
+            document.addEventListener('pointercancel', finishResize);
+        }
+
+        function attachThumbnailResizeHandles(timelineItem) {
+            const wrapper = timelineItem?.querySelector('.timeline-thumbnail-wrapper');
+            if (!wrapper || wrapper.dataset.thumbnailHandlesAttached === '1') {
+                return;
+            }
+
+            wrapper.dataset.thumbnailHandlesAttached = '1';
+            ['top-left', 'top-right', 'bottom-right', 'bottom-left'].forEach((corner) => {
+                const handle = document.createElement('span');
+                handle.className = `thumbnail-resize-handle ${corner}`;
+                handle.dataset.corner = corner;
+                handle.setAttribute('aria-hidden', 'true');
+                handle.addEventListener('pointerdown', (event) => startThumbnailResize(event, timelineItem, corner));
+                wrapper.appendChild(handle);
+            });
+        }
+
+        function setupThumbnailResizing(timelineItem) {
+            const wrapper = timelineItem?.querySelector('.timeline-thumbnail-wrapper');
+            const thumbnail = wrapper?.querySelector('.timeline-thumbnail');
+
+            if (!wrapper || !thumbnail || wrapper.dataset.thumbnailResizeInitialized === '1') {
+                return;
+            }
+
+            wrapper.dataset.thumbnailResizeInitialized = '1';
+
+            const initializeSize = () => {
+                const assignSize = () => {
+                    const aspect = (thumbnail.naturalWidth > 0 && thumbnail.naturalHeight > 0)
+                        ? thumbnail.naturalWidth / thumbnail.naturalHeight
+                        : (Number(wrapper.dataset.aspectRatio) || 16 / 9);
+                    wrapper.dataset.aspectRatio = String(aspect);
+
+                    const availableWidth = Math.min(
+                        Math.max(MIN_THUMBNAIL_WIDTH, timelineItem.clientWidth - 16),
+                        MAX_THUMBNAIL_WIDTH,
+                    );
+
+                    let baseHeight = DEFAULT_THUMBNAIL_HEIGHT;
+                    baseHeight = Math.min(Math.max(baseHeight, MIN_THUMBNAIL_HEIGHT), MAX_THUMBNAIL_HEIGHT);
+
+                    let height = baseHeight;
+                    let width = height * aspect;
+
+                    if (width > availableWidth) {
+                        width = availableWidth;
+                        height = Math.max(
+                            MIN_THUMBNAIL_HEIGHT,
+                            Math.min(MAX_THUMBNAIL_HEIGHT, width / aspect),
+                        );
+                    }
+
+                    applyTimelineThumbnailSize(timelineItem, width, height);
+                };
+
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(assignSize);
+                } else {
+                    setTimeout(assignSize, 0);
+                }
+            };
+
+            const finalizeInitialization = () => {
+                attachThumbnailResizeHandles(timelineItem);
+                initializeSize();
+            };
+
+            if (thumbnail.complete) {
+                finalizeInitialization();
+            } else {
+                thumbnail.addEventListener('load', finalizeInitialization, { once: true });
+                thumbnail.addEventListener(
+                    'error',
+                    () => {
+                        wrapper.dataset.aspectRatio = String(16 / 9);
+                        finalizeInitialization();
+                    },
+                    { once: true },
+                );
+            }
         }
 
         function getTimelineItems() {
@@ -988,6 +1306,7 @@ HOME_HTML = '''
             enableTimelineItemDragging(timelineItem);
             if ((timelineItem.dataset.fileType || '').startsWith('image/')) {
                 attachResizeHandles(timelineItem);
+                setupThumbnailResizing(timelineItem);
             }
         }
 
@@ -1301,11 +1620,14 @@ HOME_HTML = '''
                 });
                 timelineItem.appendChild(videoThumb);
             } else if (file.type.startsWith('image/')) {
+                const thumbnailWrapper = document.createElement('div');
+                thumbnailWrapper.className = 'timeline-thumbnail-wrapper';
                 const imageThumb = document.createElement('img');
                 imageThumb.className = 'timeline-thumbnail';
                 imageThumb.src = await generateImageThumbnail(objectURL);
                 imageThumb.alt = file.name;
-                timelineItem.appendChild(imageThumb);
+                thumbnailWrapper.appendChild(imageThumb);
+                timelineItem.appendChild(thumbnailWrapper);
                 timelineItem.dataset.imageDuration = String(IMAGE_FRAME_DURATION);
             }
 
