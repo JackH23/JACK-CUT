@@ -314,9 +314,9 @@ HOME_HTML = '''
         }
 
         .preview-area {
-            --preview-aspect-ratio: 16 / 9;
             position: relative;
-            aspect-ratio: var(--preview-aspect-ratio);
+            width: 100%;
+            aspect-ratio: 16 / 9;
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -329,27 +329,130 @@ HOME_HTML = '''
             padding: 16px;
             min-height: 260px;
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area.has-image {
+        .preview-frame {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        .preview-area video {
-            width: 100%;
+        .preview-frame-content {
+            --preview-aspect-ratio: 16 / 9;
+            position: relative;
+            width: auto;
             height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: var(--preview-aspect-ratio);
+            border-radius: 16px;
+            background: rgba(8, 12, 24, 0.62);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.32);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            overflow: hidden;
         }
 
-        .preview-area img {
+        .preview-placeholder {
+            text-align: center;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .preview-area.has-image .preview-placeholder,
+        .preview-area.has-video .preview-placeholder {
+            display: none;
+        }
+
+        .preview-frame-content video {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 20px;
+            border-radius: 12px;
+            background: #000;
+        }
+
+        .preview-frame-content video[hidden] {
+            display: none;
+        }
+
+        .preview-image-wrapper {
+            --preview-image-width: 80%;
+            position: relative;
+            width: min(100%, var(--preview-image-width));
+            max-width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .preview-image-wrapper[hidden] {
+            display: none;
+        }
+
+        .preview-image-wrapper img {
             display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            pointer-events: none;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            border: 2px solid rgba(15, 23, 42, 0.82);
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(56, 189, 248, 0.9));
+            box-shadow: 0 6px 14px rgba(8, 12, 24, 0.45);
+            pointer-events: auto;
+            padding: 0;
+            display: block;
+            appearance: none;
+            touch-action: none;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+
+        .preview-resize-handle:focus-visible,
+        .preview-resize-handle:hover {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.4);
+        }
+
+        .preview-resize-handle.top-left {
+            top: 0;
+            left: 0;
+            transform: translate(-50%, -50%);
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle.top-right {
+            top: 0;
+            right: 0;
+            transform: translate(50%, -50%);
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle.bottom-left {
+            bottom: 0;
+            left: 0;
+            transform: translate(-50%, 50%);
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle.bottom-right {
+            bottom: 0;
+            right: 0;
+            transform: translate(50%, 50%);
+            cursor: nwse-resize;
         }
 
         .timeline-card {
@@ -645,10 +748,20 @@ HOME_HTML = '''
 
             <article class="panel preview-card">
                 <h2>Preview window</h2>
-                <div class="preview-area">
-                    <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                    <video id="preview-video" controls hidden></video>
-                    <img id="preview-image" alt="Preview" hidden>
+                <div class="preview-area" id="preview-area">
+                    <div class="preview-frame" id="preview-frame">
+                        <div class="preview-frame-content" id="preview-frame-content">
+                            <div class="preview-placeholder" id="preview-placeholder">Drop clips here to preview your edit</div>
+                            <video id="preview-video" controls hidden></video>
+                            <div class="preview-image-wrapper" id="preview-image-wrapper" hidden>
+                                <img id="preview-image" alt="Preview">
+                                <button type="button" class="preview-resize-handle top-left" data-handle="top-left" aria-label="Resize image from top left"></button>
+                                <button type="button" class="preview-resize-handle top-right" data-handle="top-right" aria-label="Resize image from top right"></button>
+                                <button type="button" class="preview-resize-handle bottom-left" data-handle="bottom-left" aria-label="Resize image from bottom left"></button>
+                                <button type="button" class="preview-resize-handle bottom-right" data-handle="bottom-right" aria-label="Resize image from bottom right"></button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="preview-toolbar">
                     <label for="preview-aspect">Aspect ratio</label>
@@ -719,8 +832,11 @@ HOME_HTML = '''
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
         const previewArea = document.querySelector('.preview-area');
+        const previewFrame = document.getElementById('preview-frame');
+        const previewFrameContent = document.getElementById('preview-frame-content');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
+        const previewImageWrapper = document.getElementById('preview-image-wrapper');
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -728,6 +844,9 @@ HOME_HTML = '''
         const timelineProgressLine = document.getElementById('timeline-progress-line');
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
+        const previewResizeHandles = previewImageWrapper
+            ? Array.from(previewImageWrapper.querySelectorAll('.preview-resize-handle'))
+            : [];
         const playbackTimeDisplay = document.getElementById('playback-time');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
@@ -738,6 +857,9 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const IMAGE_RESIZE_DEFAULT_PERCENT = 80;
+        const IMAGE_RESIZE_MIN_PERCENT = 30;
+        const IMAGE_RESIZE_MAX_PERCENT = 100;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -745,6 +867,7 @@ HOME_HTML = '''
         let playbackClockTotalDuration = 0;
         let playbackDisplayCurrentMs = 0;
         let playbackDisplayTotalMs = 0;
+        let activePreviewImageResize = null;
 
         function formatTime(milliseconds) {
             const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
@@ -1034,26 +1157,129 @@ HOME_HTML = '''
         }
 
         function resetPreviewScroll() {
-            if (!previewArea) {
+            if (previewFrameContent) {
+                previewFrameContent.scrollTop = 0;
+                previewFrameContent.scrollLeft = 0;
+            }
+            if (previewArea) {
+                previewArea.scrollTop = 0;
+                previewArea.scrollLeft = 0;
+            }
+        }
+
+        function applyPreviewImageWidth(percent) {
+            if (!previewImageWrapper || !Number.isFinite(percent)) {
                 return;
             }
-            previewArea.scrollTop = 0;
-            previewArea.scrollLeft = 0;
+            const clamped = Math.min(IMAGE_RESIZE_MAX_PERCENT, Math.max(IMAGE_RESIZE_MIN_PERCENT, percent));
+            previewImageWrapper.style.setProperty('--preview-image-width', `${clamped}%`);
+            previewImageWrapper.dataset.widthPercent = String(clamped);
+        }
+
+        function resetPreviewImageSize() {
+            applyPreviewImageWidth(IMAGE_RESIZE_DEFAULT_PERCENT);
+        }
+
+        function startPreviewImageResize(event) {
+            if (!previewImageWrapper || previewImageWrapper.hidden || !previewFrameContent) {
+                return;
+            }
+
+            const frameRect = previewFrameContent.getBoundingClientRect();
+            const wrapperRect = previewImageWrapper.getBoundingClientRect();
+            if (frameRect.width <= 0 || frameRect.height <= 0 || wrapperRect.width <= 0 || wrapperRect.height <= 0) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const centerX = wrapperRect.left + wrapperRect.width / 2;
+            const centerY = wrapperRect.top + wrapperRect.height / 2;
+            const startDistance = Math.max(4, Math.hypot(event.clientX - centerX, event.clientY - centerY));
+            const startWidth = wrapperRect.width;
+            const startPercent = Number(previewImageWrapper.dataset.widthPercent)
+                || (startWidth / frameRect.width) * 100;
+
+            activePreviewImageResize = {
+                pointerId: event.pointerId,
+                handle: event.currentTarget,
+                centerX,
+                centerY,
+                startDistance,
+                startWidth,
+                frameWidth: frameRect.width,
+            };
+
+            applyPreviewImageWidth(startPercent);
+
+            if (typeof event.currentTarget.setPointerCapture === 'function') {
+                event.currentTarget.setPointerCapture(event.pointerId);
+            }
+        }
+
+        function handlePreviewImageResizeMove(event) {
+            if (!activePreviewImageResize || event.pointerId !== activePreviewImageResize.pointerId) {
+                return;
+            }
+
+            const distance = Math.max(
+                1,
+                Math.hypot(
+                    event.clientX - activePreviewImageResize.centerX,
+                    event.clientY - activePreviewImageResize.centerY,
+                ),
+            );
+
+            const scale = distance / activePreviewImageResize.startDistance;
+            const newWidth = activePreviewImageResize.startWidth * scale;
+            const frameWidth = activePreviewImageResize.frameWidth || 1;
+            const percent = (newWidth / frameWidth) * 100;
+            applyPreviewImageWidth(percent);
+        }
+
+        function stopPreviewImageResize(event) {
+            if (!activePreviewImageResize) {
+                return;
+            }
+
+            if (event && event.pointerId !== undefined && event.pointerId !== activePreviewImageResize.pointerId) {
+                return;
+            }
+
+            const { handle, pointerId } = activePreviewImageResize;
+            if (handle && typeof handle.releasePointerCapture === 'function') {
+                try {
+                    handle.releasePointerCapture(pointerId);
+                } catch (error) {
+                    /* no-op */
+                }
+            }
+            activePreviewImageResize = null;
         }
 
         if (previewImage) {
             previewImage.addEventListener('load', () => {
                 resetPreviewScroll();
+                resetPreviewImageSize();
             });
         }
 
+        if (previewResizeHandles.length) {
+            previewResizeHandles.forEach((handle) => {
+                handle.addEventListener('pointerdown', startPreviewImageResize);
+            });
+            window.addEventListener('pointermove', handlePreviewImageResizeMove);
+            window.addEventListener('pointerup', stopPreviewImageResize);
+            window.addEventListener('pointercancel', stopPreviewImageResize);
+        }
+
         function setPreviewAspect(aspectValue) {
-            if (!previewArea) {
+            if (!previewFrameContent) {
                 return;
             }
 
             const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
-            previewArea.style.setProperty('--preview-aspect-ratio', normalized);
+            previewFrameContent.style.setProperty('--preview-aspect-ratio', normalized);
         }
 
         if (previewAspectSelect) {
@@ -1165,12 +1391,18 @@ HOME_HTML = '''
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
             previewVideo.load();
+            if (previewImageWrapper) {
+                previewImageWrapper.hidden = true;
+                previewImageWrapper.style.removeProperty('--preview-image-width');
+                delete previewImageWrapper.dataset.widthPercent;
+            }
             previewImage.hidden = true;
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
             resetPreviewScroll();
+            activePreviewImageResize = null;
             setActiveTimelineItem(null);
         }
 
@@ -1208,6 +1440,11 @@ HOME_HTML = '''
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
                 resetPreviewScroll();
+                if (previewImageWrapper) {
+                    previewImageWrapper.hidden = true;
+                    previewImageWrapper.style.removeProperty('--preview-image-width');
+                    delete previewImageWrapper.dataset.widthPercent;
+                }
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
@@ -1222,9 +1459,13 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
+                if (previewImageWrapper) {
+                    previewImageWrapper.hidden = false;
+                }
                 previewImage.hidden = false;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
+                    resetPreviewImageSize();
                 }
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
@@ -1353,6 +1594,11 @@ HOME_HTML = '''
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
                 resetPreviewScroll();
+                if (previewImageWrapper) {
+                    previewImageWrapper.hidden = true;
+                    previewImageWrapper.style.removeProperty('--preview-image-width');
+                    delete previewImageWrapper.dataset.widthPercent;
+                }
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
@@ -1434,10 +1680,14 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
+                if (previewImageWrapper) {
+                    previewImageWrapper.hidden = false;
+                }
                 previewImage.hidden = false;
                 previewPlaceholder.hidden = true;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
+                    resetPreviewImageSize();
                 }
                 resetPreviewScroll();
 
