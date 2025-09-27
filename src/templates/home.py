@@ -316,7 +316,6 @@ HOME_HTML = '''
         .preview-area {
             --preview-aspect-ratio: 16 / 9;
             position: relative;
-            aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -329,7 +328,6 @@ HOME_HTML = '''
             padding: 16px;
             min-height: 260px;
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
         }
 
         .preview-area.has-image {
@@ -337,18 +335,41 @@ HOME_HTML = '''
             justify-content: center;
         }
 
-        .preview-area video {
+        .preview-viewport {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             width: 100%;
             height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: var(--preview-aspect-ratio);
+            border-radius: 16px;
+            background: rgba(8, 13, 28, 0.92);
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
+            overflow: hidden;
+            transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area img {
+        #preview-placeholder {
+            text-align: center;
+            line-height: 1.6;
+            padding: 0 12px;
+        }
+
+        .preview-viewport video {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 20px;
+            border-radius: 16px;
+        }
+
+        .preview-viewport img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 16px;
             display: block;
         }
 
@@ -564,9 +585,9 @@ HOME_HTML = '''
         .timeline-progress-line {
             position: absolute;
             top: 6px;
-            left: 16px;
-            right: 16px;
+            left: var(--timeline-progress-offset, 16px);
             height: 3px;
+            width: var(--timeline-progress-span, calc(100% - 32px));
             background: linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(124, 58, 237, 0.9));
             border-radius: 999px;
             transform-origin: left center;
@@ -685,9 +706,11 @@ HOME_HTML = '''
             <article class="panel preview-card">
                 <h2>Preview window</h2>
                 <div class="preview-area">
-                    <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                    <video id="preview-video" controls hidden></video>
-                    <img id="preview-image" alt="Preview" hidden>
+                    <div class="preview-viewport">
+                        <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                        <video id="preview-video" controls hidden></video>
+                        <img id="preview-image" alt="Preview" hidden>
+                    </div>
                 </div>
                 <div class="preview-toolbar">
                     <label for="preview-aspect">Aspect ratio</label>
@@ -758,6 +781,7 @@ HOME_HTML = '''
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
         const previewArea = document.querySelector('.preview-area');
+        const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -771,6 +795,11 @@ HOME_HTML = '''
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
+        let currentPreviewAspectRatio = 16 / 9;
+        let previewViewportResizeFrame = null;
+        let timelineIndicatorResizeFrame = null;
+        let previewAreaResizeObserver = null;
+        let timelineTrackResizeObserver = null;
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
@@ -995,6 +1024,8 @@ HOME_HTML = '''
         }
 
         function updateActiveTimelineIndicators() {
+            applyTimelineProgressGeometry();
+
             if (isTimelinePlaying) {
                 updatePlaybackTimeDisplay(playbackDisplayCurrentMs, getTotalTimelineDuration());
                 return;
@@ -1278,6 +1309,26 @@ HOME_HTML = '''
             });
         }
 
+        if (window.ResizeObserver) {
+            if (previewArea && !previewAreaResizeObserver) {
+                previewAreaResizeObserver = new ResizeObserver(() => {
+                    schedulePreviewViewportSizeUpdate();
+                });
+                previewAreaResizeObserver.observe(previewArea);
+            }
+            if (timelineTrack && !timelineTrackResizeObserver) {
+                timelineTrackResizeObserver = new ResizeObserver(() => {
+                    scheduleTimelineIndicatorUpdate();
+                });
+                timelineTrackResizeObserver.observe(timelineTrack);
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            schedulePreviewViewportSizeUpdate();
+            scheduleTimelineIndicatorUpdate();
+        });
+
         function setPreviewMode(mode) {
             if (!previewArea) {
                 return;
@@ -1296,9 +1347,69 @@ HOME_HTML = '''
             previewArea.scrollLeft = 0;
         }
 
+        function parseAspectRatio(value) {
+            const [rawWidth, rawHeight] = String(value).split(':');
+            const width = Number(rawWidth);
+            const height = Number(rawHeight);
+            if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+                return width / height;
+            }
+            return 16 / 9;
+        }
+
+        function updatePreviewViewportSize() {
+            if (!previewArea || !previewViewport) {
+                return;
+            }
+
+            const computedStyle = window.getComputedStyle(previewArea);
+            const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
+            const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
+            const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
+            const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
+
+            const availableWidth = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
+            const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
+
+            if (availableWidth <= 0 || availableHeight <= 0) {
+                previewViewport.style.removeProperty('width');
+                previewViewport.style.removeProperty('height');
+                return;
+            }
+
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+            let nextWidth = availableWidth;
+            let nextHeight = nextWidth / aspectRatio;
+
+            if (nextHeight > availableHeight) {
+                nextHeight = availableHeight;
+                nextWidth = nextHeight * aspectRatio;
+            }
+
+            previewViewport.style.width = `${nextWidth}px`;
+            previewViewport.style.height = `${nextHeight}px`;
+        }
+
+        function schedulePreviewViewportSizeUpdate() {
+            if (previewViewportResizeFrame !== null) {
+                return;
+            }
+            previewViewportResizeFrame = window.requestAnimationFrame(() => {
+                previewViewportResizeFrame = null;
+                updatePreviewViewportSize();
+            });
+        }
+
         if (previewImage) {
             previewImage.addEventListener('load', () => {
                 resetPreviewScroll();
+                schedulePreviewViewportSizeUpdate();
+            });
+        }
+
+        if (previewVideo) {
+            previewVideo.addEventListener('loadeddata', () => {
+                schedulePreviewViewportSizeUpdate();
             });
         }
 
@@ -1308,7 +1419,12 @@ HOME_HTML = '''
             }
 
             const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
+            currentPreviewAspectRatio = parseAspectRatio(aspectValue);
             previewArea.style.setProperty('--preview-aspect-ratio', normalized);
+            if (previewViewport) {
+                previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
+            }
+            schedulePreviewViewportSizeUpdate();
         }
 
         if (previewAspectSelect) {
@@ -1331,12 +1447,55 @@ HOME_HTML = '''
             timelineProgressInput.value = String(Math.round(clampProgress(fraction) * 100));
         }
 
+        function getTimelineProgressGeometry() {
+            if (!timelineTrack) {
+                return { offset: 0, width: 0 };
+            }
+
+            const items = getTimelineItems();
+            if (!items.length) {
+                const computedStyle = window.getComputedStyle(timelineTrack);
+                const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
+                const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
+                const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
+                return { offset: paddingLeft, width };
+            }
+
+            const firstItem = items[0];
+            const lastItem = items[items.length - 1];
+            const offset = firstItem.offsetLeft;
+            const width = (lastItem.offsetLeft + lastItem.offsetWidth) - offset;
+            return { offset, width: Math.max(0, width) };
+        }
+
+        function applyTimelineProgressGeometry() {
+            if (!timelineProgressLine || !timelineTrack) {
+                return 0;
+            }
+
+            const { offset, width } = getTimelineProgressGeometry();
+            timelineProgressLine.style.setProperty('--timeline-progress-offset', `${offset}px`);
+            timelineProgressLine.style.setProperty('--timeline-progress-span', `${width}px`);
+            return width;
+        }
+
+        function scheduleTimelineIndicatorUpdate() {
+            if (timelineIndicatorResizeFrame !== null) {
+                return;
+            }
+            timelineIndicatorResizeFrame = window.requestAnimationFrame(() => {
+                timelineIndicatorResizeFrame = null;
+                updateActiveTimelineIndicators();
+            });
+        }
+
         function resetTimelineProgressLine(fraction = 0) {
             if (!timelineProgressLine) {
                 updateTimelineProgressInput(0);
                 return;
             }
-            const clamped = clampProgress(fraction);
+            const width = applyTimelineProgressGeometry();
+            const clamped = width > 0 ? clampProgress(fraction) : 0;
             timelineProgressLine.dataset.progress = String(clamped);
             timelineProgressLine.style.transition = 'none';
             timelineProgressLine.style.transform = `scaleX(${clamped})`;
@@ -1348,13 +1507,15 @@ HOME_HTML = '''
                 updateTimelineProgressInput(endFraction);
                 return;
             }
-            const start = clampProgress(startFraction);
-            const end = clampProgress(endFraction);
+            const width = applyTimelineProgressGeometry();
+            const hasSpan = width > 0;
+            const start = hasSpan ? clampProgress(startFraction) : 0;
+            const end = hasSpan ? clampProgress(endFraction) : 0;
             timelineProgressLine.dataset.progress = String(end);
             timelineProgressLine.style.transition = 'none';
             timelineProgressLine.style.transform = `scaleX(${start})`;
             void timelineProgressLine.offsetWidth;
-            if (durationMs > 0) {
+            if (durationMs > 0 && hasSpan) {
                 timelineProgressLine.style.transition = `transform ${durationMs}ms linear`;
             } else {
                 timelineProgressLine.style.transition = 'none';
