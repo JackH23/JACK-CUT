@@ -300,15 +300,15 @@ HOME_HTML = '''
             font-size: 1.1rem;
             padding: 16px;
             min-height: 260px;
-            overflow: auto;
+            overflow: hidden;
             transition: aspect-ratio 0.2s ease;
         }
 
         .preview-area.has-image {
             aspect-ratio: auto;
             min-height: 0;
-            align-items: flex-start;
-            justify-content: flex-start;
+            align-items: center;
+            justify-content: center;
         }
 
         .preview-area video {
@@ -319,8 +319,9 @@ HOME_HTML = '''
         }
 
         .preview-area img {
-            width: auto;
-            height: auto;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
             border-radius: 20px;
             display: block;
         }
