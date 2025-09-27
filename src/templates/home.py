@@ -314,11 +314,9 @@ HOME_HTML = '''
         }
 
         .preview-area {
-            --preview-aspect-ratio: 16 / 9;
             position: relative;
-            aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 20px;
-            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
+            background: rgba(15, 23, 42, 0.8);
             border: 1px solid rgba(148, 163, 184, 0.18);
             box-shadow: var(--shadow-inner);
             display: flex;
@@ -328,28 +326,43 @@ HOME_HTML = '''
             font-size: 1.1rem;
             padding: 16px;
             min-height: 260px;
+            height: clamp(260px, 38vw, 420px);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area.has-image {
-            align-items: center;
-            justify-content: center;
+        .preview-stage {
+            --preview-aspect-ratio: 16 / 9;
+            position: relative;
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: var(--preview-aspect-ratio);
+            border-radius: 16px;
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
+            box-shadow: var(--shadow-inner);
+            display: grid;
+            place-items: center;
+            padding: 0;
         }
 
-        .preview-area video {
+        .preview-stage > * {
+            grid-area: 1 / 1;
+        }
+
+        .preview-stage video,
+        .preview-stage img {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 20px;
-        }
-
-        .preview-area img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 20px;
+            border-radius: inherit;
             display: block;
+        }
+
+        #preview-placeholder {
+            max-width: 85%;
+            text-align: center;
+            line-height: 1.5;
         }
 
         .timeline-card {
@@ -646,9 +659,11 @@ HOME_HTML = '''
             <article class="panel preview-card">
                 <h2>Preview window</h2>
                 <div class="preview-area">
-                    <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                    <video id="preview-video" controls hidden></video>
-                    <img id="preview-image" alt="Preview" hidden>
+                    <div class="preview-stage" id="preview-stage">
+                        <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                        <video id="preview-video" controls hidden></video>
+                        <img id="preview-image" alt="Preview" hidden>
+                    </div>
                 </div>
                 <div class="preview-toolbar">
                     <label for="preview-aspect">Aspect ratio</label>
@@ -719,6 +734,7 @@ HOME_HTML = '''
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
         const previewArea = document.querySelector('.preview-area');
+        const previewStage = document.getElementById('preview-stage');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -1024,13 +1040,16 @@ HOME_HTML = '''
         }
 
         function setPreviewMode(mode) {
-            if (!previewArea) {
-                return;
-            }
-            previewArea.classList.remove('has-video', 'has-image');
-            if (mode) {
-                previewArea.classList.add(mode);
-            }
+            const targets = [previewArea, previewStage];
+            targets.forEach((element) => {
+                if (!element) {
+                    return;
+                }
+                element.classList.remove('has-video', 'has-image');
+                if (mode) {
+                    element.classList.add(mode);
+                }
+            });
         }
 
         function resetPreviewScroll() {
@@ -1048,12 +1067,13 @@ HOME_HTML = '''
         }
 
         function setPreviewAspect(aspectValue) {
-            if (!previewArea) {
+            const target = previewStage || previewArea;
+            if (!target) {
                 return;
             }
 
             const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
-            previewArea.style.setProperty('--preview-aspect-ratio', normalized);
+            target.style.setProperty('--preview-aspect-ratio', normalized);
         }
 
         if (previewAspectSelect) {
