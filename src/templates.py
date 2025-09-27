@@ -2,355 +2,459 @@ HOME_HTML = """
 <!doctype html>
 <html lang="en">
 <head>
-    <title>Home</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video Editor Pro</title>
     <style>
+        :root {
+            color-scheme: dark;
+            --surface-1: #0f172a;
+            --surface-2: #111827;
+            --surface-3: #1f2937;
+            --surface-4: #243045;
+            --accent-1: #7c3aed;
+            --accent-2: #38bdf8;
+            --accent-3: #f472b6;
+            --text-primary: #f9fafb;
+            --text-secondary: #cbd5f5;
+            --border-color: rgba(148, 163, 184, 0.18);
+            --shadow-soft: 0 24px 60px rgba(2, 6, 23, 0.55);
+            --shadow-inner: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+            font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
-            background: linear-gradient(120deg, #23272f 60%, #181a20 100%);
-            margin: 0; padding: 0;
+            margin: 0;
             min-height: 100vh;
-        }
-        .topbar {
-            width: 100%;
-            background: #181a20;
-            border-bottom: 1px solid #353a45;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-        }
-        .topbar-content {
-            max-width: 900px;
-            margin: 0 auto;
-            display: flex;
-            align-items: center;
-            height: 64px;
-            padding: 0 24px;
-        }
-        .topbar-logo {
-            font-size: 32px;
-            color: #ff2e63;
-            margin-right: 14px;
-        }
-        .topbar-title {
-            color: #fff;
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        .main-layout {
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            margin: 40px auto 0 auto;
-            max-width: 1400px;
-            min-height: 600px;
-        }
-        .left-sidebar {
-            width: 220px;
-            background: #181a20;
-            border-radius: 18px 0 0 18px;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.18);
-            padding: 36px 24px 24px 24px;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            min-height: 480px;
-            margin-right: 24px;
-        }
-        .left-sidebar-title {
-            color: #08d9d6;
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 18px;
-        }
-        .upload-form {
-            width: 100%;
-            margin-bottom: 24px;
-        }
-        .upload-label {
-            color: #fff;
-            font-size: 15px;
-            margin-bottom: 8px;
-            display: block;
-        }
-        .upload-input {
-            width: 100%;
-            padding: 8px;
-            border-radius: 6px;
-            border: 1px solid #353a45;
-            background: #23272f;
-            color: #fff;
-            margin-bottom: 12px;
-        }
-        .upload-btn {
-            padding: 8px 18px;
-            background: linear-gradient(90deg, #08d9d6 80%, #ff2e63 100%);
-            color: #23272f;
-            border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 15px;
-            cursor: pointer;
-            transition: background 0.2s, color 0.2s;
-        }
-        .upload-btn:hover {
-            background: linear-gradient(90deg, #ff2e63 80%, #08d9d6 100%);
-            color: #fff;
-        }
-        .sidebar {
-            width: 120px;
-            background: #181a20;
-            border-radius: 18px 0 0 18px;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.18);
-            padding: 36px 0 0 0;
+            background:
+                radial-gradient(120% 100% at 10% 10%, rgba(124, 58, 237, 0.28), transparent 55%),
+                radial-gradient(80% 100% at 90% 0%, rgba(56, 189, 248, 0.18), transparent 60%),
+                radial-gradient(120% 120% at 50% 120%, rgba(244, 114, 182, 0.22), transparent 70%),
+                var(--surface-1);
+            color: var(--text-primary);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 32px;
-            min-height: 480px;
-            /* Hide, replaced by left-sidebar */
-            display: none;
+            padding: 24px;
         }
-        .right-sidebar {
-            width: 260px;
-            background: #181a20;
-            border-radius: 0 18px 18px 0;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.18);
-            padding: 36px 24px 24px 24px;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            min-height: 480px;
-            margin-left: 24px;
-        }
-        .right-sidebar-title {
-            color: #ff2e63;
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 18px;
-        }
-        .video-detail {
-            color: #fff;
-            font-size: 15px;
-            margin-bottom: 12px;
-        }
-        .video-setting-group {
-            margin-bottom: 18px;
-        }
-        .video-setting-label {
-            color: #08d9d6;
-            font-size: 14px;
-            margin-bottom: 4px;
-            display: block;
-        }
-        .video-setting-input {
-            width: 100%;
-            padding: 6px;
-            border-radius: 6px;
-            border: 1px solid #353a45;
-            background: #23272f;
-            color: #fff;
-            margin-bottom: 8px;
-        }
-        .workspace {
-            flex: 1;
-            background: #23272f;
-            border-radius: 0 18px 18px 0;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.32);
-            padding: 48px 48px 36px 48px;
-            min-height: 480px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            border: 1px solid #353a45;
-            position: relative;
-            padding-bottom: 120px; /* space for timeline */
-        }
-        .logo {
-            font-size: 56px;
-            margin-bottom: 18px;
-            color: #ff2e63;
-            text-shadow: 0 2px 16px #ff2e6380;
-        }
-        .toolbar {
-            display: flex;
-            justify-content: center;
+
+        .app-shell {
+            width: min(1200px, 100%);
+            display: grid;
+            grid-template-columns: 1fr;
             gap: 24px;
-            margin-bottom: 32px;
         }
-        .toolbar-icon {
-            font-size: 32px;
-            color: #08d9d6;
-            background: #181a20;
-            border-radius: 8px;
-            padding: 8px 12px;
-            box-shadow: 0 2px 8px #08d9d640;
-            transition: color 0.2s, background 0.2s;
-            cursor: pointer;
+
+        .nav-bar {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(14px);
+            border-radius: 22px;
+            padding: 18px 28px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-        .toolbar-icon.active, .toolbar-icon:hover {
-            color: #ff2e63;
-            background: #23272f;
-        }
-        h2 {
-            color: #fff;
-            margin-bottom: 28px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            font-size: 2rem;
-        }
-        .btn {
-            display: inline-block;
-            margin: 16px 10px 0 10px;
-            padding: 14px 38px;
-            background: linear-gradient(90deg, #08d9d6 80%, #ff2e63 100%);
-            color: #23272f;
-            text-decoration: none;
-            border-radius: 10px;
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 20px;
             font-weight: 600;
-            font-size: 17px;
-            box-shadow: 0 2px 12px #08d9d680;
-            transition: background 0.2s, box-shadow 0.2s, color 0.2s;
-            border: none;
-            outline: none;
+            letter-spacing: 0.4px;
         }
-        .btn:hover {
-            background: linear-gradient(90deg, #ff2e63 80%, #08d9d6 100%);
-            color: #fff;
-            box-shadow: 0 4px 24px #ff2e6380;
+
+        .brand-icon {
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(244, 114, 182, 0.7));
+            box-shadow: 0 10px 30px rgba(124, 58, 237, 0.35);
+            font-size: 26px;
         }
-        .footer {
-            margin-top: 60px;
-            padding: 24px 0 0 0;
-            border-top: 1px solid #353a45;
-            color: #888;
-            font-size: 14px;
-            letter-spacing: 0.5px;
-            background: #181a20;
-            border-radius: 0 0 18px 18px;
-            text-align: center;
-        }
-        .preview-section {
-            width: 80%;
-            max-width: 600px;
-            height: 280px;
-            background: #181a20;
-            border-radius: 14px;
-            box-shadow: 0 2px 16px #08d9d640;
-            margin: 0 auto 32px auto;
+
+        .nav-actions {
             display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .nav-actions a {
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            position: relative;
-        }
-        .preview-placeholder {
-            color: #888;
-            font-size: 22px;
-            letter-spacing: 1px;
-        }
-        .timeline-section {
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 100%;
-            height: 100px;
-            background: #181a20;
-            border-top: 2px solid #353a45;
-            border-radius: 0 0 18px 18px;
-            box-shadow: 0 -2px 16px #23272f80;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2;
-        }
-        .timeline-content {
-            width: 90%;
-            height: 60px;
-            background: #23272f;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px #08d9d640;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #08d9d6;
-            font-size: 18px;
+            padding: 10px 18px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            text-decoration: none;
             font-weight: 500;
-            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-actions a.primary {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.9));
+            color: #0f172a;
+            font-weight: 600;
+            border: none;
+            box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28);
+        }
+
+        .nav-actions a:hover {
+            border-color: rgba(148, 163, 184, 0.32);
+            transform: translateY(-1px);
+        }
+
+        .hero {
+            position: relative;
+            border-radius: 28px;
+            padding: clamp(32px, 8vw, 60px);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            overflow: hidden;
+        }
+
+        .hero::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.2), transparent 60%);
+            pointer-events: none;
+        }
+
+        .hero-content {
+            position: relative;
+            display: grid;
+            gap: 24px;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.2rem, 5vw, 3.4rem);
+            margin: 0;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .hero p {
+            margin: 0;
+            font-size: clamp(1rem, 2.4vw, 1.2rem);
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .hero-cta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .hero-cta a {
+            padding: 14px 28px;
+            border-radius: 14px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .hero-cta a.primary {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 1), rgba(244, 114, 182, 0.95));
+            color: #0b1020;
+            box-shadow: 0 20px 40px rgba(124, 58, 237, 0.35);
+        }
+
+        .hero-cta a.secondary {
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            color: var(--text-secondary);
+        }
+
+        .hero-cta a:hover {
+            transform: translateY(-2px);
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+        }
+
+        .panel {
+            background: rgba(17, 24, 39, 0.82);
+            border-radius: 22px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .panel h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .upload-card label,
+        .settings-card label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .upload-card input[type="file"],
+        .settings-card input,
+        .settings-card select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .upload-card input[type="file"]:focus,
+        .settings-card input:focus,
+        .settings-card select:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.6);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+        }
+
+        .upload-card button {
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.85));
+            color: #081229;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 16px 30px rgba(56, 189, 248, 0.25);
+            transition: transform 0.2s ease;
+        }
+
+        .upload-card button:hover {
+            transform: translateY(-2px);
+        }
+
+        .preview-card {
+            grid-column: span 2;
+        }
+
+        .preview-area {
+            aspect-ratio: 16 / 9;
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: var(--shadow-inner);
+            display: grid;
+            place-items: center;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .timeline-card {
+            grid-column: span 2;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timeline-track {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            padding: 16px;
+            border-radius: 14px;
+            background: rgba(8, 12, 24, 0.75);
+            border: 1px dashed rgba(148, 163, 184, 0.24);
+            color: var(--text-secondary);
+            text-align: center;
+            font-size: 0.95rem;
+        }
+
+        .timeline-track span {
+            padding: 14px;
+            border-radius: 10px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .info-list {
+            display: grid;
+            gap: 16px;
+        }
+
+        .info-item {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+
+        .info-icon {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: rgba(124, 58, 237, 0.18);
+            color: rgba(124, 58, 237, 0.95);
+            font-size: 18px;
+        }
+
+        .footer {
+            margin-top: 16px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 960px) {
+            .preview-card,
+            .timeline-card {
+                grid-column: span 1;
+            }
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 16px;
+            }
+            .nav-bar {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+            .hero {
+                padding: 28px;
+            }
+            .hero-cta {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .nav-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .nav-actions a {
+                flex: 1;
+                text-align: center;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <div class="topbar-content">
-            <span class="topbar-logo">🎬</span>
-            <span class="topbar-title">Video Editor Pro</span>
-        </div>
-    </div>
-    <div class="main-layout">
-        <div class="left-sidebar">
-            <div class="left-sidebar-title">Upload File</div>
-            <form class="upload-form" enctype="multipart/form-data">
-                <label class="upload-label" for="video-upload">Select video file:</label>
-                <input class="upload-input" type="file" id="video-upload" name="video-upload" accept="video/*">
-                <button class="upload-btn" type="button">Upload</button>
-            </form>
-            <div style="color:#888; font-size:13px;">Supported formats: mp4, mov, avi, etc.</div>
-        </div>
-        <!-- .sidebar is hidden, replaced by left-sidebar -->
-        <!-- <div class="sidebar"> ... </div> -->
-        <div class="workspace">
-            <div class="logo">🎬</div>
-            <div class="toolbar">
-                <span class="toolbar-icon active" title="Timeline">⏱️</span>
-                <span class="toolbar-icon" title="Media">🎞️</span>
-                <span class="toolbar-icon" title="Effects">✨</span>
-                <span class="toolbar-icon" title="Export">📤</span>
+    <div class="app-shell">
+        <header class="nav-bar">
+            <div class="nav-brand">
+                <span class="brand-icon">🎬</span>
+                <span>Video Editor Pro</span>
             </div>
-            <div class="preview-section">
-                <span class="preview-placeholder">Preview Area (Your video will appear here)</span>
-            </div>
-            <h2>Welcome {{ username if username else 'Guest' }}!</h2>
-            {% if username %}
-                <a class="btn" href="{{ url_for('signout') }}">Sign Out</a>
-            {% else %}
-                <a class="btn" href="{{ url_for('login') }}">Login</a>
-                <a class="btn" href="{{ url_for('signup') }}">Sign Up</a>
-            {% endif %}
-            <div class="timeline-section">
-                <div class="timeline-content">
-                    <span>Timeline Video (Drag & drop clips here)</span>
+            <nav class="nav-actions">
+                {% if username %}
+                    <span style="color: var(--text-secondary); font-size: 0.95rem;">Hi, {{ username }} 👋</span>
+                    <a class="primary" href="{{ url_for('signout') }}">Sign Out</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}">Log In</a>
+                    <a class="primary" href="{{ url_for('signup') }}">Get Started</a>
+                {% endif %}
+            </nav>
+        </header>
+
+        <section class="hero">
+            <div class="hero-content">
+                <h1>Create, refine and share videos with style.</h1>
+                <p>Video Editor Pro gives you a beautifully organised workspace with powerful controls so you can focus on storytelling. Upload clips, manage timelines and polish the final cut without friction.</p>
+                <div class="hero-cta">
+                    <a class="primary" href="{{ url_for('signup') }}">Start editing</a>
+                    <a class="secondary" href="#features">Explore features</a>
                 </div>
             </div>
-        </div>
-        <div class="right-sidebar">
-            <div class="right-sidebar-title">Video Settings &amp; Details</div>
-            <div class="video-detail"><strong>File Name:</strong> <span id="video-filename">No file selected</span></div>
-            <div class="video-detail"><strong>Duration:</strong> <span id="video-duration">--:--</span></div>
-            <div class="video-detail"><strong>Resolution:</strong> <span id="video-resolution">---</span></div>
-            <div class="video-setting-group">
-                <label class="video-setting-label" for="video-volume">Volume</label>
-                <input class="video-setting-input" type="range" id="video-volume" min="0" max="100" value="100">
-            </div>
-            <div class="video-setting-group">
-                <label class="video-setting-label" for="video-speed">Playback Speed</label>
-                <select class="video-setting-input" id="video-speed">
-                    <option value="0.5">0.5x</option>
-                    <option value="1" selected>1x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
-                </select>
-            </div>
-            <div class="video-setting-group">
-                <label class="video-setting-label" for="video-quality">Quality</label>
-                <select class="video-setting-input" id="video-quality">
-                    <option value="480p">480p</option>
-                    <option value="720p" selected>720p</option>
-                    <option value="1080p">1080p</option>
-                </select>
-            </div>
-        </div>
-    </div>
-    <div class="footer">
-        <span>Video Editor Pro &copy; 2024</span>
+        </section>
+
+        <section id="features" class="content-grid">
+            <article class="panel upload-card">
+                <h2>Upload footage</h2>
+                <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
+                <label for="video-upload">Select a video file</label>
+                <input type="file" id="video-upload" name="video-upload" accept="video/*">
+                <button type="button">Upload file</button>
+                <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
+            </article>
+
+            <article class="panel settings-card">
+                <h2>Playback settings</h2>
+                <div class="info-list">
+                    <div class="info-item">
+                        <div class="info-icon">🎚️</div>
+                        <div>
+                            <label for="video-volume">Volume</label>
+                            <input type="range" id="video-volume" min="0" max="100" value="80">
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-icon">⏱️</div>
+                        <div>
+                            <label for="video-speed">Playback speed</label>
+                            <select id="video-speed">
+                                <option value="0.5">0.5x</option>
+                                <option value="1" selected>1x (default)</option>
+                                <option value="1.5">1.5x</option>
+                                <option value="2">2x</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-icon">🖥️</div>
+                        <div>
+                            <label for="video-quality">Quality</label>
+                            <select id="video-quality">
+                                <option value="480p">480p</option>
+                                <option value="720p" selected>720p HD</option>
+                                <option value="1080p">1080p Full HD</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel preview-card">
+                <h2>Preview window</h2>
+                <div class="preview-area">
+                    <span>Drop clips here to preview your edit</span>
+                </div>
+            </article>
+
+            <article class="panel timeline-card">
+                <h2>Timeline overview</h2>
+                <div class="timeline-track">
+                    <span>Intro clip</span>
+                    <span>Scene 1</span>
+                    <span>Scene 2</span>
+                    <span>B-roll</span>
+                    <span>Outro</span>
+                </div>
+            </article>
+        </section>
+
+        <footer class="footer">
+            © {{ 2024 }} Video Editor Pro. Crafted for creators.
+        </footer>
     </div>
 </body>
 </html>
@@ -360,43 +464,150 @@ LOGIN_HTML = """
 <!doctype html>
 <html lang="en">
 <head>
-    <title>Login</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login • Video Editor Pro</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(120deg, #f8f9fa 60%, #e3eafc 100%); margin: 0; padding: 0; }
-        .container { max-width: 420px; margin: 60px auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 40px 32px 32px 32px; text-align: center; }
-        .logo { font-size: 48px; margin-bottom: 16px; color: #007bff; }
-        h2 { color: #222; margin-bottom: 24px; font-weight: 600; }
-        form { display: flex; flex-direction: column; align-items: center; }
-        input[type="text"], input[type="password"] {
-            padding: 12px; margin-bottom: 18px; width: 90%; border: 1px solid #d1e3ff; border-radius: 8px; font-size: 16px; background: #f4f8ff;
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+                radial-gradient(100% 100% at 0% 0%, rgba(56, 189, 248, 0.25), transparent 65%),
+                radial-gradient(120% 140% at 100% 0%, rgba(124, 58, 237, 0.28), transparent 75%),
+                #0f172a;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            color: #f8fafc;
+            padding: 20px;
         }
+
+        .card {
+            width: min(420px, 100%);
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 24px;
+            padding: 40px 36px 32px 36px;
+            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            backdrop-filter: blur(12px);
+            text-align: center;
+        }
+
+        .logo {
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            display: grid;
+            place-items: center;
+            margin: 0 auto 18px auto;
+            font-size: 36px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(56, 189, 248, 0.78));
+            box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28);
+        }
+
+        h2 {
+            margin: 0 0 12px 0;
+            font-size: 1.85rem;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0 0 24px 0;
+            color: #cbd5f5;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        form {
+            display: grid;
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.8);
+            color: #f8fafc;
+            font-size: 1rem;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.65);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22);
+        }
+
         input[type="submit"] {
-            padding: 12px 32px; background: linear-gradient(90deg, #007bff 80%, #0056b3 100%);
-            color: #fff; border: none; border-radius: 8px; font-weight: 500; font-size: 16px; cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,123,255,0.08); transition: background 0.2s, box-shadow 0.2s;
+            margin-top: 6px;
+            padding: 14px 18px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(244, 114, 182, 0.85));
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 16px 40px rgba(124, 58, 237, 0.32);
+            transition: transform 0.2s ease;
         }
-        input[type="submit"]:hover { background: linear-gradient(90deg, #0056b3 80%, #007bff 100%); box-shadow: 0 4px 16px rgba(0,123,255,0.12); }
-        .error { color: #dc3545; margin-bottom: 16px; font-weight: 500; }
-        .links { margin-top: 18px; }
-        .links a { color: #007bff; text-decoration: none; margin: 0 8px; font-size: 15px; }
-        .links a:hover { text-decoration: underline; }
+
+        input[type="submit"]:hover {
+            transform: translateY(-2px);
+        }
+
+        .error {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.12);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-weight: 500;
+            border: 1px solid rgba(248, 113, 113, 0.35);
+        }
+
+        .links {
+            margin-top: 18px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            font-size: 0.95rem;
+        }
+
+        .links a {
+            color: rgba(148, 198, 255, 0.95);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="card">
         <div class="logo">🔐</div>
-        <h2>Login</h2>
+        <h2>Welcome back</h2>
+        <p>Sign in to pick up where you left off and continue crafting your next video masterpiece.</p>
         {% if error %}
             <div class="error">{{ error }}</div>
         {% endif %}
         <form method="post">
-            <input type="text" name="username" placeholder="Enter your username" required>
-            <input type="password" name="password" placeholder="Enter your password" required>
-            <input type="submit" value="Login">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <input type="submit" value="Log in">
         </form>
         <div class="links">
-            <a href="{{ url_for('home') }}">Back to Home</a>
-            <a href="{{ url_for('signup') }}">Sign Up</a>
+            <a href="{{ url_for('signup') }}">Create an account</a>
+            <span>•</span>
+            <a href="{{ url_for('home') }}">Back to home</a>
         </div>
     </div>
 </body>
@@ -407,44 +618,153 @@ SIGNUP_HTML = """
 <!doctype html>
 <html lang="en">
 <head>
-    <title>Sign Up</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign Up • Video Editor Pro</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(120deg, #f8f9fa 60%, #e3eafc 100%); margin: 0; padding: 0; }
-        .container { max-width: 420px; margin: 60px auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); padding: 40px 32px 32px 32px; text-align: center; }
-        .logo { font-size: 48px; margin-bottom: 16px; color: #28a745; }
-        h2 { color: #222; margin-bottom: 24px; font-weight: 600; }
-        form { display: flex; flex-direction: column; align-items: center; }
-        input[type="text"], input[type="email"], input[type="password"] {
-            padding: 12px; margin-bottom: 18px; width: 90%; border: 1px solid #d1e3ff; border-radius: 8px; font-size: 16px; background: #f4f8ff;
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+                radial-gradient(100% 100% at 0% 0%, rgba(56, 189, 248, 0.25), transparent 65%),
+                radial-gradient(120% 140% at 100% 0%, rgba(244, 114, 182, 0.3), transparent 75%),
+                #0f172a;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+            color: #f8fafc;
+            padding: 20px;
         }
+
+        .card {
+            width: min(440px, 100%);
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 24px;
+            padding: 40px 36px 32px 36px;
+            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            backdrop-filter: blur(12px);
+            text-align: center;
+        }
+
+        .logo {
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            display: grid;
+            place-items: center;
+            margin: 0 auto 18px auto;
+            font-size: 36px;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.95), rgba(56, 189, 248, 0.85));
+            box-shadow: 0 10px 30px rgba(244, 114, 182, 0.28);
+        }
+
+        h2 {
+            margin: 0 0 12px 0;
+            font-size: 1.85rem;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0 0 24px 0;
+            color: #cbd5f5;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        form {
+            display: grid;
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="password"] {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.8);
+            color: #f8fafc;
+            font-size: 1rem;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: rgba(244, 114, 182, 0.7);
+            box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.25);
+        }
+
         input[type="submit"] {
-            padding: 12px 32px; background: linear-gradient(90deg, #28a745 80%, #218838 100%);
-            color: #fff; border: none; border-radius: 8px; font-weight: 500; font-size: 16px; cursor: pointer;
-            box-shadow: 0 2px 8px rgba(40,167,69,0.08); transition: background 0.2s, box-shadow 0.2s;
+            margin-top: 6px;
+            padding: 14px 18px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.95), rgba(124, 58, 237, 0.85));
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 16px 40px rgba(244, 114, 182, 0.32);
+            transition: transform 0.2s ease;
         }
-        input[type="submit"]:hover { background: linear-gradient(90deg, #218838 80%, #28a745 100%); box-shadow: 0 4px 16px rgba(40,167,69,0.12); }
-        .error { color: #dc3545; margin-bottom: 16px; font-weight: 500; }
-        .links { margin-top: 18px; }
-        .links a { color: #007bff; text-decoration: none; margin: 0 8px; font-size: 15px; }
-        .links a:hover { text-decoration: underline; }
+
+        input[type="submit"]:hover {
+            transform: translateY(-2px);
+        }
+
+        .error {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.12);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-weight: 500;
+            border: 1px solid rgba(248, 113, 113, 0.35);
+        }
+
+        .links {
+            margin-top: 18px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            font-size: 0.95rem;
+        }
+
+        .links a {
+            color: rgba(148, 198, 255, 0.95);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="card">
         <div class="logo">📝</div>
-        <h2>Sign Up</h2>
+        <h2>Create your account</h2>
+        <p>Join Video Editor Pro to organise your footage, collaborate effortlessly and share stunning edits.</p>
         {% if error %}
             <div class="error">{{ error }}</div>
         {% endif %}
         <form method="post">
             <input type="text" name="username" placeholder="Choose a username" required>
-            <input type="email" name="email" placeholder="Enter your email" required>
+            <input type="email" name="email" placeholder="Email address" required>
             <input type="password" name="password" placeholder="Create a password" required>
-            <input type="submit" value="Sign Up">
+            <input type="submit" value="Sign up">
         </form>
         <div class="links">
-            <a href="{{ url_for('login') }}">Already have an account? Login</a>
-            <a href="{{ url_for('home') }}">Back to Home</a>
+            <a href="{{ url_for('login') }}">Already have an account? Log in</a>
+            <span>•</span>
+            <a href="{{ url_for('home') }}">Back to home</a>
         </div>
     </div>
 </body>
