@@ -1,20 +1,58 @@
+import os
+from typing import Any, Dict, Optional
+
 from flask import Flask, render_template_string, request, redirect, url_for, session
-from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
 from pymongo import MongoClient
+
+from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
 
-# MongoDB connection
-MONGO_URL = "mongodb+srv://sihalardjacky_db_user:TP7iCDWj3hhq4KBP@cluster0.rssobej.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['your_database_name']  # Replace with your actual database name
-users_collection = db['users']
+
+class InMemoryCollection:
+    """Simple in-memory fallback for development and previews."""
+
+    def __init__(self) -> None:
+        self._documents: list[Dict[str, Any]] = []
+
+    def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        for document in self._documents:
+            if all(document.get(key) == value for key, value in query.items()):
+                return document
+        return None
+
+    def insert_one(self, document: Dict[str, Any]) -> None:
+        self._documents.append(document)
+
+
+def get_users_collection():
+    """Return a Mongo collection or an in-memory fallback."""
+    use_in_memory = os.getenv('USE_IN_MEMORY_DB', '0') == '1'
+    if use_in_memory:
+        return InMemoryCollection()
+
+    mongo_url = os.getenv(
+        'MONGO_URL',
+        (
+            "mongodb+srv://sihalardjacky_db_user:TP7iCDWj3hhq4KBP@cluster0.rssobej.mongodb.net/"
+            "?retryWrites=true&w=majority&appName=Cluster0"
+        ),
+    )
+    mongo_client = MongoClient(mongo_url)
+    database_name = os.getenv('MONGO_DB_NAME', 'your_database_name')
+    db = mongo_client[database_name]
+    return db['users']
+
+
+users_collection = get_users_collection()
+
 
 @app.route('/')
 def home():
     username = session.get('username')
     return render_template_string(HOME_HTML, username=username)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -26,9 +64,9 @@ def login():
         if user:
             session['username'] = username
             return redirect(url_for('home'))
-        else:
-            error = "Invalid username or password. Please try again or sign up."
+        error = "Invalid username or password. Please try again or sign up."
     return render_template_string(LOGIN_HTML, error=error)
+
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -43,16 +81,18 @@ def signup():
             users_collection.insert_one({
                 'username': username,
                 'email': email,
-                'password': password
+                'password': password,
             })
             session['username'] = username
             return redirect(url_for('home'))
     return render_template_string(SIGNUP_HTML, error=error)
 
+
 @app.route('/signout')
 def signout():
     session.pop('username', None)
     return redirect(url_for('home'))
+
 
 if __name__ == '__main__':
     app.run(debug=True)
