@@ -288,8 +288,7 @@ HOME_HTML = '''
 
         .preview-area {
             position: relative;
-            --preview-aspect-ratio: 16 / 9;
-            aspect-ratio: var(--preview-aspect-ratio);
+            aspect-ratio: 16 / 9;
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
@@ -305,23 +304,11 @@ HOME_HTML = '''
             transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area.has-image,
-        .preview-area.has-video {
+        .preview-area.has-image {
+            aspect-ratio: auto;
             min-height: 0;
             align-items: center;
             justify-content: center;
-        }
-
-        .preview-area.aspect-16-9 {
-            --preview-aspect-ratio: 16 / 9;
-        }
-
-        .preview-area.aspect-9-16 {
-            --preview-aspect-ratio: 9 / 16;
-        }
-
-        .preview-area.aspect-4-3 {
-            --preview-aspect-ratio: 4 / 3;
         }
 
         .preview-area video {
@@ -332,8 +319,8 @@ HOME_HTML = '''
         }
 
         .preview-area img {
-            width: 100%;
-            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
             border-radius: 20px;
             display: block;
@@ -635,57 +622,6 @@ HOME_HTML = '''
         let timelinePlaybackAbort = null;
 
         const IMAGE_FRAME_DURATION = 1000;
-        const PREVIEW_ASPECT_CLASSES = ['aspect-16-9', 'aspect-9-16', 'aspect-4-3'];
-
-        function setPreviewAspectClass(aspectClass) {
-            if (!previewArea) {
-                return;
-            }
-            previewArea.classList.remove(...PREVIEW_ASPECT_CLASSES);
-            if (aspectClass) {
-                previewArea.classList.add(aspectClass);
-            }
-        }
-
-        function getClosestAspectClass(width, height) {
-            if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-                return 'aspect-16-9';
-            }
-
-            const ratio = width / height;
-            const options = [
-                { className: 'aspect-16-9', ratio: 16 / 9 },
-                { className: 'aspect-4-3', ratio: 4 / 3 },
-                { className: 'aspect-9-16', ratio: 9 / 16 },
-            ];
-
-            let best = options[0];
-            let smallestDiff = Math.abs(ratio - best.ratio);
-
-            for (let index = 1; index < options.length; index += 1) {
-                const option = options[index];
-                const diff = Math.abs(ratio - option.ratio);
-                if (diff < smallestDiff) {
-                    best = option;
-                    smallestDiff = diff;
-                }
-            }
-
-            return best.className;
-        }
-
-        function updatePreviewAspectFromImage(img) {
-            if (!img) {
-                return;
-            }
-
-            const { naturalWidth, naturalHeight } = img;
-            if (naturalWidth && naturalHeight) {
-                setPreviewAspectClass(getClosestAspectClass(naturalWidth, naturalHeight));
-            } else {
-                setPreviewAspectClass('aspect-16-9');
-            }
-        }
 
         function setPreviewMode(mode) {
             if (!previewArea) {
@@ -707,11 +643,7 @@ HOME_HTML = '''
 
         if (previewImage) {
             previewImage.addEventListener('load', () => {
-                updatePreviewAspectFromImage(previewImage);
                 resetPreviewScroll();
-            });
-            previewImage.addEventListener('error', () => {
-                setPreviewAspectClass('aspect-16-9');
             });
         }
 
@@ -823,7 +755,6 @@ HOME_HTML = '''
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
-            setPreviewAspectClass(null);
             resetPreviewScroll();
             setActiveTimelineItem(null);
         }
@@ -870,7 +801,6 @@ HOME_HTML = '''
 
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
-                setPreviewAspectClass('aspect-16-9');
                 resetPreviewScroll();
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
@@ -883,15 +813,12 @@ HOME_HTML = '''
                 playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
                 setPreviewMode('has-image');
-                setPreviewAspectClass(null);
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
                 previewImage.hidden = false;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
-                } else if (previewImage.complete) {
-                    updatePreviewAspectFromImage(previewImage);
                 }
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
@@ -1009,7 +936,6 @@ HOME_HTML = '''
 
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
-                setPreviewAspectClass('aspect-16-9');
                 resetPreviewScroll();
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
@@ -1086,7 +1012,6 @@ HOME_HTML = '''
                 });
             } else if (fileType.startsWith('image/')) {
                 setPreviewMode('has-image');
-                setPreviewAspectClass(null);
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
@@ -1094,8 +1019,6 @@ HOME_HTML = '''
                 previewPlaceholder.hidden = true;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
-                } else if (previewImage.complete) {
-                    updatePreviewAspectFromImage(previewImage);
                 }
                 resetPreviewScroll();
 
