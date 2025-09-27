@@ -407,17 +407,6 @@ HOME_HTML = '''
             </nav>
         </header>
 
-        <section class="hero">
-            <div class="hero-content">
-                <h1>Create, refine and share videos with style.</h1>
-                <p>Video Editor Pro gives you a beautifully organised workspace with powerful controls so you can focus on storytelling. Upload clips, manage timelines and polish the final cut without friction.</p>
-                <div class="hero-cta">
-                    <a class="primary" href="{{ url_for('signup') }}">Start editing</a>
-                    <a class="secondary" href="#features">Explore features</a>
-                </div>
-            </div>
-        </section>
-
         <section id="features" class="content-grid">
             <article class="panel upload-card">
                 <h2>Upload footage</h2>
