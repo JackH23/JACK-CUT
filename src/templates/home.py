@@ -185,8 +185,28 @@ HOME_HTML = '''
 
         .content-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(3, minmax(260px, 1fr));
             gap: 24px;
+            grid-template-areas:
+                "upload preview settings"
+                "timeline timeline timeline";
+            align-items: start;
+        }
+
+        .upload-card {
+            grid-area: upload;
+        }
+
+        .settings-card {
+            grid-area: settings;
+        }
+
+        .preview-card {
+            grid-area: preview;
+        }
+
+        .timeline-card {
+            grid-area: timeline;
         }
 
         .panel {
@@ -325,9 +345,12 @@ HOME_HTML = '''
         }
 
         @media (max-width: 960px) {
-            .preview-card,
-            .timeline-card {
-                grid-column: span 1;
+            .content-grid {
+                grid-template-columns: repeat(2, minmax(220px, 1fr));
+                grid-template-areas:
+                    "upload preview"
+                    "settings settings"
+                    "timeline timeline";
             }
         }
 
@@ -354,6 +377,14 @@ HOME_HTML = '''
             .nav-actions a {
                 flex: 1;
                 text-align: center;
+            }
+            .content-grid {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "preview"
+                    "upload"
+                    "settings"
+                    "timeline";
             }
         }
     </style>
