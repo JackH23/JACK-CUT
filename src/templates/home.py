@@ -327,23 +327,30 @@ HOME_HTML = '''
         }
 
         .timeline-item {
-            padding: 12px;
+            padding: 10px;
             border-radius: 12px;
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid rgba(148, 163, 184, 0.2);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             overflow: hidden;
+            cursor: pointer;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .timeline-item.active {
+            border-color: rgba(124, 58, 237, 0.6);
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
         }
 
         .timeline-item img,
         .timeline-item video {
             width: 100%;
+            height: 56px;
             border-radius: 8px;
             object-fit: cover;
-            max-height: 80px;
         }
 
         .timeline-item video {
@@ -564,8 +571,10 @@ HOME_HTML = '''
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
+        let activeTimelineItem = null;
 
         function clearPreview() {
+            previewVideo.pause();
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
             previewVideo.load();
@@ -573,32 +582,66 @@ HOME_HTML = '''
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Progress video';
+            setActiveTimelineItem(null);
         }
 
-        function showPreview(file) {
-            const objectURL = URL.createObjectURL(file);
+        function setActiveTimelineItem(item) {
+            if (activeTimelineItem) {
+                activeTimelineItem.classList.remove('active');
+            }
+            activeTimelineItem = item;
+            if (activeTimelineItem) {
+                activeTimelineItem.classList.add('active');
+            }
+        }
+
+        function loadPreviewFromTimeline(timelineItem) {
+            if (!timelineItem) {
+                clearPreview();
+                return;
+            }
+
+            const fileType = timelineItem.dataset.fileType || '';
+            const objectURL = timelineItem.dataset.objectUrl;
+
+            if (!objectURL) {
+                return;
+            }
+
             previewPlaceholder.hidden = true;
 
-            if (file.type.startsWith('video/')) {
+            if (fileType.startsWith('video/')) {
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
-                previewVideo.src = objectURL;
-                previewVideo.load();
+                if (previewVideo.src !== objectURL) {
+                    previewVideo.pause();
+                    previewVideo.src = objectURL;
+                    previewVideo.load();
+                }
                 playVideoButton.textContent = 'Progress video';
-            } else if (file.type.startsWith('image/')) {
+            } else if (fileType.startsWith('image/')) {
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
                 previewImage.hidden = false;
-                previewImage.src = objectURL;
+                if (previewImage.src !== objectURL) {
+                    previewImage.src = objectURL;
+                }
                 playVideoButton.textContent = 'Progress video';
-            } else {
-                clearPreview();
+            }
+        }
+
+        function showPreview(file) {
+            const isVideo = file.type.startsWith('video/');
+            const isImage = file.type.startsWith('image/');
+
+            if (!isVideo && !isImage) {
                 alert('Unsupported file type. Please upload an image or video file.');
                 return;
             }
 
+            const objectURL = URL.createObjectURL(file);
             addToTimeline(file, objectURL);
         }
 
@@ -609,6 +652,8 @@ HOME_HTML = '''
 
             const timelineItem = document.createElement('div');
             timelineItem.className = 'timeline-item';
+            timelineItem.dataset.fileType = file.type;
+            timelineItem.dataset.objectUrl = objectURL;
 
             const label = document.createElement('span');
             label.textContent = file.name;
@@ -630,6 +675,14 @@ HOME_HTML = '''
 
             timelineItem.appendChild(label);
             timelineTrack.appendChild(timelineItem);
+
+            timelineItem.addEventListener('click', () => {
+                setActiveTimelineItem(timelineItem);
+                loadPreviewFromTimeline(timelineItem);
+            });
+
+            setActiveTimelineItem(timelineItem);
+            loadPreviewFromTimeline(timelineItem);
         }
 
         uploadInput.addEventListener('change', (event) => {
