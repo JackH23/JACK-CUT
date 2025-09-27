@@ -287,24 +287,42 @@ HOME_HTML = '''
         }
 
         .preview-area {
+            position: relative;
             aspect-ratio: 16 / 9;
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
             border: 1px solid rgba(148, 163, 184, 0.18);
             box-shadow: var(--shadow-inner);
-            display: grid;
-            place-items: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             color: var(--text-secondary);
             font-size: 1.1rem;
-            overflow: hidden;
+            padding: 16px;
+            min-height: 260px;
+            overflow: auto;
+            transition: aspect-ratio 0.2s ease;
         }
 
-        .preview-area video,
-        .preview-area img {
+        .preview-area.has-image {
+            aspect-ratio: auto;
+            min-height: 0;
+            align-items: flex-start;
+            justify-content: flex-start;
+        }
+
+        .preview-area video {
             width: 100%;
             height: 100%;
             object-fit: contain;
             border-radius: 20px;
+        }
+
+        .preview-area img {
+            width: auto;
+            height: auto;
+            border-radius: 20px;
+            display: block;
         }
 
         .timeline-card {
@@ -589,6 +607,7 @@ HOME_HTML = '''
     <script>
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
+        const previewArea = document.querySelector('.preview-area');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -602,6 +621,30 @@ HOME_HTML = '''
         let timelinePlaybackAbort = null;
 
         const IMAGE_FRAME_DURATION = 1000;
+
+        function setPreviewMode(mode) {
+            if (!previewArea) {
+                return;
+            }
+            previewArea.classList.remove('has-video', 'has-image');
+            if (mode) {
+                previewArea.classList.add(mode);
+            }
+        }
+
+        function resetPreviewScroll() {
+            if (!previewArea) {
+                return;
+            }
+            previewArea.scrollTop = 0;
+            previewArea.scrollLeft = 0;
+        }
+
+        if (previewImage) {
+            previewImage.addEventListener('load', () => {
+                resetPreviewScroll();
+            });
+        }
 
         function clampProgress(value) {
             return Math.min(Math.max(value, 0), 1);
@@ -710,6 +753,8 @@ HOME_HTML = '''
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
+            setPreviewMode(null);
+            resetPreviewScroll();
             setActiveTimelineItem(null);
         }
 
@@ -754,6 +799,8 @@ HOME_HTML = '''
             }
 
             if (fileType.startsWith('video/')) {
+                setPreviewMode('has-video');
+                resetPreviewScroll();
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
@@ -764,6 +811,7 @@ HOME_HTML = '''
                 }
                 playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
+                setPreviewMode('has-image');
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
@@ -771,6 +819,7 @@ HOME_HTML = '''
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
                 }
+                resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
             }
         }
@@ -885,6 +934,8 @@ HOME_HTML = '''
             setActiveTimelineItem(timelineItem);
 
             if (fileType.startsWith('video/')) {
+                setPreviewMode('has-video');
+                resetPreviewScroll();
                 previewImage.hidden = true;
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
@@ -959,6 +1010,7 @@ HOME_HTML = '''
                     }
                 });
             } else if (fileType.startsWith('image/')) {
+                setPreviewMode('has-image');
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
@@ -967,6 +1019,7 @@ HOME_HTML = '''
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
                 }
+                resetPreviewScroll();
 
                 await new Promise((resolve) => {
                     let resolved = false;
