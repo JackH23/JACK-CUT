@@ -14,8 +14,15 @@ from flask import (
     url_for,
     jsonify,
 )
-from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips
-from moviepy.video.fx.loop import loop
+
+try:
+    from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips
+    from moviepy.video.fx.loop import loop
+    MOVIEPY_AVAILABLE = True
+except ModuleNotFoundError:
+    ImageClip = VideoFileClip = concatenate_videoclips = None  # type: ignore[assignment]
+    loop = None  # type: ignore[assignment]
+    MOVIEPY_AVAILABLE = False
 from pymongo import MongoClient
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
@@ -149,6 +156,19 @@ def signout():
 
 @app.route('/export', methods=['POST'])
 def export_timeline():
+    if not MOVIEPY_AVAILABLE:
+        return (
+            jsonify(
+                {
+                    'error': (
+                        'Video export requires the optional dependency "moviepy". '
+                        'Install it with "pip install moviepy" and try again.'
+                    )
+                }
+            ),
+            500,
+        )
+    
     timeline_payload = request.form.get('timeline')
     if not timeline_payload:
         return jsonify({'error': 'Missing timeline data.'}), 400
