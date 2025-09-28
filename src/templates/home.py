@@ -955,12 +955,17 @@ HOME_HTML = '''
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
+        let exportCanvasElement = null;
+        let exportInProgress = false;
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const EXPORT_FRAME_RATE = 30;
+        const EXPORT_FRAME_INTERVAL = 1000 / EXPORT_FRAME_RATE;
+        const EXPORT_BACKGROUND_COLOR = '#050914';
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -976,6 +981,446 @@ HOME_HTML = '''
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
             return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function waitMilliseconds(duration) {
+            return new Promise((resolve) => {
+                window.setTimeout(resolve, Math.max(0, Math.floor(Number(duration) || 0)));
+            });
+        }
+
+        function getOrCreateExportCanvas() {
+            if (exportCanvasElement && exportCanvasElement.isConnected) {
+                return exportCanvasElement;
+            }
+            exportCanvasElement = document.createElement('canvas');
+            exportCanvasElement.id = 'export-render-canvas';
+            exportCanvasElement.setAttribute('aria-hidden', 'true');
+            exportCanvasElement.style.position = 'fixed';
+            exportCanvasElement.style.pointerEvents = 'none';
+            exportCanvasElement.style.opacity = '0';
+            exportCanvasElement.style.top = '-9999px';
+            exportCanvasElement.style.left = '-9999px';
+            document.body.appendChild(exportCanvasElement);
+            return exportCanvasElement;
+        }
+
+        function getPreviewViewportDimensions() {
+            if (!previewViewport) {
+                return { width: 1280, height: 720 };
+            }
+            const rect = previewViewport.getBoundingClientRect();
+            let width = Math.round(rect.width);
+            let height = Math.round(rect.height);
+            const aspect = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+            if (!(width > 0)) {
+                width = 1280;
+            }
+            if (!(height > 0)) {
+                height = Math.round(width / aspect);
+            }
+            if (width <= 0) {
+                width = 1280;
+            }
+            if (height <= 0) {
+                height = Math.round(width / aspect);
+            }
+            return { width, height };
+        }
+
+        function ensureExportCanvasDimensions(canvas) {
+            const { width, height } = getPreviewViewportDimensions();
+            canvas.width = Math.max(16, width);
+            canvas.height = Math.max(16, height);
+            return { width: canvas.width, height: canvas.height };
+        }
+
+        function pickExportMimeType() {
+            if (typeof window.MediaRecorder === 'undefined') {
+                return null;
+            }
+            const preferredTypes = [
+                'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+                'video/mp4;codecs=avc1.4d401e,mp4a.40.2',
+                'video/mp4',
+            ];
+            for (const type of preferredTypes) {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    return type;
+                }
+            }
+            return null;
+        }
+
+        function waitForVideoMetadata(video) {
+            if (!video) {
+                return Promise.reject(new Error('Missing video element'));
+            }
+            if (video.readyState >= 1 && Number.isFinite(video.duration)) {
+                return Promise.resolve();
+            }
+            return new Promise((resolve, reject) => {
+                const cleanup = () => {
+                    video.removeEventListener('loadedmetadata', onLoaded);
+                    video.removeEventListener('error', onError);
+                };
+                const onLoaded = () => {
+                    cleanup();
+                    resolve();
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('Unable to load video metadata for export'));
+                };
+                video.addEventListener('loadedmetadata', onLoaded, { once: true });
+                video.addEventListener('error', onError, { once: true });
+                try {
+                    video.load();
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        }
+
+        function waitForVideoReady(video) {
+            if (video.readyState >= 2) {
+                return Promise.resolve();
+            }
+            return new Promise((resolve, reject) => {
+                const cleanup = () => {
+                    video.removeEventListener('loadeddata', onLoaded);
+                    video.removeEventListener('error', onError);
+                };
+                const onLoaded = () => {
+                    cleanup();
+                    resolve();
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('Unable to buffer video for export'));
+                };
+                video.addEventListener('loadeddata', onLoaded, { once: true });
+                video.addEventListener('error', onError, { once: true });
+                try {
+                    video.load();
+                } catch (error) {
+                    cleanup();
+                    reject(error);
+                }
+            });
+        }
+
+        async function loadImageElement(url) {
+            return new Promise((resolve, reject) => {
+                const image = new Image();
+                image.decoding = 'async';
+                image.crossOrigin = 'anonymous';
+                const cleanup = () => {
+                    image.removeEventListener('load', onLoad);
+                    image.removeEventListener('error', onError);
+                };
+                const onLoad = async () => {
+                    cleanup();
+                    if (typeof image.decode === 'function') {
+                        try {
+                            await image.decode();
+                        } catch (error) {
+                            // Ignore decode errors; fallback to rendered image.
+                        }
+                    }
+                    resolve(image);
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('Unable to load image for export'));
+                };
+                image.addEventListener('load', onLoad, { once: true });
+                image.addEventListener('error', onError, { once: true });
+                image.src = url;
+            });
+        }
+
+        function calculateContainRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
+            const safeSourceWidth = Math.max(1, Number(sourceWidth) || 0);
+            const safeSourceHeight = Math.max(1, Number(sourceHeight) || 0);
+            const targetAspect = targetWidth / targetHeight;
+            const sourceAspect = safeSourceWidth / safeSourceHeight;
+            let drawWidth = targetWidth;
+            let drawHeight = drawWidth / sourceAspect;
+            if (drawHeight > targetHeight) {
+                drawHeight = targetHeight;
+                drawWidth = drawHeight * sourceAspect;
+            }
+            const offsetX = (targetWidth - drawWidth) / 2;
+            const offsetY = (targetHeight - drawHeight) / 2;
+            return {
+                x: offsetX,
+                y: offsetY,
+                width: drawWidth,
+                height: drawHeight,
+            };
+        }
+
+        async function renderForDuration(durationMs, drawFrame) {
+            const startTime = performance.now();
+            let frameIndex = 0;
+            while (true) {
+                drawFrame();
+                frameIndex += 1;
+                const now = performance.now();
+                if (now - startTime >= durationMs) {
+                    break;
+                }
+                const nextTarget = startTime + frameIndex * EXPORT_FRAME_INTERVAL;
+                const waitTime = Math.max(0, nextTarget - now);
+                // eslint-disable-next-line no-await-in-loop
+                await waitMilliseconds(waitTime);
+            }
+        }
+
+        async function renderBlankClip(ctx, canvas, durationMs) {
+            await renderForDuration(durationMs, () => {
+                ctx.fillStyle = EXPORT_BACKGROUND_COLOR;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            });
+        }
+
+        async function renderImageClip(ctx, canvas, image, durationMs) {
+            const rect = calculateContainRect(
+                image?.naturalWidth || canvas.width,
+                image?.naturalHeight || canvas.height,
+                canvas.width,
+                canvas.height,
+            );
+            await renderForDuration(durationMs, () => {
+                ctx.fillStyle = EXPORT_BACKGROUND_COLOR;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                if (image) {
+                    ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+                }
+            });
+        }
+
+        async function renderVideoClip(ctx, canvas, video, durationMs) {
+            if (!video) {
+                await renderBlankClip(ctx, canvas, durationMs);
+                return;
+            }
+            try {
+                video.pause();
+                video.currentTime = 0;
+            } catch (error) {
+                // Ignore seeks on browsers that disallow it before metadata is loaded.
+            }
+            const intrinsicDurationMs = Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration * 1000
+                : 0;
+            video.loop = intrinsicDurationMs > 0 && durationMs > intrinsicDurationMs + EXPORT_FRAME_INTERVAL;
+            try {
+                await video.play();
+            } catch (error) {
+                // Autoplay policies may reject; continue with a paused frame.
+            }
+
+            const drawFrame = () => {
+                ctx.fillStyle = EXPORT_BACKGROUND_COLOR;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const rect = calculateContainRect(
+                    video.videoWidth || canvas.width,
+                    video.videoHeight || canvas.height,
+                    canvas.width,
+                    canvas.height,
+                );
+                ctx.drawImage(video, rect.x, rect.y, rect.width, rect.height);
+            };
+
+            if (typeof video.requestVideoFrameCallback === 'function') {
+                const startTime = performance.now();
+                drawFrame();
+                if (performance.now() - startTime < durationMs) {
+                    await new Promise((resolve) => {
+                        let stopped = false;
+                        const step = () => {
+                            if (stopped) {
+                                return;
+                            }
+                            const now = performance.now();
+                            if (now - startTime >= durationMs) {
+                                stopped = true;
+                                resolve();
+                                return;
+                            }
+                            drawFrame();
+                            if (performance.now() - startTime >= durationMs) {
+                                stopped = true;
+                                resolve();
+                                return;
+                            }
+                            video.requestVideoFrameCallback(step);
+                        };
+                        video.requestVideoFrameCallback(step);
+                    });
+                }
+            } else {
+                await renderForDuration(durationMs, drawFrame);
+            }
+            video.pause();
+        }
+
+        async function prepareTimelineClips(timelineItems) {
+            const clips = [];
+            for (const item of timelineItems) {
+                const durationMs = getTimelineItemPlaybackDuration(item);
+                if (!(durationMs > 0)) {
+                    continue;
+                }
+                const fileType = item.dataset.fileType || '';
+                const objectURL = item.dataset.objectUrl;
+                if (!objectURL) {
+                    clips.push({ type: 'blank', durationMs });
+                    continue;
+                }
+                if (fileType.startsWith('video/')) {
+                    const videoElement = document.createElement('video');
+                    videoElement.src = objectURL;
+                    videoElement.preload = 'auto';
+                    videoElement.crossOrigin = 'anonymous';
+                    videoElement.playsInline = true;
+                    videoElement.muted = true;
+                    try {
+                        // eslint-disable-next-line no-await-in-loop
+                        await waitForVideoMetadata(videoElement);
+                        // eslint-disable-next-line no-await-in-loop
+                        await waitForVideoReady(videoElement);
+                        clips.push({ type: 'video', durationMs, element: videoElement });
+                    } catch (error) {
+                        console.warn('Failed to prepare video clip for export', error);
+                        clips.push({ type: 'blank', durationMs });
+                    }
+                } else if (fileType.startsWith('image/')) {
+                    try {
+                        // eslint-disable-next-line no-await-in-loop
+                        const imageElement = await loadImageElement(objectURL);
+                        clips.push({ type: 'image', durationMs, element: imageElement });
+                    } catch (error) {
+                        console.warn('Failed to prepare image clip for export', error);
+                        clips.push({ type: 'blank', durationMs });
+                    }
+                } else {
+                    clips.push({ type: 'blank', durationMs });
+                }
+            }
+            return clips;
+        }
+
+        async function renderTimelineClips(clips, ctx, canvas) {
+            for (const clip of clips) {
+                if (!clip || !(clip.durationMs > 0)) {
+                    // eslint-disable-next-line no-continue
+                    continue;
+                }
+                if (clip.type === 'video') {
+                    // eslint-disable-next-line no-await-in-loop
+                    await renderVideoClip(ctx, canvas, clip.element, clip.durationMs);
+                } else if (clip.type === 'image') {
+                    // eslint-disable-next-line no-await-in-loop
+                    await renderImageClip(ctx, canvas, clip.element, clip.durationMs);
+                } else {
+                    // eslint-disable-next-line no-await-in-loop
+                    await renderBlankClip(ctx, canvas, clip.durationMs);
+                }
+            }
+        }
+
+        async function exportTimelineToMp4(timelineItems) {
+            const mimeType = pickExportMimeType();
+            if (!mimeType) {
+                throw new Error('MP4 exporting is not supported in this browser.');
+            }
+
+            const clips = await prepareTimelineClips(timelineItems);
+            if (!clips.length) {
+                throw new Error('There are no clips in the timeline to export.');
+            }
+            const canvas = getOrCreateExportCanvas();
+            const { width, height } = ensureExportCanvasDimensions(canvas);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                throw new Error('Canvas rendering is not supported in this browser.');
+            }
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            const stream = canvas.captureStream(EXPORT_FRAME_RATE);
+            if (!stream) {
+                throw new Error('Unable to capture the preview for exporting.');
+            }
+
+            const recorder = new MediaRecorder(stream, {
+                mimeType,
+                videoBitsPerSecond: 6_000_000,
+            });
+            const chunks = [];
+            const recordingPromise = new Promise((resolve, reject) => {
+                recorder.addEventListener('dataavailable', (event) => {
+                    if (event.data && event.data.size > 0) {
+                        chunks.push(event.data);
+                    }
+                });
+                recorder.addEventListener('stop', () => {
+                    resolve(new Blob(chunks, { type: mimeType }));
+                });
+                recorder.addEventListener('error', (event) => {
+                    reject(event.error || new Error('Recording failed.'));
+                });
+            });
+
+            ctx.fillStyle = EXPORT_BACKGROUND_COLOR;
+            ctx.fillRect(0, 0, width, height);
+
+            recorder.start(Math.max(200, Math.round(EXPORT_FRAME_INTERVAL)));
+
+            try {
+                await renderTimelineClips(clips, ctx, canvas);
+                await waitMilliseconds(Math.max(200, Math.round(EXPORT_FRAME_INTERVAL)));
+            } finally {
+                if (recorder.state !== 'inactive') {
+                    recorder.stop();
+                }
+                stream.getTracks().forEach((track) => track.stop());
+            }
+
+            clips.forEach((clip) => {
+                if (clip.type === 'video' && clip.element) {
+                    try {
+                        clip.element.pause();
+                        clip.element.removeAttribute('src');
+                        clip.element.load();
+                    } catch (error) {
+                        // Ignore cleanup errors.
+                    }
+                }
+            });
+
+            return recordingPromise;
+        }
+
+        function formatExportFileName(totalDuration) {
+            const safeDuration = Math.max(0, Math.round(Number(totalDuration) || 0));
+            const seconds = Math.max(1, Math.round(safeDuration / 1000) || 1);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            return `video-editor-export-${seconds}s-${timestamp}.mp4`;
+        }
+
+        function triggerExportDownload(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 5000);
         }
 
         function updatePlaybackTimeDisplay(currentMs, totalMs) {
@@ -2253,12 +2698,18 @@ HOME_HTML = '''
 
         if (exportPreviewOverlay) {
             exportPreviewOverlay.addEventListener('click', (event) => {
+                if (exportInProgress) {
+                    return;
+                }
                 if (event.target === exportPreviewOverlay) {
                     hideExportPreviewModal();
                 }
             });
 
             exportPreviewOverlay.addEventListener('keydown', (event) => {
+                if (exportInProgress) {
+                    return;
+                }
                 if (event.key === 'Escape') {
                     event.preventDefault();
                     hideExportPreviewModal();
@@ -2266,14 +2717,56 @@ HOME_HTML = '''
             });
         }
 
-        confirmExportButton?.addEventListener('click', () => {
-            hideExportPreviewModal();
-            window.setTimeout(() => {
-                alert('Export confirmed! Your MP4 render will begin shortly.');
-            }, 100);
+        confirmExportButton?.addEventListener('click', async () => {
+            if (exportInProgress) {
+                return;
+            }
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline before exporting.');
+                return;
+            }
+            const totalDuration = getTotalTimelineDuration();
+            if (!(totalDuration > 0)) {
+                alert('Your timeline needs at least one clip with a duration before exporting.');
+                return;
+            }
+
+            const originalLabel = confirmExportButton.textContent || 'Confirm export';
+            exportInProgress = true;
+            confirmExportButton.disabled = true;
+            confirmExportButton.textContent = 'Exporting…';
+            confirmExportButton.setAttribute('aria-busy', 'true');
+            cancelExportButton?.setAttribute('disabled', 'true');
+
+            try {
+                stopTimelinePlayback();
+                const blob = await exportTimelineToMp4(timelineItems);
+                const filename = formatExportFileName(totalDuration);
+                hideExportPreviewModal();
+                triggerExportDownload(blob, filename);
+                window.setTimeout(() => {
+                    alert('Export complete! Your MP4 download has started.');
+                }, 120);
+            } catch (error) {
+                console.error('MP4 export failed:', error);
+                const message = error instanceof Error ? error.message : 'We could not export the MP4. Please try again.';
+                window.setTimeout(() => {
+                    alert(message);
+                }, 120);
+            } finally {
+                exportInProgress = false;
+                confirmExportButton.removeAttribute('aria-busy');
+                confirmExportButton.disabled = false;
+                confirmExportButton.textContent = originalLabel;
+                cancelExportButton?.removeAttribute('disabled');
+            }
         });
 
         cancelExportButton?.addEventListener('click', () => {
+            if (exportInProgress) {
+                return;
+            }
             hideExportPreviewModal();
         });
 
