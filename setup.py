@@ -13,9 +13,10 @@ setup(
     package_dir={'': 'src'},
     install_requires=[
         'Flask==2.0.1',
-        'requests==2.25.1',
-        'numpy==1.21.0',
         'moviepy==1.0.3',
+        'numpy==1.21.0',
+        'pymongo==3.12.3',
+        'requests==2.25.1',
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
