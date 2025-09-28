@@ -55,8 +55,20 @@ def ensure_moviepy_imported() -> bool:
     return True
 
 
+def load_secret_key() -> str:
+    """Return the Flask secret key from the environment or fail fast."""
+
+    secret_key = os.getenv("FLASK_SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError(
+            "Missing Flask secret key. Set the FLASK_SECRET_KEY environment variable "
+            "to a strong random value before starting the application."
+        )
+    return secret_key
+
+
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Replace with a secure key in production
+app.secret_key = load_secret_key()
 
 
 QUALITY_TO_HEIGHT = {

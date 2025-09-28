@@ -23,11 +23,22 @@ The application expects MongoDB connection details to be provided via environmen
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `FLASK_SECRET_KEY` | Yes | Secret key used by Flask for session cookies and CSRF protection. Set this to a long, random value via environment variables, `.env` files (excluded from version control), or your platform's secrets manager. |
 | `MONGO_URL` | Yes (unless `USE_IN_MEMORY_DB=1`) | MongoDB connection string, including credentials and optional default database name. |
 | `MONGO_DB_NAME` | Optional | Database name to use when it is not provided in `MONGO_URL`. |
 | `USE_IN_MEMORY_DB` | Optional | Set to `1` to disable MongoDB access and use the in-memory collection instead (useful for development or testing). |
 
 If `MONGO_URL` is missing and `USE_IN_MEMORY_DB` is not enabled, the application will exit with an error to prevent accidental use of production credentials.
+
+### Managing the Flask secret key
+
+Create a `.env` file (ignored by Git) or use your deployment platform's configuration management to provide `FLASK_SECRET_KEY`:
+
+```
+FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+Load the file with a tool such as [`python-dotenv`](https://pypi.org/project/python-dotenv/) during local development, or configure the variable directly in your hosting provider's secret storage before starting the app. Never commit the generated key to version control.
 
 ### Password storage migration
 
