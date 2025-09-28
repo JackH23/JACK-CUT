@@ -411,6 +411,126 @@ HOME_HTML = '''
             background: rgba(15, 23, 42, 0.6);
         }
 
+        .export-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(9, 13, 26, 0.65);
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 1000;
+        }
+
+        .export-modal[aria-hidden="false"] {
+            display: flex;
+        }
+
+        .export-modal__dialog {
+            width: min(520px, 100%);
+            background: rgba(17, 24, 39, 0.92);
+            border-radius: 22px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            box-shadow: 0 30px 60px rgba(2, 6, 23, 0.55);
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .export-modal__header {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .export-modal__header h3 {
+            margin: 0;
+            font-size: 1.35rem;
+            font-weight: 600;
+        }
+
+        .export-modal__summary {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .export-modal__list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .export-modal__list-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+        }
+
+        .export-modal__list-item strong {
+            font-size: 0.95rem;
+        }
+
+        .export-modal__meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .export-modal__actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .export-modal__actions button {
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #export-cancel-button {
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text-secondary);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+        }
+
+        #export-confirm-button {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.92));
+            color: #0b1020;
+            box-shadow: 0 16px 30px rgba(124, 58, 237, 0.25);
+        }
+
+        #export-status-message {
+            min-height: 20px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        #export-status-message[data-state="success"] {
+            color: #34d399;
+        }
+
+        #export-status-message[data-state="error"] {
+            color: #f87171;
+        }
+
         .timeline-item {
             position: relative;
             padding: 8px;
@@ -773,6 +893,21 @@ HOME_HTML = '''
             </div>
         </section>
 
+        <div class="export-modal" id="export-modal" role="dialog" aria-modal="true" aria-hidden="true">
+            <div class="export-modal__dialog" role="document">
+                <div class="export-modal__header">
+                    <h3>Export to MP4</h3>
+                    <p class="export-modal__summary" id="export-summary">Review the clips that will be exported from your preview window.</p>
+                </div>
+                <ul class="export-modal__list" id="export-content-list" aria-live="polite"></ul>
+                <div id="export-status-message" role="status"></div>
+                <div class="export-modal__actions">
+                    <button type="button" id="export-cancel-button">Cancel</button>
+                    <button type="button" id="export-confirm-button">Confirm export</button>
+                </div>
+            </div>
+        </div>
+
         <footer class="footer">
             © {{ 2024 }} Video Editor Pro. Crafted for creators.
         </footer>
@@ -792,6 +927,13 @@ HOME_HTML = '''
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
         const playbackTimeDisplay = document.getElementById('playback-time');
+        const exportButton = document.querySelector('.export-button');
+        const exportModal = document.getElementById('export-modal');
+        const exportContentList = document.getElementById('export-content-list');
+        const exportSummary = document.getElementById('export-summary');
+        const exportStatusMessage = document.getElementById('export-status-message');
+        const exportConfirmButton = document.getElementById('export-confirm-button');
+        const exportCancelButton = document.getElementById('export-cancel-button');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
@@ -988,6 +1130,195 @@ HOME_HTML = '''
                 elapsed += getTimelineItemPlaybackDuration(item);
             }
             return 0;
+        }
+
+        function describeTimelineItemForExport(timelineItem, index) {
+            if (!timelineItem) {
+                return null;
+            }
+            const fileType = timelineItem.dataset.fileType || 'unknown';
+            const label = timelineItem.querySelector('span');
+            const name = label ? label.textContent || `Clip ${index + 1}` : `Clip ${index + 1}`;
+            const durationMs = getTimelineItemPlaybackDuration(timelineItem);
+            return {
+                index: index + 1,
+                name: name.trim() || `Clip ${index + 1}`,
+                type: fileType,
+                durationMs,
+                durationLabel: formatDurationBadgeLabel(durationMs),
+            };
+        }
+
+        function collectTimelineSummary() {
+            const items = getTimelineItems();
+            const described = items
+                .map((item, index) => describeTimelineItemForExport(item, index))
+                .filter(Boolean);
+            const totalDuration = described.reduce((total, item) => total + item.durationMs, 0);
+            return {
+                totalDuration,
+                totalDurationLabel: formatDurationBadgeLabel(totalDuration),
+                items: described,
+            };
+        }
+
+        function updateExportStatus(message = '', state = '') {
+            if (!exportStatusMessage) {
+                return;
+            }
+            exportStatusMessage.textContent = message;
+            if (state) {
+                exportStatusMessage.dataset.state = state;
+            } else {
+                exportStatusMessage.removeAttribute('data-state');
+            }
+        }
+
+        function renderExportDetails(summary) {
+            if (!exportContentList || !summary) {
+                return;
+            }
+            exportContentList.innerHTML = '';
+            summary.items.forEach((item) => {
+                const listItem = document.createElement('li');
+                listItem.className = 'export-modal__list-item';
+
+                const title = document.createElement('strong');
+                title.textContent = `${item.index}. ${item.name}`;
+                listItem.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'export-modal__meta';
+                const type = document.createElement('span');
+                type.textContent = item.type.startsWith('video/')
+                    ? 'Video clip'
+                    : item.type.startsWith('image/')
+                        ? 'Image frame'
+                        : item.type;
+                const duration = document.createElement('span');
+                duration.textContent = `Duration: ${item.durationLabel}`;
+                meta.append(type, duration);
+                listItem.appendChild(meta);
+
+                exportContentList.appendChild(listItem);
+            });
+
+            if (exportSummary) {
+                const clipLabel = summary.items.length === 1 ? 'clip' : 'clips';
+                exportSummary.textContent = `Ready to export ${summary.items.length} ${clipLabel} with a combined length of ${summary.totalDurationLabel}.`;
+            }
+
+            updateExportStatus('', '');
+        }
+
+        function openExportModal(summary) {
+            if (!exportModal) {
+                return;
+            }
+            renderExportDetails(summary);
+            exportModal.setAttribute('aria-hidden', 'false');
+            exportModal.focus?.();
+        }
+
+        function closeExportModal() {
+            if (!exportModal) {
+                return;
+            }
+            exportModal.setAttribute('aria-hidden', 'true');
+            updateExportStatus('', '');
+        }
+
+        function ensurePreviewHasActiveItem() {
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                return null;
+            }
+            let target = activeTimelineItem;
+            if (!target || !timelineItems.includes(target)) {
+                target = timelineItems[0];
+            }
+            if (target) {
+                setActiveTimelineItem(target);
+                loadPreviewFromTimeline(target);
+            }
+            return target;
+        }
+
+        function getPreviewCaptureStream() {
+            if (previewViewport && typeof previewViewport.captureStream === 'function') {
+                return previewViewport.captureStream();
+            }
+            if (!previewVideo.hidden && typeof previewVideo.captureStream === 'function') {
+                return previewVideo.captureStream();
+            }
+            return null;
+        }
+
+        async function recordTimelinePlaybackToBlob() {
+            const stream = getPreviewCaptureStream();
+            if (!stream) {
+                throw new Error('Preview capture is not supported in this browser.');
+            }
+
+            if (typeof MediaRecorder === 'undefined') {
+                throw new Error('Video exporting is not supported in this browser.');
+            }
+
+            const mimeCandidates = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+            const supportedMime = mimeCandidates.find((candidate) => {
+                try {
+                    return MediaRecorder.isTypeSupported(candidate);
+                } catch (error) {
+                    return false;
+                }
+            }) || '';
+
+            const options = supportedMime ? { mimeType: supportedMime } : undefined;
+            const recorder = new MediaRecorder(stream, options);
+            const chunks = [];
+
+            const stopped = new Promise((resolve, reject) => {
+                recorder.addEventListener('dataavailable', (event) => {
+                    if (event.data && event.data.size) {
+                        chunks.push(event.data);
+                    }
+                });
+                recorder.addEventListener('stop', () => {
+                    const type = supportedMime || (chunks[0] ? chunks[0].type : 'video/mp4');
+                    resolve(new Blob(chunks, { type }));
+                });
+                recorder.addEventListener('error', (event) => {
+                    reject(event.error || new Error('Failed to export recording.'));
+                });
+            });
+
+            recorder.start();
+
+            try {
+                await playTimelineSequence(0);
+            } finally {
+                if (recorder.state !== 'inactive') {
+                    recorder.stop();
+                }
+            }
+
+            return stopped;
+        }
+
+        function triggerVideoDownload(blob) {
+            if (!blob) {
+                throw new Error('Nothing to download.');
+            }
+            const mimeType = blob.type || 'video/mp4';
+            const extension = mimeType.includes('webm') ? 'webm' : 'mp4';
+            const downloadURL = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = downloadURL;
+            anchor.download = `timeline-export-${Date.now()}.${extension}`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(downloadURL);
         }
 
         function getTimelineFractionForTime(timeMs) {
@@ -1996,6 +2327,58 @@ HOME_HTML = '''
                 }
             }
         }
+
+        exportButton?.addEventListener('click', () => {
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline.');
+                return;
+            }
+
+            const target = ensurePreviewHasActiveItem();
+            const summary = collectTimelineSummary();
+            openExportModal(summary);
+
+            if (!isTimelinePlaying && target) {
+                const startIndex = Math.max(0, getTimelineItems().indexOf(target));
+                void playTimelineSequence(startIndex);
+            }
+        });
+
+        exportCancelButton?.addEventListener('click', () => {
+            closeExportModal();
+            stopTimelinePlayback();
+        });
+
+        exportConfirmButton?.addEventListener('click', async () => {
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                updateExportStatus('Add clips to the timeline before exporting.', 'error');
+                return;
+            }
+
+            exportConfirmButton.disabled = true;
+            exportCancelButton.disabled = true;
+            updateExportStatus('Preparing your export. Please keep this tab open…');
+
+            try {
+                const target = ensurePreviewHasActiveItem();
+                if (!target) {
+                    throw new Error('No preview is available to export.');
+                }
+
+                stopTimelinePlayback(true, true);
+                const blob = await recordTimelinePlaybackToBlob();
+                triggerVideoDownload(blob);
+                updateExportStatus('Export complete! Your MP4 download should begin automatically.', 'success');
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Export failed. Please try again.';
+                updateExportStatus(message, 'error');
+            } finally {
+                exportConfirmButton.disabled = false;
+                exportCancelButton.disabled = false;
+            }
+        });
 
         playVideoButton.addEventListener('click', () => {
             if (isTimelinePlaying) {
