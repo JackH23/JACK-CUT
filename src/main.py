@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import tempfile
@@ -13,10 +14,16 @@ from flask import (
     session,
     url_for,
 )
-from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips, vfx
 from pymongo import MongoClient
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
+
+_MOVIEPY_AVAILABLE = importlib.util.find_spec('moviepy.editor') is not None
+
+if _MOVIEPY_AVAILABLE:
+    from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips, vfx
+else:  # pragma: no cover - exercised only when dependency is missing
+    ImageClip = VideoFileClip = concatenate_videoclips = vfx = None  # type: ignore
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
@@ -110,6 +117,13 @@ def _cleanup_paths(paths: list[str]) -> None:
 
 @app.post('/export')
 def export_timeline() -> Response:
+    if not _MOVIEPY_AVAILABLE:
+        return Response(
+            'MoviePy is required to export timelines. '
+            'Install the optional dependency with "pip install moviepy".',
+            status=503,
+        )
+
     metadata_raw = request.form.get('metadata')
     if not metadata_raw:
         return Response('Missing metadata payload.', status=400)
