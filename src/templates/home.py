@@ -2427,6 +2427,101 @@ HOME_HTML = '''
             playVideoButton.textContent = 'Play Back';
             previewVideo.currentTime = 0;
         });
+
+        // Handle Export button
+        exportButton.addEventListener('click', async () => {
+            const metadata = getTimelineItems().map((item, index) => ({
+                fieldName: `file${index}`,
+                mimeType: item.dataset.fileType,
+                durationMs: getTimelineItemPlaybackDuration(item),
+            }));
+
+            if (!metadata.length) {
+                alert("No timeline items to export!");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('metadata', JSON.stringify(metadata));
+
+            getTimelineItems().forEach((item, index) => {
+                const file = timelineItemFiles.get(item);
+                if (file) {
+                    formData.append(`file${index}`, file, file.name);
+                }
+            });
+
+            // Show modal
+            exportOverlay.hidden = false;
+            exportPreviewLoading.hidden = false;
+            exportPreviewVideo.hidden = true;
+            exportConfirmButton.disabled = true;
+            exportPreviewStatus.textContent = "Generating preview…";
+
+            try {
+                const response = await fetch(exportEndpoint, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error("Preview failed");
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+
+                exportPreviewVideo.src = url;
+                exportPreviewVideo.hidden = false;
+                exportPreviewLoading.hidden = true;
+
+                const durationMs = parseInt(response.headers.get("X-Export-Duration-Ms") || "0", 10);
+                exportPreviewDuration.textContent = "Duration: " + formatTime(durationMs);
+
+                exportConfirmButton.disabled = false;
+                exportPreviewStatus.textContent = "Preview ready. Confirm to export.";
+            } catch (err) {
+                exportPreviewStatus.textContent = "Error generating preview.";
+            }
+        });
+
+        // Confirm Export
+        exportConfirmButton.addEventListener('click', async () => {
+            exportConfirmButton.disabled = true;
+            exportPreviewStatus.textContent = "Exporting final MP4…";
+
+            const metadata = getTimelineItems().map((item, index) => ({
+                fieldName: `file${index}`,
+                mimeType: item.dataset.fileType,
+                durationMs: getTimelineItemPlaybackDuration(item),
+            }));
+            const formData = new FormData();
+            formData.append('metadata', JSON.stringify(metadata));
+            getTimelineItems().forEach((item, index) => {
+                const file = timelineItemFiles.get(item);
+                if (file) {
+                    formData.append(`file${index}`, file, file.name);
+                }
+            });
+
+            try {
+                const response = await fetch(exportEndpoint, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error("Export failed");
+
+                const blob = await response.blob();
+                const downloadUrl = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = downloadUrl;
+                a.download = "exported_video.mp4";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+
+                exportPreviewStatus.textContent = "Export complete!";
+            } catch (err) {
+                exportPreviewStatus.textContent = "Export failed.";
+            }
+        });
+
+        // Cancel Export
+        exportCancelButton.addEventListener('click', () => {
+            exportOverlay.hidden = true;
+            exportPreviewVideo.src = "";
+        });
     </script>
 </body>
 </html>
