@@ -121,12 +121,12 @@ def get_users_collection():
 
     mongo_url = os.getenv('MONGO_URL')
     if not mongo_url:
-        error_message = (
-            "Missing MongoDB configuration: set the MONGO_URL environment variable or "
-            "enable the in-memory database by setting USE_IN_MEMORY_DB=1."
+        app.logger.warning(
+            "Missing MongoDB configuration; falling back to the in-memory database. "
+            "Set MONGO_URL to connect to a MongoDB instance or set USE_IN_MEMORY_DB=1 "
+            "to silence this warning."
         )
-        app.logger.error(error_message)
-        raise RuntimeError(error_message)
+        return InMemoryCollection()
     mongo_client = MongoClient(mongo_url)
     missing_db_message = (
         "MongoDB configuration requires either a database name in the MONGO_URL or "
