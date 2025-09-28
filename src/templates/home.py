@@ -890,8 +890,8 @@ HOME_HTML = '''
                     </div>
                 </div>
                 <div class="export-preview-actions">
+                    <button type="button" id="export-confirm-button" disabled>Confirm</button>
                     <button type="button" id="export-cancel-button">Cancel</button>
-                    <button type="button" id="export-confirm-button" disabled>Confirm export</button>
                 </div>
             </div>
         </div>
@@ -948,6 +948,7 @@ HOME_HTML = '''
         let playbackDisplayTotalMs = 0;
         let exportAbortController = null;
         let pendingExport = null;
+        let previewAutoplayHandler = null;
 
         function formatTime(milliseconds) {
             const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
@@ -2161,6 +2162,10 @@ HOME_HTML = '''
             exportAbortController = null;
 
             if (exportPreviewVideo) {
+                if (previewAutoplayHandler) {
+                    exportPreviewVideo.removeEventListener('loadeddata', previewAutoplayHandler);
+                }
+                previewAutoplayHandler = null;
                 exportPreviewVideo.pause();
                 exportPreviewVideo.removeAttribute('src');
                 exportPreviewVideo.load();
@@ -2306,6 +2311,7 @@ HOME_HTML = '''
                     objectURL,
                     durationMs,
                     fileName: `video-export-${new Date().toISOString().replace(/[:.]/g, '-')}.mp4`,
+                    metadata,
                 };
 
                 if (exportPreviewLoading) {
@@ -2315,16 +2321,33 @@ HOME_HTML = '''
                 if (exportPreviewVideo) {
                     exportPreviewVideo.hidden = false;
                     exportPreviewVideo.src = objectURL;
+                    const playFromStart = () => {
+                        exportPreviewVideo.currentTime = 0;
+                        const playPromise = exportPreviewVideo.play();
+                        if (playPromise && typeof playPromise.catch === 'function') {
+                            playPromise.catch(() => undefined);
+                        }
+                    };
+
+                    if (previewAutoplayHandler) {
+                        exportPreviewVideo.removeEventListener('loadeddata', previewAutoplayHandler);
+                    }
+
+                    previewAutoplayHandler = () => {
+                        playFromStart();
+                    };
+
+                    exportPreviewVideo.addEventListener('loadeddata', previewAutoplayHandler, {
+                        once: true,
+                    });
                     exportPreviewVideo.load();
-                    exportPreviewVideo.currentTime = 0;
-                    const playPromise = exportPreviewVideo.play();
-                    if (playPromise && typeof playPromise.catch === 'function') {
-                        playPromise.catch(() => undefined);
+                    if (exportPreviewVideo.readyState >= 2) {
+                        playFromStart();
                     }
                 }
 
                 updateExportDurationDisplay(durationMs);
-                setExportStatus('Preview ready. Click Confirm to download your export.');
+                setExportStatus('Preview ready. Review the playback, then click Confirm to export.');
                 if (exportConfirmButton) {
                     exportConfirmButton.disabled = false;
                 }
@@ -2354,6 +2377,12 @@ HOME_HTML = '''
                 return;
             }
 
+            if (exportConfirmButton) {
+                exportConfirmButton.disabled = true;
+            }
+
+            setExportStatus('Exporting MP4…');
+
             const downloadLink = document.createElement('a');
             downloadLink.href = pendingExport.objectURL;
             downloadLink.download = pendingExport.fileName || 'timeline-export.mp4';
@@ -2364,7 +2393,7 @@ HOME_HTML = '''
             downloadLink.click();
             document.body.removeChild(downloadLink);
 
-            setExportStatus('Download started.');
+            setExportStatus('Export complete! Your download should begin automatically.');
             hideExportOverlay({ delay: 500 });
         }
 
@@ -2426,50 +2455,6 @@ HOME_HTML = '''
             }
             playVideoButton.textContent = 'Play Back';
             previewVideo.currentTime = 0;
-        });
-
-        // Confirm Export
-        exportConfirmButton.addEventListener('click', async () => {
-            exportConfirmButton.disabled = true;
-            exportPreviewStatus.textContent = "Exporting final MP4…";
-
-            const metadata = getTimelineItems().map((item, index) => ({
-                fieldName: `file${index}`,
-                mimeType: item.dataset.fileType,
-                durationMs: getTimelineItemPlaybackDuration(item),
-            }));
-            const formData = new FormData();
-            formData.append('metadata', JSON.stringify(metadata));
-            getTimelineItems().forEach((item, index) => {
-                const file = timelineItemFiles.get(item);
-                if (file) {
-                    formData.append(`file${index}`, file, file.name);
-                }
-            });
-
-            try {
-                const response = await fetch(exportEndpoint, { method: 'POST', body: formData });
-                if (!response.ok) throw new Error("Export failed");
-
-                const blob = await response.blob();
-                const downloadUrl = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = downloadUrl;
-                a.download = "exported_video.mp4";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-
-                exportPreviewStatus.textContent = "Export complete!";
-            } catch (err) {
-                exportPreviewStatus.textContent = "Export failed.";
-            }
-        });
-
-        // Cancel Export
-        exportCancelButton.addEventListener('click', () => {
-            exportOverlay.hidden = true;
-            exportPreviewVideo.src = "";
         });
     </script>
 </body>
