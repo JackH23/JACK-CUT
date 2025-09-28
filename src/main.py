@@ -276,10 +276,11 @@ def export_timeline():
                     'error': (
                         'Video export requires the optional dependency "moviepy". '
                         'Install it with "pip install moviepy" and try again.'
-                    )
+                    ),
+                    'error_code': 'missing_dependency',
                 }
             ),
-            500,
+            503,
         )
     
     timeline_payload = request.form.get('timeline')
