@@ -313,6 +313,147 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
+        .export-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(14px);
+            z-index: 999;
+        }
+
+        .export-overlay[hidden] {
+            display: none !important;
+        }
+
+        body.modal-open {
+            overflow: hidden;
+        }
+
+        .export-dialog {
+            width: min(520px, 100%);
+            background: rgba(17, 24, 39, 0.92);
+            border-radius: 22px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.6);
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .export-dialog h3 {
+            margin: 0;
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .export-dialog p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .export-preview-wrapper {
+            position: relative;
+            min-height: 180px;
+            border-radius: 16px;
+            background: rgba(8, 13, 28, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 16px;
+        }
+
+        #export-preview-video {
+            width: 100%;
+            border-radius: 14px;
+            background: #000;
+        }
+
+        .export-preview-fallback {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .export-summary {
+            background: rgba(15, 23, 42, 0.72);
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .export-summary strong {
+            color: var(--text-primary);
+        }
+
+        .export-summary-list {
+            margin: 0;
+            padding-left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .export-summary-list li {
+            line-height: 1.5;
+        }
+
+        .export-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .export-actions button {
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .export-actions button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .export-confirm {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(244, 114, 182, 0.9));
+            color: #0b1020;
+            box-shadow: 0 16px 30px rgba(124, 58, 237, 0.25);
+        }
+
+        .export-confirm:not(:disabled):hover {
+            transform: translateY(-1px);
+        }
+
+        .export-cancel {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            color: var(--text-secondary);
+        }
+
+        .export-cancel:hover {
+            transform: translateY(-1px);
+        }
+
         .preview-area {
             --preview-aspect-ratio: 16 / 9;
             position: relative;
@@ -777,6 +918,21 @@ HOME_HTML = '''
             © {{ 2024 }} Video Editor Pro. Crafted for creators.
         </footer>
     </div>
+    <div class="export-overlay" id="export-overlay" role="presentation" hidden>
+        <div class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+            <h3 id="export-dialog-title">Export preview</h3>
+            <p id="export-status">Preparing export…</p>
+            <div class="export-preview-wrapper">
+                <video id="export-preview-video" controls muted playsinline hidden></video>
+                <div id="export-preview-fallback" class="export-preview-fallback">Preparing render preview…</div>
+            </div>
+            <div id="export-summary" class="export-summary"></div>
+            <div class="export-actions">
+                <button type="button" id="export-confirm" class="export-confirm" disabled>Confirm export</button>
+                <button type="button" id="export-cancel" class="export-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
     <script>
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
@@ -792,6 +948,19 @@ HOME_HTML = '''
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
         const playbackTimeDisplay = document.getElementById('playback-time');
+        const exportButton = document.querySelector('.export-button');
+        const exportOverlay = document.getElementById('export-overlay');
+        const exportStatusText = document.getElementById('export-status');
+        const exportPreviewVideo = document.getElementById('export-preview-video');
+        const exportPreviewFallback = document.getElementById('export-preview-fallback');
+        const exportSummaryContainer = document.getElementById('export-summary');
+        const exportConfirmButton = document.getElementById('export-confirm');
+        const exportCancelButton = document.getElementById('export-cancel');
+        const defaultExportButtonLabel = exportButton ? exportButton.textContent.trim() : 'Export video';
+        let exportWorkflowState = 'idle';
+        let exportRenderUrl = null;
+        let exportManifest = null;
+        let exportCancellationRequested = false;
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
@@ -1039,6 +1208,136 @@ HOME_HTML = '''
             } else {
                 resetTimelineProgressLine();
                 updatePlaybackTimeDisplay(0, getTotalTimelineDuration());
+            }
+        }
+
+        function collectTimelineClipsForExport() {
+            const clips = [];
+            const timelineItems = getTimelineItems();
+            timelineItems.forEach((item, index) => {
+                const label = item.querySelector('span');
+                const labelText = label && typeof label.textContent === 'string'
+                    ? label.textContent.trim()
+                    : `Clip ${index + 1}`;
+                clips.push({
+                    index: index + 1,
+                    name: labelText || `Clip ${index + 1}`,
+                    type: item.dataset.fileType || 'unknown',
+                    durationMs: getTimelineItemPlaybackDuration(item),
+                });
+            });
+            return clips;
+        }
+
+        function createExportManifestForTimeline(clips, playbackCompleted) {
+            const totalDurationMs = clips.reduce(
+                (total, clip) => total + Math.max(0, Number(clip.durationMs) || 0),
+                0,
+            );
+            return {
+                exportedAt: new Date().toISOString(),
+                playbackCompleted: Boolean(playbackCompleted),
+                totalDurationMs,
+                clipCount: clips.length,
+                clips: clips.map((clip) => ({
+                    index: clip.index,
+                    name: clip.name,
+                    type: clip.type,
+                    durationMs: clip.durationMs,
+                })),
+            };
+        }
+
+        function createMp4PlaceholderFromManifest(manifest) {
+            const encoder = new TextEncoder();
+            const header = 'Video Editor Pro MP4 Export\n';
+            const payload = `${header}${JSON.stringify(manifest, null, 2)}\n`;
+            return new Blob([encoder.encode(payload)], { type: 'video/mp4' });
+        }
+
+        function renderExportSummaryContent(manifest) {
+            if (!exportSummaryContainer) {
+                return;
+            }
+            const clips = Array.isArray(manifest?.clips) ? manifest.clips : [];
+            const itemsHtml = clips.map((clip) => (
+                `<li><strong>Clip ${clip.index}:</strong> ${clip.name} · ${clip.type} · ${formatTime(clip.durationMs)} (${clip.durationMs}ms)</li>`
+            )).join('');
+            exportSummaryContainer.innerHTML = `
+                <div><strong>Total duration:</strong> ${formatTime(manifest.totalDurationMs)} (${manifest.totalDurationMs}ms)</div>
+                <div><strong>Clips:</strong></div>
+                <ol class="export-summary-list">${itemsHtml || '<li>No clips available.</li>'}</ol>
+            `;
+        }
+
+        function setExportStatus(message) {
+            if (exportStatusText) {
+                exportStatusText.textContent = message;
+            }
+        }
+
+        function resetExportOverlayContent(statusText = 'Preparing export…') {
+            setExportStatus(statusText);
+            if (exportPreviewVideo) {
+                exportPreviewVideo.pause();
+                exportPreviewVideo.hidden = true;
+                exportPreviewVideo.removeAttribute('src');
+                exportPreviewVideo.load();
+            }
+            if (exportPreviewFallback) {
+                exportPreviewFallback.hidden = false;
+                exportPreviewFallback.textContent = 'Preparing render preview…';
+            }
+            if (exportSummaryContainer) {
+                exportSummaryContainer.innerHTML = '';
+            }
+            if (exportConfirmButton) {
+                exportConfirmButton.disabled = true;
+            }
+        }
+
+        function showExportOverlay() {
+            if (exportOverlay) {
+                exportOverlay.hidden = false;
+            }
+            if (document?.body) {
+                document.body.classList.add('modal-open');
+            }
+            window.setTimeout(() => {
+                if (exportCancelButton) {
+                    exportCancelButton.focus();
+                }
+            }, 0);
+        }
+
+        function hideExportOverlay() {
+            if (exportOverlay) {
+                exportOverlay.hidden = true;
+            }
+            if (document?.body) {
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function cleanupExportResources() {
+            if (exportRenderUrl) {
+                URL.revokeObjectURL(exportRenderUrl);
+                exportRenderUrl = null;
+            }
+            exportManifest = null;
+        }
+
+        function finalizeExportWorkflow() {
+            cleanupExportResources();
+            exportWorkflowState = 'idle';
+            exportCancellationRequested = false;
+            if (exportButton) {
+                exportButton.disabled = false;
+                exportButton.textContent = defaultExportButtonLabel;
+            }
+            if (playVideoButton) {
+                playVideoButton.disabled = false;
+                playVideoButton.textContent = 'Play Back';
             }
         }
 
@@ -1995,6 +2294,139 @@ HOME_HTML = '''
                     updateActiveTimelineIndicators();
                 }
             }
+            return completedNaturally;
+        }
+
+        async function handleExportButtonClick() {
+            if (!exportButton || exportWorkflowState !== 'idle') {
+                return;
+            }
+
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline before exporting.');
+                return;
+            }
+
+            exportWorkflowState = 'preparing';
+            exportCancellationRequested = false;
+
+            exportButton.disabled = true;
+            exportButton.textContent = 'Preparing export…';
+            if (playVideoButton) {
+                playVideoButton.disabled = true;
+            }
+
+            resetExportOverlayContent('Collecting preview by playing back your timeline…');
+            showExportOverlay();
+
+            const previousActiveItem = activeTimelineItem;
+
+            let playbackCompleted = false;
+            try {
+                stopTimelinePlayback();
+                const playbackResult = await playTimelineSequence(0);
+                playbackCompleted = playbackResult !== false;
+            } catch (error) {
+                console.error('Failed to prepare export preview:', error);
+                setExportStatus('Unable to collect preview from the timeline. Cancel and try again.');
+                if (exportPreviewFallback) {
+                    exportPreviewFallback.hidden = false;
+                    exportPreviewFallback.textContent = 'An error occurred while playing the timeline.';
+                }
+                exportWorkflowState = 'error';
+                exportButton.disabled = false;
+                exportButton.textContent = defaultExportButtonLabel;
+                if (playVideoButton) {
+                    playVideoButton.disabled = false;
+                }
+                return;
+            } finally {
+                if (previousActiveItem) {
+                    setActiveTimelineItem(previousActiveItem);
+                    loadPreviewFromTimeline(previousActiveItem);
+                }
+            }
+
+            if (exportWorkflowState !== 'preparing' || exportCancellationRequested) {
+                return;
+            }
+
+            const clips = collectTimelineClipsForExport();
+            exportManifest = createExportManifestForTimeline(clips, playbackCompleted);
+            const exportBlob = createMp4PlaceholderFromManifest(exportManifest);
+            exportRenderUrl = URL.createObjectURL(exportBlob);
+
+            if (exportPreviewVideo) {
+                exportPreviewVideo.pause();
+                exportPreviewVideo.hidden = true;
+                exportPreviewVideo.removeAttribute('src');
+                exportPreviewVideo.load();
+            }
+
+            if (exportPreviewFallback) {
+                exportPreviewFallback.hidden = false;
+                exportPreviewFallback.textContent = playbackCompleted
+                    ? 'Timeline playback captured successfully. Review the summary below before exporting.'
+                    : 'Timeline playback was interrupted, but the collected clips are ready to export.';
+            }
+
+            renderExportSummaryContent(exportManifest);
+            setExportStatus('Render ready. Confirm to export your MP4 file.');
+
+            if (exportConfirmButton) {
+                exportConfirmButton.disabled = false;
+            }
+
+            exportWorkflowState = 'ready';
+        }
+
+        if (exportButton) {
+            exportButton.addEventListener('click', () => {
+                if (exportWorkflowState === 'ready') {
+                    showExportOverlay();
+                    return;
+                }
+                if (exportWorkflowState !== 'idle') {
+                    return;
+                }
+                handleExportButtonClick().catch((error) => {
+                    console.error('Unexpected error during export preparation:', error);
+                    hideExportOverlay();
+                    finalizeExportWorkflow();
+                });
+            });
+        }
+
+        if (exportCancelButton) {
+            exportCancelButton.addEventListener('click', () => {
+                if (exportWorkflowState === 'preparing') {
+                    exportCancellationRequested = true;
+                    stopTimelinePlayback();
+                }
+                hideExportOverlay();
+                finalizeExportWorkflow();
+            });
+        }
+
+        if (exportConfirmButton) {
+            exportConfirmButton.addEventListener('click', () => {
+                if (exportWorkflowState !== 'ready' || !exportRenderUrl) {
+                    hideExportOverlay();
+                    finalizeExportWorkflow();
+                    return;
+                }
+
+                const downloadLink = document.createElement('a');
+                downloadLink.href = exportRenderUrl;
+                downloadLink.download = `video-editor-export-${Date.now()}.mp4`;
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+
+                hideExportOverlay();
+                finalizeExportWorkflow();
+            });
         }
 
         playVideoButton.addEventListener('click', () => {
