@@ -1036,22 +1036,50 @@ HOME_HTML = '''
             return presetsForAspect[qualityKey];
         }
 
-        function getSupportedMp4MimeType() {
+        const EXPORT_FORMAT_CANDIDATES = [
+            {
+                mimeType: 'video/mp4;codecs="avc1.42E01E, mp4a.40.2"',
+                fileExtension: 'mp4',
+                label: 'MP4 (H.264)',
+            },
+            {
+                mimeType: 'video/mp4;codecs="avc1.4D401E, mp4a.40.2"',
+                fileExtension: 'mp4',
+                label: 'MP4 (H.264)',
+            },
+            {
+                mimeType: 'video/mp4',
+                fileExtension: 'mp4',
+                label: 'MP4 (H.264)',
+            },
+            {
+                mimeType: 'video/webm;codecs="vp9,opus"',
+                fileExtension: 'webm',
+                label: 'WebM (VP9)',
+            },
+            {
+                mimeType: 'video/webm;codecs="vp8,opus"',
+                fileExtension: 'webm',
+                label: 'WebM (VP8)',
+            },
+            {
+                mimeType: 'video/webm',
+                fileExtension: 'webm',
+                label: 'WebM',
+            },
+        ];
+
+        function getSupportedExportFormat() {
             if (!window.MediaRecorder) {
                 return null;
             }
-            const preferredTypes = [
-                'video/mp4;codecs="avc1.42E01E, mp4a.40.2"',
-                'video/mp4;codecs="avc1.4D401E, mp4a.40.2"',
-                'video/mp4',
-            ];
-            for (const type of preferredTypes) {
+            for (const candidate of EXPORT_FORMAT_CANDIDATES) {
                 try {
-                    if (window.MediaRecorder.isTypeSupported(type)) {
-                        return type;
+                    if (window.MediaRecorder.isTypeSupported(candidate.mimeType)) {
+                        return candidate;
                     }
                 } catch (error) {
-                    // Continue to next type
+                    // Continue to next candidate
                 }
             }
             return null;
@@ -1205,13 +1233,20 @@ HOME_HTML = '''
                 exportSummaryDuration.textContent = `${formattedDuration} (${formatSecondsLabel(totalDuration)})`;
             }
 
+            const selectedQuality = videoQualitySelect?.value || '720p';
+            const exportFormat = getSupportedExportFormat();
+
             if (exportSummaryResolution) {
-                const selectedQuality = videoQualitySelect?.value || '720p';
-                exportSummaryResolution.textContent = `${selectedQuality} MP4`;
+                const extensionLabel = exportFormat?.fileExtension?.toUpperCase();
+                exportSummaryResolution.textContent = extensionLabel
+                    ? `${selectedQuality} ${extensionLabel}`
+                    : selectedQuality;
             }
 
             if (exportSummaryFormat) {
-                exportSummaryFormat.textContent = 'MP4 (H.264)';
+                exportSummaryFormat.textContent = exportFormat
+                    ? `${selectedQuality} ${exportFormat.label}`
+                    : 'Export format not supported in this browser';
             }
 
             if (exportDialogStatus) {
@@ -2501,9 +2536,9 @@ HOME_HTML = '''
                 return;
             }
 
-            const mp4MimeType = getSupportedMp4MimeType();
-            if (!mp4MimeType) {
-                alert('MP4 export is not supported by this browser. Try using a browser with MediaRecorder MP4 support.');
+            const exportFormat = getSupportedExportFormat();
+            if (!exportFormat) {
+                alert('Export is not supported by this browser. Try using a browser with MediaRecorder support for MP4 or WebM.');
                 return;
             }
 
@@ -2527,7 +2562,7 @@ HOME_HTML = '''
             const originalLabel = confirmExportButton.textContent;
             confirmExportButton.textContent = 'Exporting…';
             if (exportDialogStatus) {
-                exportDialogStatus.textContent = 'Exporting timeline preview to MP4…';
+                exportDialogStatus.textContent = `Exporting timeline preview to ${exportFormat.label}…`;
                 exportDialogStatus.dataset.state = 'progress';
             }
 
@@ -2560,7 +2595,7 @@ HOME_HTML = '''
                 }
 
                 recorder = new MediaRecorder(combinedStream, {
-                    mimeType: mp4MimeType,
+                    mimeType: exportFormat.mimeType,
                     videoBitsPerSecond: 6_000_000,
                 });
 
@@ -2571,7 +2606,7 @@ HOME_HTML = '''
                         }
                     });
                     recorder.addEventListener('stop', () => {
-                        resolve(new Blob(recordedChunks, { type: mp4MimeType }));
+                        resolve(new Blob(recordedChunks, { type: exportFormat.mimeType }));
                     }, { once: true });
                     recorder.addEventListener('error', (event) => {
                         reject(event.error || new Error('Recording error.'));
@@ -2593,14 +2628,14 @@ HOME_HTML = '''
                 const downloadUrl = URL.createObjectURL(exportBlob);
                 const tempAnchor = document.createElement('a');
                 tempAnchor.href = downloadUrl;
-                tempAnchor.download = 'timeline-export.mp4';
+                tempAnchor.download = `timeline-export.${exportFormat.fileExtension}`;
                 document.body.appendChild(tempAnchor);
                 tempAnchor.click();
                 document.body.removeChild(tempAnchor);
                 window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
 
                 if (exportDialogStatus) {
-                    exportDialogStatus.textContent = 'Export complete! Your MP4 download should begin shortly.';
+                    exportDialogStatus.textContent = `Export complete! Your ${exportFormat.fileExtension.toUpperCase()} download should begin shortly.`;
                     exportDialogStatus.dataset.state = 'ready';
                 }
 
