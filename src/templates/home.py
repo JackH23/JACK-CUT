@@ -1244,21 +1244,156 @@ HOME_HTML = '''
             return target;
         }
 
-        function getPreviewCaptureStream() {
-            if (previewViewport && typeof previewViewport.captureStream === 'function') {
-                return previewViewport.captureStream();
+        function getPreviewCapture() {
+            const attemptNativeCapture = (element) => {
+                if (!element) {
+                    return null;
+                }
+                if (typeof element.captureStream === 'function') {
+                    return element.captureStream();
+                }
+                if (typeof element.mozCaptureStream === 'function') {
+                    return element.mozCaptureStream();
+                }
+                return null;
+            };
+
+            const viewportStream = attemptNativeCapture(previewViewport);
+            if (viewportStream) {
+                return { stream: viewportStream, stop: () => {} };
             }
-            if (!previewVideo.hidden && typeof previewVideo.captureStream === 'function') {
-                return previewVideo.captureStream();
+
+            if (!previewVideo.hidden) {
+                const videoStream = attemptNativeCapture(previewVideo);
+                if (videoStream) {
+                    return { stream: videoStream, stop: () => {} };
+                }
             }
-            return null;
+
+            if (!previewViewport || typeof HTMLCanvasElement === 'undefined') {
+                return null;
+            }
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            if (!context || typeof canvas.captureStream !== 'function') {
+                return null;
+            }
+
+            const fallbackFrameRate = 30;
+            let animationFrameId = null;
+            let stopped = false;
+
+            const drawContainedElement = (element, sourceWidth, sourceHeight, viewportWidth, viewportHeight) => {
+                if (!element || !sourceWidth || !sourceHeight || !viewportWidth || !viewportHeight) {
+                    return false;
+                }
+                const scale = Math.min(viewportWidth / sourceWidth, viewportHeight / sourceHeight);
+                const targetWidth = sourceWidth * scale;
+                const targetHeight = sourceHeight * scale;
+                const offsetX = (viewportWidth - targetWidth) / 2;
+                const offsetY = (viewportHeight - targetHeight) / 2;
+                context.drawImage(element, offsetX, offsetY, targetWidth, targetHeight);
+                return true;
+            };
+
+            const renderFrame = () => {
+                if (stopped) {
+                    return;
+                }
+
+                const rect = previewViewport.getBoundingClientRect();
+                const deviceScale = window.devicePixelRatio || 1;
+                const width = Math.max(1, Math.round(rect.width * deviceScale));
+                const height = Math.max(1, Math.round(rect.height * deviceScale));
+
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                context.scale(deviceScale, deviceScale);
+
+                const computedStyle = window.getComputedStyle(previewViewport);
+                const backgroundColor = computedStyle?.backgroundColor || '#000';
+                context.fillStyle = backgroundColor;
+                context.fillRect(0, 0, rect.width, rect.height);
+
+                const videoVisible = !previewVideo.hidden && previewVideo.readyState >= 1;
+                const imageVisible = !previewImage.hidden && previewImage.naturalWidth > 0;
+
+                let drewContent = false;
+
+                if (videoVisible) {
+                    drewContent = drawContainedElement(
+                        previewVideo,
+                        previewVideo.videoWidth,
+                        previewVideo.videoHeight,
+                        rect.width,
+                        rect.height,
+                    );
+                }
+
+                if (!drewContent && imageVisible) {
+                    drewContent = drawContainedElement(
+                        previewImage,
+                        previewImage.naturalWidth,
+                        previewImage.naturalHeight,
+                        rect.width,
+                        rect.height,
+                    );
+                }
+
+                if (!drewContent) {
+                    const placeholder = previewPlaceholder?.textContent?.trim() || 'Preview unavailable';
+                    context.fillStyle = '#94a3b8';
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+                    const fontSize = Math.min(24, Math.max(14, rect.width / 18));
+                    context.font = `${fontSize}px "Inter", "Segoe UI", sans-serif`;
+                    const lines = placeholder.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+                    if (!lines.length) {
+                        lines.push('Preview unavailable');
+                    }
+                    const lineHeight = fontSize * 1.4;
+                    const startY = rect.height / 2 - ((lines.length - 1) * lineHeight) / 2;
+                    lines.forEach((line, index) => {
+                        context.fillText(line, rect.width / 2, startY + index * lineHeight);
+                    });
+                }
+
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                animationFrameId = window.requestAnimationFrame(renderFrame);
+            };
+
+            renderFrame();
+
+            const stream = canvas.captureStream(fallbackFrameRate);
+
+            const stop = () => {
+                if (stopped) {
+                    return;
+                }
+                stopped = true;
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                }
+                stream.getTracks().forEach((track) => track.stop());
+            };
+
+            return { stream, stop };
         }
 
         async function recordTimelinePlaybackToBlob() {
-            const stream = getPreviewCaptureStream();
-            if (!stream) {
+            const capture = getPreviewCapture();
+            if (!capture || !capture.stream) {
                 throw new Error('Preview capture is not supported in this browser.');
             }
+
+            const { stream, stop: stopCapture } = capture;
 
             if (typeof MediaRecorder === 'undefined') {
                 throw new Error('Video exporting is not supported in this browser.');
@@ -1302,7 +1437,11 @@ HOME_HTML = '''
                 }
             }
 
-            return stopped;
+            try {
+                return await stopped;
+            } finally {
+                stopCapture?.();
+            }
         }
 
         function triggerVideoDownload(blob) {
