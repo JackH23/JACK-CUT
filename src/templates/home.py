@@ -2520,6 +2520,79 @@ HOME_HTML = '''
             });
         }
 
+        function attachPreviewAudioToStream(previewVideo, combinedStream) {
+            if (!previewVideo || !combinedStream) {
+                return {
+                    audioContext: null,
+                    success: false,
+                    error: new Error('Missing preview video or combined stream.'),
+                };
+            }
+
+            let lastError = null;
+
+            if (typeof previewVideo.captureStream === 'function') {
+                try {
+                    const audioStream = previewVideo.captureStream();
+                    if (audioStream) {
+                        const audioTracks = audioStream.getAudioTracks();
+                        audioTracks.forEach((track) => combinedStream.addTrack(track));
+                        if (audioTracks.length) {
+                            return { audioContext: null, success: true, error: null };
+                        }
+                    }
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextConstructor) {
+                return {
+                    audioContext: null,
+                    success: false,
+                    error: lastError || new Error('AudioContext is not supported in this browser.'),
+                };
+            }
+
+            let audioContext = null;
+            try {
+                audioContext = new AudioContextConstructor();
+                const sourceNode = audioContext.createMediaElementSource(previewVideo);
+                const destination = audioContext.createMediaStreamDestination();
+                sourceNode.connect(destination);
+                sourceNode.connect(audioContext.destination);
+
+                const audioTracks = destination.stream.getAudioTracks();
+                audioTracks.forEach((track) => combinedStream.addTrack(track));
+                if (!audioTracks.length) {
+                    const closeResult = audioContext.close();
+                    if (closeResult && typeof closeResult.catch === 'function') {
+                        closeResult.catch(() => {});
+                    }
+                    return {
+                        audioContext: null,
+                        success: false,
+                        error: lastError || new Error('No audio tracks available from preview video.'),
+                    };
+                }
+
+                return { audioContext, success: true, error: null };
+            } catch (error) {
+                if (audioContext && typeof audioContext.close === 'function') {
+                    const closeResult = audioContext.close();
+                    if (closeResult && typeof closeResult.catch === 'function') {
+                        closeResult.catch(() => {});
+                    }
+                }
+                return {
+                    audioContext: null,
+                    success: false,
+                    error: error || lastError || new Error('Failed to attach audio from preview video.'),
+                };
+            }
+        }
+
         async function handleConfirmExport() {
             if (isExportingTimeline) {
                 return;
@@ -2572,6 +2645,7 @@ HOME_HTML = '''
             let recorder = null;
             let combinedStream = null;
             const recordedChunks = [];
+            let exportAudioContext = null;
 
             try {
                 stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
@@ -2585,13 +2659,10 @@ HOME_HTML = '''
                 combinedStream = new MediaStream();
                 canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
 
-                if (typeof previewVideo.captureStream === 'function') {
-                    try {
-                        const audioStream = previewVideo.captureStream();
-                        audioStream.getAudioTracks().forEach((track) => combinedStream.addTrack(track));
-                    } catch (error) {
-                        console.warn('Unable to capture audio from preview video.', error);
-                    }
+                const audioAttachment = attachPreviewAudioToStream(previewVideo, combinedStream);
+                exportAudioContext = audioAttachment.audioContext;
+                if (!audioAttachment.success) {
+                    console.warn('Unable to capture audio from preview video.', audioAttachment.error);
                 }
 
                 recorder = new MediaRecorder(combinedStream, {
@@ -2657,6 +2728,17 @@ HOME_HTML = '''
                 }
                 if (combinedStream) {
                     combinedStream.getTracks().forEach((track) => track.stop());
+                }
+                if (exportAudioContext) {
+                    try {
+                        const closeResult = exportAudioContext.close();
+                        if (closeResult && typeof closeResult.catch === 'function') {
+                            closeResult.catch(() => {});
+                        }
+                    } catch (error) {
+                        // Ignore
+                    }
+                    exportAudioContext = null;
                 }
                 stopMirroring();
                 confirmExportButton.disabled = false;
