@@ -12,8 +12,15 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     install_requires=[
-        # List your project dependencies here
+        'Flask>=2.0,<3',
+        'requests>=2.25,<3',
+        'numpy>=1.21,<2',
     ],
+    extras_require={
+        'timeline': [
+            'moviepy>=1.0.3,<2',
+        ],
+    },
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
