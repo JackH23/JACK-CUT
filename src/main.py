@@ -27,6 +27,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConfigurationError
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
+from werkzeug.security import check_password_hash, generate_password_hash
 
 def ensure_moviepy_imported() -> bool:
     """Attempt to import moviepy lazily when it becomes available."""
@@ -162,10 +163,21 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form.get('password', '')
-        user = users_collection.find_one({'username': username, 'password': password})
+        user = users_collection.find_one({'username': username})
         if user:
-            session['username'] = username
-            return redirect(url_for('home'))
+            stored_password = user.get('password', '')
+            passwords_match = False
+
+            if stored_password:
+                if stored_password.startswith('pbkdf2:'):
+                    passwords_match = check_password_hash(stored_password, password)
+                else:
+                    # Support legacy plaintext passwords during migration.
+                    passwords_match = stored_password == password
+
+            if passwords_match:
+                session['username'] = username
+                return redirect(url_for('home'))
         error = "Invalid username or password. Please try again or sign up."
     return render_template_string(LOGIN_HTML, error=error)
 
@@ -180,10 +192,11 @@ def signup():
         if users_collection.find_one({'username': username}):
             error = "Username already exists. Please choose another."
         else:
+            password_hash = generate_password_hash(password)
             users_collection.insert_one({
                 'username': username,
                 'email': email,
-                'password': password,
+                'password': password_hash,
             })
             session['username'] = username
             return redirect(url_for('home'))
