@@ -1259,7 +1259,7 @@ HOME_HTML = '''
             if (!exportSummaryContainer) {
                 return;
             }
-            const clips = Array.isArray(manifest?.clips) ? manifest.clips : [];
+            const clips = manifest && Array.isArray(manifest.clips) ? manifest.clips : [];
             const itemsHtml = clips.map((clip) => (
                 `<li><strong>Clip ${clip.index}:</strong> ${clip.name} · ${clip.type} · ${formatTime(clip.durationMs)} (${clip.durationMs}ms)</li>`
             )).join('');
@@ -1300,7 +1300,7 @@ HOME_HTML = '''
             if (exportOverlay) {
                 exportOverlay.hidden = false;
             }
-            if (document?.body) {
+            if (typeof document !== 'undefined' && document.body) {
                 document.body.classList.add('modal-open');
             }
             window.setTimeout(() => {
@@ -1314,7 +1314,7 @@ HOME_HTML = '''
             if (exportOverlay) {
                 exportOverlay.hidden = true;
             }
-            if (document?.body) {
+            if (typeof document !== 'undefined' && document.body) {
                 document.body.classList.remove('modal-open');
             }
         }
@@ -1413,8 +1413,9 @@ HOME_HTML = '''
             setActiveTimelineItem(timelineItem);
 
             const handle = event.currentTarget;
+            const handleResizeEdge = handle && handle.dataset ? handle.dataset.resizeEdge : undefined;
             const resizeEdge = resizeEdgeOverride
-                || handle?.dataset?.resizeEdge
+                || handleResizeEdge
                 || getTimelineItemResizeEdgeFromEvent(event, timelineItem)
                 || 'right';
             const isLeftResize = resizeEdge === 'left';
@@ -1435,7 +1436,9 @@ HOME_HTML = '''
             const captureTarget = handle instanceof HTMLElement && handle !== timelineItem
                 ? handle
                 : timelineItem;
-            captureTarget?.setPointerCapture?.(event.pointerId);
+            if (captureTarget && typeof captureTarget.setPointerCapture === 'function') {
+                captureTarget.setPointerCapture(event.pointerId);
+            }
 
             const onPointerMove = (moveEvent) => {
                 if (timelineTrack) {
@@ -1463,7 +1466,9 @@ HOME_HTML = '''
             };
 
             const finishResize = () => {
-                captureTarget?.releasePointerCapture?.(event.pointerId);
+                if (captureTarget && typeof captureTarget.releasePointerCapture === 'function') {
+                    captureTarget.releasePointerCapture(event.pointerId);
+                }
                 document.removeEventListener('pointermove', onPointerMove);
                 document.removeEventListener('pointerup', finishResize);
                 document.removeEventListener('pointercancel', finishResize);
