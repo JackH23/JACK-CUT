@@ -12,7 +12,10 @@ setup(
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     install_requires=[
-        # List your project dependencies here
+        'Flask==2.0.1',
+        'requests==2.25.1',
+        'numpy==1.21.0',
+        'moviepy==1.0.3',
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
