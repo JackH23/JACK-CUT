@@ -1369,6 +1369,10 @@ HOME_HTML = '''
             }
 
             const { formData, clips } = buildExportRequestPayload();
+            const fallbackDurationMs = clips.reduce(
+                (total, clip) => total + Math.max(0, Number(clip.duration_ms) || 0),
+                0,
+            );
             if (!clips.length) {
                 alert('We could not locate the media files for your timeline. Please re-upload your clips and try again.');
                 return;
@@ -1425,8 +1429,17 @@ HOME_HTML = '''
                 document.body.removeChild(anchor);
 
                 const rawDurationSeconds = Number(data.duration_seconds);
-                if (Number.isFinite(rawDurationSeconds) && rawDurationSeconds >= 0) {
-                    const formattedDuration = formatDurationBadgeLabel(rawDurationSeconds * 1000);
+                let formattedDuration = null;
+
+                if (typeof data.duration_formatted === 'string' && data.duration_formatted.trim()) {
+                    formattedDuration = data.duration_formatted.trim();
+                } else if (Number.isFinite(rawDurationSeconds) && rawDurationSeconds >= 0) {
+                    formattedDuration = formatDurationBadgeLabel(rawDurationSeconds * 1000);
+                } else if (fallbackDurationMs > 0) {
+                    formattedDuration = formatDurationBadgeLabel(fallbackDurationMs);
+                }
+
+                if (formattedDuration) {
                     alert(`Video exported! Duration: ${formattedDuration}`);
                 } else {
                     alert('Video exported successfully.');

@@ -87,6 +87,20 @@ DEFAULT_ASPECT_RATIO = '16:9'
 MIN_IMAGE_CLIP_DURATION_SECONDS = 0.5
 
 
+def format_duration_label(duration_seconds: float) -> str:
+    """Return a human-friendly duration string (MM:SS or HH:MM:SS)."""
+
+    safe_seconds = max(0.0, float(duration_seconds or 0.0))
+    rounded_seconds = int(round(safe_seconds))
+
+    minutes, seconds = divmod(rounded_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
 def parse_aspect_ratio(aspect_value: str) -> tuple[int, int]:
     try:
         raw_width, raw_height = (part.strip() for part in aspect_value.split(':', 1))
@@ -259,7 +273,7 @@ def export_timeline():
 
     input_paths: list[str] = []
     opened_clips: list[Any] = []
-    clips_to_concatenate: list[Any] = []
+    clips_with_duration: list[tuple[Any, float]] = []
 
     try:
         for index, clip_info in enumerate(timeline_data):
@@ -295,7 +309,8 @@ def export_timeline():
                 clip = ImageClip(temp_file.name, duration=duration)
                 clip = clip.resize(newsize=(export_width, export_height))
                 opened_clips.append(clip)
-                clips_to_concatenate.append(clip)
+                clip_duration = float(max(duration, getattr(clip, 'duration', duration) or 0.0))
+                clips_with_duration.append((clip, clip_duration))
                 continue
 
             raw_clip = VideoFileClip(temp_file.name)
@@ -312,7 +327,11 @@ def export_timeline():
             working_clip = working_clip.resize(newsize=(export_width, export_height))
             if working_clip is not raw_clip:
                 opened_clips.append(working_clip)
-            clips_to_concatenate.append(working_clip)
+
+            applied_duration = getattr(working_clip, 'duration', None)
+            if not applied_duration or applied_duration <= 0:
+                applied_duration = duration_seconds or intrinsic_duration
+            clips_with_duration.append((working_clip, float(max(0.0, applied_duration or 0.0))))
     except Exception:
         app.logger.exception('Failed to prepare clips for export')
         for clip in opened_clips:
@@ -321,7 +340,8 @@ def export_timeline():
         cleanup_paths(input_paths)
         return jsonify({'error': 'Failed to prepare clips for export.'}), 500
 
-    valid_clips = [clip for clip in clips_to_concatenate if getattr(clip, 'duration', 0) > 0]
+    valid_clips = [clip for clip, duration in clips_with_duration if duration > 0]
+    total_duration_seconds = sum(duration for _, duration in clips_with_duration if duration > 0)
     if not valid_clips:
         for clip in opened_clips:
             with suppress(Exception):
@@ -349,9 +369,10 @@ def export_timeline():
             logger=None,
         )
         try:
-            final_duration_seconds = float(max(0.0, final_clip.duration or 0.0))
+            final_clip_duration = float(max(0.0, final_clip.duration or 0.0))
         except Exception:
-            final_duration_seconds = 0.0
+            final_clip_duration = 0.0
+        final_duration_seconds = max(final_clip_duration, total_duration_seconds)
     except Exception:
         app.logger.exception('Failed to export video')
         if final_clip is not None:
@@ -391,6 +412,7 @@ def export_timeline():
             'video': public_url,
             'filename': public_filename,
             'duration_seconds': final_duration_seconds,
+            'duration_formatted': format_duration_label(final_duration_seconds),
         }
     )
 
