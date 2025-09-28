@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import secrets
 import tempfile
 from contextlib import suppress
 from typing import Any, Dict, Optional
@@ -56,15 +58,18 @@ def ensure_moviepy_imported() -> bool:
 
 
 def load_secret_key() -> str:
-    """Return the Flask secret key from the environment or fail fast."""
+    """Return the Flask secret key, generating a temporary one if necessary."""
 
-    secret_key = os.getenv("FLASK_SECRET_KEY")
-    if not secret_key:
-        raise RuntimeError(
-            "Missing Flask secret key. Set the FLASK_SECRET_KEY environment variable "
-            "to a strong random value before starting the application."
-        )
-    return secret_key
+    secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY")
+    if secret_key:
+        return secret_key
+
+    generated_secret = secrets.token_hex(32)
+    logging.getLogger(__name__).warning(
+        "Missing FLASK_SECRET_KEY environment variable; generated a temporary key "
+        "for this process. Sessions will reset when the application restarts."
+    )
+    return generated_secret
 
 
 app = Flask(__name__)
