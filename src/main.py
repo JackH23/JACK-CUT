@@ -1,8 +1,8 @@
-import importlib.util
 import json
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from flask import (
@@ -17,13 +17,6 @@ from flask import (
 from pymongo import MongoClient
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
-
-_MOVIEPY_AVAILABLE = importlib.util.find_spec('moviepy.editor') is not None
-
-if _MOVIEPY_AVAILABLE:
-    from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips, vfx
-else:  # pragma: no cover - exercised only when dependency is missing
-    ImageClip = VideoFileClip = concatenate_videoclips = vfx = None  # type: ignore
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
@@ -65,6 +58,37 @@ def get_users_collection():
 
 
 users_collection = get_users_collection()
+
+_MOVIEPY_MODULES: SimpleNamespace | None = None
+_MOVIEPY_IMPORT_ERROR_LOGGED = False
+
+
+def _load_moviepy() -> SimpleNamespace | None:
+    """Attempt to import MoviePy lazily so new installs are picked up."""
+
+    global _MOVIEPY_MODULES, _MOVIEPY_IMPORT_ERROR_LOGGED
+
+    if _MOVIEPY_MODULES is not None:
+        return _MOVIEPY_MODULES
+
+    try:
+        from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips, vfx
+    except ModuleNotFoundError:
+        return None
+    except Exception as error:  # pragma: no cover - defensive logging path
+        if not _MOVIEPY_IMPORT_ERROR_LOGGED:
+            app.logger.exception('MoviePy import failed: %s', error)
+            _MOVIEPY_IMPORT_ERROR_LOGGED = True
+        return None
+
+    _MOVIEPY_MODULES = SimpleNamespace(
+        ImageClip=ImageClip,
+        VideoFileClip=VideoFileClip,
+        concatenate_videoclips=concatenate_videoclips,
+        vfx=vfx,
+    )
+    _MOVIEPY_IMPORT_ERROR_LOGGED = False
+    return _MOVIEPY_MODULES
 
 
 @app.route('/')
@@ -117,7 +141,8 @@ def _cleanup_paths(paths: list[str]) -> None:
 
 @app.post('/export')
 def export_timeline() -> Response:
-    if not _MOVIEPY_AVAILABLE:
+    moviepy = _load_moviepy()
+    if moviepy is None:
         return Response(
             'MoviePy is required to export timelines. '
             'Install the optional dependency with "pip install moviepy".',
@@ -166,14 +191,14 @@ def export_timeline() -> Response:
             temp_paths.append(temp_path)
 
             if mime_type.startswith('image/'):
-                clip = ImageClip(temp_path).set_duration(duration_seconds).set_fps(30)
+                clip = moviepy.ImageClip(temp_path).set_duration(duration_seconds).set_fps(30)
             else:
-                clip = VideoFileClip(temp_path)
+                clip = moviepy.VideoFileClip(temp_path)
                 intrinsic_duration = float(clip.duration or 0)
                 if intrinsic_duration and duration_seconds < intrinsic_duration:
                     clip = clip.subclip(0, duration_seconds)
                 elif intrinsic_duration and duration_seconds > intrinsic_duration:
-                    clip = clip.fx(vfx.loop, duration=duration_seconds)
+                    clip = clip.fx(moviepy.vfx.loop, duration=duration_seconds)
                 else:
                     clip = clip.subclip(0, intrinsic_duration or duration_seconds)
                 clip = clip.set_fps(30)
@@ -186,7 +211,7 @@ def export_timeline() -> Response:
         if len(timeline_clips) == 1:
             final_clip = timeline_clips[0]
         else:
-            final_clip = concatenate_videoclips(timeline_clips, method='compose')
+            final_clip = moviepy.concatenate_videoclips(timeline_clips, method='compose')
 
         export_duration = float(final_clip.duration or 0.0)
         if export_duration <= 0:
