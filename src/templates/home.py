@@ -1067,6 +1067,7 @@ HOME_HTML = '''
         let timelineTrackResizeObserver = null;
         let exportPreviewAbortRequested = false;
         let exportPreviewPlaybackPromise = null;
+        const timelineFileStore = new Map();
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
@@ -1294,6 +1295,127 @@ HOME_HTML = '''
                     + `<span>${typeLabel} • ${formatDurationBadgeLabel(duration)}</span>`;
                 exportDetailsList.appendChild(li);
             });
+        }
+
+        function buildExportRequestPayload() {
+            const formData = new FormData();
+            const timelineItems = getTimelineItems();
+            const clips = [];
+
+            timelineItems.forEach((timelineItem, index) => {
+                const objectURL = timelineItem.dataset.objectUrl;
+                if (!objectURL) {
+                    return;
+                }
+                const file = timelineFileStore.get(objectURL);
+                if (!file) {
+                    return;
+                }
+
+                const fieldName = `file_${index}`;
+                formData.append(fieldName, file, file.name || `clip_${index + 1}`);
+                const duration = getTimelineItemPlaybackDuration(timelineItem);
+                clips.push({
+                    field: fieldName,
+                    duration_ms: Math.max(0, Math.round(Number(duration) || 0)),
+                    kind: file.type.startsWith('image/') ? 'image' : 'video',
+                    original_filename: file.name,
+                });
+            });
+
+            if (previewAspectSelect && previewAspectSelect.value) {
+                formData.append('aspect_ratio', previewAspectSelect.value);
+            }
+
+            if (videoQualitySelect && videoQualitySelect.value) {
+                formData.append('quality', videoQualitySelect.value);
+            }
+
+            formData.append('timeline', JSON.stringify(clips));
+            return { formData, clips };
+        }
+
+        async function readExportErrorMessage(response) {
+            if (!response) {
+                return 'Failed to export video. Please try again.';
+            }
+
+            try {
+                const data = await response.clone().json();
+                if (data && typeof data.error === 'string' && data.error.trim()) {
+                    return data.error.trim();
+                }
+            } catch (error) {
+                // Ignore JSON parsing errors and fall back to text.
+            }
+
+            try {
+                const text = await response.text();
+                if (text && text.trim()) {
+                    return text.trim();
+                }
+            } catch (error) {
+                // Ignore text parsing errors.
+            }
+
+            return 'Failed to export video. Please try again.';
+        }
+
+        async function handleExportConfirmClick() {
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                alert('Add media to your timeline before exporting.');
+                return;
+            }
+
+            const { formData, clips } = buildExportRequestPayload();
+            if (!clips.length) {
+                alert('We could not locate the media files for your timeline. Please re-upload your clips and try again.');
+                return;
+            }
+
+            const originalLabel = exportConfirmButton.textContent;
+            exportConfirmButton.disabled = true;
+            exportConfirmButton.setAttribute('aria-busy', 'true');
+            exportConfirmButton.textContent = 'Exporting…';
+
+            try {
+                const response = await fetch('/export', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const message = await readExportErrorMessage(response);
+                    throw new Error(message);
+                }
+
+                const blob = await response.blob();
+                const downloadURL = URL.createObjectURL(blob);
+                const downloadName = response.headers.get('X-Export-Filename')
+                    || `video-export-${Date.now()}.mp4`;
+
+                const anchor = document.createElement('a');
+                anchor.href = downloadURL;
+                anchor.download = downloadName;
+                anchor.style.display = 'none';
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                URL.revokeObjectURL(downloadURL);
+
+                closeExportModal();
+            } catch (error) {
+                console.error('Failed to export video', error);
+                const message = error instanceof Error && error.message
+                    ? error.message
+                    : 'Failed to export video. Please try again.';
+                alert(message);
+            } finally {
+                exportConfirmButton.disabled = false;
+                exportConfirmButton.removeAttribute('aria-busy');
+                exportConfirmButton.textContent = originalLabel;
+            }
         }
 
         function setTimelineItemDuration(timelineItem, durationKey, durationMs, options = {}) {
@@ -2237,6 +2359,7 @@ HOME_HTML = '''
             timelineItem.className = 'timeline-item';
             timelineItem.dataset.fileType = file.type;
             timelineItem.dataset.objectUrl = objectURL;
+            timelineFileStore.set(objectURL, file);
 
             const label = document.createElement('span');
             label.textContent = file.name;
@@ -2577,9 +2700,11 @@ HOME_HTML = '''
         });
 
         if (exportConfirmButton) {
-            exportConfirmButton.addEventListener('click', () => {
-                closeExportModal();
-                alert('Your MP4 export is being prepared. We will let you know when it is ready to download.');
+            exportConfirmButton.addEventListener('click', async () => {
+                if (exportConfirmButton.disabled) {
+                    return;
+                }
+                await handleExportConfirmClick();
             });
         }
 
