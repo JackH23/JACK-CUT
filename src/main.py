@@ -1,7 +1,19 @@
+import json
 import os
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, Optional
 
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import (
+    Flask,
+    Response,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
+from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips, vfx
 from pymongo import MongoClient
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
@@ -86,6 +98,123 @@ def signup():
             session['username'] = username
             return redirect(url_for('home'))
     return render_template_string(SIGNUP_HTML, error=error)
+
+
+def _cleanup_paths(paths: list[str]) -> None:
+    for path in paths:
+        try:
+            os.unlink(path)
+        except OSError:
+            continue
+
+
+@app.post('/export')
+def export_timeline() -> Response:
+    metadata_raw = request.form.get('metadata')
+    if not metadata_raw:
+        return Response('Missing metadata payload.', status=400)
+
+    try:
+        metadata = json.loads(metadata_raw)
+    except json.JSONDecodeError:
+        return Response('Metadata payload is not valid JSON.', status=400)
+
+    if not isinstance(metadata, list) or not metadata:
+        return Response('At least one timeline item is required for export.', status=400)
+
+    temp_paths: list[str] = []
+    timeline_clips: list[Any] = []
+    final_clip = None
+    output_path: str | None = None
+    export_duration = 0.0
+
+    try:
+        for index, entry in enumerate(metadata):
+            if not isinstance(entry, dict):
+                raise ValueError('Each metadata entry must be an object.')
+
+            field_name = entry.get('fieldName')
+            mime_type = str(entry.get('mimeType') or '')
+            duration_ms = max(int(entry.get('durationMs', 0) or 0), 0)
+            duration_seconds = max(duration_ms / 1000.0, 0.001)
+
+            if not field_name:
+                raise ValueError('Missing file field name in metadata entry.')
+
+            file_storage = request.files.get(field_name)
+            if file_storage is None:
+                raise ValueError(f'Missing file data for timeline item {index + 1}.')
+
+            suffix = Path(file_storage.filename or '').suffix or '.bin'
+            temp_descriptor, temp_path = tempfile.mkstemp(suffix=suffix)
+            os.close(temp_descriptor)
+            file_storage.save(temp_path)
+            temp_paths.append(temp_path)
+
+            if mime_type.startswith('image/'):
+                clip = ImageClip(temp_path).set_duration(duration_seconds).set_fps(30)
+            else:
+                clip = VideoFileClip(temp_path)
+                intrinsic_duration = float(clip.duration or 0)
+                if intrinsic_duration and duration_seconds < intrinsic_duration:
+                    clip = clip.subclip(0, duration_seconds)
+                elif intrinsic_duration and duration_seconds > intrinsic_duration:
+                    clip = clip.fx(vfx.loop, duration=duration_seconds)
+                else:
+                    clip = clip.subclip(0, intrinsic_duration or duration_seconds)
+                clip = clip.set_fps(30)
+
+            timeline_clips.append(clip)
+
+        if not timeline_clips:
+            raise ValueError('No timeline clips were provided for export.')
+
+        if len(timeline_clips) == 1:
+            final_clip = timeline_clips[0]
+        else:
+            final_clip = concatenate_videoclips(timeline_clips, method='compose')
+
+        export_duration = float(final_clip.duration or 0.0)
+        if export_duration <= 0:
+            export_duration = sum(float(clip.duration or 0.0) for clip in timeline_clips)
+
+        output_descriptor, output_path = tempfile.mkstemp(suffix='.mp4')
+        os.close(output_descriptor)
+
+        final_clip.write_videofile(
+            output_path,
+            codec='libx264',
+            audio_codec='aac',
+            fps=30,
+            remove_temp=True,
+            logger=None,
+        )
+
+        with open(output_path, 'rb') as export_file:
+            payload = export_file.read()
+
+    except ValueError as error:
+        return Response(str(error), status=400)
+    except Exception as error:  # pragma: no cover - defensive logging path
+        app.logger.exception('Failed to export timeline preview: %s', error)
+        return Response('Failed to export timeline.', status=500)
+    finally:
+        if final_clip is not None and final_clip not in timeline_clips:
+            final_clip.close()
+        for clip in timeline_clips:
+            try:
+                clip.close()
+            except Exception:  # pragma: no cover - clip cleanup errors are non-fatal
+                continue
+        _cleanup_paths(temp_paths)
+        if output_path:
+            _cleanup_paths([output_path])
+
+    response = Response(payload, mimetype='video/mp4')
+    response.headers['Content-Length'] = str(len(payload))
+    response.headers['X-Export-Duration-Ms'] = str(int(round(export_duration * 1000)))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route('/signout')
