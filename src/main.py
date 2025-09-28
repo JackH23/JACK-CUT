@@ -24,6 +24,7 @@ except ModuleNotFoundError:
     loop = None  # type: ignore[assignment]
     MOVIEPY_AVAILABLE = False
 from pymongo import MongoClient
+from pymongo.errors import ConfigurationError
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
 
@@ -118,16 +119,31 @@ def get_users_collection():
     if use_in_memory:
         return InMemoryCollection()
 
-    mongo_url = os.getenv(
-        'MONGO_URL',
-        (
-            "mongodb+srv://sihalardjacky_db_user:TP7iCDWj3hhq4KBP@cluster0.rssobej.mongodb.net/"
-            "?retryWrites=true&w=majority&appName=Cluster0"
-        ),
-    )
+    mongo_url = os.getenv('MONGO_URL')
+    if not mongo_url:
+        error_message = (
+            "Missing MongoDB configuration: set the MONGO_URL environment variable or "
+            "enable the in-memory database by setting USE_IN_MEMORY_DB=1."
+        )
+        app.logger.error(error_message)
+        raise RuntimeError(error_message)
     mongo_client = MongoClient(mongo_url)
-    database_name = os.getenv('MONGO_DB_NAME', 'your_database_name')
-    db = mongo_client[database_name]
+    missing_db_message = (
+        "MongoDB configuration requires either a database name in the MONGO_URL or "
+        "a MONGO_DB_NAME environment variable."
+    )
+    database_name = os.getenv('MONGO_DB_NAME')
+    if database_name:
+        db = mongo_client[database_name]
+    else:
+        try:
+            db = mongo_client.get_default_database()
+        except ConfigurationError as exc:
+            app.logger.error(missing_db_message)
+            raise RuntimeError(missing_db_message) from exc
+        if db is None:
+            app.logger.error(missing_db_message)
+            raise RuntimeError(missing_db_message)
     return db['users']
 
 
