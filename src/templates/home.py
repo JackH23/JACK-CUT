@@ -313,6 +313,151 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
+        .export-dialog {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(18px);
+            padding: clamp(16px, 4vw, 40px);
+            z-index: 999;
+        }
+
+        .export-dialog[hidden] {
+            display: none;
+        }
+
+        .export-dialog__panel {
+            width: min(520px, 100%);
+            background: rgba(11, 18, 41, 0.95);
+            border-radius: 24px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
+            padding: clamp(24px, 4vw, 36px);
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .export-dialog__panel h3 {
+            margin: 0;
+            font-size: 1.45rem;
+            font-weight: 600;
+        }
+
+        .export-dialog__subtitle {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .export-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .export-summary__item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .export-summary__item span {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            letter-spacing: 0.01em;
+        }
+
+        .export-summary__item strong {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .export-dialog__status {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--accent-2);
+        }
+
+        .export-dialog__status[data-state="warning"] {
+            color: #facc15;
+        }
+
+        .export-timeline-list {
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        .export-timeline-list__items {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .export-timeline-list__item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        .export-timeline-clip-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .export-timeline-clip-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.01em;
+        }
+
+        .export-dialog__actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 4px;
+        }
+
+        .export-dialog__button {
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            background: rgba(15, 23, 42, 0.8);
+            color: var(--text-secondary);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
+        .export-dialog__button.primary {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.92));
+            color: #0b1020;
+            border: none;
+            box-shadow: 0 16px 36px rgba(56, 189, 248, 0.25);
+        }
+
+        .export-dialog__button:hover {
+            transform: translateY(-1px);
+        }
+
         .preview-area {
             --preview-aspect-ratio: 16 / 9;
             position: relative;
@@ -773,6 +918,37 @@ HOME_HTML = '''
             </div>
         </section>
 
+        <div class="export-dialog" id="export-dialog" hidden aria-hidden="true">
+            <div class="export-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+                <h3 id="export-dialog-title">Export timeline to MP4</h3>
+                <p class="export-dialog__subtitle">We gathered the latest playback from your timeline. Review the export configuration before confirming.</p>
+                <div class="export-summary">
+                    <div class="export-summary__item">
+                        <span>Total clips</span>
+                        <strong id="export-summary-clips">0</strong>
+                    </div>
+                    <div class="export-summary__item">
+                        <span>Total duration</span>
+                        <strong id="export-summary-duration">00:00</strong>
+                    </div>
+                    <div class="export-summary__item">
+                        <span>Resolution</span>
+                        <strong id="export-summary-resolution">720p HD</strong>
+                    </div>
+                    <div class="export-summary__item">
+                        <span>Format</span>
+                        <strong id="export-summary-format">MP4 (H.264)</strong>
+                    </div>
+                </div>
+                <p class="export-dialog__status" id="export-dialog-status" data-state="ready">Preview completed successfully. Ready to export.</p>
+                <div class="export-timeline-list" id="export-timeline-list"></div>
+                <div class="export-dialog__actions">
+                    <button type="button" class="export-dialog__button" id="cancel-export-button">Cancel</button>
+                    <button type="button" class="export-dialog__button primary" id="confirm-export-button">Confirm export</button>
+                </div>
+            </div>
+        </div>
+
         <footer class="footer">
             © {{ 2024 }} Video Editor Pro. Crafted for creators.
         </footer>
@@ -792,6 +968,17 @@ HOME_HTML = '''
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
         const playbackTimeDisplay = document.getElementById('playback-time');
+        const exportButton = document.querySelector('.export-button');
+        const exportDialog = document.getElementById('export-dialog');
+        const exportTimelineList = document.getElementById('export-timeline-list');
+        const exportSummaryClips = document.getElementById('export-summary-clips');
+        const exportSummaryDuration = document.getElementById('export-summary-duration');
+        const exportSummaryResolution = document.getElementById('export-summary-resolution');
+        const exportSummaryFormat = document.getElementById('export-summary-format');
+        const exportDialogStatus = document.getElementById('export-dialog-status');
+        const confirmExportButton = document.getElementById('confirm-export-button');
+        const cancelExportButton = document.getElementById('cancel-export-button');
+        const videoQualitySelect = document.getElementById('video-quality');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
@@ -834,6 +1021,116 @@ HOME_HTML = '''
             playbackTimeDisplay.textContent = `${formatTime(clampedCurrent)} / ${formatTime(playbackDisplayTotalMs)}`;
             playbackTimeDisplay.dataset.current = String(clampedCurrent);
             playbackTimeDisplay.dataset.total = String(playbackDisplayTotalMs);
+        }
+
+        function formatSecondsLabel(durationMs) {
+            const safeMs = Math.max(0, Number(durationMs) || 0);
+            const seconds = safeMs / 1000;
+            if (seconds <= 0) {
+                return '0s';
+            }
+            if (Number.isInteger(seconds)) {
+                return `${seconds}s`;
+            }
+            return `${seconds.toFixed(1)}s`;
+        }
+
+        function describeFileType(fileType) {
+            if (typeof fileType !== 'string' || !fileType.length) {
+                return 'Media clip';
+            }
+            if (fileType.startsWith('video/')) {
+                return 'Video clip';
+            }
+            if (fileType.startsWith('image/')) {
+                return 'Image frame';
+            }
+            return 'Media clip';
+        }
+
+        function renderExportSummary(timelineItems, playbackCompleted) {
+            if (exportSummaryClips) {
+                exportSummaryClips.textContent = String(timelineItems.length);
+            }
+
+            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+            if (exportSummaryDuration) {
+                const formattedDuration = formatTime(totalDuration);
+                exportSummaryDuration.textContent = `${formattedDuration} (${formatSecondsLabel(totalDuration)})`;
+            }
+
+            if (exportSummaryResolution) {
+                const selectedQuality = videoQualitySelect?.value || '720p';
+                exportSummaryResolution.textContent = `${selectedQuality} MP4`;
+            }
+
+            if (exportSummaryFormat) {
+                exportSummaryFormat.textContent = 'MP4 (H.264)';
+            }
+
+            if (exportDialogStatus) {
+                exportDialogStatus.dataset.state = playbackCompleted ? 'ready' : 'warning';
+                exportDialogStatus.textContent = playbackCompleted
+                    ? 'Preview completed successfully. Ready to export.'
+                    : 'Preview interrupted before completion. Review the details below.';
+            }
+
+            if (exportTimelineList) {
+                exportTimelineList.innerHTML = '';
+                if (!timelineItems.length) {
+                    const emptyMessage = document.createElement('p');
+                    emptyMessage.className = 'export-dialog__subtitle';
+                    emptyMessage.textContent = 'No media in the timeline. Add clips to export.';
+                    exportTimelineList.appendChild(emptyMessage);
+                } else {
+                    const list = document.createElement('ul');
+                    list.className = 'export-timeline-list__items';
+                    timelineItems.forEach((timelineItem, index) => {
+                        const listItem = document.createElement('li');
+                        listItem.className = 'export-timeline-list__item';
+
+                        const clipName = document.createElement('span');
+                        clipName.className = 'export-timeline-clip-name';
+                        const displayName = timelineItem.dataset.displayName
+                            || timelineItem.dataset.fileName
+                            || timelineItem.querySelector('span')?.textContent
+                            || `Clip ${index + 1}`;
+                        clipName.textContent = `${index + 1}. ${displayName}`;
+
+                        const clipMeta = document.createElement('span');
+                        clipMeta.className = 'export-timeline-clip-meta';
+                        const duration = getTimelineItemPlaybackDuration(timelineItem);
+                        clipMeta.textContent = `${describeFileType(timelineItem.dataset.fileType || '')} • ${formatTime(duration)} (${formatSecondsLabel(duration)})`;
+
+                        listItem.appendChild(clipName);
+                        listItem.appendChild(clipMeta);
+                        list.appendChild(listItem);
+                    });
+                    exportTimelineList.appendChild(list);
+                }
+            }
+        }
+
+        function openExportDialog() {
+            if (!exportDialog) {
+                return;
+            }
+            exportDialog.hidden = false;
+            exportDialog.removeAttribute('hidden');
+            exportDialog.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeExportDialog() {
+            if (!exportDialog) {
+                return;
+            }
+            exportDialog.hidden = true;
+            exportDialog.setAttribute('hidden', '');
+            exportDialog.setAttribute('aria-hidden', 'true');
+        }
+
+        function isExportDialogOpen() {
+            return Boolean(exportDialog && !exportDialog.hasAttribute('hidden'));
         }
 
         function startPlaybackClock(startElapsed, totalDuration) {
@@ -1693,6 +1990,7 @@ HOME_HTML = '''
             timelineItem.className = 'timeline-item';
             timelineItem.dataset.fileType = file.type;
             timelineItem.dataset.objectUrl = objectURL;
+            timelineItem.dataset.displayName = file.name;
 
             const label = document.createElement('span');
             label.textContent = file.name;
@@ -1954,7 +2252,7 @@ HOME_HTML = '''
             const timelineItems = getTimelineItems();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
-                return;
+                return false;
             }
 
             const initialIndex = Math.min(Math.max(0, startIndex), timelineItems.length - 1);
@@ -1995,7 +2293,70 @@ HOME_HTML = '''
                     updateActiveTimelineIndicators();
                 }
             }
+
+            return completedNaturally;
         }
+
+        if (exportButton) {
+            exportButton.addEventListener('click', async () => {
+                const timelineItems = getTimelineItems();
+                if (!timelineItems.length) {
+                    alert('Upload an image or video to build your timeline.');
+                    return;
+                }
+
+                if (isTimelinePlaying) {
+                    stopTimelinePlayback();
+                }
+
+                const originalLabel = exportButton.textContent;
+                exportButton.disabled = true;
+                exportButton.textContent = 'Preparing preview…';
+
+                let playbackCompleted = false;
+                try {
+                    playbackCompleted = await playTimelineSequence(0);
+                } catch (error) {
+                    console.error('Failed to collect playback before export.', error);
+                    playbackCompleted = false;
+                } finally {
+                    exportButton.disabled = false;
+                    exportButton.textContent = originalLabel || 'Export video';
+                }
+
+                const refreshedTimelineItems = getTimelineItems();
+                renderExportSummary(refreshedTimelineItems, Boolean(playbackCompleted));
+                openExportDialog();
+            });
+        }
+
+        if (cancelExportButton) {
+            cancelExportButton.addEventListener('click', () => {
+                closeExportDialog();
+            });
+        }
+
+        if (confirmExportButton) {
+            confirmExportButton.addEventListener('click', () => {
+                closeExportDialog();
+                alert('Export started! Rendering your MP4 file.');
+            });
+        }
+
+        if (exportDialog) {
+            exportDialog.addEventListener('click', (event) => {
+                if (event.target === exportDialog) {
+                    closeExportDialog();
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && isExportDialogOpen()) {
+                event.preventDefault();
+                closeExportDialog();
+            }
+        });
 
         playVideoButton.addEventListener('click', () => {
             if (isTimelinePlaying) {
@@ -2010,7 +2371,9 @@ HOME_HTML = '''
             }
 
             const startIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : 0;
-            playTimelineSequence(startIndex >= 0 ? startIndex : 0);
+            playTimelineSequence(startIndex >= 0 ? startIndex : 0).catch((error) => {
+                console.error('Timeline playback failed.', error);
+            });
         });
 
         previewVideo.addEventListener('ended', () => {
