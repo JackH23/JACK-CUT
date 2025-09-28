@@ -27,6 +27,32 @@ from pymongo import MongoClient
 
 from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
 
+def ensure_moviepy_imported() -> bool:
+    """Attempt to import moviepy lazily when it becomes available."""
+
+    global MOVIEPY_AVAILABLE, ImageClip, VideoFileClip, concatenate_videoclips, loop
+
+    if MOVIEPY_AVAILABLE:
+        return True
+
+    try:
+        from moviepy.editor import (
+            ImageClip as _ImageClip,
+            VideoFileClip as _VideoFileClip,
+            concatenate_videoclips as _concatenate_videoclips,
+        )
+        from moviepy.video.fx.loop import loop as _loop
+    except ModuleNotFoundError:
+        return False
+
+    ImageClip = _ImageClip  # type: ignore[assignment]
+    VideoFileClip = _VideoFileClip  # type: ignore[assignment]
+    concatenate_videoclips = _concatenate_videoclips  # type: ignore[assignment]
+    loop = _loop  # type: ignore[assignment]
+    MOVIEPY_AVAILABLE = True
+    return True
+
+
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
 
@@ -156,7 +182,7 @@ def signout():
 
 @app.route('/export', methods=['POST'])
 def export_timeline():
-    if not MOVIEPY_AVAILABLE:
+    if not ensure_moviepy_imported():
         return (
             jsonify(
                 {
