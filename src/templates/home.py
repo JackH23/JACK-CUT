@@ -979,6 +979,8 @@ HOME_HTML = '''
         const confirmExportButton = document.getElementById('confirm-export-button');
         const cancelExportButton = document.getElementById('cancel-export-button');
         const videoQualitySelect = document.getElementById('video-quality');
+        const exportMirrorCanvas = document.createElement('canvas');
+        const exportMirrorContext = exportMirrorCanvas.getContext('2d');
         let activeTimelineItem = null;
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
@@ -987,6 +989,7 @@ HOME_HTML = '''
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
+        let isExportingTimeline = false;
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
@@ -1007,6 +1010,149 @@ HOME_HTML = '''
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
             return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        const EXPORT_RESOLUTION_PRESETS = {
+            '16:9': {
+                '480p': { width: 854, height: 480 },
+                '720p': { width: 1280, height: 720 },
+                '1080p': { width: 1920, height: 1080 },
+            },
+            '9:16': {
+                '480p': { width: 480, height: 854 },
+                '720p': { width: 720, height: 1280 },
+                '1080p': { width: 1080, height: 1920 },
+            },
+        };
+
+        function getExportResolution(aspectValue, qualityValue) {
+            const aspectKey = (aspectValue || '16:9') in EXPORT_RESOLUTION_PRESETS
+                ? aspectValue
+                : '16:9';
+            const presetsForAspect = EXPORT_RESOLUTION_PRESETS[aspectKey] || {};
+            const qualityKey = qualityValue && qualityValue in presetsForAspect
+                ? qualityValue
+                : '720p';
+            return presetsForAspect[qualityKey];
+        }
+
+        function getSupportedMp4MimeType() {
+            if (!window.MediaRecorder) {
+                return null;
+            }
+            const preferredTypes = [
+                'video/mp4;codecs="avc1.42E01E, mp4a.40.2"',
+                'video/mp4;codecs="avc1.4D401E, mp4a.40.2"',
+                'video/mp4',
+            ];
+            for (const type of preferredTypes) {
+                try {
+                    if (window.MediaRecorder.isTypeSupported(type)) {
+                        return type;
+                    }
+                } catch (error) {
+                    // Continue to next type
+                }
+            }
+            return null;
+        }
+
+        function computeContainDimensions(sourceWidth, sourceHeight, targetWidth, targetHeight) {
+            if (!Number.isFinite(sourceWidth)
+                || !Number.isFinite(sourceHeight)
+                || sourceWidth <= 0
+                || sourceHeight <= 0
+            ) {
+                return {
+                    x: 0,
+                    y: 0,
+                    width: targetWidth,
+                    height: targetHeight,
+                };
+            }
+
+            const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+            const width = sourceWidth * scale;
+            const height = sourceHeight * scale;
+            const x = (targetWidth - width) / 2;
+            const y = (targetHeight - height) / 2;
+            return { x, y, width, height };
+        }
+
+        function startPreviewMirroring(width, height) {
+            if (!exportMirrorContext) {
+                throw new Error('Unable to access export canvas context.');
+            }
+
+            exportMirrorCanvas.width = Math.max(1, Math.round(width));
+            exportMirrorCanvas.height = Math.max(1, Math.round(height));
+
+            let stopped = false;
+            let rafId = 0;
+
+            const drawFrame = () => {
+                if (stopped) {
+                    return;
+                }
+
+                exportMirrorContext.fillStyle = '#000000';
+                exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
+
+                if (!previewVideo.hidden && previewVideo.readyState >= 2) {
+                    const dimensions = computeContainDimensions(
+                        previewVideo.videoWidth,
+                        previewVideo.videoHeight,
+                        exportMirrorCanvas.width,
+                        exportMirrorCanvas.height,
+                    );
+                    exportMirrorContext.drawImage(
+                        previewVideo,
+                        dimensions.x,
+                        dimensions.y,
+                        dimensions.width,
+                        dimensions.height,
+                    );
+                } else if (!previewImage.hidden && previewImage.complete) {
+                    const dimensions = computeContainDimensions(
+                        previewImage.naturalWidth,
+                        previewImage.naturalHeight,
+                        exportMirrorCanvas.width,
+                        exportMirrorCanvas.height,
+                    );
+                    exportMirrorContext.drawImage(
+                        previewImage,
+                        dimensions.x,
+                        dimensions.y,
+                        dimensions.width,
+                        dimensions.height,
+                    );
+                } else {
+                    exportMirrorContext.fillStyle = '#1f2937';
+                    exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
+                    exportMirrorContext.fillStyle = '#e2e8f0';
+                    exportMirrorContext.textAlign = 'center';
+                    exportMirrorContext.textBaseline = 'middle';
+                    const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
+                    exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
+                    exportMirrorContext.fillText(
+                        'Preparing preview…',
+                        exportMirrorCanvas.width / 2,
+                        exportMirrorCanvas.height / 2,
+                    );
+                }
+
+                rafId = window.requestAnimationFrame(drawFrame);
+            };
+
+            drawFrame();
+
+            return () => {
+                stopped = true;
+                if (rafId) {
+                    window.cancelAnimationFrame(rafId);
+                    rafId = 0;
+                }
+            };
         }
 
         function updatePlaybackTimeDisplay(currentMs, totalMs) {
@@ -2332,14 +2478,161 @@ HOME_HTML = '''
 
         if (cancelExportButton) {
             cancelExportButton.addEventListener('click', () => {
+                if (isExportingTimeline) {
+                    return;
+                }
                 closeExportDialog();
             });
         }
 
+        async function handleConfirmExport() {
+            if (isExportingTimeline) {
+                return;
+            }
+
+            const timelineItems = getTimelineItems();
+            if (!timelineItems.length) {
+                alert('Upload an image or video to build your timeline.');
+                return;
+            }
+
+            if (!window.MediaRecorder) {
+                alert('Export is not supported in this browser.');
+                return;
+            }
+
+            const mp4MimeType = getSupportedMp4MimeType();
+            if (!mp4MimeType) {
+                alert('MP4 export is not supported by this browser. Try using a browser with MediaRecorder MP4 support.');
+                return;
+            }
+
+            if (!exportMirrorContext) {
+                alert('Unable to start export because the rendering context is unavailable.');
+                return;
+            }
+
+            const resolution = getExportResolution(
+                previewAspectSelect?.value,
+                videoQualitySelect?.value,
+            );
+
+            if (!resolution) {
+                alert('Unable to determine export resolution.');
+                return;
+            }
+
+            isExportingTimeline = true;
+            confirmExportButton.disabled = true;
+            const originalLabel = confirmExportButton.textContent;
+            confirmExportButton.textContent = 'Exporting…';
+            if (exportDialogStatus) {
+                exportDialogStatus.textContent = 'Exporting timeline preview to MP4…';
+                exportDialogStatus.dataset.state = 'progress';
+            }
+
+            stopTimelinePlayback();
+
+            let stopMirroring = () => {};
+            let recorder = null;
+            let combinedStream = null;
+            const recordedChunks = [];
+
+            try {
+                stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
+                if (typeof exportMirrorCanvas.captureStream !== 'function') {
+                    throw new Error('Canvas captureStream is not supported in this browser.');
+                }
+                const canvasStream = exportMirrorCanvas.captureStream(30);
+                if (!canvasStream) {
+                    throw new Error('Unable to access canvas capture stream.');
+                }
+                combinedStream = new MediaStream();
+                canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
+
+                if (typeof previewVideo.captureStream === 'function') {
+                    try {
+                        const audioStream = previewVideo.captureStream();
+                        audioStream.getAudioTracks().forEach((track) => combinedStream.addTrack(track));
+                    } catch (error) {
+                        console.warn('Unable to capture audio from preview video.', error);
+                    }
+                }
+
+                recorder = new MediaRecorder(combinedStream, {
+                    mimeType: mp4MimeType,
+                    videoBitsPerSecond: 6_000_000,
+                });
+
+                const recordingPromise = new Promise((resolve, reject) => {
+                    recorder.addEventListener('dataavailable', (event) => {
+                        if (event.data && event.data.size > 0) {
+                            recordedChunks.push(event.data);
+                        }
+                    });
+                    recorder.addEventListener('stop', () => {
+                        resolve(new Blob(recordedChunks, { type: mp4MimeType }));
+                    }, { once: true });
+                    recorder.addEventListener('error', (event) => {
+                        reject(event.error || new Error('Recording error.'));
+                    }, { once: true });
+                });
+
+                recorder.start(250);
+                const playbackCompleted = await playTimelineSequence(0);
+                if (recorder.state !== 'inactive') {
+                    recorder.stop();
+                }
+
+                const exportBlob = await recordingPromise;
+
+                if (!playbackCompleted) {
+                    throw new Error('Timeline playback was interrupted before completion.');
+                }
+
+                const downloadUrl = URL.createObjectURL(exportBlob);
+                const tempAnchor = document.createElement('a');
+                tempAnchor.href = downloadUrl;
+                tempAnchor.download = 'timeline-export.mp4';
+                document.body.appendChild(tempAnchor);
+                tempAnchor.click();
+                document.body.removeChild(tempAnchor);
+                window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+
+                if (exportDialogStatus) {
+                    exportDialogStatus.textContent = 'Export complete! Your MP4 download should begin shortly.';
+                    exportDialogStatus.dataset.state = 'ready';
+                }
+
+                closeExportDialog();
+            } catch (error) {
+                console.error('Failed to export timeline preview.', error);
+                alert(`Export failed: ${error?.message || error}`);
+                if (exportDialogStatus) {
+                    exportDialogStatus.textContent = 'Export failed. Please try again.';
+                    exportDialogStatus.dataset.state = 'warning';
+                }
+            } finally {
+                if (recorder && recorder.state !== 'inactive') {
+                    try {
+                        recorder.stop();
+                    } catch (error) {
+                        // Ignore
+                    }
+                }
+                if (combinedStream) {
+                    combinedStream.getTracks().forEach((track) => track.stop());
+                }
+                stopMirroring();
+                confirmExportButton.disabled = false;
+                confirmExportButton.textContent = originalLabel || 'Confirm export';
+                isExportingTimeline = false;
+            }
+        }
+
         if (confirmExportButton) {
             confirmExportButton.addEventListener('click', () => {
-                closeExportDialog();
-                alert('Export started! Rendering your MP4 file.');
+                handleConfirmExport();
             });
         }
 
