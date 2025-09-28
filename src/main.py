@@ -9,11 +9,11 @@ from flask import (
     redirect,
     render_template_string,
     request,
-    send_file,
     session,
     url_for,
     jsonify,
 )
+from uuid import uuid4
 
 try:
     from moviepy.editor import ImageClip, VideoFileClip, concatenate_videoclips
@@ -262,6 +262,7 @@ def export_timeline():
     output_file.close()
 
     final_clip: Optional[Any] = None
+    final_duration_seconds: float = 0.0
 
     try:
         final_clip = concatenate_videoclips(valid_clips, method='compose')
@@ -275,6 +276,10 @@ def export_timeline():
             verbose=False,
             logger=None,
         )
+        try:
+            final_duration_seconds = float(max(0.0, final_clip.duration or 0.0))
+        except Exception:
+            final_duration_seconds = 0.0
     except Exception:
         app.logger.exception('Failed to export video')
         if final_clip is not None:
@@ -294,15 +299,28 @@ def export_timeline():
                 clip.close()
         cleanup_paths(input_paths)
 
-    response = send_file(
-        output_path,
-        as_attachment=True,
-        download_name='video-export.mp4',
-        mimetype='video/mp4',
+    static_root = app.static_folder or os.path.join(os.path.dirname(__file__), 'static')
+    export_directory = os.path.join(static_root, 'exports')
+    os.makedirs(export_directory, exist_ok=True)
+
+    public_filename = f"video-export-{uuid4().hex}.mp4"
+    final_path = os.path.join(export_directory, public_filename)
+
+    try:
+        os.replace(output_path, final_path)
+    except Exception:
+        cleanup_paths([output_path])
+        return jsonify({'error': 'Failed to prepare exported video. Please try again.'}), 500
+
+    public_url = url_for('static', filename=f"exports/{public_filename}")
+    return jsonify(
+        {
+            'status': 'success',
+            'video': public_url,
+            'filename': public_filename,
+            'duration_seconds': final_duration_seconds,
+        }
     )
-    response.headers['X-Export-Filename'] = 'video-export.mp4'
-    response.call_on_close(lambda: cleanup_paths([output_path]))
-    return response
 
 
 if __name__ == '__main__':

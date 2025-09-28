@@ -7,3 +7,6 @@ build/
 dist/
 *.egg-info/
 
+# Generated media exports
+src/static/exports/
+

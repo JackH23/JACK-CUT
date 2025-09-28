@@ -1390,19 +1390,47 @@ HOME_HTML = '''
                     throw new Error(message);
                 }
 
-                const blob = await response.blob();
-                const downloadURL = URL.createObjectURL(blob);
-                const downloadName = response.headers.get('X-Export-Filename')
-                    || `video-export-${Date.now()}.mp4`;
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    console.error('Failed to parse export response as JSON', jsonError);
+                }
+
+                if (!data || data.status !== 'success') {
+                    const message = data && typeof data.error === 'string' && data.error.trim()
+                        ? data.error.trim()
+                        : 'Failed to export video. Please try again.';
+                    throw new Error(message);
+                }
+
+                const downloadURL = data.video;
+                if (!downloadURL) {
+                    throw new Error('The exported video could not be located.');
+                }
+
+                const downloadName = data.filename
+                    && typeof data.filename === 'string'
+                    && data.filename.trim()
+                    ? data.filename.trim()
+                    : `video-export-${Date.now()}.mp4`;
 
                 const anchor = document.createElement('a');
                 anchor.href = downloadURL;
                 anchor.download = downloadName;
+                anchor.rel = 'noopener';
                 anchor.style.display = 'none';
                 document.body.appendChild(anchor);
                 anchor.click();
                 document.body.removeChild(anchor);
-                URL.revokeObjectURL(downloadURL);
+
+                const rawDurationSeconds = Number(data.duration_seconds);
+                if (Number.isFinite(rawDurationSeconds) && rawDurationSeconds >= 0) {
+                    const formattedDuration = formatDurationBadgeLabel(rawDurationSeconds * 1000);
+                    alert(`Video exported! Duration: ${formattedDuration}`);
+                } else {
+                    alert('Video exported successfully.');
+                }
 
                 closeExportModal();
             } catch (error) {
