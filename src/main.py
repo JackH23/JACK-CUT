@@ -123,6 +123,33 @@ def compute_export_dimensions(aspect_value: str, quality_value: str) -> tuple[in
     return width, height
 
 
+def probe_video_duration(path: str) -> float:
+    """Return the duration of the video at ``path`` if it can be inspected."""
+
+    if not path:
+        return 0.0
+
+    if not ensure_moviepy_imported():
+        return 0.0
+
+    try:
+        clip = VideoFileClip(path)
+    except Exception:
+        app.logger.exception("Unable to open exported video to measure duration")
+        return 0.0
+
+    try:
+        duration = float(max(0.0, clip.duration or 0.0))
+    except Exception:
+        app.logger.exception("Failed to read exported video duration")
+        duration = 0.0
+    finally:
+        with suppress(Exception):
+            clip.close()
+
+    return duration
+
+
 def cleanup_paths(paths: list[str]) -> None:
     for path in paths:
         with suppress(FileNotFoundError):
@@ -368,11 +395,19 @@ def export_timeline():
             verbose=False,
             logger=None,
         )
+        duration_candidates: list[float] = [total_duration_seconds]
         try:
             final_clip_duration = float(max(0.0, final_clip.duration or 0.0))
         except Exception:
             final_clip_duration = 0.0
-        final_duration_seconds = max(final_clip_duration, total_duration_seconds)
+        if final_clip_duration > 0:
+            duration_candidates.append(final_clip_duration)
+
+        probed_duration = probe_video_duration(output_path)
+        if probed_duration > 0:
+            duration_candidates.append(probed_duration)
+
+        final_duration_seconds = max(duration_candidates) if duration_candidates else 0.0
     except Exception:
         app.logger.exception('Failed to export video')
         if final_clip is not None:
@@ -404,6 +439,9 @@ def export_timeline():
     except Exception:
         cleanup_paths([output_path])
         return jsonify({'error': 'Failed to prepare exported video. Please try again.'}), 500
+
+    if final_duration_seconds <= 0:
+        final_duration_seconds = probe_video_duration(final_path)
 
     public_url = url_for('static', filename=f"exports/{public_filename}")
     return jsonify(
