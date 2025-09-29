@@ -185,18 +185,197 @@ HOME_HTML = '''
 
         .editor-layout {
             display: grid;
-            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(220px, 260px);
+            grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
             gap: 24px;
-            grid-template-areas: "upload preview settings";
             align-items: start;
         }
 
-        .upload-card {
-            grid-area: upload;
+        .workspace-main {
+            display: grid;
+            gap: 24px;
+        }
+
+        @media (min-width: 1100px) {
+            .workspace-main {
+                grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+            }
+        }
+
+        .workspace-sidebar {
+            position: sticky;
+            top: 24px;
+            align-self: start;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            background: linear-gradient(180deg, rgba(17, 24, 39, 0.95), rgba(15, 23, 42, 0.88) 45%, rgba(30, 41, 59, 0.82));
+            border-radius: 26px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            box-shadow: 0 35px 80px rgba(2, 6, 23, 0.55);
+            padding: 28px;
+            overflow: hidden;
+        }
+
+        .workspace-sidebar::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 26px;
+            background: radial-gradient(circle at top right, rgba(124, 58, 237, 0.28), transparent 55%);
+            opacity: 0.75;
+            pointer-events: none;
+        }
+
+        .workspace-sidebar > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .sidebar-avatar {
+            display: grid;
+            place-items: center;
+            width: 54px;
+            height: 54px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.7));
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0b1020;
+            box-shadow: 0 18px 35px rgba(124, 58, 237, 0.35);
+        }
+
+        .sidebar-greeting {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.04em;
+        }
+
+        .sidebar-username {
+            margin: 2px 0 0;
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+
+        .sidebar-progress {
+            display: grid;
+            gap: 10px;
+            padding: 18px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: var(--shadow-inner);
+        }
+
+        .sidebar-progress__label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .sidebar-progress__track {
+            position: relative;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.9);
+            overflow: hidden;
+        }
+
+        .sidebar-progress__fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: var(--progress-value, 0%);
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.95), rgba(244, 114, 182, 0.95));
+            box-shadow: 0 10px 25px rgba(56, 189, 248, 0.25);
+        }
+
+        .sidebar-progress__hint {
+            margin: 0;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .sidebar-section {
+            display: grid;
+            gap: 12px;
+        }
+
+        .sidebar-section h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .info-text {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .sidebar-section__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .sidebar-section__badge {
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(124, 58, 237, 0.18);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+        }
+
+        .sidebar-links {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 10px;
+        }
+
+        .sidebar-links a {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-radius: 12px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.68);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            transition: border 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .sidebar-links a:hover {
+            border-color: rgba(124, 58, 237, 0.45);
+            transform: translateY(-1px);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.45);
+        }
+
+        .sidebar-links a span {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            opacity: 0.75;
         }
 
         .preview-card {
-            grid-area: preview;
+            height: 100%;
         }
 
         .preview-toolbar {
@@ -225,7 +404,21 @@ HOME_HTML = '''
         }
 
         .settings-card {
-            grid-area: settings;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .settings-card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 15% 20%, rgba(124, 58, 237, 0.2), transparent 55%);
+            pointer-events: none;
+        }
+
+        .settings-card > * {
+            position: relative;
+            z-index: 1;
         }
 
         .timeline-footer {
@@ -904,12 +1097,16 @@ HOME_HTML = '''
             font-size: 0.9rem;
         }
 
-        @media (max-width: 960px) {
+        @media (max-width: 1024px) {
             .editor-layout {
-                grid-template-columns: repeat(2, minmax(220px, 1fr));
-                grid-template-areas:
-                    "upload preview"
-                    "settings preview";
+                grid-template-columns: 1fr;
+            }
+            .workspace-main {
+                grid-template-columns: 1fr;
+            }
+            .workspace-sidebar {
+                position: static;
+                padding: 24px;
             }
         }
 
@@ -937,12 +1134,15 @@ HOME_HTML = '''
                 flex: 1;
                 text-align: center;
             }
-            .editor-layout {
+            .workspace-sidebar {
+                padding: 20px;
+            }
+            .sidebar-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .workspace-main {
                 grid-template-columns: 1fr;
-                grid-template-areas:
-                    "preview"
-                    "upload"
-                    "settings";
             }
         }
     </style>
@@ -965,37 +1165,72 @@ HOME_HTML = '''
             </nav>
         </header>
 
+        {% set display_name = (username or 'Guest creator') %}
+        {% set avatar_letter = (display_name|trim)[0:1] %}
         <section id="features" class="editor-layout">
-            <article class="panel upload-card">
-                <h2>Upload footage</h2>
-                <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
-                <label for="video-upload">Select a video file</label>
-                <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple>
-                <button type="button" id="upload-button">Upload file</button>
-                <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
-            </article>
-
-            <article class="panel preview-card">
-                <h2>Preview window</h2>
-                <div class="preview-area">
-                    <div class="preview-viewport">
-                        <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                        <video id="preview-video" controls hidden></video>
-                        <img id="preview-image" alt="Preview" hidden>
+            <aside class="panel workspace-sidebar" aria-label="Editor sidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-avatar">{{ avatar_letter|upper if avatar_letter else 'V' }}</div>
+                    <div>
+                        <p class="sidebar-greeting">Welcome back</p>
+                        <h2 class="sidebar-username">{{ display_name }}</h2>
                     </div>
                 </div>
-                <div class="preview-toolbar">
-                    <label for="preview-aspect">Aspect ratio</label>
-                    <select id="preview-aspect">
-                        <option value="16:9" selected>16:9 (Landscape)</option>
-                        <option value="9:16">9:16 (Portrait)</option>
-                    </select>
+                <div class="sidebar-progress" role="group" aria-label="Project readiness">
+                    <div class="sidebar-progress__label">
+                        <span>Project readiness</span>
+                        <span>45%</span>
+                    </div>
+                    <div class="sidebar-progress__track" aria-hidden="true">
+                        <span class="sidebar-progress__fill" style="--progress-value: 45%;"></span>
+                    </div>
+                    <p class="sidebar-progress__hint">Organize clips and set export preferences to reach 100%.</p>
                 </div>
-            </article>
+                <div class="sidebar-section upload-card" aria-labelledby="sidebar-upload-title">
+                    <div class="sidebar-section__header">
+                        <h3 id="sidebar-upload-title">Upload footage</h3>
+                        <span class="sidebar-section__badge">Step 1</span>
+                    </div>
+                    <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
+                    <label for="video-upload">Select a video file</label>
+                    <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple>
+                    <button type="button" id="upload-button">Upload file</button>
+                    <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
+                </div>
+                <div class="sidebar-section sidebar-shortcuts" aria-label="Quick actions">
+                    <div class="sidebar-section__header">
+                        <h3>Quick actions</h3>
+                        <span class="sidebar-section__badge">Shortcuts</span>
+                    </div>
+                    <ul class="sidebar-links">
+                        <li><a href="#settings-panel-video">Tune export settings <span>↗</span></a></li>
+                        <li><a href="#timeline-track">Review timeline <span>↗</span></a></li>
+                        <li><a href="#export-dialog">Prepare export <span>↗</span></a></li>
+                    </ul>
+                </div>
+            </aside>
+            <div class="workspace-main">
+                <article class="panel preview-card">
+                    <h2>Preview window</h2>
+                    <div class="preview-area">
+                        <div class="preview-viewport">
+                            <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                            <video id="preview-video" controls hidden></video>
+                            <img id="preview-image" alt="Preview" hidden>
+                        </div>
+                    </div>
+                    <div class="preview-toolbar">
+                        <label for="preview-aspect">Aspect ratio</label>
+                        <select id="preview-aspect">
+                            <option value="16:9" selected>16:9 (Landscape)</option>
+                            <option value="9:16">9:16 (Portrait)</option>
+                        </select>
+                    </div>
+                </article>
 
-            <article class="panel settings-card">
-                <h2>Editor menu</h2>
-                <nav class="settings-menu" aria-label="Editor options" role="tablist">
+                <article class="panel settings-card">
+                    <h2>Editor menu</h2>
+                    <nav class="settings-menu" aria-label="Editor options" role="tablist">
                     <button
                         type="button"
                         class="settings-menu__button is-active"
@@ -1214,6 +1449,7 @@ HOME_HTML = '''
                 </div>
                 <button type="button" class="export-button">Export video</button>
             </article>
+            </div>
         </section>
 
         <section class="panel timeline-card timeline-footer">
@@ -1294,12 +1530,34 @@ HOME_HTML = '''
         const settingsMenuButtons = Array.from(document.querySelectorAll('.settings-menu__button'));
         const settingsSections = Array.from(document.querySelectorAll('[data-settings-section]'));
         const rangeOutputElements = new Map();
+        const sidebarLinks = Array.from(document.querySelectorAll('.sidebar-links a'));
 
         document.querySelectorAll('[data-range-output-for]').forEach((outputElement) => {
             const targetId = outputElement.dataset.rangeOutputFor;
             if (targetId && !rangeOutputElements.has(targetId)) {
                 rangeOutputElements.set(targetId, outputElement);
             }
+        });
+
+        sidebarLinks.forEach((linkElement) => {
+            const hrefValue = linkElement.getAttribute('href') ?? '';
+            if (!hrefValue.startsWith('#')) {
+                return;
+            }
+
+            linkElement.addEventListener('click', (event) => {
+                if (hrefValue === '#export-dialog' && exportButton) {
+                    event.preventDefault();
+                    exportButton.click();
+                    return;
+                }
+
+                const targetElement = document.querySelector(hrefValue);
+                if (targetElement) {
+                    event.preventDefault();
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
         });
 
         function formatRangeValue(inputElement) {
