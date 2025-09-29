@@ -190,10 +190,14 @@ HOME_HTML = '''
 
         .editor-layout {
             display: grid;
-            grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(220px, 260px);
             gap: 24px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             grid-template-areas: "upload preview settings";
-            align-items: start;
+            align-items: stretch;
+        }
+
+        .editor-layout > .panel {
+            height: 100%;
         }
 
         .upload-card {
