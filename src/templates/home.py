@@ -1222,7 +1222,7 @@ HOME_HTML = '''
             return 'Media clip';
         }
 
-        function renderExportSummary(timelineItems, playbackCompleted) {
+        function renderExportSummary(timelineItems, playbackCompleted = null) {
             if (exportSummaryClips) {
                 exportSummaryClips.textContent = String(timelineItems.length);
             }
@@ -1250,10 +1250,16 @@ HOME_HTML = '''
             }
 
             if (exportDialogStatus) {
-                exportDialogStatus.dataset.state = playbackCompleted ? 'ready' : 'warning';
-                exportDialogStatus.textContent = playbackCompleted
-                    ? 'Preview completed successfully. Ready to export.'
-                    : 'Preview interrupted before completion. Review the details below.';
+                if (playbackCompleted === true) {
+                    exportDialogStatus.dataset.state = 'ready';
+                    exportDialogStatus.textContent = 'Preview completed successfully. Ready to export.';
+                } else if (playbackCompleted === false) {
+                    exportDialogStatus.dataset.state = 'warning';
+                    exportDialogStatus.textContent = 'Preview interrupted before completion. Review the details below.';
+                } else {
+                    exportDialogStatus.dataset.state = 'ready';
+                    exportDialogStatus.textContent = 'Review your export settings and timeline before exporting.';
+                }
             }
 
             if (exportTimelineList) {
@@ -2479,7 +2485,7 @@ HOME_HTML = '''
         }
 
         if (exportButton) {
-            exportButton.addEventListener('click', async () => {
+            exportButton.addEventListener('click', () => {
                 const timelineItems = getTimelineItems();
                 if (!timelineItems.length) {
                     alert('Upload an image or video to build your timeline.');
@@ -2492,21 +2498,16 @@ HOME_HTML = '''
 
                 const originalLabel = exportButton.textContent;
                 exportButton.disabled = true;
-                exportButton.textContent = 'Preparing preview…';
+                exportButton.textContent = 'Preparing export…';
 
-                let playbackCompleted = false;
                 try {
-                    playbackCompleted = await playTimelineSequence(0);
-                } catch (error) {
-                    console.error('Failed to collect playback before export.', error);
-                    playbackCompleted = false;
+                    const refreshedTimelineItems = getTimelineItems();
+                    renderExportSummary(refreshedTimelineItems, null);
                 } finally {
                     exportButton.disabled = false;
                     exportButton.textContent = originalLabel || 'Export video';
                 }
 
-                const refreshedTimelineItems = getTimelineItems();
-                renderExportSummary(refreshedTimelineItems, Boolean(playbackCompleted));
                 openExportDialog();
             });
         }
