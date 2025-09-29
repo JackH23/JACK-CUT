@@ -1222,6 +1222,14 @@ HOME_HTML = '''
             return 'Media clip';
         }
 
+        function getSelectedAspectLabel() {
+            if (!previewAspectSelect) {
+                return '16:9 (Landscape)';
+            }
+            const selectedOption = previewAspectSelect.selectedOptions?.[0];
+            return selectedOption?.textContent?.trim() || `${previewAspectSelect.value} ratio`;
+        }
+
         function renderExportSummary(timelineItems, playbackCompleted = null) {
             if (exportSummaryClips) {
                 exportSummaryClips.textContent = String(timelineItems.length);
@@ -1234,13 +1242,18 @@ HOME_HTML = '''
             }
 
             const selectedQuality = videoQualitySelect?.value || '720p';
+            const selectedAspect = previewAspectSelect?.value || '16:9';
+            const selectedAspectLabel = getSelectedAspectLabel();
             const exportFormat = getSupportedExportFormat();
+            const resolution = getExportResolution(selectedAspect, selectedQuality);
 
             if (exportSummaryResolution) {
-                const extensionLabel = exportFormat?.fileExtension?.toUpperCase();
-                exportSummaryResolution.textContent = extensionLabel
-                    ? `${selectedQuality} ${extensionLabel}`
-                    : selectedQuality;
+                if (resolution) {
+                    const dimensionLabel = `${resolution.width}×${resolution.height}`;
+                    exportSummaryResolution.textContent = `${selectedQuality} ${dimensionLabel} (${selectedAspectLabel})`;
+                } else {
+                    exportSummaryResolution.textContent = `${selectedQuality} ${selectedAspectLabel}`;
+                }
             }
 
             if (exportSummaryFormat) {
@@ -1909,6 +1922,9 @@ HOME_HTML = '''
                 previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
             }
             schedulePreviewViewportSizeUpdate();
+            if (isExportDialogOpen()) {
+                renderExportSummary(getTimelineItems(), null);
+            }
         }
 
         if (previewAspectSelect) {
@@ -1918,6 +1934,14 @@ HOME_HTML = '''
             setPreviewAspect(previewAspectSelect.value);
         } else {
             setPreviewAspect('16:9');
+        }
+
+        if (videoQualitySelect) {
+            videoQualitySelect.addEventListener('change', () => {
+                if (isExportDialogOpen()) {
+                    renderExportSummary(getTimelineItems(), null);
+                }
+            });
         }
 
         function clampProgress(value) {
