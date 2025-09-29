@@ -40,13 +40,20 @@ HOME_HTML = '''
             flex-direction: column;
             align-items: center;
             padding: clamp(16px, 3vh, 24px);
+            overflow: hidden;
         }
 
         .app-shell {
             width: min(1200px, 100%);
             display: grid;
             grid-template-columns: 1fr;
-            gap: clamp(18px, 3vh, 24px);
+            gap: clamp(16px, 2.5vh, 22px);
+            min-height: calc(100vh - 2 * clamp(16px, 3vh, 24px));
+            grid-template-rows: auto 1fr auto;
+            grid-template-areas:
+                "nav"
+                "workspace"
+                "footer";
         }
 
         .nav-bar {
@@ -59,6 +66,7 @@ HOME_HTML = '''
             display: flex;
             align-items: center;
             justify-content: space-between;
+            grid-area: nav;
         }
 
         .nav-brand {
@@ -190,14 +198,20 @@ HOME_HTML = '''
 
         .editor-layout {
             display: grid;
-            gap: clamp(16px, 3vw, 24px);
+            gap: clamp(16px, 3vw, 20px);
             grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
-            grid-template-areas: "upload preview settings";
+            grid-template-rows: minmax(0, 1fr) minmax(0, 0.6fr);
+            grid-template-areas:
+                "upload preview settings"
+                "timeline timeline timeline";
             align-items: stretch;
+            min-height: 0;
+            grid-area: workspace;
         }
 
         .editor-layout > .panel {
             height: 100%;
+            min-height: 0;
         }
 
         .upload-card {
@@ -206,6 +220,11 @@ HOME_HTML = '''
 
         .preview-card {
             grid-area: preview;
+        }
+
+        .timeline-card {
+            grid-area: timeline;
+            min-height: 0;
         }
 
         @keyframes fadeIn {
@@ -1110,18 +1129,21 @@ HOME_HTML = '''
         }
 
         .footer {
-            margin-top: 16px;
+            margin-top: 0;
             text-align: center;
             color: var(--text-secondary);
             font-size: 0.9rem;
+            grid-area: footer;
         }
 
         @media (max-width: 960px) {
             .editor-layout {
                 grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
+                grid-template-rows: minmax(0, 1fr) minmax(0, 0.55fr) minmax(0, 0.5fr);
                 grid-template-areas:
                     "upload preview"
-                    "settings preview";
+                    "settings preview"
+                    "timeline timeline";
             }
         }
 
@@ -1134,13 +1156,6 @@ HOME_HTML = '''
                 align-items: flex-start;
                 gap: 16px;
             }
-            .hero {
-                padding: 28px;
-            }
-            .hero-cta {
-                flex-direction: column;
-                align-items: stretch;
-            }
             .nav-actions {
                 width: 100%;
                 justify-content: flex-start;
@@ -1151,10 +1166,12 @@ HOME_HTML = '''
             }
             .editor-layout {
                 grid-template-columns: 1fr;
+                grid-template-rows: repeat(4, minmax(0, 1fr));
                 grid-template-areas:
                     "preview"
                     "upload"
-                    "settings";
+                    "settings"
+                    "timeline";
             }
         }
     </style>
@@ -1373,20 +1390,19 @@ HOME_HTML = '''
                     </section>
                 </div>
             </article>
-        </section>
-
-        <section class="panel timeline-card timeline-footer">
-            <h2>Timeline overview</h2>
-            <div class="timeline-track" id="timeline-track">
-                <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
-                <span id="timeline-empty-state">Upload media to build your timeline</span>
-            </div>
-            <div class="timeline-progress">
-                <label for="timeline-progress">Progress</label>
-                <input type="range" id="timeline-progress" min="0" max="100" value="0">
-                <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
-                <button type="button" id="play-video-button">Play Back</button>
-            </div>
+            <article class="panel timeline-card timeline-footer">
+                <h2>Timeline overview</h2>
+                <div class="timeline-track" id="timeline-track">
+                    <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
+                    <span id="timeline-empty-state">Upload media to build your timeline</span>
+                </div>
+                <div class="timeline-progress">
+                    <label for="timeline-progress">Progress</label>
+                    <input type="range" id="timeline-progress" min="0" max="100" value="0">
+                    <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
+                    <button type="button" id="play-video-button">Play Back</button>
+                </div>
+            </article>
         </section>
 
         <div class="export-dialog" id="export-dialog" hidden aria-hidden="true">
