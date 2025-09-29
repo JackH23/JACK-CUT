@@ -226,6 +226,72 @@ HOME_HTML = '''
 
         .settings-card {
             grid-area: settings;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            border-radius: 12px;
+            padding: 6px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            overflow-x: auto;
+        }
+
+        .settings-tab {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .settings-tab:focus-visible {
+            outline: 2px solid rgba(56, 189, 248, 0.55);
+            outline-offset: 2px;
+        }
+
+        .settings-tab.is-active {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(56, 189, 248, 0.22));
+            color: var(--text-primary);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .settings-content {
+            flex: 1;
+        }
+
+        .settings-section {
+            display: none;
+            animation: fadeIn 0.18s ease;
+        }
+
+        .settings-section.is-active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .timeline-footer {
@@ -867,38 +933,133 @@ HOME_HTML = '''
             </article>
 
             <article class="panel settings-card">
-                <h2>Playback settings</h2>
-                <div class="info-list">
-                    <div class="info-item">
-                        <div class="info-icon">🎚️</div>
-                        <div>
-                            <label for="video-volume">Volume</label>
-                            <input type="range" id="video-volume" min="0" max="100" value="80">
+                <h2>Creative controls</h2>
+                <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
+                    <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
+                    <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
+                    <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
+                    <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
+                    <button type="button" class="settings-tab" id="settings-tab-adjustment" role="tab" aria-selected="false" aria-controls="settings-adjustment" data-section="adjustment">Adjustment</button>
+                </div>
+                <div class="settings-content">
+                    <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🖥️</div>
+                                <div>
+                                    <label for="video-quality">Quality</label>
+                                    <select id="video-quality">
+                                        <option value="480p">480p</option>
+                                        <option value="720p" selected>720p HD</option>
+                                        <option value="1080p">1080p Full HD</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🎨</div>
+                                <div>
+                                    <label for="video-color-profile">Color profile</label>
+                                    <select id="video-color-profile">
+                                        <option value="standard" selected>Standard</option>
+                                        <option value="cinematic">Cinematic</option>
+                                        <option value="hdr">HDR vivid</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-icon">⏱️</div>
-                        <div>
-                            <label for="video-speed">Playback speed</label>
-                            <select id="video-speed">
-                                <option value="0.5">0.5x</option>
-                                <option value="1" selected>1x (default)</option>
-                                <option value="1.5">1.5x</option>
-                                <option value="2">2x</option>
-                            </select>
+                    </section>
+                    <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">✨</div>
+                                <div>
+                                    <label for="animation-preset">Transition preset</label>
+                                    <select id="animation-preset">
+                                        <option value="cut" selected>Quick cut</option>
+                                        <option value="fade">Soft fade</option>
+                                        <option value="zoom">Dynamic zoom</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🌀</div>
+                                <div>
+                                    <label for="animation-intensity">Motion intensity</label>
+                                    <input type="range" id="animation-intensity" min="0" max="100" value="45">
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-icon">🖥️</div>
-                        <div>
-                            <label for="video-quality">Quality</label>
-                            <select id="video-quality">
-                                <option value="480p">480p</option>
-                                <option value="720p" selected>720p HD</option>
-                                <option value="1080p">1080p Full HD</option>
-                            </select>
+                    </section>
+                    <section class="settings-section" id="settings-speed" data-section="speed" role="tabpanel" aria-labelledby="settings-tab-speed" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">⏱️</div>
+                                <div>
+                                    <label for="video-speed">Playback speed</label>
+                                    <select id="video-speed">
+                                        <option value="0.25">0.25x</option>
+                                        <option value="0.5">0.5x</option>
+                                        <option value="1" selected>1x (default)</option>
+                                        <option value="1.5">1.5x</option>
+                                        <option value="2">2x</option>
+                                        <option value="3">3x</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🎬</div>
+                                <div>
+                                    <label for="speed-ramp">Speed ramping</label>
+                                    <select id="speed-ramp">
+                                        <option value="none" selected>None</option>
+                                        <option value="ease-in">Ease in</option>
+                                        <option value="ease-out">Ease out</option>
+                                        <option value="ease-in-out">Ease in-out</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    </section>
+                    <section class="settings-section" id="settings-audio" data-section="audio" role="tabpanel" aria-labelledby="settings-tab-audio" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🔊</div>
+                                <div>
+                                    <label for="video-volume">Master volume</label>
+                                    <input type="range" id="video-volume" min="0" max="100" value="80">
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🎵</div>
+                                <div>
+                                    <label for="audio-track">Audio track</label>
+                                    <select id="audio-track">
+                                        <option value="original" selected>Original track</option>
+                                        <option value="voice">Voice enhancement</option>
+                                        <option value="music">Music bed</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-adjustment" data-section="adjustment" role="tabpanel" aria-labelledby="settings-tab-adjustment" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🌗</div>
+                                <div>
+                                    <label for="adjustment-exposure">Exposure</label>
+                                    <input type="range" id="adjustment-exposure" min="-50" max="50" value="0">
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🎚️</div>
+                                <div>
+                                    <label for="adjustment-contrast">Contrast</label>
+                                    <input type="range" id="adjustment-contrast" min="-50" max="50" value="10">
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
                 <button type="button" class="export-button">Export video</button>
             </article>
@@ -979,6 +1140,8 @@ HOME_HTML = '''
         const confirmExportButton = document.getElementById('confirm-export-button');
         const cancelExportButton = document.getElementById('cancel-export-button');
         const videoQualitySelect = document.getElementById('video-quality');
+        const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
+        const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
         const exportMirrorCanvas = document.createElement('canvas');
         const exportMirrorContext = exportMirrorCanvas.getContext('2d');
         let activeTimelineItem = null;
@@ -1003,6 +1166,56 @@ HOME_HTML = '''
         let playbackClockTotalDuration = 0;
         let playbackDisplayCurrentMs = 0;
         let playbackDisplayTotalMs = 0;
+
+        function activateSettingsSection(sectionName) {
+            if (!settingsTabs.length || !settingsSections.length) {
+                return;
+            }
+
+            const fallbackSection = settingsSections[0]?.dataset.section || '';
+            const targetSection = sectionName || fallbackSection;
+            let matched = false;
+
+            settingsTabs.forEach((tab) => {
+                const isMatch = tab.dataset.section === targetSection;
+                tab.classList.toggle('is-active', isMatch);
+                tab.setAttribute('aria-selected', String(isMatch));
+                tab.tabIndex = isMatch ? 0 : -1;
+                if (isMatch) {
+                    matched = true;
+                }
+            });
+
+            const resolvedSection = matched ? targetSection : fallbackSection;
+
+            settingsSections.forEach((section) => {
+                const isActive = section.dataset.section === resolvedSection;
+                section.classList.toggle('is-active', isActive);
+                section.setAttribute('aria-hidden', String(!isActive));
+                if (isActive) {
+                    section.removeAttribute('hidden');
+                } else {
+                    section.setAttribute('hidden', '');
+                }
+            });
+
+            if (!matched && resolvedSection !== targetSection) {
+                settingsTabs.forEach((tab) => {
+                    const isFallback = tab.dataset.section === resolvedSection;
+                    tab.classList.toggle('is-active', isFallback);
+                    tab.setAttribute('aria-selected', String(isFallback));
+                    tab.tabIndex = isFallback ? 0 : -1;
+                });
+            }
+        }
+
+        settingsTabs.forEach((tab) => {
+            tab.addEventListener('click', () => {
+                activateSettingsSection(tab.dataset.section);
+            });
+        });
+
+        activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
 
         function formatTime(milliseconds) {
             const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
