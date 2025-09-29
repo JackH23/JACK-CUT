@@ -581,20 +581,88 @@ HOME_HTML = '''
         }
 
         .panel {
-            background: rgba(17, 24, 39, 0.82);
-            border-radius: 22px;
+            position: relative;
+            overflow: hidden;
+            background: rgba(17, 24, 39, 0.88);
+            border-radius: 24px;
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-soft);
-            padding: 24px;
+            padding: 26px;
             display: flex;
             flex-direction: column;
+            gap: 22px;
+        }
+
+        .panel::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(140deg, rgba(124, 58, 237, 0.16), transparent 45%),
+                linear-gradient(200deg, rgba(56, 189, 248, 0.12), transparent 60%);
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        .panel > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             gap: 18px;
         }
 
-        .panel h2 {
+        .panel-title {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+
+        .panel-title__icon {
+            display: grid;
+            place-items: center;
+            width: 48px;
+            height: 48px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(56, 189, 248, 0.65));
+            box-shadow: 0 16px 30px rgba(56, 189, 248, 0.25);
+            font-size: 24px;
+        }
+
+        .panel-header h2 {
             margin: 0;
-            font-size: 1.25rem;
+            font-size: 1.28rem;
             font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+
+        .panel-subtitle {
+            margin: 4px 0 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            max-width: 60ch;
+        }
+
+        .panel-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.68);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
         }
 
         .upload-card label,
@@ -605,7 +673,10 @@ HOME_HTML = '''
             display: block;
         }
 
-        .upload-card input[type="file"],
+        .upload-card input[type="file"] {
+            display: none;
+        }
+
         .settings-card input,
         .settings-card select,
         .preview-toolbar select {
@@ -616,28 +687,419 @@ HOME_HTML = '''
             background: rgba(15, 23, 42, 0.9);
             color: var(--text-primary);
             font-size: 0.95rem;
-            transition: border 0.2s ease, box-shadow 0.2s ease;
+            transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
 
-        .upload-card input[type="file"]:focus,
         .settings-card input:focus,
         .settings-card select:focus,
         .preview-toolbar select:focus {
             outline: none;
             border-color: rgba(56, 189, 248, 0.6);
             box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+            transform: translateY(-1px);
         }
 
-        .upload-card button {
-            padding: 12px 20px;
-            border-radius: 12px;
+        .upload-dropzone {
+            position: relative;
+            display: grid;
+            place-items: center;
+            text-align: center;
+            padding: 38px 28px;
+            border-radius: 20px;
+            border: 1.5px dashed rgba(148, 163, 184, 0.3);
+            background:
+                radial-gradient(circle at 20% -10%, rgba(124, 58, 237, 0.22), transparent 65%),
+                radial-gradient(circle at 80% 120%, rgba(56, 189, 248, 0.18), transparent 70%),
+                rgba(12, 19, 33, 0.85);
+            color: var(--text-secondary);
+            gap: 16px;
+            cursor: pointer;
+            transition: border 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .upload-dropzone:hover {
+            border-color: rgba(148, 163, 184, 0.48);
+            transform: translateY(-2px);
+            box-shadow: 0 18px 36px rgba(15, 23, 42, 0.45);
+        }
+
+        .upload-dropzone__icon {
+            display: grid;
+            place-items: center;
+            width: 60px;
+            height: 60px;
+            border-radius: 18px;
+            background: rgba(56, 189, 248, 0.2);
+            color: rgba(148, 198, 255, 0.95);
+            font-size: 26px;
+        }
+
+        .upload-dropzone__cta {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .upload-dropzone__hint {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .upload-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .upload-meta__item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        .upload-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .upload-primary {
+            padding: 12px 22px;
+            border-radius: 14px;
             border: none;
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.85));
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.9));
             color: #081229;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 16px 30px rgba(56, 189, 248, 0.25);
-            transition: transform 0.2s ease;
+            box-shadow: 0 18px 36px rgba(56, 189, 248, 0.25);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .upload-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 22px 40px rgba(56, 189, 248, 0.28);
+        }
+
+        .upload-secondary {
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: border 0.2s ease, color 0.2s ease;
+        }
+
+        .upload-secondary:hover {
+            border-color: rgba(148, 163, 184, 0.42);
+            color: var(--text-primary);
+        }
+
+        .preview-card {
+            gap: 24px;
+        }
+
+        .preview-metadata {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .preview-area {
+            background: rgba(8, 13, 26, 0.92);
+            border-radius: 20px;
+            padding: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+            min-height: 260px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preview-viewport {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(17, 24, 39, 0.9), rgba(15, 23, 42, 0.7));
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            transition: aspect-ratio 0.2s ease;
+        }
+
+        .preview-viewport::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 20%, rgba(56, 189, 248, 0.08), transparent 60%);
+            pointer-events: none;
+        }
+
+        #preview-placeholder {
+            color: rgba(203, 213, 225, 0.75);
+            font-size: 0.95rem;
+        }
+
+        #preview-video,
+        #preview-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .preview-toolbar {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            align-items: end;
+        }
+
+        .preview-toolbar label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .preview-toolbar select {
+            background: rgba(8, 13, 26, 0.92);
+        }
+
+        .settings-tabs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            padding: 6px;
+            border-radius: 16px;
+            background: rgba(8, 13, 26, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+
+        .settings-tab {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        .settings-tab .tab-icon {
+            font-size: 1.1rem;
+        }
+
+        .settings-tab.is-active {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(124, 58, 237, 0.28));
+            color: var(--text-primary);
+            transform: translateY(-1px);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+        }
+
+        .settings-content {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(8, 13, 26, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: var(--shadow-inner);
+        }
+
+        .settings-card .info-list {
+            display: grid;
+            gap: 18px;
+        }
+
+        .settings-card .info-item {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .settings-card .info-icon {
+            display: grid;
+            place-items: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            background: rgba(124, 58, 237, 0.22);
+            font-size: 1.2rem;
+        }
+
+        .settings-card .export-button {
+            align-self: flex-end;
+            padding: 12px 22px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.9), rgba(124, 58, 237, 0.95));
+            color: #0b1020;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 18px 36px rgba(244, 114, 182, 0.32);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .settings-card .export-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 22px 44px rgba(244, 114, 182, 0.4);
+        }
+
+        .timeline-card {
+            gap: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timeline-card .panel-header {
+            align-items: flex-start;
+        }
+
+        .timeline-summary {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .timeline-summary__badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            font-size: 0.85rem;
+        }
+
+        .timeline-track {
+            position: relative;
+            min-height: 120px;
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            background:
+                linear-gradient(90deg, rgba(56, 189, 248, 0.08) 0%, transparent 50%, rgba(124, 58, 237, 0.1) 100%),
+                rgba(8, 13, 26, 0.88);
+            padding: 18px;
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            justify-content: flex-start;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            scroll-snap-type: x proximity;
+        }
+
+        .timeline-track::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .timeline-track::-webkit-scrollbar-thumb {
+            background: rgba(124, 58, 237, 0.38);
+            border-radius: 999px;
+        }
+
+        .timeline-track::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+
+        .timeline-track::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+            background-size: 32px 100%;
+            opacity: 0.35;
+            pointer-events: none;
+        }
+
+        .timeline-progress-line {
+            position: absolute;
+            top: 12px;
+            bottom: 12px;
+            width: 0;
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.55), rgba(124, 58, 237, 0.75));
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+        }
+
+        #timeline-empty-state {
+            position: relative;
+            z-index: 1;
+            color: rgba(203, 213, 225, 0.75);
+            font-size: 0.95rem;
+        }
+
+        .timeline-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .timeline-progress-control {
+            flex: 1;
+            min-width: 240px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .timeline-progress-control label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        #timeline-progress {
+            width: 100%;
+            accent-color: rgba(124, 58, 237, 0.9);
+        }
+
+        .playback-time {
+            font-family: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+            font-size: 0.9rem;
+            color: rgba(203, 213, 225, 0.85);
+        }
+
+        #play-video-button {
+            padding: 12px 22px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(124, 58, 237, 0.9));
+            color: #081229;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 18px 36px rgba(56, 189, 248, 0.25);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        #play-video-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 22px 40px rgba(56, 189, 248, 0.28);
         }
 
         .upload-card button:hover {
@@ -804,104 +1266,6 @@ HOME_HTML = '''
 
         .export-dialog__button:hover {
             transform: translateY(-1px);
-        }
-
-        .preview-area {
-            --preview-aspect-ratio: 16 / 9;
-            position: relative;
-            border-radius: 20px;
-            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: var(--shadow-inner);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-            padding: 16px;
-            min-height: 260px;
-            overflow: hidden;
-        }
-
-        .preview-area.has-image {
-            align-items: center;
-            justify-content: center;
-        }
-
-        .preview-viewport {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            height: 100%;
-            max-width: 100%;
-            max-height: 100%;
-            aspect-ratio: var(--preview-aspect-ratio);
-            border-radius: 16px;
-            background: rgba(8, 13, 28, 0.92);
-            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
-            overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
-        }
-
-        #preview-placeholder {
-            text-align: center;
-            line-height: 1.6;
-            padding: 0 12px;
-        }
-
-        .preview-viewport video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 16px;
-        }
-
-        .preview-viewport img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 16px;
-            display: block;
-        }
-
-        .timeline-card {
-            position: relative;
-            overflow: hidden;
-        }
-
-        .timeline-track {
-            position: relative;
-            display: flex;
-            flex-wrap: nowrap;
-            align-items: stretch;
-            gap: 10px;
-            padding: 16px;
-            border-radius: 14px;
-            background: rgba(8, 12, 24, 0.75);
-            border: 1px dashed rgba(148, 163, 184, 0.24);
-            color: var(--text-secondary);
-            text-align: center;
-            font-size: 0.95rem;
-            min-height: 140px;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: thin;
-            scroll-snap-type: x proximity;
-        }
-
-        .timeline-track::-webkit-scrollbar {
-            height: 8px;
-        }
-
-        .timeline-track::-webkit-scrollbar-thumb {
-            background: rgba(124, 58, 237, 0.4);
-            border-radius: 999px;
-        }
-
-        .timeline-track::-webkit-scrollbar-track {
-            background: rgba(15, 23, 42, 0.6);
         }
 
         .timeline-item {
@@ -1217,16 +1581,50 @@ HOME_HTML = '''
 
         <section id="features" class="editor-layout">
             <article class="panel upload-card">
-                <h2>Upload footage</h2>
-                <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
-                <label for="video-upload">Select a video file</label>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="panel-title__icon" aria-hidden="true">📤</span>
+                        <div>
+                            <h2>Upload footage</h2>
+                            <p class="panel-subtitle">Bring in your raw clips, shots, and stills to start shaping the narrative.</p>
+                        </div>
+                    </div>
+                    <div class="panel-toolbar" aria-label="Upload settings">
+                        <span class="toolbar-badge">Auto-save enabled</span>
+                        <span class="toolbar-badge">Up to 4K ProRes</span>
+                    </div>
+                </div>
+                <label for="video-upload" class="upload-dropzone" aria-describedby="upload-hint">
+                    <div class="upload-dropzone__icon" aria-hidden="true">⬆️</div>
+                    <div class="upload-dropzone__cta">Drop clips or browse files</div>
+                    <p class="upload-dropzone__hint" id="upload-hint">Supports MP4, MOV, AVI, PNG, and JPG assets.</p>
+                </label>
                 <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple>
-                <button type="button" id="upload-button">Upload file</button>
-                <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
+                <div class="upload-actions">
+                    <button type="button" class="upload-primary" id="upload-button">Process uploads</button>
+                    <button type="button" class="upload-secondary" data-action="open-samples">Browse sample library</button>
+                </div>
+                <div class="upload-meta" role="list">
+                    <span class="upload-meta__item" role="listitem">⚡ Batch import support</span>
+                    <span class="upload-meta__item" role="listitem">☁️ Cloud sync ready</span>
+                    <span class="upload-meta__item" role="listitem">🔒 Your media stays private</span>
+                </div>
             </article>
 
             <article class="panel preview-card">
-                <h2>Preview window</h2>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="panel-title__icon" aria-hidden="true">🖼️</span>
+                        <div>
+                            <h2>Preview window</h2>
+                            <p class="panel-subtitle">Fine-tune the look, frame, and pacing before sharing your cut.</p>
+                        </div>
+                    </div>
+                    <div class="panel-toolbar" aria-label="Preview settings">
+                        <span class="toolbar-badge">Live render</span>
+                        <span class="toolbar-badge">Safe frame guides</span>
+                    </div>
+                </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
@@ -1235,22 +1633,55 @@ HOME_HTML = '''
                     </div>
                 </div>
                 <div class="preview-toolbar">
-                    <label for="preview-aspect">Aspect ratio</label>
-                    <select id="preview-aspect">
-                        <option value="16:9" selected>16:9 (Landscape)</option>
-                        <option value="9:16">9:16 (Portrait)</option>
-                    </select>
+                    <div>
+                        <label for="preview-aspect">Aspect ratio</label>
+                        <select id="preview-aspect">
+                            <option value="16:9" selected>16:9 (Landscape)</option>
+                            <option value="9:16">9:16 (Portrait)</option>
+                        </select>
+                    </div>
+                    <div class="preview-metadata">
+                        <span>Use the timeline overview to scrub and audition clips in real-time.</span>
+                        <span>Spacebar toggles playback when the preview window is focused.</span>
+                    </div>
                 </div>
             </article>
 
             <article class="panel settings-card">
-                <h2>Creative controls</h2>
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="panel-title__icon" aria-hidden="true">🎛️</span>
+                        <div>
+                            <h2>Creative controls</h2>
+                            <p class="panel-subtitle">Dial in the polish using modular presets for motion, speed, and color.</p>
+                        </div>
+                    </div>
+                    <div class="panel-toolbar" aria-label="Creative control status">
+                        <span class="toolbar-badge">Non-destructive edits</span>
+                        <span class="toolbar-badge">Realtime previews</span>
+                    </div>
+                </div>
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
-                    <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
-                    <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
-                    <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
-                    <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
-                    <button type="button" class="settings-tab" id="settings-tab-adjustment" role="tab" aria-selected="false" aria-controls="settings-adjustment" data-section="adjustment">Adjustment</button>
+                    <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">
+                        <span class="tab-icon" aria-hidden="true">🎬</span>
+                        <span>Video</span>
+                    </button>
+                    <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">
+                        <span class="tab-icon" aria-hidden="true">✨</span>
+                        <span>Animation</span>
+                    </button>
+                    <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">
+                        <span class="tab-icon" aria-hidden="true">⏩</span>
+                        <span>Speed</span>
+                    </button>
+                    <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">
+                        <span class="tab-icon" aria-hidden="true">🎵</span>
+                        <span>Audio</span>
+                    </button>
+                    <button type="button" class="settings-tab" id="settings-tab-adjustment" role="tab" aria-selected="false" aria-controls="settings-adjustment" data-section="adjustment">
+                        <span class="tab-icon" aria-hidden="true">🎚️</span>
+                        <span>Adjustment</span>
+                    </button>
                 </div>
                 <div class="settings-content">
                     <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
@@ -1377,16 +1808,30 @@ HOME_HTML = '''
         </section>
 
         <section class="panel timeline-card timeline-footer">
-            <h2>Timeline overview</h2>
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-title__icon" aria-hidden="true">🕒</span>
+                    <div>
+                        <h2>Timeline overview</h2>
+                        <p class="panel-subtitle">Keep track of pacing, transitions, and story beats at a glance.</p>
+                    </div>
+                </div>
+                <div class="timeline-summary" aria-label="Timeline assistive details">
+                    <span class="timeline-summary__badge">🎯 Snapping active</span>
+                    <span class="timeline-summary__badge">🎞️ Frame-accurate trim</span>
+                </div>
+            </div>
             <div class="timeline-track" id="timeline-track">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
-            <div class="timeline-progress">
-                <label for="timeline-progress">Progress</label>
-                <input type="range" id="timeline-progress" min="0" max="100" value="0">
+            <div class="timeline-controls">
+                <div class="timeline-progress-control">
+                    <label for="timeline-progress">Scrub timeline</label>
+                    <input type="range" id="timeline-progress" min="0" max="100" value="0">
+                </div>
                 <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
-                <button type="button" id="play-video-button">Play Back</button>
+                <button type="button" id="play-video-button">Play preview</button>
             </div>
         </section>
 
