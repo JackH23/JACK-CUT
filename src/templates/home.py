@@ -249,8 +249,71 @@ HOME_HTML = '''
             font-weight: 600;
         }
 
-        .upload-card label,
-        .settings-card label {
+        .settings-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .settings-menu__button {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: left;
+            cursor: pointer;
+            transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .settings-menu__button:hover {
+            border-color: rgba(148, 163, 184, 0.38);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.45);
+            transform: translateY(-1px);
+        }
+
+        .settings-menu__button:focus-visible {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.65);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+        }
+
+        .settings-menu__button.is-active {
+            border-color: rgba(124, 58, 237, 0.65);
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.32), rgba(56, 189, 248, 0.24));
+        }
+
+        .settings-menu__icon {
+            display: grid;
+            place-items: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            font-size: 1.1rem;
+        }
+
+        .settings-menu__label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .settings-menu__shortcut {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.02em;
+        }
+
+        .upload-card label {
             font-size: 0.9rem;
             color: var(--text-secondary);
             margin-bottom: 6px;
@@ -258,8 +321,6 @@ HOME_HTML = '''
         }
 
         .upload-card input[type="file"],
-        .settings-card input,
-        .settings-card select,
         .preview-toolbar select {
             width: 100%;
             padding: 12px 14px;
@@ -272,8 +333,6 @@ HOME_HTML = '''
         }
 
         .upload-card input[type="file"]:focus,
-        .settings-card input:focus,
-        .settings-card select:focus,
         .preview-toolbar select:focus {
             outline: none;
             border-color: rgba(56, 189, 248, 0.6);
@@ -746,30 +805,6 @@ HOME_HTML = '''
             transform: translateY(-2px);
         }
 
-        .info-list {
-            display: grid;
-            gap: 16px;
-        }
-
-        .info-item {
-            display: flex;
-            gap: 14px;
-            align-items: flex-start;
-            font-size: 0.95rem;
-            color: var(--text-secondary);
-        }
-
-        .info-icon {
-            display: grid;
-            place-items: center;
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            background: rgba(124, 58, 237, 0.18);
-            color: rgba(124, 58, 237, 0.95);
-            font-size: 18px;
-        }
-
         .footer {
             margin-top: 16px;
             text-align: center;
@@ -867,39 +902,44 @@ HOME_HTML = '''
             </article>
 
             <article class="panel settings-card">
-                <h2>Playback settings</h2>
-                <div class="info-list">
-                    <div class="info-item">
-                        <div class="info-icon">🎚️</div>
-                        <div>
-                            <label for="video-volume">Volume</label>
-                            <input type="range" id="video-volume" min="0" max="100" value="80">
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-icon">⏱️</div>
-                        <div>
-                            <label for="video-speed">Playback speed</label>
-                            <select id="video-speed">
-                                <option value="0.5">0.5x</option>
-                                <option value="1" selected>1x (default)</option>
-                                <option value="1.5">1.5x</option>
-                                <option value="2">2x</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-icon">🖥️</div>
-                        <div>
-                            <label for="video-quality">Quality</label>
-                            <select id="video-quality">
-                                <option value="480p">480p</option>
-                                <option value="720p" selected>720p HD</option>
-                                <option value="1080p">1080p Full HD</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+                <h2>Editor menu</h2>
+                <nav class="settings-menu" aria-label="Editor options">
+                    <button type="button" class="settings-menu__button is-active">
+                        <span class="settings-menu__label">
+                            <span class="settings-menu__icon">🎞️</span>
+                            <span>Video</span>
+                        </span>
+                        <span class="settings-menu__shortcut">⌘1</span>
+                    </button>
+                    <button type="button" class="settings-menu__button">
+                        <span class="settings-menu__label">
+                            <span class="settings-menu__icon">✨</span>
+                            <span>Animation</span>
+                        </span>
+                        <span class="settings-menu__shortcut">⌘2</span>
+                    </button>
+                    <button type="button" class="settings-menu__button">
+                        <span class="settings-menu__label">
+                            <span class="settings-menu__icon">⚡</span>
+                            <span>Speed</span>
+                        </span>
+                        <span class="settings-menu__shortcut">⌘3</span>
+                    </button>
+                    <button type="button" class="settings-menu__button">
+                        <span class="settings-menu__label">
+                            <span class="settings-menu__icon">🎧</span>
+                            <span>Audio</span>
+                        </span>
+                        <span class="settings-menu__shortcut">⌘4</span>
+                    </button>
+                    <button type="button" class="settings-menu__button">
+                        <span class="settings-menu__label">
+                            <span class="settings-menu__icon">🎚️</span>
+                            <span>Adjustment</span>
+                        </span>
+                        <span class="settings-menu__shortcut">⌘5</span>
+                    </button>
+                </nav>
                 <button type="button" class="export-button">Export video</button>
             </article>
         </section>
