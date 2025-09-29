@@ -83,8 +83,9 @@ HOME_HTML = '''
 
         .nav-actions {
             display: flex;
-            gap: 12px;
+            gap: 16px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .nav-actions a {
@@ -93,12 +94,16 @@ HOME_HTML = '''
             justify-content: center;
             padding: 10px 18px;
             border-radius: 12px;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid transparent;
+            background: rgba(15, 23, 42, 0.68);
+            border: 1px solid rgba(148, 163, 184, 0.22);
             color: var(--text-secondary);
             text-decoration: none;
             font-weight: 500;
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease, border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .nav-actions a.nav-link {
+            background: rgba(15, 23, 42, 0.55);
         }
 
         .nav-actions a.primary {
@@ -106,12 +111,56 @@ HOME_HTML = '''
             color: #0f172a;
             font-weight: 600;
             border: none;
-            box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28);
+            box-shadow: 0 12px 32px rgba(56, 189, 248, 0.3);
         }
 
         .nav-actions a:hover {
-            border-color: rgba(148, 163, 184, 0.32);
+            border-color: rgba(148, 163, 184, 0.36);
             transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35);
+        }
+
+        .account-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+        }
+
+        .account-chip__avatar {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.8), rgba(56, 189, 248, 0.8));
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .account-chip__meta {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+        }
+
+        .account-chip__label {
+            font-size: 0.7rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(203, 213, 225, 0.75);
+        }
+
+        .account-chip__name {
+            color: var(--text-primary);
+            font-weight: 600;
+            letter-spacing: 0.01em;
         }
 
         .hero {
@@ -181,6 +230,239 @@ HOME_HTML = '''
 
         .hero-cta a:hover {
             transform: translateY(-2px);
+        }
+
+        .hero-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .hero-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .hero-pill span {
+            font-size: 1rem;
+        }
+
+        .hero-layout {
+            display: grid;
+            gap: clamp(24px, 5vw, 48px);
+            grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+            align-items: center;
+        }
+
+        .hero-text {
+            display: grid;
+            gap: 18px;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.16);
+            color: rgba(148, 198, 255, 0.95);
+            font-weight: 600;
+            font-size: 0.85rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            width: fit-content;
+        }
+
+        .hero-kicker::before {
+            content: '•';
+            font-size: 1.2rem;
+            opacity: 0.7;
+        }
+
+        .hero-checklist {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: grid;
+            gap: 12px;
+        }
+
+        .hero-checklist li {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .hero-checklist span {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(124, 58, 237, 0.22);
+            color: rgba(124, 58, 237, 0.95);
+            font-size: 0.85rem;
+        }
+
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .hero-stat {
+            background: rgba(15, 23, 42, 0.65);
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            padding: 16px 18px;
+            display: grid;
+            gap: 6px;
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+        }
+
+        .hero-stat strong {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .hero-stat span {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.01em;
+        }
+
+        .hero-media {
+            position: relative;
+            border-radius: 26px;
+            background: linear-gradient(140deg, rgba(15, 23, 42, 0.85), rgba(36, 48, 69, 0.92));
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 28px;
+            box-shadow: 0 24px 60px rgba(2, 6, 23, 0.5);
+            overflow: hidden;
+        }
+
+        .hero-media::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(120% 120% at 10% 10%, rgba(56, 189, 248, 0.2), transparent 60%);
+            pointer-events: none;
+        }
+
+        .hero-media__glow {
+            position: absolute;
+            inset: auto -30% -40% -30%;
+            height: 70%;
+            background: radial-gradient(circle at center, rgba(124, 58, 237, 0.3), transparent 70%);
+            filter: blur(40px);
+            z-index: 0;
+        }
+
+        .hero-media__card {
+            position: relative;
+            z-index: 1;
+            border-radius: 20px;
+            background: rgba(8, 13, 28, 0.88);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            padding: 20px;
+            display: grid;
+            gap: 18px;
+        }
+
+        .hero-media__header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .hero-media__badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.2);
+            color: rgba(148, 198, 255, 0.95);
+            font-size: 0.8rem;
+            letter-spacing: 0.04em;
+        }
+
+        .hero-media__timeline {
+            display: grid;
+            gap: 12px;
+        }
+
+        .hero-media__timeline-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .hero-media__timeline-row span {
+            flex: 1;
+            height: 10px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.6), rgba(124, 58, 237, 0.6));
+            opacity: 0.6;
+        }
+
+        .hero-media__timeline-row span.is-active {
+            opacity: 1;
+            box-shadow: 0 6px 18px rgba(56, 189, 248, 0.35);
+        }
+
+        .hero-media__meter {
+            position: relative;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.25);
+            overflow: hidden;
+        }
+
+        .hero-media__meter::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.8), rgba(244, 114, 182, 0.8));
+            transform-origin: left;
+            transform: scaleX(0.7);
+        }
+
+        .hero-media__thumbs {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .hero-media__thumb {
+            aspect-ratio: 16 / 9;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.4), rgba(244, 114, 182, 0.35));
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-media__thumb::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3), transparent 65%);
         }
 
         .editor-layout {
@@ -844,6 +1126,18 @@ HOME_HTML = '''
         }
 
         @media (max-width: 960px) {
+            .hero-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-media {
+                order: -1;
+            }
+
+            .hero-pills {
+                justify-content: flex-start;
+            }
+
             .editor-layout {
                 grid-template-columns: repeat(2, minmax(220px, 1fr));
                 grid-template-areas:
@@ -855,6 +1149,16 @@ HOME_HTML = '''
         @media (max-width: 600px) {
             body {
                 padding: 16px;
+            }
+            .account-chip {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .hero-pills {
+                justify-content: center;
+            }
+            .hero-checklist li {
+                align-items: flex-start;
             }
             .nav-bar {
                 flex-direction: column;
@@ -895,14 +1199,90 @@ HOME_HTML = '''
             </div>
             <nav class="nav-actions">
                 {% if username %}
-                    <span style="color: var(--text-secondary); font-size: 0.95rem;">Hi, {{ username }} 👋</span>
-                    <a class="primary" href="{{ url_for('signout') }}">Sign Out</a>
+                    <span class="account-chip" role="status" aria-live="polite">
+                        <span class="account-chip__avatar">{{ (username|first)|upper }}</span>
+                        <span class="account-chip__meta">
+                            <span class="account-chip__label">Signed in</span>
+                            <span class="account-chip__name">{{ username }}</span>
+                        </span>
+                    </span>
+                    <a class="nav-link" href="#features">Workspace</a>
+                    <a class="primary" href="{{ url_for('signout') }}">Sign out</a>
                 {% else %}
-                    <a href="{{ url_for('login') }}">Log In</a>
-                    <a class="primary" href="{{ url_for('signup') }}">Get Started</a>
+                    <a class="nav-link" href="{{ url_for('login') }}">Log in</a>
+                    <a class="primary" href="{{ url_for('signup') }}">Get started</a>
                 {% endif %}
             </nav>
         </header>
+
+        <section class="hero" id="overview" aria-labelledby="hero-title">
+            <div class="hero-content hero-layout">
+                <div class="hero-text">
+                    <span class="hero-kicker">New in 2.1</span>
+                    <div class="hero-pills">
+                        <span class="hero-pill"><span>✨</span>Adaptive colour matching</span>
+                        <span class="hero-pill"><span>⚡</span>Live preview scrubbing</span>
+                        <span class="hero-pill"><span>🤝</span>Real-time collaboration</span>
+                    </div>
+                    <h1 id="hero-title">Craft cinematic stories in minutes.</h1>
+                    <p>Video Editor Pro brings intelligent timeline suggestions, polished presets and a serene workspace so {{ username or 'creators' }} can stay in the flow.</p>
+                    <ul class="hero-checklist">
+                        <li><span>✓</span>Storyboard drafts update as you drop new clips.</li>
+                        <li><span>✓</span>Smart audio levelling keeps voices crisp and consistent.</li>
+                        <li><span>✓</span>Export profiles for every platform—YouTube, TikTok, Reels and more.</li>
+                    </ul>
+                    <div class="hero-cta">
+                        {% if username %}
+                            <a class="primary" href="#features">Open workspace</a>
+                            <a class="secondary" href="{{ url_for('signout') }}">Sign out</a>
+                        {% else %}
+                            <a class="primary" href="{{ url_for('signup') }}">Start for free</a>
+                            <a class="secondary" href="{{ url_for('login') }}">I already have an account</a>
+                        {% endif %}
+                    </div>
+                    <div class="hero-stats">
+                        <div class="hero-stat">
+                            <strong>220+</strong>
+                            <span>AI smart presets</span>
+                        </div>
+                        <div class="hero-stat">
+                            <strong>4K</strong>
+                            <span>Real-time preview</span>
+                        </div>
+                        <div class="hero-stat">
+                            <strong>&lt;5 min</strong>
+                            <span>Average export time</span>
+                        </div>
+                    </div>
+                </div>
+                <aside class="hero-media" aria-hidden="true">
+                    <div class="hero-media__glow"></div>
+                    <div class="hero-media__card">
+                        <div class="hero-media__header">
+                            <span class="hero-media__badge">Storyboard preview</span>
+                            <span class="playback-time">00:42 / 01:30</span>
+                        </div>
+                        <div class="hero-media__timeline">
+                            <div class="hero-media__timeline-row">
+                                <span class="is-active"></span>
+                            </div>
+                            <div class="hero-media__timeline-row">
+                                <span></span>
+                            </div>
+                            <div class="hero-media__timeline-row">
+                                <span></span>
+                            </div>
+                        </div>
+                        <div class="hero-media__meter"></div>
+                        <div class="hero-media__thumbs">
+                            <div class="hero-media__thumb"></div>
+                            <div class="hero-media__thumb"></div>
+                            <div class="hero-media__thumb"></div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
 
         <section id="features" class="editor-layout">
             <article class="panel upload-card">
