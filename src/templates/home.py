@@ -251,15 +251,32 @@ HOME_HTML = '''
 
         .settings-menu {
             display: flex;
-            flex-direction: column;
+            align-items: stretch;
             gap: 12px;
+            padding-bottom: 4px;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+
+        .settings-menu::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .settings-menu::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+
+        .settings-menu::-webkit-scrollbar-thumb {
+            background: rgba(124, 58, 237, 0.45);
+            border-radius: 999px;
         }
 
         .settings-menu__button {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            width: 100%;
+            flex: 1 1 0;
+            min-width: 160px;
             padding: 14px 16px;
             border-radius: 14px;
             border: 1px solid rgba(148, 163, 184, 0.22);
@@ -311,6 +328,81 @@ HOME_HTML = '''
             font-size: 0.8rem;
             color: var(--text-secondary);
             letter-spacing: 0.02em;
+        }
+
+        .settings-content {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .settings-section {
+            display: none;
+            flex-direction: column;
+            gap: 18px;
+            padding: 18px;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(15, 23, 42, 0.72);
+            box-shadow: var(--shadow-inner);
+        }
+
+        .settings-section.is-active {
+            display: flex;
+        }
+
+        .settings-section h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .settings-section__group {
+            display: grid;
+            gap: 8px;
+        }
+
+        .settings-section__description {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .settings-section label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .settings-section input[type="number"],
+        .settings-section input[type="range"],
+        .settings-section select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .settings-section input[type="range"] {
+            padding: 0;
+        }
+
+        .settings-section input[type="number"]:focus,
+        .settings-section input[type="range"]:focus,
+        .settings-section select:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.6);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+        }
+
+        .settings-range-value {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-align: right;
         }
 
         .upload-card label {
@@ -903,43 +995,223 @@ HOME_HTML = '''
 
             <article class="panel settings-card">
                 <h2>Editor menu</h2>
-                <nav class="settings-menu" aria-label="Editor options">
-                    <button type="button" class="settings-menu__button is-active">
+                <nav class="settings-menu" aria-label="Editor options" role="tablist">
+                    <button
+                        type="button"
+                        class="settings-menu__button is-active"
+                        id="settings-tab-video"
+                        role="tab"
+                        aria-selected="true"
+                        aria-controls="settings-panel-video"
+                        data-settings-target="video"
+                        tabindex="0"
+                    >
                         <span class="settings-menu__label">
                             <span class="settings-menu__icon">🎞️</span>
                             <span>Video</span>
                         </span>
-                        <span class="settings-menu__shortcut">⌘1</span>
+                        <span class="settings-menu__shortcut" aria-hidden="true">⌘1</span>
                     </button>
-                    <button type="button" class="settings-menu__button">
+                    <button
+                        type="button"
+                        class="settings-menu__button"
+                        id="settings-tab-animation"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="settings-panel-animation"
+                        data-settings-target="animation"
+                        tabindex="-1"
+                    >
                         <span class="settings-menu__label">
                             <span class="settings-menu__icon">✨</span>
                             <span>Animation</span>
                         </span>
-                        <span class="settings-menu__shortcut">⌘2</span>
+                        <span class="settings-menu__shortcut" aria-hidden="true">⌘2</span>
                     </button>
-                    <button type="button" class="settings-menu__button">
+                    <button
+                        type="button"
+                        class="settings-menu__button"
+                        id="settings-tab-speed"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="settings-panel-speed"
+                        data-settings-target="speed"
+                        tabindex="-1"
+                    >
                         <span class="settings-menu__label">
                             <span class="settings-menu__icon">⚡</span>
                             <span>Speed</span>
                         </span>
-                        <span class="settings-menu__shortcut">⌘3</span>
+                        <span class="settings-menu__shortcut" aria-hidden="true">⌘3</span>
                     </button>
-                    <button type="button" class="settings-menu__button">
+                    <button
+                        type="button"
+                        class="settings-menu__button"
+                        id="settings-tab-audio"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="settings-panel-audio"
+                        data-settings-target="audio"
+                        tabindex="-1"
+                    >
                         <span class="settings-menu__label">
                             <span class="settings-menu__icon">🎧</span>
                             <span>Audio</span>
                         </span>
-                        <span class="settings-menu__shortcut">⌘4</span>
+                        <span class="settings-menu__shortcut" aria-hidden="true">⌘4</span>
                     </button>
-                    <button type="button" class="settings-menu__button">
+                    <button
+                        type="button"
+                        class="settings-menu__button"
+                        id="settings-tab-adjustment"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="settings-panel-adjustment"
+                        data-settings-target="adjustment"
+                        tabindex="-1"
+                    >
                         <span class="settings-menu__label">
                             <span class="settings-menu__icon">🎚️</span>
                             <span>Adjustment</span>
                         </span>
-                        <span class="settings-menu__shortcut">⌘5</span>
+                        <span class="settings-menu__shortcut" aria-hidden="true">⌘5</span>
                     </button>
                 </nav>
+                <div class="settings-content">
+                    <section
+                        class="settings-section is-active"
+                        id="settings-panel-video"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-video"
+                        aria-hidden="false"
+                        data-settings-section="video"
+                        tabindex="0"
+                    >
+                        <div class="settings-section__group">
+                            <h3>Video output</h3>
+                            <p class="settings-section__description">Control export fidelity so your footage looks sharp on every platform.</p>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="video-quality">Quality preset</label>
+                            <select id="video-quality" name="video-quality">
+                                <option value="480p">480p SD</option>
+                                <option value="720p" selected>720p HD</option>
+                                <option value="1080p">1080p Full HD</option>
+                            </select>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="video-framerate">Frame rate (fps)</label>
+                            <input type="number" id="video-framerate" name="video-framerate" min="12" max="120" step="1" value="30">
+                        </div>
+                    </section>
+                    <section
+                        class="settings-section"
+                        id="settings-panel-animation"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-animation"
+                        aria-hidden="true"
+                        data-settings-section="animation"
+                        tabindex="-1"
+                        hidden
+                    >
+                        <div class="settings-section__group">
+                            <h3>Motion presets</h3>
+                            <p class="settings-section__description">Smooth out cuts with pre-built transitions and subtle camera moves.</p>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="animation-style">Transition style</label>
+                            <select id="animation-style" name="animation-style">
+                                <option value="crossfade">Cross fade</option>
+                                <option value="slide">Slide</option>
+                                <option value="zoom">Zoom punch</option>
+                                <option value="spin">Spin reveal</option>
+                            </select>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="animation-duration">Transition duration</label>
+                            <input type="range" id="animation-duration" name="animation-duration" min="200" max="1200" step="50" value="400" data-range-suffix=" ms">
+                            <span class="settings-range-value" data-range-output-for="animation-duration"></span>
+                        </div>
+                    </section>
+                    <section
+                        class="settings-section"
+                        id="settings-panel-speed"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-speed"
+                        aria-hidden="true"
+                        data-settings-section="speed"
+                        tabindex="-1"
+                        hidden
+                    >
+                        <div class="settings-section__group">
+                            <h3>Playback tempo</h3>
+                            <p class="settings-section__description">Nail the pacing by controlling ramp-ups and slow-motion moments.</p>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="speed-rate">Master speed multiplier</label>
+                            <input type="range" id="speed-rate" name="speed-rate" min="0.2" max="3" step="0.05" value="1" data-range-suffix="×">
+                            <span class="settings-range-value" data-range-output-for="speed-rate"></span>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="speed-ramp">Ramp smoothing</label>
+                            <input type="range" id="speed-ramp" name="speed-ramp" min="0" max="100" step="5" value="35" data-range-suffix="%">
+                            <span class="settings-range-value" data-range-output-for="speed-ramp"></span>
+                        </div>
+                    </section>
+                    <section
+                        class="settings-section"
+                        id="settings-panel-audio"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-audio"
+                        aria-hidden="true"
+                        data-settings-section="audio"
+                        tabindex="-1"
+                        hidden
+                    >
+                        <div class="settings-section__group">
+                            <h3>Audio mix</h3>
+                            <p class="settings-section__description">Balance dialogue, music, and effects for a polished final mix.</p>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="audio-level">Master volume</label>
+                            <input type="range" id="audio-level" name="audio-level" min="0" max="100" step="1" value="75" data-range-suffix="%">
+                            <span class="settings-range-value" data-range-output-for="audio-level"></span>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="audio-ducking">Auto-duck music when speaking</label>
+                            <select id="audio-ducking" name="audio-ducking">
+                                <option value="off">Disabled</option>
+                                <option value="medium" selected>Moderate</option>
+                                <option value="strong">Aggressive</option>
+                            </select>
+                        </div>
+                    </section>
+                    <section
+                        class="settings-section"
+                        id="settings-panel-adjustment"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-adjustment"
+                        aria-hidden="true"
+                        data-settings-section="adjustment"
+                        tabindex="-1"
+                        hidden
+                    >
+                        <div class="settings-section__group">
+                            <h3>Color adjustments</h3>
+                            <p class="settings-section__description">Dial in exposure, temperature, and contrast to match your aesthetic.</p>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="adjustment-exposure">Exposure</label>
+                            <input type="range" id="adjustment-exposure" name="adjustment-exposure" min="-2" max="2" step="0.1" value="0" data-range-suffix=" EV">
+                            <span class="settings-range-value" data-range-output-for="adjustment-exposure"></span>
+                        </div>
+                        <div class="settings-section__group">
+                            <label for="adjustment-temperature">Temperature</label>
+                            <input type="range" id="adjustment-temperature" name="adjustment-temperature" min="-50" max="50" step="5" value="10" data-range-suffix=" K">
+                            <span class="settings-range-value" data-range-output-for="adjustment-temperature"></span>
+                        </div>
+                    </section>
+                </div>
                 <button type="button" class="export-button">Export video</button>
             </article>
         </section>
@@ -1019,6 +1291,145 @@ HOME_HTML = '''
         const confirmExportButton = document.getElementById('confirm-export-button');
         const cancelExportButton = document.getElementById('cancel-export-button');
         const videoQualitySelect = document.getElementById('video-quality');
+        const settingsMenuButtons = Array.from(document.querySelectorAll('.settings-menu__button'));
+        const settingsSections = Array.from(document.querySelectorAll('[data-settings-section]'));
+        const rangeOutputElements = new Map();
+
+        document.querySelectorAll('[data-range-output-for]').forEach((outputElement) => {
+            const targetId = outputElement.dataset.rangeOutputFor;
+            if (targetId && !rangeOutputElements.has(targetId)) {
+                rangeOutputElements.set(targetId, outputElement);
+            }
+        });
+
+        function formatRangeValue(inputElement) {
+            const rawValue = Number.parseFloat(inputElement.value);
+            const suffix = inputElement.dataset.rangeSuffix ?? '';
+            let formattedValue = inputElement.value;
+
+            if (Number.isFinite(rawValue)) {
+                const stepValue = inputElement.step || '1';
+                const decimalPart = stepValue.includes('.') ? stepValue.split('.')[1] : '';
+                const decimalPlaces = decimalPart.length;
+                formattedValue = rawValue.toFixed(decimalPlaces);
+            }
+
+            return `${formattedValue}${suffix}`;
+        }
+
+        function updateRangeOutput(inputElement) {
+            if (!inputElement || !inputElement.id) {
+                return;
+            }
+
+            const outputElement = rangeOutputElements.get(inputElement.id);
+            if (!outputElement) {
+                return;
+            }
+
+            outputElement.textContent = formatRangeValue(inputElement);
+        }
+
+        const rangeInputs = Array.from(document.querySelectorAll('.settings-section input[type="range"]'));
+
+        rangeInputs.forEach((rangeInput) => {
+            updateRangeOutput(rangeInput);
+            rangeInput.addEventListener('input', () => updateRangeOutput(rangeInput));
+        });
+
+        function activateSettingsTab(targetName, { focusTab = false } = {}) {
+            if (!targetName) {
+                return;
+            }
+
+            let matchedButton = null;
+            let matchedSection = null;
+
+            settingsMenuButtons.forEach((button) => {
+                const isMatch = button.dataset.settingsTarget === targetName;
+                button.classList.toggle('is-active', isMatch);
+                button.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+                button.setAttribute('tabindex', isMatch ? '0' : '-1');
+                if (isMatch) {
+                    matchedButton = button;
+                }
+            });
+
+            settingsSections.forEach((section) => {
+                const isMatch = section.dataset.settingsSection === targetName;
+                section.classList.toggle('is-active', isMatch);
+                section.toggleAttribute('hidden', !isMatch);
+                section.setAttribute('tabindex', isMatch ? '0' : '-1');
+                section.setAttribute('aria-hidden', isMatch ? 'false' : 'true');
+                if (isMatch) {
+                    matchedSection = section;
+                }
+            });
+
+            if (focusTab && matchedButton) {
+                matchedButton.focus();
+            }
+
+            if (matchedSection) {
+                matchedSection.scrollTop = 0;
+            }
+        }
+
+        function focusRelativeSettingsTab(currentIndex, offset) {
+            if (!settingsMenuButtons.length) {
+                return;
+            }
+
+            const total = settingsMenuButtons.length;
+            const nextIndex = (currentIndex + offset + total) % total;
+            const nextButton = settingsMenuButtons[nextIndex];
+            if (nextButton) {
+                activateSettingsTab(nextButton.dataset.settingsTarget, { focusTab: true });
+            }
+        }
+
+        function handleSettingsTabKeydown(event, index) {
+            switch (event.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                    event.preventDefault();
+                    focusRelativeSettingsTab(index, 1);
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                    event.preventDefault();
+                    focusRelativeSettingsTab(index, -1);
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    focusRelativeSettingsTab(index, -index);
+                    break;
+                case 'End':
+                    event.preventDefault();
+                    focusRelativeSettingsTab(index, settingsMenuButtons.length - 1 - index);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (settingsMenuButtons.length && settingsSections.length) {
+            settingsMenuButtons.forEach((button, index) => {
+                button.addEventListener('click', () => {
+                    activateSettingsTab(button.dataset.settingsTarget);
+                });
+
+                button.addEventListener('keydown', (event) => {
+                    handleSettingsTabKeydown(event, index);
+                });
+            });
+
+            const initiallyActiveButton = settingsMenuButtons.find((button) => button.classList.contains('is-active'))
+                || settingsMenuButtons[0];
+            if (initiallyActiveButton) {
+                activateSettingsTab(initiallyActiveButton.dataset.settingsTarget);
+            }
+        }
         const exportMirrorCanvas = document.createElement('canvas');
         const exportMirrorContext = exportMirrorCanvas.getContext('2d');
         let activeTimelineItem = null;
