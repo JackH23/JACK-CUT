@@ -703,10 +703,48 @@ HOME_HTML = '''
             margin: 0;
             font-size: 0.9rem;
             color: var(--accent-2);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 24px;
         }
 
         .export-dialog__status[data-state="warning"] {
             color: #facc15;
+        }
+
+        .export-dialog__status[data-state="progress"] {
+            color: var(--text-secondary);
+        }
+
+        .export-progress {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 6px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(148, 163, 184, 0.18);
+        }
+
+        .export-progress__bar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: -40%;
+            width: 40%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+            animation: export-progress-marquee 1.4s ease-in-out infinite;
+        }
+
+        @keyframes export-progress-marquee {
+            0% {
+                transform: translateX(0);
+            }
+            100% {
+                transform: translateX(250%);
+            }
         }
 
         .export-timeline-list {
@@ -1373,7 +1411,7 @@ HOME_HTML = '''
                         <strong id="export-summary-format">MP4 (H.264)</strong>
                     </div>
                 </div>
-                <p class="export-dialog__status" id="export-dialog-status" data-state="ready">Preview completed successfully. Ready to export.</p>
+                <p class="export-dialog__status" id="export-dialog-status" data-state="ready" aria-live="polite">Preview completed successfully. Ready to export.</p>
                 <div class="export-timeline-list" id="export-timeline-list"></div>
                 <div class="export-dialog__actions">
                     <button type="button" class="export-dialog__button" id="cancel-export-button">Cancel</button>
@@ -3181,8 +3219,13 @@ HOME_HTML = '''
             const originalLabel = confirmExportButton.textContent;
             confirmExportButton.textContent = 'Exporting…';
             if (exportDialogStatus) {
-                exportDialogStatus.textContent = `Exporting timeline preview to ${exportFormat.label}…`;
                 exportDialogStatus.dataset.state = 'progress';
+                exportDialogStatus.innerHTML = `
+                    <span class="visually-hidden" role="status">Exporting timeline preview to ${exportFormat.label}…</span>
+                    <div class="export-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Exporting timeline preview" aria-live="off">
+                        <div class="export-progress__bar"></div>
+                    </div>
+                `.trim();
             }
 
             stopTimelinePlayback();
