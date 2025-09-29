@@ -710,6 +710,45 @@ HOME_HTML = '''
             display: flex;
             flex-direction: column;
             gap: 18px;
+            position: relative;
+        }
+
+        .export-loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 18px;
+            padding: 32px;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(10px);
+            border-radius: inherit;
+            z-index: 2;
+        }
+
+        .export-loading-overlay__spinner {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 4px solid rgba(148, 163, 184, 0.25);
+            border-top-color: rgba(56, 189, 248, 0.95);
+            animation: export-loading-spin 0.9s linear infinite;
+        }
+
+        .export-loading-overlay__label {
+            margin: 0;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.01em;
+        }
+
+        @keyframes export-loading-spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .export-dialog__panel h3 {
@@ -1522,6 +1561,10 @@ HOME_HTML = '''
                     <button type="button" class="export-dialog__button" id="cancel-export-button">Cancel</button>
                     <button type="button" class="export-dialog__button primary" id="confirm-export-button">Confirm export</button>
                 </div>
+                <div class="export-loading-overlay" id="export-loading-overlay" hidden aria-hidden="true">
+                    <div class="export-loading-overlay__spinner" aria-hidden="true"></div>
+                    <p class="export-loading-overlay__label">Preparing your export…</p>
+                </div>
             </div>
         </div>
 
@@ -1605,6 +1648,7 @@ HOME_HTML = '''
         const exportSummaryResolution = document.getElementById('export-summary-resolution');
         const exportSummaryFormat = document.getElementById('export-summary-format');
         const exportDialogStatus = document.getElementById('export-dialog-status');
+        const exportLoadingOverlay = document.getElementById('export-loading-overlay');
         const confirmExportButton = document.getElementById('confirm-export-button');
         const cancelExportButton = document.getElementById('cancel-export-button');
         const videoQualitySelect = document.getElementById('video-quality');
@@ -2006,6 +2050,10 @@ HOME_HTML = '''
             exportDialog.hidden = false;
             exportDialog.removeAttribute('hidden');
             exportDialog.setAttribute('aria-hidden', 'false');
+            if (exportLoadingOverlay) {
+                exportLoadingOverlay.hidden = true;
+                exportLoadingOverlay.setAttribute('aria-hidden', 'true');
+            }
         }
 
         function closeExportDialog() {
@@ -2015,6 +2063,10 @@ HOME_HTML = '''
             exportDialog.hidden = true;
             exportDialog.setAttribute('hidden', '');
             exportDialog.setAttribute('aria-hidden', 'true');
+            if (exportLoadingOverlay) {
+                exportLoadingOverlay.hidden = true;
+                exportLoadingOverlay.setAttribute('aria-hidden', 'true');
+            }
         }
 
         function isExportDialogOpen() {
@@ -3373,6 +3425,11 @@ HOME_HTML = '''
             confirmExportButton.disabled = true;
             const originalLabel = confirmExportButton.textContent;
             confirmExportButton.textContent = 'Exporting…';
+            if (exportLoadingOverlay) {
+                exportLoadingOverlay.hidden = false;
+                exportLoadingOverlay.removeAttribute('hidden');
+                exportLoadingOverlay.setAttribute('aria-hidden', 'false');
+            }
             if (exportDialogStatus) {
                 exportDialogStatus.textContent = `Exporting timeline preview to ${exportFormat.label}…`;
                 exportDialogStatus.dataset.state = 'progress';
@@ -3483,6 +3540,10 @@ HOME_HTML = '''
                 confirmExportButton.disabled = false;
                 confirmExportButton.textContent = originalLabel || 'Confirm export';
                 isExportingTimeline = false;
+                if (exportLoadingOverlay) {
+                    exportLoadingOverlay.hidden = true;
+                    exportLoadingOverlay.setAttribute('aria-hidden', 'true');
+                }
             }
         }
 
