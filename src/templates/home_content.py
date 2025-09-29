@@ -204,90 +204,6 @@ HOME_HTML = '''
             grid-area: preview;
         }
 
-        .preview-toolbar {
-            margin-top: 12px;
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .preview-toolbar label {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            white-space: nowrap;
-        }
-
-        .preview-toolbar select {
-            padding: 8px 12px;
-            border-radius: 10px;
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            background: rgba(15, 23, 42, 0.9);
-            color: var(--text-primary);
-            font-size: 0.9rem;
-            width: auto;
-            min-width: 120px;
-        }
-
-        .settings-card {
-            grid-area: settings;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .settings-tabs {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            border-radius: 12px;
-            padding: 6px;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            overflow-x: auto;
-        }
-
-        .settings-tab {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 10px 16px;
-            border-radius: 10px;
-            border: none;
-            background: transparent;
-            color: var(--text-secondary);
-            font: inherit;
-            font-weight: 500;
-            cursor: pointer;
-            transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .settings-tab:focus-visible {
-            outline: 2px solid rgba(56, 189, 248, 0.55);
-            outline-offset: 2px;
-        }
-
-        .settings-tab.is-active {
-            background: linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(56, 189, 248, 0.22));
-            color: var(--text-primary);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-        }
-
-        .settings-content {
-            flex: 1;
-        }
-
-        .settings-section {
-            display: none;
-            animation: fadeIn 0.18s ease;
-        }
-
-        .settings-section.is-active {
-            display: block;
-        }
-
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -311,29 +227,355 @@ HOME_HTML = '''
             padding: 24px;
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 20px;
+        }
+
+        .panel-header {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
         .panel h2 {
             margin: 0;
-            font-size: 1.25rem;
+            font-size: 1.3rem;
             font-weight: 600;
+            letter-spacing: -0.01em;
         }
 
-        .upload-card label,
-        .settings-card label {
-            font-size: 0.9rem;
+        .panel-subtitle {
+            margin: 0;
             color: var(--text-secondary);
-            margin-bottom: 6px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .upload-card {
+            position: relative;
+            gap: 24px;
+        }
+
+        .upload-dropzone {
+            position: relative;
+            display: grid;
+            gap: 14px;
+            justify-items: center;
+            padding: 28px 20px;
+            border-radius: 18px;
+            border: 1.5px dashed rgba(148, 163, 184, 0.32);
+            background: linear-gradient(140deg, rgba(124, 58, 237, 0.08), rgba(56, 189, 248, 0.05));
+            cursor: pointer;
+            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            text-align: center;
+        }
+
+        .upload-dropzone:hover {
+            border-color: rgba(124, 58, 237, 0.55);
+            transform: translateY(-1px);
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+        }
+
+        .upload-dropzone__icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(56, 189, 248, 0.2));
+            color: rgba(244, 114, 182, 0.9);
+            font-size: 28px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .upload-dropzone__text strong {
+            display: block;
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .upload-dropzone__text span {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .upload-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .upload-meta__status {
+            color: var(--text-primary);
+            font-weight: 500;
+            letter-spacing: 0.01em;
+        }
+
+        .upload-meta__hint {
+            font-size: 0.85rem;
+        }
+
+        .upload-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .upload-actions button {
+            flex: 1;
+            min-width: 140px;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-family: inherit;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        }
+
+        .upload-actions button:focus-visible {
+            outline: 2px solid rgba(56, 189, 248, 0.6);
+            outline-offset: 3px;
+        }
+
+        .upload-primary {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.85));
+            color: #081229;
+            box-shadow: 0 16px 30px rgba(56, 189, 248, 0.25);
+        }
+
+        .upload-primary:hover {
+            transform: translateY(-2px);
+        }
+
+        .upload-secondary {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            color: var(--text-secondary);
+        }
+
+        .upload-secondary[disabled] {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .upload-guidelines {
+            margin: 0;
+            padding-left: 18px;
+            display: grid;
+            gap: 6px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .preview-card {
+            gap: 24px;
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .preview-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
+        .preview-toolbar label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .preview-toolbar select {
+            appearance: none;
+            padding: 8px 32px 8px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.9) url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%23cbd5f5"><path d="M5.23 7.21a.75.75 0 011.06.02L10 10.939l3.71-3.71a.75.75 0 011.06 1.061l-4.24 4.24a.75.75 0 01-1.06 0l-4.24-4.24a.75.75 0 01.02-1.06z"/></svg>') no-repeat right 10px center;
+            background-size: 16px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            min-width: 150px;
+        }
+
+        .preview-toolbar select:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.6);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+        }
+
+        .preview-area {
+            --preview-aspect-ratio: 16 / 9;
+            position: relative;
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: var(--shadow-inner);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            padding: 16px;
+            min-height: 280px;
+            overflow: hidden;
+        }
+
+        .preview-area::after {
+            content: '';
+            position: absolute;
+            inset: 16px;
+            border-radius: 16px;
+            border: 1px dashed rgba(148, 163, 184, 0.15);
+            pointer-events: none;
+        }
+
+        .preview-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .preview-meta__item {
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .preview-meta__item span {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.04em;
+        }
+
+        .preview-meta__item strong {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .settings-card {
+            grid-area: settings;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .settings-tabs {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            border-radius: 14px;
+            padding: 6px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            overflow-x: auto;
+        }
+
+        .settings-tab {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .settings-tab:focus-visible {
+            outline: 2px solid rgba(56, 189, 248, 0.55);
+            outline-offset: 2px;
+        }
+
+        .settings-tab.is-active {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.28), rgba(56, 189, 248, 0.22));
+            color: var(--text-primary);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .settings-content {
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+            flex: 1;
+        }
+
+        .settings-section {
+            display: none;
+            animation: fadeIn 0.18s ease;
+        }
+
+        .settings-section.is-active {
             display: block;
         }
 
-        .upload-card input[type="file"],
-        .settings-card input,
-        .settings-card select,
-        .preview-toolbar select {
+        .info-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+        }
+
+        .info-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 16px;
+            border-radius: 16px;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+        }
+
+        .info-item label {
+            font-size: 0.85rem;
+            letter-spacing: 0.01em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .info-item select,
+        .info-item input[type="range"] {
             width: 100%;
-            padding: 12px 14px;
+            padding: 10px 12px;
             border-radius: 12px;
             border: 1px solid rgba(148, 163, 184, 0.28);
             background: rgba(15, 23, 42, 0.9);
@@ -342,29 +584,27 @@ HOME_HTML = '''
             transition: border 0.2s ease, box-shadow 0.2s ease;
         }
 
-        .upload-card input[type="file"]:focus,
-        .settings-card input:focus,
-        .settings-card select:focus,
-        .preview-toolbar select:focus {
+        .info-item input[type="range"] {
+            padding: 0;
+            accent-color: rgba(124, 58, 237, 0.85);
+        }
+
+        .info-item select:focus,
+        .info-item input[type="range"]:focus {
             outline: none;
             border-color: rgba(56, 189, 248, 0.6);
             box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
         }
 
-        .upload-card button {
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: none;
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.85));
-            color: #081229;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 16px 30px rgba(56, 189, 248, 0.25);
-            transition: transform 0.2s ease;
-        }
-
-        .upload-card button:hover {
-            transform: translateY(-2px);
+        .info-icon {
+            display: grid;
+            place-items: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(56, 189, 248, 0.18));
+            color: rgba(244, 114, 182, 0.95);
+            font-size: 20px;
         }
 
         .export-button {
@@ -530,23 +770,6 @@ HOME_HTML = '''
 
         .export-dialog__button:hover {
             transform: translateY(-1px);
-        }
-
-        .preview-area {
-            --preview-aspect-ratio: 16 / 9;
-            position: relative;
-            border-radius: 20px;
-            background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: var(--shadow-inner);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-            padding: 16px;
-            min-height: 260px;
-            overflow: hidden;
         }
 
         .preview-area.has-image {
@@ -916,16 +1139,46 @@ HOME_HTML = '''
 
         <section id="features" class="editor-layout">
             <article class="panel upload-card">
-                <h2>Upload footage</h2>
-                <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
-                <label for="video-upload">Select a video file</label>
-                <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple>
-                <button type="button" id="upload-button">Upload file</button>
-                <small style="color: var(--text-secondary);">Supported formats: MP4, MOV, AVI and more.</small>
+                <div class="panel-header">
+                    <h2>Upload footage</h2>
+                    <p class="panel-subtitle">Bring in your raw clips with a guided dropzone that supports bulk uploads.</p>
+                </div>
+                <label class="upload-dropzone" for="video-upload">
+                    <div class="upload-dropzone__icon" aria-hidden="true">⬆️</div>
+                    <div class="upload-dropzone__text">
+                        <strong>Drag &amp; drop footage</strong>
+                        <span>or tap to browse from your device</span>
+                    </div>
+                    <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple class="visually-hidden">
+                </label>
+                <div class="upload-meta" aria-live="polite">
+                    <span class="upload-meta__status">No clips added yet</span>
+                    <span class="upload-meta__hint">Tip: drop multiple files to keep your story flowing.</span>
+                </div>
+                <div class="upload-actions">
+                    <button type="button" id="upload-button" class="upload-primary">Choose files</button>
+                    <button type="button" class="upload-secondary" disabled>Import from cloud</button>
+                </div>
+                <ul class="upload-guidelines">
+                    <li>Supports MP4, MOV, AVI, GIF and PNG formats.</li>
+                    <li>For best results upload footage in 1080p or higher.</li>
+                </ul>
             </article>
 
             <article class="panel preview-card">
-                <h2>Preview window</h2>
+                <div class="panel-header preview-header">
+                    <div>
+                        <h2>Preview window</h2>
+                        <p class="panel-subtitle">Review scenes in a responsive canvas with live aspect toggles.</p>
+                    </div>
+                    <div class="preview-toolbar">
+                        <label for="preview-aspect">Aspect ratio</label>
+                        <select id="preview-aspect">
+                            <option value="16:9" selected>16:9 (Landscape)</option>
+                            <option value="9:16">9:16 (Portrait)</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
@@ -933,17 +1186,23 @@ HOME_HTML = '''
                         <img id="preview-image" alt="Preview" hidden>
                     </div>
                 </div>
-                <div class="preview-toolbar">
-                    <label for="preview-aspect">Aspect ratio</label>
-                    <select id="preview-aspect">
-                        <option value="16:9" selected>16:9 (Landscape)</option>
-                        <option value="9:16">9:16 (Portrait)</option>
-                    </select>
+                <div class="preview-meta">
+                    <div class="preview-meta__item">
+                        <span>Aspect</span>
+                        <strong id="preview-aspect-label">16:9 (Landscape)</strong>
+                    </div>
+                    <div class="preview-meta__item">
+                        <span>Safe guides</span>
+                        <strong>On</strong>
+                    </div>
                 </div>
             </article>
 
             <article class="panel settings-card">
-                <h2>Creative controls</h2>
+                <div class="panel-header">
+                    <h2>Creative controls</h2>
+                    <p class="panel-subtitle">Dial in the look, pacing and sound with tactile sliders and curated presets.</p>
+                </div>
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
                     <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
                     <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
@@ -1126,6 +1385,8 @@ HOME_HTML = '''
     <script>
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
+        const uploadMetaStatus = document.querySelector('.upload-meta__status');
+        const uploadMetaHint = document.querySelector('.upload-meta__hint');
         const previewArea = document.querySelector('.preview-area');
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
@@ -1137,6 +1398,7 @@ HOME_HTML = '''
         const timelineProgressLine = document.getElementById('timeline-progress-line');
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
+        const previewAspectLabel = document.getElementById('preview-aspect-label');
         const playbackTimeDisplay = document.getElementById('playback-time');
         const exportButton = document.querySelector('.export-button');
         const exportDialog = document.getElementById('export-dialog');
@@ -1450,6 +1712,13 @@ HOME_HTML = '''
             }
             const selectedOption = previewAspectSelect.selectedOptions?.[0];
             return selectedOption?.textContent?.trim() || `${previewAspectSelect.value} ratio`;
+        }
+
+        function updatePreviewAspectLabel() {
+            if (!previewAspectLabel) {
+                return;
+            }
+            previewAspectLabel.textContent = getSelectedAspectLabel();
         }
 
         function renderExportSummary(timelineItems, playbackCompleted = null) {
@@ -2147,6 +2416,7 @@ HOME_HTML = '''
             if (isExportDialogOpen()) {
                 renderExportSummary(getTimelineItems(), null);
             }
+            updatePreviewAspectLabel();
         }
 
         if (previewAspectSelect) {
@@ -2154,8 +2424,10 @@ HOME_HTML = '''
                 setPreviewAspect(event.target.value);
             });
             setPreviewAspect(previewAspectSelect.value);
+            updatePreviewAspectLabel();
         } else {
             setPreviewAspect('16:9');
+            updatePreviewAspectLabel();
         }
 
         if (videoQualitySelect) {
@@ -2495,7 +2767,30 @@ HOME_HTML = '''
         uploadInput.addEventListener('change', async (event) => {
             const files = Array.from(event.target.files || []);
             if (!files.length) {
+                if (uploadMetaStatus) {
+                    uploadMetaStatus.textContent = 'No clips added yet';
+                }
+                if (uploadMetaHint) {
+                    uploadMetaHint.textContent = 'Tip: drop multiple files to keep your story flowing.';
+                }
                 return;
+            }
+
+            if (uploadMetaStatus) {
+                const clipLabel = files.length === 1 ? 'clip' : 'clips';
+                uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
+            }
+
+            if (uploadMetaHint) {
+                const latestFile = files[files.length - 1];
+                if (latestFile?.name) {
+                    const truncatedName = latestFile.name.length > 42
+                        ? `${latestFile.name.slice(0, 39)}…`
+                        : latestFile.name;
+                    uploadMetaHint.textContent = files.length === 1
+                        ? `Ready: ${truncatedName}`
+                        : `${truncatedName} and ${files.length - 1} more`;
+                }
             }
 
             for (const file of files) {
