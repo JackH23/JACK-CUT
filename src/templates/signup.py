@@ -9,6 +9,21 @@ SIGNUP_HTML = '''
         :root {
             color-scheme: dark;
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            --bg: #050b1a;
+            --card: rgba(12, 19, 36, 0.82);
+            --card-border: rgba(148, 163, 184, 0.18);
+            --text: #f8fafc;
+            --text-soft: #e0e7ff;
+            --text-muted: rgba(203, 213, 225, 0.85);
+            --accent: #f472b6;
+            --accent-strong: #7c3aed;
+            --accent-cool: #38bdf8;
+            --success: rgba(74, 222, 128, 0.85);
+            --error: rgba(248, 113, 113, 0.9);
+            --radius-lg: 32px;
+            --radius-md: 20px;
+            --radius-sm: 12px;
+            --shadow: 0 44px 120px rgba(2, 6, 23, 0.5);
         }
 
         * {
@@ -19,123 +34,60 @@ SIGNUP_HTML = '''
             margin: 0;
             min-height: 100vh;
             display: flex;
-            align-items: stretch;
+            align-items: center;
             justify-content: center;
             background:
-                radial-gradient(110% 140% at 0% 10%, rgba(244, 114, 182, 0.32), transparent 65%),
-                radial-gradient(130% 140% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 70%),
-                radial-gradient(160% 180% at 50% 130%, rgba(124, 58, 237, 0.26), transparent 75%),
-                #0b1120;
-            color: #f8fafc;
-            padding: clamp(16px, 5vw, 48px);
+                radial-gradient(120% 140% at 0% 10%, rgba(244, 114, 182, 0.32), transparent 65%),
+                radial-gradient(140% 140% at 100% 0%, rgba(56, 189, 248, 0.28), transparent 70%),
+                radial-gradient(150% 180% at 50% 120%, rgba(124, 58, 237, 0.26), transparent 75%),
+                var(--bg);
+            color: var(--text);
+            padding: clamp(16px, 5vw, 52px);
         }
 
-        .page {
-            width: min(980px, 100%);
+        .shell {
+            width: min(1100px, 100%);
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
-            gap: clamp(24px, 4vw, 48px);
-            background: rgba(15, 23, 42, 0.72);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: clamp(24px, 4vw, 36px);
-            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
-            backdrop-filter: blur(14px);
-            padding: clamp(28px, 4vw, 48px);
-        }
-
-        .showcase {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 32px;
-        }
-
-        .showcase__header {
-            display: grid;
-            gap: 18px;
-        }
-
-        .showcase__badge {
-            align-self: flex-start;
-            padding: 6px 14px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            font-weight: 600;
-            background: linear-gradient(135deg, rgba(244, 114, 182, 0.4), rgba(56, 189, 248, 0.28));
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            color: rgba(255, 228, 255, 0.9);
-        }
-
-        .showcase__title {
-            font-size: clamp(1.9rem, 3.2vw, 2.6rem);
-            margin: 0;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-        }
-
-        .showcase__text {
-            margin: 0;
-            line-height: 1.6;
-            color: #e2e8f0;
-            font-size: 1.05rem;
-        }
-
-        .showcase__grid {
-            display: grid;
-            gap: 16px;
-        }
-
-        .showcase__card {
-            padding: 18px 20px;
-            border-radius: 18px;
-            background: rgba(15, 23, 42, 0.78);
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            display: grid;
-            gap: 8px;
-        }
-
-        .showcase__card strong {
-            font-size: 1.05rem;
-        }
-
-        .showcase__card span {
-            color: rgba(203, 213, 225, 0.9);
-            font-size: 0.95rem;
-            line-height: 1.5;
+            grid-template-columns: minmax(320px, 420px) minmax(0, 0.95fr);
+            gap: clamp(24px, 5vw, 52px);
+            background: rgba(10, 17, 32, 0.76);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: clamp(24px, 5vw, 36px);
+            padding: clamp(28px, 5vw, 48px);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px);
         }
 
         .card {
-            background: rgba(8, 13, 28, 0.82);
-            border-radius: clamp(20px, 3vw, 28px);
-            padding: clamp(28px, 3vw, 36px);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--card-border);
+            padding: clamp(28px, 4vw, 36px);
             display: flex;
             flex-direction: column;
             gap: 24px;
+            box-shadow: inset 0 0 0 1px rgba(244, 114, 182, 0.1);
         }
 
         .card__header {
-            text-align: center;
             display: grid;
-            gap: 14px;
+            gap: 12px;
         }
 
-        .card__logo {
-            width: 72px;
-            height: 72px;
-            border-radius: 20px;
-            display: grid;
-            place-items: center;
-            margin: 0 auto;
-            font-size: 36px;
-            background: linear-gradient(135deg, rgba(244, 114, 182, 0.95), rgba(56, 189, 248, 0.85));
-            box-shadow: 0 18px 40px rgba(244, 114, 182, 0.28);
+        .card__badge {
+            width: fit-content;
+            padding: 8px 16px;
+            border-radius: 999px;
+            background: rgba(244, 114, 182, 0.24);
+            border: 1px solid rgba(244, 114, 182, 0.32);
+            color: rgba(255, 228, 255, 0.9);
+            font-size: 0.8rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 600;
         }
 
-        h1 {
+        .card__title {
             margin: 0;
             font-size: 1.9rem;
             font-weight: 600;
@@ -143,27 +95,51 @@ SIGNUP_HTML = '''
 
         .card__subtitle {
             margin: 0;
-            color: #e2e8f0;
-            line-height: 1.5;
+            color: var(--text-muted);
+            line-height: 1.55;
+        }
+
+        .card__progress {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: rgba(203, 213, 225, 0.75);
+            font-size: 0.9rem;
+        }
+
+        .card__progress-bar {
+            flex: 1;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card__progress-bar::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(244, 114, 182, 0.9), rgba(124, 58, 237, 0.85));
+            transform: scaleX(0.95);
+            transform-origin: left;
         }
 
         form {
             display: grid;
             gap: 18px;
-            margin-top: 6px;
         }
 
         .field {
             display: grid;
             gap: 8px;
-            text-align: left;
         }
 
         .field label {
             font-size: 0.85rem;
             font-weight: 600;
-            color: rgba(226, 232, 240, 0.92);
-            letter-spacing: 0.01em;
+            color: rgba(244, 244, 255, 0.9);
+            letter-spacing: 0.02em;
         }
 
         .input {
@@ -175,10 +151,10 @@ SIGNUP_HTML = '''
         .input input {
             width: 100%;
             padding: 14px 16px;
-            border-radius: 14px;
+            border-radius: var(--radius-md);
             border: 1px solid rgba(148, 163, 184, 0.25);
             background: rgba(15, 23, 42, 0.86);
-            color: #f8fafc;
+            color: var(--text);
             font-size: 1rem;
             transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
@@ -195,104 +171,239 @@ SIGNUP_HTML = '''
             right: 10px;
             top: 50%;
             transform: translateY(-50%);
-            border: none;
-            border-radius: 10px;
             padding: 6px 12px;
-            background: rgba(15, 23, 42, 0.75);
-            color: rgba(244, 165, 255, 0.85);
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: rgba(15, 23, 42, 0.72);
+            color: rgba(255, 228, 255, 0.95);
             font-weight: 600;
             font-size: 0.8rem;
             cursor: pointer;
-            transition: background 0.2s ease, color 0.2s ease;
+            transition: background 0.2s ease, border 0.2s ease;
         }
 
         .input--password button:hover,
-        .input--password button:focus {
+        .input--password button:focus-visible {
             outline: none;
             background: rgba(244, 114, 182, 0.24);
-            color: #fdf4ff;
+            border-color: rgba(244, 114, 182, 0.36);
         }
 
-        .helper-text {
-            color: rgba(203, 213, 225, 0.8);
-            font-size: 0.85rem;
+        .card__hint {
+            font-size: 0.9rem;
+            color: rgba(244, 244, 255, 0.65);
+        }
+
+        .error {
+            color: var(--error);
+            background: rgba(248, 113, 113, 0.16);
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(248, 113, 113, 0.28);
+            padding: 12px 14px;
+            font-weight: 500;
         }
 
         .submit {
-            margin-top: 6px;
-            padding: 14px 18px;
-            border-radius: 16px;
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
             border: none;
-            background: linear-gradient(135deg, rgba(244, 114, 182, 0.95), rgba(124, 58, 237, 0.85));
-            color: #0f172a;
-            font-size: 1rem;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.95), rgba(124, 58, 237, 0.9));
+            color: #0b1020;
             font-weight: 600;
+            font-size: 1rem;
             cursor: pointer;
-            box-shadow: 0 18px 40px rgba(244, 114, 182, 0.32);
+            box-shadow: 0 26px 54px rgba(244, 114, 182, 0.28);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         .submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 24px 50px rgba(244, 114, 182, 0.4);
-        }
-
-        .error {
-            color: #fca5a5;
-            background: rgba(248, 113, 113, 0.12);
-            border-radius: 14px;
-            padding: 12px 14px;
-            font-weight: 500;
-            border: 1px solid rgba(248, 113, 113, 0.28);
-            text-align: left;
+            box-shadow: 0 32px 60px rgba(244, 114, 182, 0.32);
         }
 
         .card__footer {
             margin-top: auto;
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
             gap: 12px;
-            justify-content: center;
             font-size: 0.95rem;
+            color: rgba(244, 244, 255, 0.78);
+            text-align: center;
         }
 
         .card__footer a {
-            color: rgba(148, 198, 255, 0.95);
+            color: rgba(244, 114, 182, 0.95);
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 600;
         }
 
         .card__footer a:hover {
             text-decoration: underline;
         }
 
+        .preview {
+            display: flex;
+            flex-direction: column;
+            gap: clamp(24px, 4vw, 40px);
+            justify-content: space-between;
+        }
+
+        .preview__nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .brand__icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-sm);
+            display: grid;
+            place-items: center;
+            background: linear-gradient(135deg, rgba(244, 114, 182, 0.55), rgba(56, 189, 248, 0.52));
+            box-shadow: 0 18px 40px rgba(244, 114, 182, 0.3);
+            font-size: 24px;
+        }
+
+        .preview__nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid transparent;
+            background: rgba(15, 23, 42, 0.58);
+            transition: transform 0.2s ease, border 0.2s ease, color 0.2s ease;
+        }
+
+        .preview__nav a:hover,
+        .preview__nav a:focus-visible {
+            color: var(--text);
+            border-color: rgba(148, 163, 184, 0.32);
+            transform: translateY(-2px);
+            outline: none;
+        }
+
+        .preview__content {
+            display: grid;
+            gap: clamp(20px, 3vw, 32px);
+        }
+
+        .preview__badge {
+            align-self: flex-start;
+            padding: 8px 16px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.22);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: rgba(190, 242, 255, 0.95);
+            font-size: 0.8rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .preview__headline {
+            margin: 0;
+            font-size: clamp(2rem, 4.5vw, 2.8rem);
+            letter-spacing: -0.02em;
+        }
+
+        .preview__description {
+            margin: 0;
+            color: var(--text-muted);
+            line-height: 1.7;
+            font-size: 1.05rem;
+        }
+
+        .preview__grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .preview__card {
+            padding: 20px 22px;
+            border-radius: var(--radius-md);
+            background: rgba(8, 13, 28, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            display: grid;
+            gap: 8px;
+        }
+
+        .preview__card strong {
+            font-size: 1.05rem;
+        }
+
+        .preview__card span {
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .preview__steps {
+            display: grid;
+            gap: 12px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .preview__steps li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .preview__steps span {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: rgba(244, 114, 182, 0.24);
+            color: rgba(255, 228, 255, 0.9);
+            font-weight: 600;
+        }
+
         @media (max-width: 960px) {
-            .page {
+            .shell {
                 grid-template-columns: 1fr;
-                padding: clamp(24px, 5vw, 40px);
+                padding: clamp(24px, 6vw, 40px);
             }
 
-            .showcase {
+            .preview {
                 order: 2;
                 text-align: center;
             }
 
-            .showcase__badge {
+            .preview__badge {
                 margin: 0 auto;
             }
 
-            .showcase__grid {
+            .preview__grid {
                 text-align: left;
+            }
+
+            .preview__steps li {
+                justify-content: center;
+                text-align: left;
+            }
+
+            .preview__nav {
+                justify-content: center;
             }
         }
 
         @media (max-width: 600px) {
             body {
                 padding: 16px;
-            }
-
-            .page {
-                gap: 20px;
             }
 
             .card {
@@ -311,33 +422,16 @@ SIGNUP_HTML = '''
     </style>
 </head>
 <body>
-    <div class="page">
-        <section class="showcase" aria-label="Why creators choose us">
-            <div class="showcase__header">
-                <span class="showcase__badge">Start collaborating</span>
-                <h2 class="showcase__title">Everything you need to storyboard, edit and publish together.</h2>
-                <p class="showcase__text">Unlock collaborative timelines, AI clean up tools and export presets tuned for every platform the moment you join Video Editor Pro.</p>
-            </div>
-            <div class="showcase__grid">
-                <div class="showcase__card">
-                    <strong>Teams ready</strong>
-                    <span>Invite editors, producers and clients with secure review links.</span>
-                </div>
-                <div class="showcase__card">
-                    <strong>Smart automation</strong>
-                    <span>Auto-level audio, match color palettes and set pacing in a single click.</span>
-                </div>
-                <div class="showcase__card">
-                    <strong>Cloud workspace</strong>
-                    <span>Organise assets in synced folders and jump between devices instantly.</span>
-                </div>
-            </div>
-        </section>
+    <div class="shell">
         <main class="card" aria-labelledby="signup-title">
             <div class="card__header">
-                <div class="card__logo">🚀</div>
-                <h1 id="signup-title">Create your account</h1>
-                <p class="card__subtitle">Join Video Editor Pro to organise your footage, collaborate effortlessly and share stunning edits.</p>
+                <span class="card__badge">Create workspace</span>
+                <div class="card__progress" aria-hidden="true">
+                    <span>Step 2 of 2</span>
+                    <div class="card__progress-bar"></div>
+                </div>
+                <h1 class="card__title" id="signup-title">Let’s get you editing</h1>
+                <p class="card__subtitle">Set up your account in seconds and unlock collaborative timelines, responsive previews and project sharing.</p>
             </div>
             {% if error %}
                 <div class="error" role="alert">{{ error }}</div>
@@ -361,16 +455,44 @@ SIGNUP_HTML = '''
                         <input type="password" id="password" name="password" autocomplete="new-password" required>
                         <button type="button" id="toggle-password" aria-controls="password" aria-pressed="false">Show</button>
                     </div>
-                    <p class="helper-text">Use at least 8 characters with a mix of letters and numbers for a strong password.</p>
                 </div>
+                <p class="card__hint">By creating an account you accept our community guidelines and privacy commitment.</p>
                 <button class="submit" type="submit">Create account</button>
             </form>
             <div class="card__footer">
-                <a href="{{ url_for('login') }}">Already have an account? Log in</a>
-                <span>•</span>
-                <a href="{{ url_for('home') }}">Back to home</a>
+                <span>Already a member? <a href="{{ url_for('login') }}">Log in here</a></span>
+                <a href="{{ url_for('home') }}">Return to the product tour</a>
             </div>
         </main>
+        <section class="preview" aria-label="What’s included">
+            <div class="preview__nav">
+                <div class="brand">
+                    <div class="brand__icon" aria-hidden="true">🎬</div>
+                    <span>Video Editor Pro</span>
+                </div>
+                <a href="{{ url_for('home') }}">Back to home</a>
+            </div>
+            <div class="preview__content">
+                <span class="preview__badge">All plans include</span>
+                <h2 class="preview__headline">Everything you need to craft cinematic stories.</h2>
+                <p class="preview__description">Collaborate in real time, automate color matching and deliver across every platform with streamlined controls and a calm, modern workspace.</p>
+                <div class="preview__grid">
+                    <article class="preview__card">
+                        <strong>Team-ready out of the box</strong>
+                        <span>Invite teammates, set granular roles and stay secure with watermarking and review approvals.</span>
+                    </article>
+                    <article class="preview__card">
+                        <strong>Smart automation</strong>
+                        <span>Scene detection, auto subtitles and AI-suggested edits keep your timeline organised.</span>
+                    </article>
+                    <ul class="preview__steps">
+                        <li><span>01</span> Download the desktop app for macOS or Windows.</li>
+                        <li><span>02</span> Connect your storage or cloud libraries in a click.</li>
+                        <li><span>03</span> Share projects instantly with secure collaboration links.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
     </div>
     <script>
         const togglePasswordButton = document.getElementById('toggle-password');

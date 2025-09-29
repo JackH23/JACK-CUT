@@ -9,6 +9,19 @@ LOGIN_HTML = '''
         :root {
             color-scheme: dark;
             font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            --bg: #050b1a;
+            --card: rgba(12, 19, 36, 0.85);
+            --card-border: rgba(148, 163, 184, 0.18);
+            --text: #f8fafc;
+            --text-soft: #cbd5f5;
+            --accent: #60a5fa;
+            --accent-strong: #7c3aed;
+            --warning: rgba(248, 113, 113, 0.85);
+            --error-bg: rgba(248, 113, 113, 0.14);
+            --radius-lg: 32px;
+            --radius-md: 20px;
+            --radius-sm: 12px;
+            --shadow: 0 40px 120px rgba(2, 6, 23, 0.5);
         }
 
         * {
@@ -19,127 +32,155 @@ LOGIN_HTML = '''
             margin: 0;
             min-height: 100vh;
             display: flex;
-            align-items: stretch;
+            align-items: center;
             justify-content: center;
             background:
-                radial-gradient(110% 120% at 0% 0%, rgba(56, 189, 248, 0.25), transparent 65%),
-                radial-gradient(120% 140% at 100% 0%, rgba(124, 58, 237, 0.32), transparent 75%),
-                radial-gradient(180% 180% at 50% 140%, rgba(244, 114, 182, 0.24), transparent 75%),
-                #0b1120;
-            color: #f8fafc;
-            padding: clamp(16px, 5vw, 48px);
+                radial-gradient(120% 140% at 0% 0%, rgba(96, 165, 250, 0.25), transparent 65%),
+                radial-gradient(140% 140% at 100% 0%, rgba(124, 58, 237, 0.34), transparent 75%),
+                radial-gradient(160% 200% at 50% 120%, rgba(244, 114, 182, 0.18), transparent 80%),
+                var(--bg);
+            color: var(--text);
+            padding: clamp(16px, 5vw, 52px);
         }
 
-        .page {
-            width: min(980px, 100%);
+        .shell {
+            width: min(1100px, 100%);
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-            gap: clamp(24px, 4vw, 48px);
-            background: rgba(15, 23, 42, 0.72);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: clamp(24px, 4vw, 36px);
-            box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
-            backdrop-filter: blur(14px);
-            padding: clamp(28px, 4vw, 48px);
+            grid-template-columns: minmax(0, 0.9fr) minmax(320px, 420px);
+            gap: clamp(24px, 5vw, 52px);
+            background: rgba(10, 17, 32, 0.72);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: clamp(24px, 5vw, 36px);
+            padding: clamp(28px, 5vw, 48px);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(18px);
         }
 
-        .showcase {
+        .preview {
             display: flex;
             flex-direction: column;
+            gap: clamp(24px, 4vw, 40px);
             justify-content: space-between;
-            gap: 32px;
         }
 
-        .showcase__header {
+        .preview__nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .brand__icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-sm);
             display: grid;
-            gap: 18px;
+            place-items: center;
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.55), rgba(124, 58, 237, 0.55));
+            box-shadow: 0 18px 40px rgba(124, 58, 237, 0.32);
+            font-size: 24px;
         }
 
-        .showcase__badge {
+        .preview__nav a {
+            color: var(--text-soft);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid transparent;
+            background: rgba(15, 23, 42, 0.55);
+            transition: transform 0.2s ease, border 0.2s ease, color 0.2s ease;
+        }
+
+        .preview__nav a:hover,
+        .preview__nav a:focus-visible {
+            color: var(--text);
+            border-color: rgba(148, 163, 184, 0.32);
+            transform: translateY(-2px);
+            outline: none;
+        }
+
+        .preview__content {
+            display: grid;
+            gap: clamp(20px, 3vw, 32px);
+        }
+
+        .preview__badge {
             align-self: flex-start;
-            padding: 6px 14px;
+            padding: 8px 16px;
             border-radius: 999px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            font-weight: 600;
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(124, 58, 237, 0.35));
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            color: rgba(148, 198, 255, 0.95);
+            background: rgba(96, 165, 250, 0.2);
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            color: rgba(191, 219, 254, 0.95);
         }
 
-        .showcase__title {
-            font-size: clamp(1.9rem, 3.2vw, 2.6rem);
+        .preview__headline {
             margin: 0;
-            font-weight: 700;
+            font-size: clamp(2rem, 4.5vw, 2.8rem);
             letter-spacing: -0.02em;
         }
 
-        .showcase__text {
+        .preview__description {
             margin: 0;
-            line-height: 1.6;
-            color: #cbd5f5;
+            color: var(--text-soft);
+            line-height: 1.7;
             font-size: 1.05rem;
         }
 
-        .showcase__list {
+        .preview__highlights {
+            display: grid;
+            gap: 18px;
             margin: 0;
             padding: 0;
             list-style: none;
-            display: grid;
-            gap: 18px;
         }
 
-        .showcase__list li {
+        .preview__highlights li {
             display: grid;
             grid-template-columns: auto 1fr;
             gap: 12px;
             align-items: start;
-            font-size: 0.95rem;
-            color: #cbd5f5;
+            color: var(--text-soft);
         }
 
-        .showcase__icon {
+        .preview__icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
             display: grid;
             place-items: center;
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            background: rgba(56, 189, 248, 0.15);
-            color: rgba(148, 198, 255, 0.95);
-            font-size: 18px;
+            background: rgba(96, 165, 250, 0.2);
+            color: rgba(191, 219, 254, 0.95);
         }
 
         .card {
-            background: rgba(8, 13, 28, 0.82);
-            border-radius: clamp(20px, 3vw, 28px);
-            padding: clamp(28px, 3vw, 36px);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--card-border);
+            padding: clamp(28px, 4vw, 36px);
             display: flex;
             flex-direction: column;
             gap: 24px;
+            box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.08);
         }
 
         .card__header {
-            text-align: center;
             display: grid;
-            gap: 14px;
+            gap: 12px;
+            text-align: left;
         }
 
-        .card__logo {
-            width: 72px;
-            height: 72px;
-            border-radius: 20px;
-            display: grid;
-            place-items: center;
-            margin: 0 auto;
-            font-size: 36px;
-            background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(56, 189, 248, 0.78));
-            box-shadow: 0 18px 40px rgba(56, 189, 248, 0.25);
-        }
-
-        h1 {
+        .card__title {
             margin: 0;
             font-size: 1.9rem;
             font-weight: 600;
@@ -147,27 +188,51 @@ LOGIN_HTML = '''
 
         .card__subtitle {
             margin: 0;
-            color: #cbd5f5;
+            color: var(--text-soft);
             line-height: 1.5;
+        }
+
+        .progress {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: rgba(203, 213, 225, 0.75);
+        }
+
+        .progress__bar {
+            flex: 1;
+            height: 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.28);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress__bar::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(96, 165, 250, 0.85), rgba(124, 58, 237, 0.75));
+            transform: scaleX(0.5);
+            transform-origin: left;
         }
 
         form {
             display: grid;
             gap: 18px;
-            margin-top: 6px;
         }
 
         .field {
             display: grid;
             gap: 8px;
-            text-align: left;
         }
 
         .field label {
             font-size: 0.85rem;
             font-weight: 600;
-            color: rgba(203, 213, 225, 0.88);
-            letter-spacing: 0.01em;
+            letter-spacing: 0.02em;
+            color: rgba(226, 232, 240, 0.9);
         }
 
         .input {
@@ -179,18 +244,18 @@ LOGIN_HTML = '''
         .input input {
             width: 100%;
             padding: 14px 16px;
-            border-radius: 14px;
+            border-radius: var(--radius-md);
             border: 1px solid rgba(148, 163, 184, 0.25);
-            background: rgba(15, 23, 42, 0.86);
-            color: #f8fafc;
+            background: rgba(15, 23, 42, 0.85);
+            color: var(--text);
             font-size: 1rem;
             transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
         }
 
         .input input:focus {
             outline: none;
-            border-color: rgba(56, 189, 248, 0.65);
-            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+            border-color: rgba(96, 165, 250, 0.65);
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
             transform: translateY(-1px);
         }
 
@@ -199,66 +264,97 @@ LOGIN_HTML = '''
             right: 10px;
             top: 50%;
             transform: translateY(-50%);
-            border: none;
-            border-radius: 10px;
             padding: 6px 12px;
-            background: rgba(15, 23, 42, 0.75);
-            color: #93c5fd;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: rgba(15, 23, 42, 0.7);
+            color: rgba(191, 219, 254, 0.95);
             font-weight: 600;
             font-size: 0.8rem;
             cursor: pointer;
-            transition: background 0.2s ease, color 0.2s ease;
+            transition: background 0.2s ease, border 0.2s ease;
         }
 
         .input--password button:hover,
-        .input--password button:focus {
+        .input--password button:focus-visible {
             outline: none;
-            background: rgba(56, 189, 248, 0.2);
-            color: #f8fafc;
+            background: rgba(96, 165, 250, 0.2);
+            border-color: rgba(148, 163, 184, 0.36);
+        }
+
+        .card__options {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 0.9rem;
+            color: rgba(203, 213, 225, 0.75);
+        }
+
+        .card__options label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card__options input[type="checkbox"] {
+            accent-color: rgba(96, 165, 250, 0.9);
+            width: 18px;
+            height: 18px;
+        }
+
+        .card__options a {
+            color: rgba(191, 219, 254, 0.95);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .card__options a:hover {
+            text-decoration: underline;
         }
 
         .submit {
             margin-top: 6px;
-            padding: 14px 18px;
-            border-radius: 16px;
+            padding: 14px 20px;
+            border-radius: var(--radius-md);
             border: none;
-            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(244, 114, 182, 0.85));
-            color: #0f172a;
-            font-size: 1rem;
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.95), rgba(124, 58, 237, 0.9));
+            color: #050b1a;
             font-weight: 600;
+            font-size: 1rem;
             cursor: pointer;
-            box-shadow: 0 18px 40px rgba(124, 58, 237, 0.32);
+            box-shadow: 0 22px 46px rgba(96, 165, 250, 0.28);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
         .submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 24px 50px rgba(124, 58, 237, 0.38);
+            box-shadow: 0 28px 50px rgba(96, 165, 250, 0.32);
         }
 
         .error {
-            color: #fca5a5;
-            background: rgba(248, 113, 113, 0.12);
-            border-radius: 14px;
+            color: var(--warning);
+            background: var(--error-bg);
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(248, 113, 113, 0.28);
             padding: 12px 14px;
             font-weight: 500;
-            border: 1px solid rgba(248, 113, 113, 0.28);
-            text-align: left;
         }
 
         .card__footer {
             margin-top: auto;
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
             gap: 12px;
-            justify-content: center;
             font-size: 0.95rem;
+            color: rgba(203, 213, 225, 0.8);
+            text-align: center;
         }
 
         .card__footer a {
-            color: rgba(148, 198, 255, 0.95);
+            color: rgba(191, 219, 254, 0.95);
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 600;
         }
 
         .card__footer a:hover {
@@ -266,33 +362,33 @@ LOGIN_HTML = '''
         }
 
         @media (max-width: 960px) {
-            .page {
+            .shell {
                 grid-template-columns: 1fr;
-                padding: clamp(24px, 5vw, 40px);
+                padding: clamp(24px, 6vw, 40px);
             }
 
-            .showcase {
+            .preview {
                 order: 2;
                 text-align: center;
             }
 
-            .showcase__badge {
+            .preview__badge {
                 margin: 0 auto;
             }
 
-            .showcase__list li {
+            .preview__highlights li {
                 justify-items: center;
                 text-align: center;
+            }
+
+            .preview__nav {
+                justify-content: center;
             }
         }
 
         @media (max-width: 600px) {
             body {
                 padding: 16px;
-            }
-
-            .page {
-                gap: 20px;
             }
 
             .card {
@@ -311,33 +407,43 @@ LOGIN_HTML = '''
     </style>
 </head>
 <body>
-    <div class="page">
-        <section class="showcase" aria-label="Product highlights">
-            <div class="showcase__header">
-                <span class="showcase__badge">Polished for 2024</span>
-                <h2 class="showcase__title">Edit faster with a workspace that keeps pace with your ideas.</h2>
-                <p class="showcase__text">Video Editor Pro gives you cinematic looks, real-time previews and smart automation so you can stay focused on the story, not the settings.</p>
+    <div class="shell">
+        <section class="preview" aria-label="Highlights">
+            <div class="preview__nav">
+                <div class="brand">
+                    <div class="brand__icon" aria-hidden="true">🎬</div>
+                    <span>Video Editor Pro</span>
+                </div>
+                <a href="{{ url_for('home') }}">Back to home</a>
             </div>
-            <ul class="showcase__list">
-                <li>
-                    <span class="showcase__icon">⚡</span>
-                    <span>Instant scrubbing with buttery smooth previews across every device.</span>
-                </li>
-                <li>
-                    <span class="showcase__icon">🎯</span>
-                    <span>Intelligent scene detection highlights the best moments in your footage.</span>
-                </li>
-                <li>
-                    <span class="showcase__icon">🤝</span>
-                    <span>Shareable timelines that keep collaborators in sync in real time.</span>
-                </li>
-            </ul>
+            <div class="preview__content">
+                <span class="preview__badge">Fresh redesign</span>
+                <h1 class="preview__headline">Log in and reconnect with your creative flow.</h1>
+                <p class="preview__description">Pick up your projects in seconds with synced timelines, favourites and a layout that keeps your essential tools ready from the first frame.</p>
+                <ul class="preview__highlights">
+                    <li>
+                        <span class="preview__icon">⚡</span>
+                        <span>Lightning-fast project search across every workspace.</span>
+                    </li>
+                    <li>
+                        <span class="preview__icon">🎯</span>
+                        <span>Smart resume remembers your last edit position automatically.</span>
+                    </li>
+                    <li>
+                        <span class="preview__icon">🤝</span>
+                        <span>Collaborative review threads keep feedback tidy and actionable.</span>
+                    </li>
+                </ul>
+            </div>
         </section>
         <main class="card" aria-labelledby="login-title">
             <div class="card__header">
-                <div class="card__logo">🎬</div>
-                <h1 id="login-title">Welcome back</h1>
-                <p class="card__subtitle">Sign in to pick up where you left off and continue crafting your next video masterpiece.</p>
+                <div class="progress" aria-hidden="true">
+                    <span>Step 1 of 2</span>
+                    <div class="progress__bar"></div>
+                </div>
+                <h1 class="card__title" id="login-title">Welcome back</h1>
+                <p class="card__subtitle">Sign in to continue editing and keep your team aligned.</p>
             </div>
             {% if error %}
                 <div class="error" role="alert">{{ error }}</div>
@@ -356,12 +462,17 @@ LOGIN_HTML = '''
                         <button type="button" id="toggle-password" aria-controls="password" aria-pressed="false">Show</button>
                     </div>
                 </div>
+                <div class="card__options">
+                    <label>
+                        <input type="checkbox" name="remember" value="1"> Keep me signed in
+                    </label>
+                    <a href="#" aria-disabled="true" onclick="return false;">Forgot password?</a>
+                </div>
                 <button class="submit" type="submit">Log in</button>
             </form>
             <div class="card__footer">
-                <a href="{{ url_for('signup') }}">Create an account</a>
-                <span>•</span>
-                <a href="{{ url_for('home') }}">Back to home</a>
+                <span>Need an account? <a href="{{ url_for('signup') }}">Create one for free</a></span>
+                <a href="{{ url_for('home') }}">Browse the product tour</a>
             </div>
         </main>
     </div>
