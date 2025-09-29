@@ -87,7 +87,8 @@ HOME_HTML = '''
             align-items: center;
         }
 
-        .nav-actions a {
+        .nav-actions a,
+        .nav-actions button {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -99,9 +100,12 @@ HOME_HTML = '''
             text-decoration: none;
             font-weight: 500;
             transition: all 0.2s ease;
+            cursor: pointer;
+            font-family: inherit;
         }
 
-        .nav-actions a.primary {
+        .nav-actions a.primary,
+        .nav-actions button.primary {
             background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.9));
             color: #0f172a;
             font-weight: 600;
@@ -109,7 +113,8 @@ HOME_HTML = '''
             box-shadow: 0 10px 30px rgba(56, 189, 248, 0.28);
         }
 
-        .nav-actions a:hover {
+        .nav-actions a:hover,
+        .nav-actions button:hover {
             border-color: rgba(148, 163, 184, 0.32);
             transform: translateY(-1px);
         }
@@ -363,8 +368,7 @@ HOME_HTML = '''
         }
 
         .export-button {
-            margin-top: 8px;
-            padding: 12px 20px;
+            padding: 10px 18px;
             border-radius: 12px;
             border: none;
             background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(244, 114, 182, 0.9));
@@ -377,6 +381,10 @@ HOME_HTML = '''
 
         .export-button:hover {
             transform: translateY(-2px);
+        }
+
+        .nav-actions .export-button {
+            margin: 0;
         }
 
         .export-dialog {
@@ -896,10 +904,12 @@ HOME_HTML = '''
             <nav class="nav-actions">
                 {% if username %}
                     <span style="color: var(--text-secondary); font-size: 0.95rem;">Hi, {{ username }} 👋</span>
+                    <button type="button" class="export-button">Export video</button>
                     <a class="primary" href="{{ url_for('signout') }}">Sign Out</a>
                 {% else %}
                     <a href="{{ url_for('login') }}">Log In</a>
                     <a class="primary" href="{{ url_for('signup') }}">Get Started</a>
+                    <button type="button" class="export-button">Export video</button>
                 {% endif %}
             </nav>
         </header>
@@ -1061,7 +1071,6 @@ HOME_HTML = '''
                         </div>
                     </section>
                 </div>
-                <button type="button" class="export-button">Export video</button>
             </article>
         </section>
 
