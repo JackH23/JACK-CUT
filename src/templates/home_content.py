@@ -191,7 +191,7 @@ HOME_HTML = '''
         .editor-layout {
             display: grid;
             gap: 24px;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
             grid-template-areas: "upload preview settings";
             align-items: stretch;
         }
@@ -1080,7 +1080,7 @@ HOME_HTML = '''
 
         @media (max-width: 960px) {
             .editor-layout {
-                grid-template-columns: repeat(2, minmax(220px, 1fr));
+                grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
                 grid-template-areas:
                     "upload preview"
                     "settings preview";
