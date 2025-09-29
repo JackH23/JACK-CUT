@@ -39,26 +39,33 @@ HOME_HTML = '''
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 24px;
+            padding: clamp(20px, 5vw, 42px);
         }
 
         .app-shell {
             width: min(1200px, 100%);
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: clamp(24px, 4vw, 44px);
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: clamp(28px, 5vw, 52px);
         }
 
         .nav-bar {
             background: rgba(17, 24, 39, 0.85);
             backdrop-filter: blur(14px);
             border-radius: 22px;
-            padding: 18px 28px;
+            padding: clamp(16px, 3vw, 24px) clamp(20px, 4vw, 32px);
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-soft);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 24px;
         }
 
         .nav-brand {
@@ -68,6 +75,25 @@ HOME_HTML = '''
             font-size: 20px;
             font-weight: 600;
             letter-spacing: 0.4px;
+            flex: 1 1 auto;
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .brand-title {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+
+        .brand-tagline {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.02em;
         }
 
         .brand-icon {
@@ -81,10 +107,33 @@ HOME_HTML = '''
             font-size: 26px;
         }
 
+        .nav-toggle {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            transition: border-color 0.2s ease, background 0.2s ease;
+            margin-left: auto;
+        }
+
+        .nav-toggle:hover {
+            border-color: rgba(148, 163, 184, 0.5);
+            background: rgba(15, 23, 42, 0.85);
+        }
+
         .nav-actions {
             display: flex;
             gap: 12px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .nav-actions a,
@@ -102,6 +151,10 @@ HOME_HTML = '''
             transition: all 0.2s ease;
             cursor: pointer;
             font-family: inherit;
+        }
+
+        .nav-actions[data-open="false"] {
+            display: none;
         }
 
         .nav-actions a.primary,
@@ -1072,10 +1125,43 @@ HOME_HTML = '''
         }
 
         .footer {
-            margin-top: 16px;
-            text-align: center;
+            margin-top: 8px;
+            background: rgba(17, 24, 39, 0.7);
+            border-radius: 22px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            padding: clamp(18px, 3vw, 28px) clamp(22px, 4vw, 36px);
+        }
+
+        .footer-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .footer-copy {
+            margin: 0;
             color: var(--text-secondary);
+            font-size: 0.92rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
             font-size: 0.9rem;
+            transition: color 0.2s ease;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
         }
 
         @media (max-width: 960px) {
@@ -1087,14 +1173,46 @@ HOME_HTML = '''
             }
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 900px) {
             body {
-                padding: 16px;
+                align-items: stretch;
+                padding: clamp(18px, 6vw, 32px);
             }
             .nav-bar {
                 flex-direction: column;
+                align-items: stretch;
+                gap: 18px;
+            }
+            .nav-brand {
                 align-items: flex-start;
-                gap: 16px;
+                gap: 14px;
+            }
+            .nav-toggle {
+                display: inline-flex;
+            }
+            .nav-actions {
+                width: 100%;
+                align-items: stretch;
+                justify-content: flex-start;
+            }
+            .nav-actions > span {
+                width: 100%;
+            }
+            .nav-actions[data-open="false"] {
+                display: none;
+            }
+            .nav-actions[data-open="true"] {
+                display: flex;
+            }
+            .nav-actions a,
+            .nav-actions button {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 16px;
             }
             .hero {
                 padding: 28px;
@@ -1103,12 +1221,9 @@ HOME_HTML = '''
                 flex-direction: column;
                 align-items: stretch;
             }
-            .nav-actions {
+            .nav-actions a,
+            .nav-actions button {
                 width: 100%;
-                justify-content: flex-start;
-            }
-            .nav-actions a {
-                flex: 1;
                 text-align: center;
             }
             .editor-layout {
@@ -1118,6 +1233,10 @@ HOME_HTML = '''
                     "upload"
                     "settings";
             }
+            .footer-content {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
@@ -1126,9 +1245,15 @@ HOME_HTML = '''
         <header class="nav-bar">
             <div class="nav-brand">
                 <span class="brand-icon">🎬</span>
-                <span>Video Editor Pro</span>
+                <div class="brand-text">
+                    <span class="brand-title">Video Editor Pro</span>
+                    <span class="brand-tagline">Edit at the speed of your story</span>
+                </div>
+                <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="primary-navigation" aria-label="Toggle navigation">
+                    Menu
+                </button>
             </div>
-            <nav class="nav-actions">
+            <nav class="nav-actions" id="primary-navigation" aria-label="Primary navigation" data-open="true">
                 {% if username %}
                     <span style="color: var(--text-secondary); font-size: 0.95rem;">Hi, {{ username }} 👋</span>
                     <button type="button" class="export-button">Export video</button>
@@ -1141,7 +1266,24 @@ HOME_HTML = '''
             </nav>
         </header>
 
-        <section id="features" class="editor-layout">
+        <main class="main-content">
+            <section class="hero">
+                <div class="hero-content">
+                    <h1>Craft cinematic stories faster</h1>
+                    <p>Balance precision with creativity using realtime previews and tactile controls tuned for modern storytellers.</p>
+                    <div class="hero-cta">
+                        {% if username %}
+                            <a class="primary" href="#timeline">Open your timeline</a>
+                            <a class="secondary" href="#features">Explore tools</a>
+                        {% else %}
+                            <a class="primary" href="{{ url_for('signup') }}">Start editing</a>
+                            <a class="secondary" href="{{ url_for('login') }}">Log in</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </section>
+
+            <section id="features" class="editor-layout">
             <article class="panel upload-card">
                 <div class="panel-header">
                     <h2>Upload footage</h2>
@@ -1337,7 +1479,7 @@ HOME_HTML = '''
             </article>
         </section>
 
-        <section class="panel timeline-card timeline-footer">
+            <section id="timeline" class="panel timeline-card timeline-footer">
             <h2>Timeline overview</h2>
             <div class="timeline-track" id="timeline-track">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
@@ -1349,7 +1491,8 @@ HOME_HTML = '''
                 <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
                 <button type="button" id="play-video-button">Play Back</button>
             </div>
-        </section>
+            </section>
+        </main>
 
         <div class="export-dialog" id="export-dialog" hidden aria-hidden="true">
             <div class="export-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
@@ -1383,10 +1526,60 @@ HOME_HTML = '''
         </div>
 
         <footer class="footer">
-            © {{ 2024 }} Video Editor Pro. Crafted for creators.
+            <div class="footer-content">
+                <p class="footer-copy">© {{ 2024 }} Video Editor Pro. Crafted for creators.</p>
+                <div class="footer-links">
+                    <a href="#features">Features</a>
+                    <a href="#timeline">Timeline</a>
+                    {% if username %}
+                        <a href="{{ url_for('signout') }}">Sign Out</a>
+                    {% else %}
+                        <a href="{{ url_for('login') }}">Log In</a>
+                    {% endif %}
+                </div>
+            </div>
         </footer>
     </div>
     <script>
+        const navToggleButton = document.querySelector('.nav-toggle');
+        const navActions = document.getElementById('primary-navigation');
+        const NAVIGATION_BREAKPOINT = 900;
+
+        if (navToggleButton && navActions) {
+            const applyNavState = (expanded) => {
+                const isExpanded = Boolean(expanded);
+                navToggleButton.setAttribute('aria-expanded', String(isExpanded));
+                navActions.dataset.open = String(isExpanded);
+            };
+
+            const syncNavForViewport = () => {
+                if (window.innerWidth > NAVIGATION_BREAKPOINT) {
+                    applyNavState(true);
+                } else {
+                    const isExpanded = navToggleButton.getAttribute('aria-expanded') === 'true';
+                    applyNavState(isExpanded);
+                }
+            };
+
+            navToggleButton.addEventListener('click', () => {
+                const isExpanded = navToggleButton.getAttribute('aria-expanded') === 'true';
+                applyNavState(!isExpanded);
+            });
+
+            navActions.addEventListener('click', (event) => {
+                if (window.innerWidth > NAVIGATION_BREAKPOINT) {
+                    return;
+                }
+                const activated = event.target?.closest?.('a, button');
+                if (activated) {
+                    applyNavState(false);
+                }
+            });
+
+            syncNavForViewport();
+            window.addEventListener('resize', syncNavForViewport);
+        }
+
         const uploadInput = document.getElementById('video-upload');
         const uploadButton = document.getElementById('upload-button');
         const uploadMetaStatus = document.querySelector('.upload-meta__status');
