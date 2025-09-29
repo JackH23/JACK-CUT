@@ -6,6 +6,8 @@ HOME_HTML = '''
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Video Editor Pro</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700&display=swap');
+
         :root {
             color-scheme: dark;
             --surface-1: #0f172a;
@@ -135,7 +137,9 @@ HOME_HTML = '''
         .hero-content {
             position: relative;
             display: grid;
-            gap: 24px;
+            grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+            gap: clamp(24px, 4vw, 48px);
+            align-items: center;
         }
 
         .hero h1 {
@@ -181,6 +185,214 @@ HOME_HTML = '''
 
         .hero-cta a:hover {
             transform: translateY(-2px);
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: clamp(32px, 6vw, 48px);
+        }
+
+        .hero-copy {
+            display: grid;
+            gap: 18px;
+        }
+
+        .hero-highlights {
+            display: grid;
+            gap: 8px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .hero-highlights li {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            width: fit-content;
+        }
+
+        .hero-aside {
+            display: grid;
+            gap: 14px;
+        }
+
+        .hero-aside-card {
+            padding: 18px 20px;
+            border-radius: 18px;
+            background: rgba(17, 24, 39, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: var(--shadow-inner);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .hero-aside-value {
+            font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        .hero-aside-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .hero-aside-card p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .quickstart {
+            display: grid;
+            gap: 20px;
+            background: rgba(17, 24, 39, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 24px;
+            padding: clamp(24px, 4vw, 32px);
+            box-shadow: var(--shadow-soft);
+        }
+
+        .section-heading {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            font-size: 1.6rem;
+            font-weight: 600;
+        }
+
+        .section-heading p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .quickstart-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .quickstart-card {
+            display: grid;
+            gap: 12px;
+            padding: 18px;
+            border-radius: 16px;
+            background: rgba(10, 17, 35, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            position: relative;
+        }
+
+        .quickstart-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-weight: 600;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.8), rgba(56, 189, 248, 0.75));
+            color: #0b1020;
+        }
+
+        .quickstart-card h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .quickstart-card p {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .support-grid {
+            display: grid;
+            gap: 24px;
+        }
+
+        .support-grid__cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+        }
+
+        .support-card {
+            display: grid;
+            gap: 12px;
+            padding: 20px;
+            border-radius: 18px;
+            background: rgba(17, 24, 39, 0.68);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: var(--shadow-inner);
+        }
+
+        .support-icon {
+            font-size: 1.4rem;
+        }
+
+        .support-card h3 {
+            margin: 0;
+            font-size: 1.15rem;
+        }
+
+        .support-card p {
+            margin: 0;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+
+        .keyboard-shortcuts {
+            display: grid;
+            gap: 20px;
+            background: rgba(17, 24, 39, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 24px;
+            padding: clamp(24px, 4vw, 32px);
+        }
+
+        .shortcut-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: grid;
+            gap: 12px;
+        }
+
+        .shortcut-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: rgba(8, 13, 28, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+
+        .shortcut-list span:first-child {
+            font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+            font-weight: 600;
+            color: var(--text-primary);
         }
 
         .editor-layout {
@@ -844,6 +1056,16 @@ HOME_HTML = '''
         }
 
         @media (max-width: 960px) {
+            .hero-content {
+                grid-template-columns: 1fr;
+            }
+            .hero-aside {
+                grid-auto-flow: column;
+                grid-auto-columns: minmax(0, 1fr);
+            }
+            .hero-aside-card {
+                align-items: flex-start;
+            }
             .editor-layout {
                 grid-template-columns: repeat(2, minmax(220px, 1fr));
                 grid-template-areas:
@@ -864,9 +1086,25 @@ HOME_HTML = '''
             .hero {
                 padding: 28px;
             }
+            .hero-content {
+                gap: 24px;
+            }
+            .hero-highlights li {
+                width: 100%;
+            }
+            .hero-aside {
+                grid-auto-flow: row;
+            }
             .hero-cta {
                 flex-direction: column;
                 align-items: stretch;
+            }
+            .quickstart {
+                padding: 24px;
+            }
+            .shortcut-list li {
+                flex-direction: column;
+                align-items: flex-start;
             }
             .nav-actions {
                 width: 100%;
@@ -904,7 +1142,76 @@ HOME_HTML = '''
             </nav>
         </header>
 
-        <section id="features" class="editor-layout">
+        <main class="main-content">
+            <section class="hero" aria-labelledby="hero-title">
+                <div class="hero-content">
+                    <div class="hero-copy">
+                        <h1 id="hero-title">Craft standout edits with a calmer workspace</h1>
+                        {% if username %}
+                        <p>Pick up your latest project and keep refining every beat with a clear, organised interface.</p>
+                        {% else %}
+                        <p>Shape your footage into scroll-stopping edits with intuitive controls and a calming, organised interface.</p>
+                        {% endif %}
+                        <div class="hero-cta">
+                            <a class="primary" href="#features">{% if username %}Jump into the editor{% else %}Start editing for free{% endif %}</a>
+                            {% if username %}
+                            <a class="secondary" href="#workflow">Explore workflow tips</a>
+                            {% else %}
+                            <a class="secondary" href="{{ url_for('login') }}">I already have an account</a>
+                            {% endif %}
+                        </div>
+                        <ul class="hero-highlights">
+                            <li>✨ Drag-and-drop timeline with precision snapping</li>
+                            <li>🎧 Audio sweetening presets in one click</li>
+                            <li>🚀 Export-ready templates for every platform</li>
+                        </ul>
+                    </div>
+                    <aside class="hero-aside" aria-label="Editor highlights">
+                        <div class="hero-aside-card">
+                            <span class="hero-aside-value">4K</span>
+                            <span class="hero-aside-label">Export ready</span>
+                            <p>Optimised presets keep social and cinematic formats looking crisp.</p>
+                        </div>
+                        <div class="hero-aside-card">
+                            <span class="hero-aside-value">60+</span>
+                            <span class="hero-aside-label">Transitions</span>
+                            <p>Blend clips with curated motion design, from subtle fades to energetic cuts.</p>
+                        </div>
+                        <div class="hero-aside-card">
+                            <span class="hero-aside-value">Live</span>
+                            <span class="hero-aside-label">Collaboration</span>
+                            <p>Share feedback links and review edits in real time with your team.</p>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+
+            <section class="quickstart" aria-labelledby="quickstart-title">
+                <div class="section-heading">
+                    <h2 id="quickstart-title">Get started in three simple steps</h2>
+                    <p>Keep your story organised with a guided flow before you dive into the timeline.</p>
+                </div>
+                <div class="quickstart-steps">
+                    <article class="quickstart-card">
+                        <span class="quickstart-icon">1</span>
+                        <h3>Import media</h3>
+                        <p>Drop files directly into the workspace or browse your library—we generate thumbnails instantly.</p>
+                    </article>
+                    <article class="quickstart-card">
+                        <span class="quickstart-icon">2</span>
+                        <h3>Arrange &amp; refine</h3>
+                        <p>Use smart snapping and magnetic tracks to line up cuts, transitions, and overlays effortlessly.</p>
+                    </article>
+                    <article class="quickstart-card">
+                        <span class="quickstart-icon">3</span>
+                        <h3>Preview &amp; share</h3>
+                        <p>Switch aspect ratios on the fly, polish audio, then export ready-to-share videos in seconds.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section id="features" class="editor-layout">
+
             <article class="panel upload-card">
                 <h2>Upload footage</h2>
                 <p class="info-text">Drag in your raw clips or browse your drive to start building the story.</p>
@@ -1079,7 +1386,46 @@ HOME_HTML = '''
             </div>
         </section>
 
-        <div class="export-dialog" id="export-dialog" hidden aria-hidden="true">
+        <section id="workflow" class="support-grid" aria-labelledby="workflow-title">
+            <div class="section-heading">
+                <h2 id="workflow-title">Stay in flow with contextual guidance</h2>
+                <p>Discover the tools that help you collaborate, stay organised, and deliver on deadline.</p>
+            </div>
+            <div class="support-grid__cards">
+                <article class="support-card">
+                    <span class="support-icon">🎯</span>
+                    <h3>Storyboard-ready layouts</h3>
+                    <p>Group clips into scenes, add annotations, and keep notes visible beside the preview.</p>
+                </article>
+                <article class="support-card">
+                    <span class="support-icon">🤝</span>
+                    <h3>Comment without chaos</h3>
+                    <p>Time-stamped comments land right on the timeline so nothing gets lost in long email threads.</p>
+                </article>
+                <article class="support-card">
+                    <span class="support-icon">🧠</span>
+                    <h3>Guided colour balance</h3>
+                    <p>Adaptive presets suggest exposure and tone tweaks tailored to each clip’s mood.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="keyboard-shortcuts" aria-labelledby="shortcuts-title">
+            <div class="section-heading">
+                <h2 id="shortcuts-title">Keyboard shortcuts that speed up your edit</h2>
+                <p>Keep these at hand to fly through rough cuts and final polish.</p>
+            </div>
+            <ul class="shortcut-list">
+                <li><span>Space</span><span>Play / pause the active timeline preview</span></li>
+                <li><span>Shift + S</span><span>Split the selected clip at the playhead</span></li>
+                <li><span>Option / Alt + Drag</span><span>Duplicate media while preserving effects</span></li>
+                <li><span>Cmd / Ctrl + E</span><span>Open the export dialog with your latest settings</span></li>
+            </ul>
+        </section>
+        </main>
+
+        <div class="export-dialog"
+ id="export-dialog" hidden aria-hidden="true">
             <div class="export-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
                 <h3 id="export-dialog-title">Export timeline to MP4</h3>
                 <p class="export-dialog__subtitle">We gathered the latest playback from your timeline. Review the export configuration before confirming.</p>
