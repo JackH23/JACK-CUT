@@ -39,21 +39,21 @@ HOME_HTML = '''
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 24px;
+            padding: clamp(16px, 3vh, 24px);
         }
 
         .app-shell {
             width: min(1200px, 100%);
             display: grid;
             grid-template-columns: 1fr;
-            gap: 24px;
+            gap: clamp(18px, 3vh, 24px);
         }
 
         .nav-bar {
             background: rgba(17, 24, 39, 0.85);
             backdrop-filter: blur(14px);
             border-radius: 22px;
-            padding: 18px 28px;
+            padding: clamp(14px, 2.5vh, 18px) clamp(20px, 4vw, 28px);
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-soft);
             display: flex;
@@ -190,7 +190,7 @@ HOME_HTML = '''
 
         .editor-layout {
             display: grid;
-            gap: 24px;
+            gap: clamp(16px, 3vw, 24px);
             grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
             grid-template-areas: "upload preview settings";
             align-items: stretch;
@@ -228,10 +228,10 @@ HOME_HTML = '''
             border-radius: 22px;
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-soft);
-            padding: 24px;
+            padding: clamp(16px, 3vh, 24px);
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: clamp(16px, 3vh, 20px);
         }
 
         .panel-header {
@@ -446,7 +446,7 @@ HOME_HTML = '''
             color: var(--text-secondary);
             font-size: 1.1rem;
             padding: 16px;
-            min-height: 280px;
+            min-height: clamp(200px, 32vh, 280px);
             overflow: hidden;
         }
 
