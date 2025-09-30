@@ -873,7 +873,6 @@ HOME_HTML = '''
             max-width: 100%;
             max-height: 100%;
             aspect-ratio: var(--preview-aspect-ratio);
-            border-radius: 16px;
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
@@ -910,14 +909,12 @@ HOME_HTML = '''
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 16px;
         }
 
         .preview-viewport img {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 16px;
             display: block;
         }
 
@@ -938,7 +935,6 @@ HOME_HTML = '''
             display: flex;
             align-items: stretch;
             justify-content: stretch;
-            border-radius: 16px;
             overflow: hidden;
             box-shadow:
                 0 0 0 1px rgba(148, 163, 184, 0.35),
