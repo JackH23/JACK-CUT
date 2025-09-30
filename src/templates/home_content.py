@@ -22,6 +22,9 @@ HOME_HTML = '''
             --shadow-inner: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
             --preview-guide-base: rgba(148, 163, 184, 0.18);
             --preview-guide-strong: rgba(56, 189, 248, 0.8);
+            --preview-viewport-border-default: rgba(148, 163, 184, 0.18);
+            --preview-viewport-border-aligned: rgba(56, 189, 248, 0.82);
+            --preview-viewport-border-out-of-bounds: rgba(248, 113, 113, 0.85);
             font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
         }
 
@@ -833,9 +836,28 @@ HOME_HTML = '''
             aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 16px;
             background: rgba(8, 13, 28, 0.92);
+            border: 1px solid var(--preview-viewport-border-default);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
+            transition: aspect-ratio 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        .preview-viewport.is-aligned {
+            border-color: var(--preview-viewport-border-aligned);
+            box-shadow:
+                inset 0 0 0 1px rgba(15, 23, 42, 0.45),
+                0 0 0 1px rgba(56, 189, 248, 0.35),
+                0 24px 52px rgba(8, 13, 28, 0.55);
+            filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.25));
+        }
+
+        .preview-viewport.is-out-of-bounds {
+            border-color: var(--preview-viewport-border-out-of-bounds);
+            box-shadow:
+                inset 0 0 0 1px rgba(15, 23, 42, 0.45),
+                0 0 0 1px rgba(248, 113, 113, 0.25),
+                0 20px 46px rgba(8, 13, 28, 0.5);
+            filter: drop-shadow(0 0 14px rgba(248, 113, 113, 0.2));
         }
 
         .preview-guides {
@@ -2881,88 +2903,78 @@ HOME_HTML = '''
             const proposedLeft = left;
             const proposedTop = top;
 
-            const visibilityPaddingX = Math.max(
-                16,
-                Math.min(120, (Math.min(width, viewportWidth) * 0.25) + 12),
-            );
-            const visibilityPaddingY = Math.max(
-                16,
-                Math.min(120, (Math.min(height, viewportHeight) * 0.25) + 12),
-            );
+            const snapThreshold = Math.max(1, Math.min(12, Math.min(width, height) * 0.08));
+            const horizontalMin = 0;
+            const horizontalMax = viewportWidth - width;
+            const verticalMin = 0;
+            const verticalMax = viewportHeight - height;
+            const canFitHorizontally = horizontalMax >= horizontalMin;
+            const canFitVertically = verticalMax >= verticalMin;
 
-            const horizontalMin = visibilityPaddingX - width;
-            const horizontalMax = viewportWidth - visibilityPaddingX;
-            const verticalMin = visibilityPaddingY - height;
-            const verticalMax = viewportHeight - visibilityPaddingY;
-
-            if (horizontalMin <= horizontalMax) {
-                if (left < horizontalMin) {
-                    left = horizontalMin;
-                    boundaries.overflow.left = true;
-                    boundaries.touches.left = true;
-                } else if (left > horizontalMax) {
-                    left = horizontalMax;
-                    boundaries.overflow.right = true;
-                    boundaries.touches.right = true;
-                }
-
-                if (!boundaries.overflow.left && Math.abs(left - horizontalMin) <= 0.5) {
-                    left = horizontalMin;
-                    boundaries.touches.left = true;
-                }
-
-                if (!boundaries.overflow.right && Math.abs(left - horizontalMax) <= 0.5) {
-                    left = horizontalMax;
-                    boundaries.touches.right = true;
-                }
-            } else {
-                const fallback = (horizontalMin + horizontalMax) / 2;
-                left = Number.isFinite(fallback) ? fallback : 0;
-                boundaries.touches.left = true;
-                boundaries.touches.right = true;
-            }
-
-            if (verticalMin <= verticalMax) {
-                if (top < verticalMin) {
-                    top = verticalMin;
-                    boundaries.overflow.top = true;
-                    boundaries.touches.top = true;
-                } else if (top > verticalMax) {
-                    top = verticalMax;
-                    boundaries.overflow.bottom = true;
-                    boundaries.touches.bottom = true;
-                }
-
-                if (!boundaries.overflow.top && Math.abs(top - verticalMin) <= 0.5) {
-                    top = verticalMin;
-                    boundaries.touches.top = true;
-                }
-
-                if (!boundaries.overflow.bottom && Math.abs(top - verticalMax) <= 0.5) {
-                    top = verticalMax;
-                    boundaries.touches.bottom = true;
-                }
-            } else {
-                const fallback = (verticalMin + verticalMax) / 2;
-                top = Number.isFinite(fallback) ? fallback : 0;
-                boundaries.touches.top = true;
-                boundaries.touches.bottom = true;
-            }
-
-            if (horizontalMin <= horizontalMax) {
+            if (canFitHorizontally) {
                 if (!boundaries.overflow.left && proposedLeft < horizontalMin) {
                     boundaries.overflow.left = true;
                 } else if (!boundaries.overflow.right && proposedLeft > horizontalMax) {
                     boundaries.overflow.right = true;
                 }
+
+                left = Math.min(Math.max(left, horizontalMin), horizontalMax);
+
+                if (!boundaries.overflow.left && Math.abs(left - horizontalMin) <= snapThreshold) {
+                    left = horizontalMin;
+                    boundaries.touches.left = true;
+                }
+
+                if (!boundaries.overflow.right && Math.abs(left - horizontalMax) <= snapThreshold) {
+                    left = horizontalMax;
+                    boundaries.touches.right = true;
+                }
+
+                if (left === horizontalMin) {
+                    boundaries.touches.left = true;
+                }
+
+                if (left === horizontalMax) {
+                    boundaries.touches.right = true;
+                }
+            } else {
+                const fallback = (viewportWidth - width) / 2;
+                left = Number.isFinite(fallback) ? fallback : 0;
+                boundaries.touches.left = true;
+                boundaries.touches.right = true;
             }
 
-            if (verticalMin <= verticalMax) {
+            if (canFitVertically) {
                 if (!boundaries.overflow.top && proposedTop < verticalMin) {
                     boundaries.overflow.top = true;
                 } else if (!boundaries.overflow.bottom && proposedTop > verticalMax) {
                     boundaries.overflow.bottom = true;
                 }
+
+                top = Math.min(Math.max(top, verticalMin), verticalMax);
+
+                if (!boundaries.overflow.top && Math.abs(top - verticalMin) <= snapThreshold) {
+                    top = verticalMin;
+                    boundaries.touches.top = true;
+                }
+
+                if (!boundaries.overflow.bottom && Math.abs(top - verticalMax) <= snapThreshold) {
+                    top = verticalMax;
+                    boundaries.touches.bottom = true;
+                }
+
+                if (top === verticalMin) {
+                    boundaries.touches.top = true;
+                }
+
+                if (top === verticalMax) {
+                    boundaries.touches.bottom = true;
+                }
+            } else {
+                const fallback = (viewportHeight - height) / 2;
+                top = Number.isFinite(fallback) ? fallback : 0;
+                boundaries.touches.top = true;
+                boundaries.touches.bottom = true;
             }
 
             return {
@@ -3003,6 +3015,10 @@ HOME_HTML = '''
                 if (previewGuides) {
                     previewGuides.classList.remove('is-visible', 'is-aligned', 'is-out-of-bounds');
                     previewGuides.removeAttribute('data-active-edges');
+                }
+                if (previewViewport) {
+                    previewViewport.classList.remove('is-aligned', 'is-out-of-bounds');
+                    previewViewport.removeAttribute('data-aligned-edges');
                 }
                 return;
             }
@@ -3066,6 +3082,22 @@ HOME_HTML = '''
                         previewGuides.setAttribute('data-active-edges', touchedEdges);
                     } else {
                         previewGuides.removeAttribute('data-active-edges');
+                    }
+                }
+            }
+
+            if (previewViewport) {
+                if (isOverflow) {
+                    previewViewport.classList.add('is-out-of-bounds');
+                    previewViewport.classList.remove('is-aligned');
+                    previewViewport.removeAttribute('data-aligned-edges');
+                } else {
+                    previewViewport.classList.toggle('is-aligned', isTouching);
+                    previewViewport.classList.remove('is-out-of-bounds');
+                    if (isTouching && touchedEdges) {
+                        previewViewport.setAttribute('data-aligned-edges', touchedEdges);
+                    } else {
+                        previewViewport.removeAttribute('data-aligned-edges');
                     }
                 }
             }
@@ -3154,6 +3186,10 @@ HOME_HTML = '''
             if (previewGuides) {
                 previewGuides.classList.remove('is-visible', 'is-aligned', 'is-out-of-bounds');
                 previewGuides.removeAttribute('data-active-edges');
+            }
+            if (previewViewport) {
+                previewViewport.classList.remove('is-aligned', 'is-out-of-bounds');
+                previewViewport.removeAttribute('data-aligned-edges');
             }
             previewImageFrameState = null;
         }
