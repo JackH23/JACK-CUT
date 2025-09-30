@@ -1009,6 +1009,200 @@ HOME_HTML = '''
             cursor: nesw-resize;
         }
 
+        .preview-guides-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 12;
+            display: none;
+        }
+
+        .preview-guides-layer.is-active {
+            display: block;
+        }
+
+        .preview-guide {
+            position: absolute;
+            display: none;
+            opacity: 0.95;
+            pointer-events: none;
+            transition: opacity 0.12s ease;
+        }
+
+        .preview-guide--vertical {
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            transform: translateX(-50%);
+        }
+
+        .preview-guide--horizontal {
+            left: 0;
+            right: 0;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+
+        .preview-guide--alignment {
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.85), rgba(124, 58, 237, 0.65));
+            box-shadow:
+                0 0 0 1px rgba(148, 163, 184, 0.35),
+                0 0 18px rgba(56, 189, 248, 0.35);
+        }
+
+        .preview-guide--snap {
+            background: linear-gradient(180deg, rgba(244, 114, 182, 0.9), rgba(56, 189, 248, 0.75));
+            box-shadow:
+                0 0 0 1px rgba(15, 23, 42, 0.6),
+                0 0 12px rgba(244, 114, 182, 0.4);
+        }
+
+        .preview-guide--smart {
+            width: 120px;
+            height: 120px;
+            border-radius: 18px;
+            border: 1.5px dashed rgba(124, 58, 237, 0.65);
+            transform: translate(-50%, -50%);
+            display: none;
+            box-shadow:
+                0 0 0 1px rgba(15, 23, 42, 0.6),
+                0 0 20px rgba(124, 58, 237, 0.3);
+        }
+
+        .preview-guide--smart::before,
+        .preview-guide--smart::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1.5px;
+            transform: translateX(-50%);
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.8), rgba(124, 58, 237, 0.6));
+        }
+
+        .preview-guide--smart::after {
+            top: 50%;
+            bottom: auto;
+            height: 1.5px;
+            width: 100%;
+            left: 0;
+            transform: translateY(-50%);
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.8), rgba(124, 58, 237, 0.6));
+        }
+
+        .preview-guide--smart[data-state="locked"] {
+            border-color: rgba(244, 114, 182, 0.85);
+            box-shadow:
+                0 0 0 1px rgba(244, 114, 182, 0.7),
+                0 0 24px rgba(244, 114, 182, 0.4);
+        }
+
+        .preview-guide-measure {
+            position: absolute;
+            display: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            background: rgba(8, 13, 28, 0.85);
+            color: rgba(226, 232, 240, 0.95);
+            box-shadow: 0 12px 32px rgba(8, 12, 24, 0.45);
+            white-space: nowrap;
+        }
+
+        .preview-guide-measure[data-measure="size"] {
+            transform: translate(-50%, -50%);
+        }
+
+        .preview-guide-measure[data-measure="position"] {
+            transform: translate(-50%, -100%);
+        }
+
+        .preview-guide-measure[data-placement="below"] {
+            transform: translate(-50%, 0);
+        }
+
+        .preview-ruler {
+            position: absolute;
+            display: none;
+            font-size: 0.68rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(226, 232, 240, 0.92);
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+
+        .preview-ruler.is-visible {
+            display: block;
+        }
+
+        .preview-ruler--horizontal {
+            left: 0;
+            right: 0;
+            top: 0;
+            height: 28px;
+            padding: 8px 10px 6px;
+            background:
+                linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0)) 0 0 / 100% 100%,
+                repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.28) 1px, transparent 1px, transparent 8px);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
+        .preview-ruler--horizontal::after {
+            content: '';
+            position: absolute;
+            left: var(--marker-start, 0px);
+            right: calc(100% - var(--marker-end, 0px));
+            top: 0;
+            bottom: 6px;
+            border-bottom: 2px solid rgba(56, 189, 248, 0.9);
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(124, 58, 237, 0.2));
+            pointer-events: none;
+        }
+
+        .preview-ruler--vertical {
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 28px;
+            padding: 10px 6px;
+            background:
+                linear-gradient(90deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0)) 0 0 / 100% 100%,
+                repeating-linear-gradient(0deg, rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.28) 1px, transparent 1px, transparent 8px);
+            border-right: 1px solid rgba(148, 163, 184, 0.22);
+        }
+
+        .preview-ruler--vertical::after {
+            content: '';
+            position: absolute;
+            top: var(--marker-start, 0px);
+            bottom: calc(100% - var(--marker-end, 0px));
+            left: 0;
+            right: 6px;
+            border-right: 2px solid rgba(56, 189, 248, 0.9);
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.22), rgba(124, 58, 237, 0.2));
+            pointer-events: none;
+        }
+
+        .preview-ruler__label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: rgba(8, 13, 28, 0.85);
+            box-shadow: 0 10px 24px rgba(8, 12, 24, 0.45);
+        }
+
+        .preview-ruler--vertical .preview-ruler__label {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            gap: 4px;
+        }
+
         .timeline-card {
             position: relative;
             overflow: hidden;
@@ -1386,6 +1580,27 @@ HOME_HTML = '''
                                 <button type="button" class="preview-resize-handle handle-sw" data-handle="sw" aria-label="Resize from bottom left"></button>
                             </div>
                         </div>
+                        <div class="preview-guides-layer" id="preview-guides-layer" hidden aria-hidden="true">
+                            <div class="preview-ruler preview-ruler--horizontal" data-ruler="horizontal">
+                                <span class="preview-ruler__label" data-ruler-value="horizontal"></span>
+                            </div>
+                            <div class="preview-ruler preview-ruler--vertical" data-ruler="vertical">
+                                <span class="preview-ruler__label" data-ruler-value="vertical"></span>
+                            </div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--vertical" data-guide="align-left"></div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--vertical" data-guide="align-right"></div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--horizontal" data-guide="align-top"></div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--horizontal" data-guide="align-bottom"></div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--vertical" data-guide="align-center-vertical"></div>
+                            <div class="preview-guide preview-guide--alignment preview-guide--horizontal" data-guide="align-center-horizontal"></div>
+                            <div class="preview-guide preview-guide--snap preview-guide--vertical" data-guide="snap-left"></div>
+                            <div class="preview-guide preview-guide--snap preview-guide--vertical" data-guide="snap-right"></div>
+                            <div class="preview-guide preview-guide--snap preview-guide--horizontal" data-guide="snap-top"></div>
+                            <div class="preview-guide preview-guide--snap preview-guide--horizontal" data-guide="snap-bottom"></div>
+                            <div class="preview-guide preview-guide--smart" data-guide="smart-center"></div>
+                            <div class="preview-guide-measure" data-measure="size"></div>
+                            <div class="preview-guide-measure" data-measure="position"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="preview-outside-indicator" id="preview-outside-indicator" hidden aria-hidden="true">
@@ -1615,6 +1830,36 @@ HOME_HTML = '''
                 left: previewOutsideIndicator.querySelector('[data-segment="left"]'),
             }
             : null;
+        const previewGuidesLayer = document.getElementById('preview-guides-layer');
+        const previewGuideElements = previewGuidesLayer
+            ? {
+                alignLeft: previewGuidesLayer.querySelector('[data-guide="align-left"]'),
+                alignRight: previewGuidesLayer.querySelector('[data-guide="align-right"]'),
+                alignTop: previewGuidesLayer.querySelector('[data-guide="align-top"]'),
+                alignBottom: previewGuidesLayer.querySelector('[data-guide="align-bottom"]'),
+                alignCenterVertical: previewGuidesLayer.querySelector('[data-guide="align-center-vertical"]'),
+                alignCenterHorizontal: previewGuidesLayer.querySelector('[data-guide="align-center-horizontal"]'),
+                snapLeft: previewGuidesLayer.querySelector('[data-guide="snap-left"]'),
+                snapRight: previewGuidesLayer.querySelector('[data-guide="snap-right"]'),
+                snapTop: previewGuidesLayer.querySelector('[data-guide="snap-top"]'),
+                snapBottom: previewGuidesLayer.querySelector('[data-guide="snap-bottom"]'),
+                smartCenter: previewGuidesLayer.querySelector('[data-guide="smart-center"]'),
+            }
+            : null;
+        const previewGuideMeasurements = previewGuidesLayer
+            ? {
+                size: previewGuidesLayer.querySelector('[data-measure="size"]'),
+                position: previewGuidesLayer.querySelector('[data-measure="position"]'),
+            }
+            : null;
+        const previewRulerElements = previewGuidesLayer
+            ? {
+                horizontal: previewGuidesLayer.querySelector('[data-ruler="horizontal"]'),
+                vertical: previewGuidesLayer.querySelector('[data-ruler="vertical"]'),
+                horizontalLabel: previewGuidesLayer.querySelector('[data-ruler-value="horizontal"]'),
+                verticalLabel: previewGuidesLayer.querySelector('[data-ruler-value="vertical"]'),
+            }
+            : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -1652,6 +1897,7 @@ HOME_HTML = '''
         let pendingPreviewImageTransform = null;
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
+        let previewGuidesHideTimeout = null;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -1662,6 +1908,8 @@ HOME_HTML = '''
 
         const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
         const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
+        const PREVIEW_GUIDE_NEAR_THRESHOLD = Math.max(PREVIEW_IMAGE_SNAP_THRESHOLD, 14);
+        const PREVIEW_SMART_GUIDE_TOLERANCE = 6;
         const PREVIEW_ALIGNMENT_CLASSES = {
             left: 'is-aligned-left',
             right: 'is-aligned-right',
@@ -2837,6 +3085,314 @@ HOME_HTML = '''
             };
         }
 
+        function clamp(value, min, max) {
+            const safeMin = Number.isFinite(min) ? min : 0;
+            const safeMax = Number.isFinite(max) ? max : safeMin;
+            const safeValue = Number.isFinite(value) ? value : safeMin;
+            if (safeMin > safeMax) {
+                return safeMin;
+            }
+            return Math.min(Math.max(safeValue, safeMin), safeMax);
+        }
+
+        function resetPreviewGuideElements() {
+            if (previewGuideElements) {
+                Object.values(previewGuideElements).forEach((element) => {
+                    if (!element) {
+                        return;
+                    }
+                    element.style.display = 'none';
+                    element.style.removeProperty('left');
+                    element.style.removeProperty('right');
+                    element.style.removeProperty('top');
+                    element.style.removeProperty('bottom');
+                    element.style.removeProperty('width');
+                    element.style.removeProperty('height');
+                    element.removeAttribute('data-state');
+                });
+            }
+
+            if (previewGuideMeasurements) {
+                Object.values(previewGuideMeasurements).forEach((element) => {
+                    if (!element) {
+                        return;
+                    }
+                    element.style.display = 'none';
+                    element.textContent = '';
+                    element.style.removeProperty('left');
+                    element.style.removeProperty('top');
+                    element.removeAttribute('data-placement');
+                });
+            }
+
+            if (previewRulerElements) {
+                const { horizontal, vertical, horizontalLabel, verticalLabel } = previewRulerElements;
+                if (horizontal) {
+                    horizontal.classList.remove('is-visible');
+                    horizontal.style.removeProperty('--marker-start');
+                    horizontal.style.removeProperty('--marker-end');
+                }
+                if (vertical) {
+                    vertical.classList.remove('is-visible');
+                    vertical.style.removeProperty('--marker-start');
+                    vertical.style.removeProperty('--marker-end');
+                }
+                if (horizontalLabel) {
+                    horizontalLabel.textContent = '';
+                }
+                if (verticalLabel) {
+                    verticalLabel.textContent = '';
+                }
+            }
+        }
+
+        function setPreviewGuidesVisible(isVisible) {
+            if (!previewGuidesLayer) {
+                return;
+            }
+
+            if (previewGuidesHideTimeout) {
+                window.clearTimeout(previewGuidesHideTimeout);
+                previewGuidesHideTimeout = null;
+            }
+
+            if (isVisible) {
+                previewGuidesLayer.classList.add('is-active');
+                previewGuidesLayer.removeAttribute('hidden');
+                previewGuidesLayer.setAttribute('aria-hidden', 'false');
+            } else {
+                previewGuidesLayer.classList.remove('is-active');
+                previewGuidesLayer.setAttribute('aria-hidden', 'true');
+                if (!previewGuidesLayer.hasAttribute('hidden')) {
+                    previewGuidesLayer.setAttribute('hidden', '');
+                }
+                resetPreviewGuideElements();
+            }
+        }
+
+        function schedulePreviewGuidesHide(delay = 200) {
+            if (!previewGuidesLayer) {
+                return;
+            }
+
+            if (previewGuidesHideTimeout) {
+                window.clearTimeout(previewGuidesHideTimeout);
+            }
+
+            previewGuidesHideTimeout = window.setTimeout(() => {
+                previewGuidesHideTimeout = null;
+                setPreviewGuidesVisible(false);
+            }, Math.max(0, delay));
+        }
+
+        function hideGuideElement(element) {
+            if (!element) {
+                return;
+            }
+            element.style.display = 'none';
+            element.style.removeProperty('left');
+            element.style.removeProperty('right');
+            element.style.removeProperty('top');
+            element.style.removeProperty('bottom');
+            element.style.removeProperty('width');
+            element.style.removeProperty('height');
+            element.removeAttribute('data-state');
+        }
+
+        function showGuideElement(element, styles = {}) {
+            if (!element) {
+                return;
+            }
+
+            element.style.display = 'block';
+            element.style.removeProperty('left');
+            element.style.removeProperty('right');
+            element.style.removeProperty('top');
+            element.style.removeProperty('bottom');
+            element.style.removeProperty('width');
+            element.style.removeProperty('height');
+
+            Object.entries(styles).forEach(([key, value]) => {
+                if (value === null || value === undefined || value === '') {
+                    element.style.removeProperty(key);
+                } else {
+                    element.style[key] = value;
+                }
+            });
+        }
+
+        function updatePreviewGuides(transform, alignment) {
+            if (!previewGuidesLayer
+                || !previewGuideElements
+                || !previewViewport
+                || !previewGuidesLayer.classList.contains('is-active')) {
+                return;
+            }
+
+            if (!transform) {
+                resetPreviewGuideElements();
+                return;
+            }
+
+            const viewportWidth = Math.max(0, previewViewport.clientWidth);
+            const viewportHeight = Math.max(0, previewViewport.clientHeight);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                resetPreviewGuideElements();
+                return;
+            }
+
+            const { left, top, width, height } = transform;
+
+            if (![left, top, width, height].every((value) => Number.isFinite(value))) {
+                resetPreviewGuideElements();
+                return;
+            }
+
+            const safeAlignment = alignment
+                || evaluatePreviewImageAlignment(transform, { width: viewportWidth, height: viewportHeight });
+
+            const right = left + width;
+            const bottom = top + height;
+            const centerX = left + (width / 2);
+            const centerY = top + (height / 2);
+            const viewportCenterX = viewportWidth / 2;
+            const viewportCenterY = viewportHeight / 2;
+
+            const nearLeft = Math.abs(left) <= PREVIEW_GUIDE_NEAR_THRESHOLD;
+            const nearRight = Math.abs(viewportWidth - right) <= PREVIEW_GUIDE_NEAR_THRESHOLD;
+            const nearTop = Math.abs(top) <= PREVIEW_GUIDE_NEAR_THRESHOLD;
+            const nearBottom = Math.abs(viewportHeight - bottom) <= PREVIEW_GUIDE_NEAR_THRESHOLD;
+            const nearCenterX = Math.abs(centerX - viewportCenterX) <= PREVIEW_SMART_GUIDE_TOLERANCE;
+            const nearCenterY = Math.abs(centerY - viewportCenterY) <= PREVIEW_SMART_GUIDE_TOLERANCE;
+
+            if (safeAlignment.left) {
+                showGuideElement(previewGuideElements.alignLeft, { left: '0px' });
+            } else {
+                hideGuideElement(previewGuideElements.alignLeft);
+            }
+
+            if (safeAlignment.right) {
+                showGuideElement(previewGuideElements.alignRight, { left: `${viewportWidth}px` });
+            } else {
+                hideGuideElement(previewGuideElements.alignRight);
+            }
+
+            if (safeAlignment.top) {
+                showGuideElement(previewGuideElements.alignTop, { top: '0px' });
+            } else {
+                hideGuideElement(previewGuideElements.alignTop);
+            }
+
+            if (safeAlignment.bottom) {
+                showGuideElement(previewGuideElements.alignBottom, { top: `${viewportHeight}px` });
+            } else {
+                hideGuideElement(previewGuideElements.alignBottom);
+            }
+
+            if (nearCenterX) {
+                showGuideElement(previewGuideElements.alignCenterVertical, { left: `${viewportCenterX}px` });
+            } else {
+                hideGuideElement(previewGuideElements.alignCenterVertical);
+            }
+
+            if (nearCenterY) {
+                showGuideElement(previewGuideElements.alignCenterHorizontal, { top: `${viewportCenterY}px` });
+            } else {
+                hideGuideElement(previewGuideElements.alignCenterHorizontal);
+            }
+
+            if (!safeAlignment.left && nearLeft) {
+                const leftEdge = clamp(left, 0, viewportWidth);
+                showGuideElement(previewGuideElements.snapLeft, { left: `${leftEdge}px` });
+            } else {
+                hideGuideElement(previewGuideElements.snapLeft);
+            }
+
+            if (!safeAlignment.right && nearRight) {
+                const rightEdge = clamp(right, 0, viewportWidth);
+                showGuideElement(previewGuideElements.snapRight, { left: `${rightEdge}px` });
+            } else {
+                hideGuideElement(previewGuideElements.snapRight);
+            }
+
+            if (!safeAlignment.top && nearTop) {
+                const topEdge = clamp(top, 0, viewportHeight);
+                showGuideElement(previewGuideElements.snapTop, { top: `${topEdge}px` });
+            } else {
+                hideGuideElement(previewGuideElements.snapTop);
+            }
+
+            if (!safeAlignment.bottom && nearBottom) {
+                const bottomEdge = clamp(bottom, 0, viewportHeight);
+                showGuideElement(previewGuideElements.snapBottom, { top: `${bottomEdge}px` });
+            } else {
+                hideGuideElement(previewGuideElements.snapBottom);
+            }
+
+            const smartGuideElement = previewGuideElements.smartCenter;
+            if (smartGuideElement) {
+                if (nearCenterX || nearCenterY) {
+                    showGuideElement(smartGuideElement, {
+                        left: `${viewportCenterX}px`,
+                        top: `${viewportCenterY}px`,
+                    });
+                    smartGuideElement.dataset.state = (nearCenterX && nearCenterY) ? 'locked' : 'active';
+                } else {
+                    hideGuideElement(smartGuideElement);
+                }
+            }
+
+            if (previewGuideMeasurements?.size) {
+                const sizeElement = previewGuideMeasurements.size;
+                sizeElement.style.display = 'block';
+                sizeElement.textContent = `${Math.round(width)} × ${Math.round(height)} px`;
+                const labelX = clamp(centerX, 32, viewportWidth - 32);
+                const labelY = clamp(centerY, 32, viewportHeight - 32);
+                sizeElement.style.left = `${labelX}px`;
+                sizeElement.style.top = `${labelY}px`;
+            }
+
+            if (previewGuideMeasurements?.position) {
+                const positionElement = previewGuideMeasurements.position;
+                positionElement.style.display = 'block';
+                positionElement.textContent = `x ${Math.round(left)} px • y ${Math.round(top)} px`;
+                const labelX = clamp(centerX, 36, viewportWidth - 36);
+                let labelY = top - 14;
+                let placement = 'above';
+                if (labelY < 18) {
+                    labelY = top + height + 22;
+                    placement = 'below';
+                }
+                labelY = clamp(labelY, 18, viewportHeight - 18);
+                positionElement.style.left = `${labelX}px`;
+                positionElement.style.top = `${labelY}px`;
+                positionElement.setAttribute('data-placement', placement);
+            }
+
+            if (previewRulerElements?.horizontal) {
+                const startX = clamp(left, 0, viewportWidth);
+                const endX = clamp(right, 0, viewportWidth);
+                previewRulerElements.horizontal.classList.add('is-visible');
+                previewRulerElements.horizontal.style.setProperty('--marker-start', `${startX}px`);
+                previewRulerElements.horizontal.style.setProperty('--marker-end', `${endX}px`);
+                if (previewRulerElements.horizontalLabel) {
+                    previewRulerElements.horizontalLabel.textContent = `X ${Math.round(left)} • W ${Math.round(width)}`;
+                }
+            }
+
+            if (previewRulerElements?.vertical) {
+                const startY = clamp(top, 0, viewportHeight);
+                const endY = clamp(bottom, 0, viewportHeight);
+                previewRulerElements.vertical.classList.add('is-visible');
+                previewRulerElements.vertical.style.setProperty('--marker-start', `${startY}px`);
+                previewRulerElements.vertical.style.setProperty('--marker-end', `${endY}px`);
+                if (previewRulerElements.verticalLabel) {
+                    previewRulerElements.verticalLabel.textContent = `Y ${Math.round(top)} • H ${Math.round(height)}`;
+                }
+            }
+        }
+
         function updatePreviewViewportAlignmentState(alignment) {
             if (!previewViewport) {
                 return;
@@ -3146,6 +3702,7 @@ HOME_HTML = '''
         function applyPreviewImageTransform(alignmentOverride) {
             if (!previewImageFrame || !previewImageTransform) {
                 resetPreviewViewportAlignmentState();
+                resetPreviewGuideElements();
                 return;
             }
 
@@ -3157,6 +3714,7 @@ HOME_HTML = '''
                 || evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize());
             updatePreviewViewportAlignmentState(alignment);
             updatePreviewOutsideOutline();
+            updatePreviewGuides(previewImageTransform, alignment);
         }
 
         function clearPreviewImageTransform() {
@@ -3169,6 +3727,7 @@ HOME_HTML = '''
             }
             resetPreviewViewportAlignmentState();
             hidePreviewOutsideOutline();
+            setPreviewGuidesVisible(false);
         }
 
         function hidePreviewOutsideOutline() {
@@ -3544,6 +4103,7 @@ HOME_HTML = '''
             if (hadInteraction) {
                 persistPreviewImageTransformForActiveTimelineItem();
             }
+            schedulePreviewGuidesHide();
         }
 
         function onPreviewImagePointerDown(event) {
@@ -3583,6 +4143,12 @@ HOME_HTML = '''
                 previewImageFrame.classList.add('is-dragging');
             }
 
+            setPreviewGuidesVisible(true);
+            updatePreviewGuides(
+                previewImageTransform,
+                evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize()),
+            );
+
             event.preventDefault();
             event.stopPropagation();
         }
@@ -3595,6 +4161,8 @@ HOME_HTML = '''
             if (!previewImageTransform) {
                 return;
             }
+
+            setPreviewGuidesVisible(true);
 
             const deltaX = event.clientX - previewImagePointerState.origin.pointerX;
             const deltaY = event.clientY - previewImagePointerState.origin.pointerY;
