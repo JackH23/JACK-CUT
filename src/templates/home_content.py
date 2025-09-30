@@ -291,6 +291,13 @@ HOME_HTML = '''
             box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
         }
 
+        .upload-dropzone.is-dragover {
+            border-color: rgba(124, 58, 237, 0.65);
+            transform: translateY(-2px);
+            box-shadow: 0 20px 44px rgba(15, 23, 42, 0.32);
+            background: linear-gradient(140deg, rgba(124, 58, 237, 0.16), rgba(56, 189, 248, 0.12));
+        }
+
         .upload-dropzone__icon {
             width: 64px;
             height: 64px;
@@ -922,9 +929,27 @@ HOME_HTML = '''
             position: absolute;
             inset: 0;
             pointer-events: none;
+            z-index: 8;
         }
 
         .preview-image-layer[hidden] {
+            display: none;
+        }
+
+        .preview-background-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.18s ease;
+            z-index: 4;
+        }
+
+        .preview-background-layer.is-visible {
+            opacity: 1;
+        }
+
+        .preview-background-layer[hidden] {
             display: none;
         }
 
@@ -959,6 +984,14 @@ HOME_HTML = '''
             object-fit: cover;
             user-select: none;
             pointer-events: none;
+        }
+
+        .preview-background-layer img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            filter: saturate(0.95);
         }
 
         .preview-resize-handle {
@@ -1566,6 +1599,9 @@ HOME_HTML = '''
                 <div class="preview-area">
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
+                        <div class="preview-background-layer" id="preview-background-layer" hidden>
+                            <img id="preview-background-image" alt="Background preview" hidden>
+                        </div>
                         <video id="preview-video" controls hidden></video>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
@@ -1807,12 +1843,15 @@ HOME_HTML = '''
         const uploadButton = document.getElementById('upload-button');
         const uploadMetaStatus = document.querySelector('.upload-meta__status');
         const uploadMetaHint = document.querySelector('.upload-meta__hint');
+        const uploadDropzone = document.querySelector('.upload-dropzone');
         const previewArea = document.querySelector('.preview-area');
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewImageLayer = document.getElementById('preview-image-layer');
         const previewImageFrame = document.getElementById('preview-image-frame');
+        const previewBackgroundLayer = document.getElementById('preview-background-layer');
+        const previewBackgroundImage = document.getElementById('preview-background-image');
         const previewResizeHandles = previewImageFrame
             ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
             : [];
@@ -1894,6 +1933,7 @@ HOME_HTML = '''
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
+        let currentPreviewBackgroundItem = null;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -2602,7 +2642,86 @@ HOME_HTML = '''
         }
 
         function getTimelineItems() {
+            if (!timelineTrack) {
+                return [];
+            }
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
+        }
+
+        function hidePreviewBackground() {
+            if (!previewBackgroundLayer || !previewBackgroundImage) {
+                return;
+            }
+
+            currentPreviewBackgroundItem = null;
+            previewBackgroundLayer.classList.remove('is-visible');
+            previewBackgroundLayer.hidden = true;
+            previewBackgroundImage.hidden = true;
+            previewBackgroundImage.removeAttribute('src');
+            previewBackgroundImage.removeAttribute('alt');
+            delete previewBackgroundLayer.dataset.objectUrl;
+        }
+
+        function syncPreviewBackground(foregroundItem = activeTimelineItem) {
+            if (!previewBackgroundLayer || !previewBackgroundImage) {
+                return;
+            }
+
+            const timelineItems = getTimelineItems();
+            const candidateForeground = foregroundItem && timelineItems.includes(foregroundItem)
+                ? foregroundItem
+                : null;
+
+            if (!candidateForeground || !(candidateForeground.dataset.fileType || '').startsWith('image/')) {
+                hidePreviewBackground();
+                return;
+            }
+
+            const startIndex = timelineItems.indexOf(candidateForeground);
+            let backgroundCandidate = null;
+
+            for (let index = startIndex + 1; index < timelineItems.length; index += 1) {
+                const candidate = timelineItems[index];
+                const fileType = candidate?.dataset.fileType || '';
+                if (fileType.startsWith('image/') && candidate.dataset.objectUrl) {
+                    backgroundCandidate = candidate;
+                    break;
+                }
+            }
+
+            if (!backgroundCandidate) {
+                hidePreviewBackground();
+                return;
+            }
+
+            const objectURL = backgroundCandidate.dataset.objectUrl;
+
+            if (!objectURL) {
+                hidePreviewBackground();
+                return;
+            }
+
+            if (currentPreviewBackgroundItem === backgroundCandidate
+                && previewBackgroundLayer.dataset.objectUrl === objectURL) {
+                previewBackgroundLayer.hidden = false;
+                previewBackgroundLayer.classList.add('is-visible');
+                previewBackgroundImage.hidden = false;
+                return;
+            }
+
+            currentPreviewBackgroundItem = backgroundCandidate;
+            previewBackgroundLayer.dataset.objectUrl = objectURL;
+
+            const label = backgroundCandidate.dataset.displayName
+                || backgroundCandidate.dataset.fileName
+                || backgroundCandidate.querySelector('span')?.textContent
+                || 'Timeline background';
+
+            previewBackgroundImage.src = objectURL;
+            previewBackgroundImage.alt = label;
+            previewBackgroundImage.hidden = false;
+            previewBackgroundLayer.hidden = false;
+            previewBackgroundLayer.classList.add('is-visible');
         }
 
         function getTotalTimelineDuration() {
@@ -2659,6 +2778,7 @@ HOME_HTML = '''
 
         function updateActiveTimelineIndicators() {
             applyTimelineProgressGeometry();
+            syncPreviewBackground();
 
             if (isTimelinePlaying) {
                 updatePlaybackTimeDisplay(playbackDisplayCurrentMs, getTotalTimelineDuration());
@@ -4258,6 +4378,7 @@ HOME_HTML = '''
             } else {
                 previewImage.hidden = true;
                 hidePreviewImageLayer();
+                hidePreviewBackground();
             }
         }
 
@@ -4472,6 +4593,7 @@ HOME_HTML = '''
             previewVideo.removeAttribute('src');
             previewVideo.load();
             setPreviewImageVisibility(false);
+            hidePreviewBackground();
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
@@ -4538,6 +4660,8 @@ HOME_HTML = '''
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
             }
+
+            syncPreviewBackground(timelineItem);
         }
 
         async function showPreview(file) {
@@ -4551,6 +4675,71 @@ HOME_HTML = '''
 
             const objectURL = URL.createObjectURL(file);
             await addToTimeline(file, objectURL);
+        }
+
+        function setUploadMetaDefaults() {
+            if (uploadMetaStatus) {
+                uploadMetaStatus.textContent = 'No clips added yet';
+            }
+            if (uploadMetaHint) {
+                uploadMetaHint.textContent = 'Tip: drop multiple files to keep your story flowing.';
+            }
+        }
+
+        async function handleIncomingFiles(fileList) {
+            const incomingFiles = Array.from(fileList || []);
+
+            if (!incomingFiles.length) {
+                setUploadMetaDefaults();
+                return;
+            }
+
+            const acceptedFiles = incomingFiles.filter((file) => {
+                if (!file) {
+                    return false;
+                }
+                const type = file.type || '';
+                return type.startsWith('video/') || type.startsWith('image/');
+            });
+
+            if (!acceptedFiles.length) {
+                if (uploadMetaStatus) {
+                    uploadMetaStatus.textContent = incomingFiles.length === 1
+                        ? 'Unsupported clip skipped'
+                        : 'Unsupported clips skipped';
+                }
+                if (uploadMetaHint) {
+                    uploadMetaHint.textContent = 'Try uploading images or video files.';
+                }
+                return;
+            }
+
+            const clipLabel = acceptedFiles.length === 1 ? 'clip' : 'clips';
+            if (uploadMetaStatus) {
+                uploadMetaStatus.textContent = `${acceptedFiles.length} ${clipLabel} ready to preview`;
+            }
+
+            if (uploadMetaHint) {
+                const latestFile = acceptedFiles[acceptedFiles.length - 1];
+                let hintMessage = 'Clips ready to preview.';
+                if (latestFile?.name) {
+                    const truncatedName = latestFile.name.length > 42
+                        ? `${latestFile.name.slice(0, 39)}…`
+                        : latestFile.name;
+                    hintMessage = acceptedFiles.length === 1
+                        ? `Ready: ${truncatedName}`
+                        : `${truncatedName} and ${acceptedFiles.length - 1} more`;
+                }
+                if (incomingFiles.length > acceptedFiles.length) {
+                    hintMessage = `${hintMessage} Unsupported files were skipped.`;
+                }
+                uploadMetaHint.textContent = hintMessage;
+            }
+
+            for (const file of acceptedFiles) {
+                // eslint-disable-next-line no-await-in-loop
+                await showPreview(file);
+            }
         }
 
         async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
@@ -4655,42 +4844,59 @@ HOME_HTML = '''
             loadPreviewFromTimeline(timelineItem);
         }
 
-        uploadInput.addEventListener('change', async (event) => {
-            const files = Array.from(event.target.files || []);
-            if (!files.length) {
-                if (uploadMetaStatus) {
-                    uploadMetaStatus.textContent = 'No clips added yet';
+        if (uploadInput) {
+            uploadInput.addEventListener('change', async (event) => {
+                await handleIncomingFiles(event.target.files || []);
+                uploadInput.value = '';
+            });
+        }
+
+        if (uploadButton && uploadInput) {
+            uploadButton.addEventListener('click', () => uploadInput.click());
+        }
+
+        if (uploadDropzone) {
+            let dropzoneDragDepth = 0;
+
+            const highlightDropzone = () => {
+                uploadDropzone.classList.add('is-dragover');
+            };
+
+            const resetDropzone = () => {
+                dropzoneDragDepth = 0;
+                uploadDropzone.classList.remove('is-dragover');
+            };
+
+            uploadDropzone.addEventListener('dragenter', (event) => {
+                event.preventDefault();
+                dropzoneDragDepth += 1;
+                highlightDropzone();
+            });
+
+            uploadDropzone.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                highlightDropzone();
+            });
+
+            uploadDropzone.addEventListener('dragleave', () => {
+                dropzoneDragDepth = Math.max(dropzoneDragDepth - 1, 0);
+                if (dropzoneDragDepth === 0) {
+                    uploadDropzone.classList.remove('is-dragover');
                 }
-                if (uploadMetaHint) {
-                    uploadMetaHint.textContent = 'Tip: drop multiple files to keep your story flowing.';
+            });
+
+            uploadDropzone.addEventListener('dragend', resetDropzone);
+
+            uploadDropzone.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                resetDropzone();
+                const files = event.dataTransfer ? Array.from(event.dataTransfer.files || []) : [];
+                await handleIncomingFiles(files);
+                if (uploadInput) {
+                    uploadInput.value = '';
                 }
-                return;
-            }
-
-            if (uploadMetaStatus) {
-                const clipLabel = files.length === 1 ? 'clip' : 'clips';
-                uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
-            }
-
-            if (uploadMetaHint) {
-                const latestFile = files[files.length - 1];
-                if (latestFile?.name) {
-                    const truncatedName = latestFile.name.length > 42
-                        ? `${latestFile.name.slice(0, 39)}…`
-                        : latestFile.name;
-                    uploadMetaHint.textContent = files.length === 1
-                        ? `Ready: ${truncatedName}`
-                        : `${truncatedName} and ${files.length - 1} more`;
-                }
-            }
-
-            for (const file of files) {
-                // eslint-disable-next-line no-await-in-loop
-                await showPreview(file);
-            }
-        });
-
-        uploadButton.addEventListener('click', () => uploadInput.click());
+            });
+        }
 
         async function playTimelineItem(timelineItem) {
             const fileType = timelineItem.dataset.fileType || '';
