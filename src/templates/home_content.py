@@ -851,6 +851,8 @@ HOME_HTML = '''
             min-width: 80px;
             min-height: 80px;
             z-index: 2;
+            cursor: grab;
+            touch-action: none;
         }
 
         .preview-media-frame[hidden] {
@@ -866,6 +868,11 @@ HOME_HTML = '''
             box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.55), 0 24px 50px rgba(15, 23, 42, 0.6);
         }
 
+        .preview-media-frame.is-dragging {
+            cursor: grabbing;
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.65), 0 28px 56px rgba(15, 23, 42, 0.65);
+        }
+
         .preview-media-frame img {
             width: 100%;
             height: 100%;
@@ -878,12 +885,12 @@ HOME_HTML = '''
 
         .preview-resize-handle {
             position: absolute;
-            width: 18px;
-            height: 18px;
-            border-radius: 6px;
+            width: 24px;
+            height: 24px;
+            border-radius: 8px;
             background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.92));
             border: none;
-            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.45);
+            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.5);
             display: grid;
             place-items: center;
             padding: 0;
@@ -891,20 +898,66 @@ HOME_HTML = '''
             cursor: pointer;
             touch-action: none;
             pointer-events: auto;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .preview-resize-handle::before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(248, 250, 252, 0.55);
+            border-radius: 6px;
+            opacity: 0.85;
         }
 
         .preview-resize-handle::after {
             content: '';
-            width: 6px;
-            height: 6px;
-            border-radius: 2px;
+            width: 8px;
+            height: 8px;
+            border-radius: 3px;
             background: rgba(15, 23, 42, 0.85);
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .preview-resize-handle:hover,
+        .preview-resize-handle:focus-visible {
+            background: linear-gradient(135deg, rgba(148, 80, 255, 0.98), rgba(56, 189, 248, 0.98));
+            box-shadow: 0 18px 34px rgba(15, 23, 42, 0.55);
+            transform: scale(1.05);
         }
 
         .preview-resize-handle:focus-visible {
             outline: 2px solid rgba(56, 189, 248, 0.7);
             outline-offset: 3px;
+        }
+
+        .preview-resize-handle.top-left::before {
+            bottom: 3px;
+            right: 3px;
+            border-bottom: none;
+            border-right: none;
+        }
+
+        .preview-resize-handle.top-right::before {
+            bottom: 3px;
+            left: 3px;
+            border-bottom: none;
+            border-left: none;
+        }
+
+        .preview-resize-handle.bottom-left::before {
+            top: 3px;
+            right: 3px;
+            border-top: none;
+            border-right: none;
+        }
+
+        .preview-resize-handle.bottom-right::before {
+            top: 3px;
+            left: 3px;
+            border-top: none;
+            border-left: none;
         }
 
         .preview-resize-handle.top-left {
@@ -2594,36 +2647,59 @@ HOME_HTML = '''
                 height = width / aspect;
             }
 
-            if (width > viewportWidth) {
-                width = viewportWidth;
+            const baseWidth = Math.max(viewportWidth, viewportHeight * aspect);
+            const maxWidth = Math.max(minWidth, baseWidth) * 4;
+
+            if (width > maxWidth) {
+                width = maxWidth;
                 height = width / aspect;
             }
 
-            if (height > viewportHeight) {
-                height = viewportHeight;
-                width = height * aspect;
-                if (width > viewportWidth) {
-                    width = viewportWidth;
-                    height = width / aspect;
-                }
-            }
+            const maxHeight = maxWidth / aspect;
 
-            const maxLeft = Math.max(0, viewportWidth - width);
-            const maxTop = Math.max(0, viewportHeight - height);
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * aspect;
+            }
 
             let left = Number.isFinite(rect?.left) ? rect.left : (viewportWidth - width) / 2;
             let top = Number.isFinite(rect?.top) ? rect.top : (viewportHeight - height) / 2;
 
             if (!Number.isFinite(left)) {
-                left = 0;
+                left = (viewportWidth - width) / 2;
             }
 
             if (!Number.isFinite(top)) {
-                top = 0;
+                top = (viewportHeight - height) / 2;
             }
 
-            left = Math.min(Math.max(0, left), maxLeft);
-            top = Math.min(Math.max(0, top), maxTop);
+            const visibilityPaddingX = Math.max(
+                16,
+                Math.min(120, (Math.min(width, viewportWidth) * 0.25) + 12),
+            );
+            const visibilityPaddingY = Math.max(
+                16,
+                Math.min(120, (Math.min(height, viewportHeight) * 0.25) + 12),
+            );
+
+            const horizontalMin = visibilityPaddingX - width;
+            const horizontalMax = viewportWidth - visibilityPaddingX;
+            const verticalMin = visibilityPaddingY - height;
+            const verticalMax = viewportHeight - visibilityPaddingY;
+
+            if (horizontalMin <= horizontalMax) {
+                left = Math.min(Math.max(horizontalMin, left), horizontalMax);
+            } else {
+                const fallback = (horizontalMin + horizontalMax) / 2;
+                left = Number.isFinite(fallback) ? fallback : 0;
+            }
+
+            if (verticalMin <= verticalMax) {
+                top = Math.min(Math.max(verticalMin, top), verticalMax);
+            } else {
+                const fallback = (verticalMin + verticalMax) / 2;
+                top = Number.isFinite(fallback) ? fallback : 0;
+            }
 
             return {
                 width,
@@ -2704,7 +2780,7 @@ HOME_HTML = '''
         function hidePreviewImageFrame() {
             if (previewMediaFrame) {
                 previewMediaFrame.setAttribute('hidden', '');
-                previewMediaFrame.classList.remove('is-active', 'is-resizing');
+                previewMediaFrame.classList.remove('is-active', 'is-resizing', 'is-dragging');
                 previewMediaFrame.style.removeProperty('width');
                 previewMediaFrame.style.removeProperty('height');
                 previewMediaFrame.style.removeProperty('left');
@@ -2772,6 +2848,99 @@ HOME_HTML = '''
             };
         }
 
+        function startPreviewImageDrag(event) {
+            if (!previewMediaFrame || !previewImage || previewImage.hidden) {
+                return;
+            }
+
+            const targetElement = event.target;
+            if (targetElement && typeof targetElement.closest === 'function') {
+                if (targetElement.closest('.preview-resize-handle')) {
+                    return;
+                }
+            }
+
+            if (event.pointerType === 'mouse' && event.button !== 0) {
+                return;
+            }
+
+            if (!previewImageFrameState) {
+                initializePreviewImageFrame();
+            }
+
+            if (!previewImageFrameState) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const pointerId = event.pointerId;
+            const aspect = previewImageFrameState.aspect || getPreviewImageAspect();
+
+            previewMediaFrame.classList.remove('is-resizing');
+            previewMediaFrame.classList.add('is-dragging');
+
+            if (typeof previewMediaFrame.setPointerCapture === 'function') {
+                try {
+                    previewMediaFrame.setPointerCapture(pointerId);
+                } catch (error) {
+                    console.warn('Unable to capture pointer for preview drag interaction.', error);
+                }
+            }
+
+            const startPointer = {
+                x: event.clientX,
+                y: event.clientY,
+            };
+
+            const startFrame = {
+                left: previewImageFrameState.left,
+                top: previewImageFrameState.top,
+                width: previewImageFrameState.width,
+                height: previewImageFrameState.height,
+            };
+
+            const onPointerMove = (moveEvent) => {
+                if (moveEvent.pointerId !== pointerId) {
+                    return;
+                }
+                moveEvent.preventDefault();
+                const deltaX = moveEvent.clientX - startPointer.x;
+                const deltaY = moveEvent.clientY - startPointer.y;
+                setPreviewFrameState({
+                    left: startFrame.left + deltaX,
+                    top: startFrame.top + deltaY,
+                    width: startFrame.width,
+                    height: startFrame.height,
+                    aspect,
+                });
+            };
+
+            const finishDrag = (endEvent) => {
+                if (endEvent.pointerId !== pointerId) {
+                    return;
+                }
+
+                if (typeof previewMediaFrame.releasePointerCapture === 'function') {
+                    try {
+                        previewMediaFrame.releasePointerCapture(pointerId);
+                    } catch (error) {
+                        console.warn('Unable to release pointer capture for preview drag interaction.', error);
+                    }
+                }
+
+                previewMediaFrame.classList.remove('is-dragging');
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', finishDrag);
+                window.removeEventListener('pointercancel', finishDrag);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', finishDrag);
+            window.addEventListener('pointercancel', finishDrag);
+        }
+
         function startPreviewImageResize(event, handle) {
             if (!previewMediaFrame || !handle || !previewImage || previewImage.hidden) {
                 return;
@@ -2793,6 +2962,7 @@ HOME_HTML = '''
             event.stopPropagation();
 
             const pointerId = event.pointerId;
+            previewMediaFrame.classList.remove('is-dragging');
             previewMediaFrame.classList.add('is-resizing');
 
             if (typeof handle.setPointerCapture === 'function') {
@@ -2892,6 +3062,12 @@ HOME_HTML = '''
         if (previewVideo) {
             previewVideo.addEventListener('loadeddata', () => {
                 schedulePreviewViewportSizeUpdate();
+            });
+        }
+
+        if (previewMediaFrame) {
+            previewMediaFrame.addEventListener('pointerdown', (event) => {
+                startPreviewImageDrag(event);
             });
         }
 
