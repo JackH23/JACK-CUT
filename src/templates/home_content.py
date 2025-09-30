@@ -833,7 +833,99 @@ HOME_HTML = '''
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
+            transition: aspect-ratio 0.2s ease, width 0.18s ease, height 0.18s ease;
+            touch-action: none;
+            --preview-overflow-scale: 1;
+        }
+
+        .preview-viewport.is-resizing {
+            transition: none;
+        }
+
+        .preview-viewport.is-overflowing {
+            overflow: visible;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .preview-viewport.is-overflowing video,
+        .preview-viewport.is-overflowing img {
+            opacity: 0;
+        }
+
+        .preview-viewport.is-overflowing::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            pointer-events: none;
+            transform: scale(var(--preview-overflow-scale, 1));
+            box-shadow: 0 0 0 1px rgba(8, 13, 28, 0.4);
+            transform-origin: center;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            border: 2px solid rgba(255, 255, 255, 0.85);
+            background: rgba(15, 23, 42, 0.85);
+            box-shadow: 0 4px 18px rgba(2, 6, 23, 0.45);
+            display: none;
+            z-index: 2;
+            touch-action: none;
+            user-select: none;
+            transition: transform 0.12s ease, background 0.12s ease;
+        }
+
+        .preview-resize-handle::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border-radius: 3px;
+            background: rgba(124, 58, 237, 0.35);
+            opacity: 0;
+            transition: opacity 0.12s ease;
+        }
+
+        .preview-resize-handle:focus-visible::after,
+        .preview-resize-handle:hover::after {
+            opacity: 1;
+        }
+
+        .preview-area.has-video .preview-resize-handle,
+        .preview-area.has-image .preview-resize-handle {
+            display: block;
+        }
+
+        .preview-area.is-resizing .preview-resize-handle {
+            background: rgba(15, 23, 42, 0.75);
+        }
+
+        .preview-resize-handle--top-left {
+            top: -10px;
+            left: -10px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle--top-right {
+            top: -10px;
+            right: -10px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle--bottom-left {
+            bottom: -10px;
+            left: -10px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle--bottom-right {
+            bottom: -10px;
+            right: -10px;
+            cursor: nwse-resize;
         }
 
         #preview-placeholder {
@@ -1226,6 +1318,10 @@ HOME_HTML = '''
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-resize-handle preview-resize-handle--top-left" data-handle="top-left" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--top-right" data-handle="top-right" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--bottom-left" data-handle="bottom-left" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--bottom-right" data-handle="bottom-right" aria-hidden="true"></div>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1434,6 +1530,7 @@ HOME_HTML = '''
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
+        const previewResizeHandles = Array.from(document.querySelectorAll('.preview-resize-handle'));
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
@@ -1462,6 +1559,9 @@ HOME_HTML = '''
         let timelinePlaybackAbort = null;
         let currentPreviewAspectRatio = 16 / 9;
         let previewViewportResizeFrame = null;
+        let previewViewportDesiredSize = null;
+        let activePreviewResize = null;
+        let previewViewportPendingForceFit = false;
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
@@ -2366,6 +2466,9 @@ HOME_HTML = '''
             previewArea.classList.remove('has-video', 'has-image');
             if (mode) {
                 previewArea.classList.add(mode);
+                schedulePreviewViewportSizeUpdate();
+            } else {
+                clearPreviewViewportSizing();
             }
         }
 
@@ -2377,19 +2480,25 @@ HOME_HTML = '''
             previewArea.scrollLeft = 0;
         }
 
-        function parseAspectRatio(value) {
-            const [rawWidth, rawHeight] = String(value).split(':');
-            const width = Number(rawWidth);
-            const height = Number(rawHeight);
-            if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
-                return width / height;
+        function clearPreviewViewportSizing() {
+            previewViewportDesiredSize = null;
+            activePreviewResize = null;
+            if (!previewViewport) {
+                return;
             }
-            return 16 / 9;
+            previewViewport.style.removeProperty('width');
+            previewViewport.style.removeProperty('height');
+            previewViewport.style.removeProperty('--preview-overflow-scale');
+            previewViewport.classList.remove('is-overflowing', 'is-resizing');
+            previewArea?.classList.remove('is-resizing');
         }
 
-        function updatePreviewViewportSize() {
-            if (!previewArea || !previewViewport) {
-                return;
+        function getPreviewAreaMetrics() {
+            if (!previewArea) {
+                return {
+                    availableWidth: 0,
+                    availableHeight: 0,
+                };
             }
 
             const computedStyle = window.getComputedStyle(previewArea);
@@ -2401,32 +2510,278 @@ HOME_HTML = '''
             const availableWidth = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
             const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
 
+            return { availableWidth, availableHeight };
+        }
+
+        function fitPreviewToAspect(aspectRatio, availableWidth, availableHeight) {
+            const safeAspect = aspectRatio > 0 ? aspectRatio : 16 / 9;
+            let width = availableWidth;
+            let height = width / safeAspect;
+
+            if (height > availableHeight) {
+                height = availableHeight;
+                width = height * safeAspect;
+            }
+
+            return {
+                width,
+                height,
+            };
+        }
+
+        function resolvePreviewViewportSize({
+            requestedWidth,
+            requestedHeight,
+            aspectRatio,
+            availableWidth,
+            availableHeight,
+        }) {
+            const safeAspect = aspectRatio > 0 ? aspectRatio : 16 / 9;
+
+            let width = Number.isFinite(requestedWidth) ? requestedWidth : 0;
+            let height = Number.isFinite(requestedHeight) ? requestedHeight : 0;
+
+            if (width <= 0 && height <= 0) {
+                const fitted = fitPreviewToAspect(safeAspect, availableWidth, availableHeight);
+                width = fitted.width;
+                height = fitted.height;
+            } else if (width <= 0 && height > 0) {
+                width = height * safeAspect;
+            } else if (height <= 0 && width > 0) {
+                height = width / safeAspect;
+            }
+
+            const rawWidth = width;
+            const rawHeight = height;
+
+            const maxWidth = Math.min(availableWidth, availableHeight * safeAspect);
+            const maxHeight = Math.min(availableHeight, availableWidth / safeAspect);
+
+            const minWidth = Math.min(maxWidth, Math.max(120, availableWidth * 0.2));
+            const minHeight = Math.min(maxHeight, Math.max(120 / safeAspect, availableHeight * 0.2));
+
+            const overflowWidth = rawWidth > maxWidth;
+            const overflowHeight = rawHeight > maxHeight;
+            const isOverflowing = overflowWidth || overflowHeight;
+
+            width = Math.min(Math.max(rawWidth, minWidth), maxWidth);
+            height = width / safeAspect;
+
+            if (height > maxHeight) {
+                height = Math.min(Math.max(rawHeight, minHeight), maxHeight);
+                width = height * safeAspect;
+            }
+
+            if (width < minWidth) {
+                width = minWidth;
+                height = width / safeAspect;
+            }
+
+            if (height < minHeight) {
+                height = minHeight;
+                width = height * safeAspect;
+            }
+
+            const overflowScale = isOverflowing && width > 0 && height > 0
+                ? Math.max(rawWidth / width, rawHeight / height)
+                : 1;
+
+            return {
+                appliedWidth: width,
+                appliedHeight: height,
+                isOverflowing,
+                overflowScale: Number.isFinite(overflowScale) && overflowScale > 1 ? overflowScale : 1,
+            };
+        }
+
+        function applyPreviewViewportSize({ requestedSize, forceFit = false } = {}) {
+            if (!previewViewport || !previewArea) {
+                return null;
+            }
+
+            const { availableWidth, availableHeight } = getPreviewAreaMetrics();
+
             if (availableWidth <= 0 || availableHeight <= 0) {
                 previewViewport.style.removeProperty('width');
                 previewViewport.style.removeProperty('height');
-                return;
+                return null;
             }
 
             const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
-            let nextWidth = availableWidth;
-            let nextHeight = nextWidth / aspectRatio;
 
-            if (nextHeight > availableHeight) {
-                nextHeight = availableHeight;
-                nextWidth = nextHeight * aspectRatio;
+            let targetSize = requestedSize;
+
+            if (!targetSize || forceFit) {
+                targetSize = fitPreviewToAspect(aspectRatio, availableWidth, availableHeight);
             }
 
-            previewViewport.style.width = `${nextWidth}px`;
-            previewViewport.style.height = `${nextHeight}px`;
+            const resolution = resolvePreviewViewportSize({
+                requestedWidth: targetSize?.width,
+                requestedHeight: targetSize?.height,
+                aspectRatio,
+                availableWidth,
+                availableHeight,
+            });
+
+            previewViewport.style.width = `${resolution.appliedWidth}px`;
+            previewViewport.style.height = `${resolution.appliedHeight}px`;
+            previewViewport.style.setProperty('--preview-overflow-scale', resolution.overflowScale.toFixed(3));
+
+            previewViewport.classList.toggle('is-overflowing', Boolean(activePreviewResize) && resolution.isOverflowing);
+            previewViewport.classList.toggle('is-resizing', Boolean(activePreviewResize));
+            previewArea.classList.toggle('is-resizing', Boolean(activePreviewResize));
+
+            previewViewportDesiredSize = {
+                width: resolution.appliedWidth,
+                height: resolution.appliedHeight,
+            };
+
+            return resolution;
         }
 
-        function schedulePreviewViewportSizeUpdate() {
+        function handlePreviewResizePointerDown(event) {
+            if (!previewViewport || !previewArea) {
+                return;
+            }
+
+            const handle = event.currentTarget;
+            const handlePosition = handle?.dataset?.handle;
+            if (!handlePosition) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const areaRect = previewArea.getBoundingClientRect();
+            const viewportRect = previewViewport.getBoundingClientRect();
+
+            previewViewportDesiredSize = {
+                width: viewportRect.width,
+                height: viewportRect.height,
+            };
+
+            activePreviewResize = {
+                pointerId: event.pointerId,
+                handleElement: handle,
+                handlePosition,
+                centerX: areaRect.left + areaRect.width / 2,
+                centerY: areaRect.top + areaRect.height / 2,
+                aspectRatio: currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9,
+            };
+
+            if (typeof handle.setPointerCapture === 'function') {
+                try {
+                    handle.setPointerCapture(event.pointerId);
+                } catch (error) {
+                    // Ignore failures to capture pointer.
+                }
+            }
+
+            applyPreviewViewportSize({ requestedSize: previewViewportDesiredSize });
+        }
+
+        function handlePreviewResizePointerMove(event) {
+            if (!activePreviewResize || event.pointerId !== activePreviewResize.pointerId) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const { handlePosition, centerX, centerY, aspectRatio } = activePreviewResize;
+            const signX = handlePosition.includes('left') ? -1 : 1;
+            const signY = handlePosition.includes('top') ? -1 : 1;
+
+            const offsetX = signX * (event.clientX - centerX);
+            const offsetY = signY * (event.clientY - centerY);
+
+            const halfWidth = Math.max(offsetX, 0);
+            const halfHeight = Math.max(offsetY, 0);
+
+            let requestedWidth = halfWidth * 2;
+            let requestedHeight = halfHeight * 2;
+
+            if (requestedWidth <= 0 && requestedHeight <= 0) {
+                requestedWidth = previewViewportDesiredSize?.width || 0;
+                requestedHeight = previewViewportDesiredSize?.height || 0;
+            }
+
+            if (requestedWidth > 0 || requestedHeight > 0) {
+                const widthBasedHeight = requestedWidth / aspectRatio;
+                if (widthBasedHeight <= requestedHeight || requestedHeight <= 0) {
+                    requestedHeight = widthBasedHeight;
+                } else {
+                    requestedWidth = requestedHeight * aspectRatio;
+                }
+            }
+
+            applyPreviewViewportSize({
+                requestedSize: {
+                    width: requestedWidth,
+                    height: requestedHeight,
+                },
+            });
+        }
+
+        function handlePreviewResizePointerUp(event) {
+            if (!activePreviewResize) {
+                return;
+            }
+
+            if (event && event.pointerId !== undefined && event.pointerId !== activePreviewResize.pointerId) {
+                return;
+            }
+
+            const handle = activePreviewResize.handleElement;
+            if (handle && typeof handle.releasePointerCapture === 'function') {
+                try {
+                    handle.releasePointerCapture(activePreviewResize.pointerId);
+                } catch (error) {
+                    // Ignore failures to release capture.
+                }
+            }
+
+            activePreviewResize = null;
+            applyPreviewViewportSize({ requestedSize: previewViewportDesiredSize });
+        }
+
+        if (previewResizeHandles.length) {
+            previewResizeHandles.forEach((handle) => {
+                handle.addEventListener('pointerdown', handlePreviewResizePointerDown);
+                handle.addEventListener('lostpointercapture', handlePreviewResizePointerUp);
+            });
+        }
+
+        window.addEventListener('pointermove', handlePreviewResizePointerMove);
+        window.addEventListener('pointerup', handlePreviewResizePointerUp);
+        window.addEventListener('pointercancel', handlePreviewResizePointerUp);
+
+        function parseAspectRatio(value) {
+            const [rawWidth, rawHeight] = String(value).split(':');
+            const width = Number(rawWidth);
+            const height = Number(rawHeight);
+            if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+                return width / height;
+            }
+            return 16 / 9;
+        }
+
+        function updatePreviewViewportSize({ forceFit = false } = {}) {
+            applyPreviewViewportSize({
+                requestedSize: forceFit ? null : previewViewportDesiredSize,
+                forceFit,
+            });
+        }
+
+        function schedulePreviewViewportSizeUpdate({ forceFit = false } = {}) {
+            previewViewportPendingForceFit = previewViewportPendingForceFit || forceFit;
             if (previewViewportResizeFrame !== null) {
                 return;
             }
             previewViewportResizeFrame = window.requestAnimationFrame(() => {
                 previewViewportResizeFrame = null;
-                updatePreviewViewportSize();
+                const shouldForceFit = previewViewportPendingForceFit;
+                previewViewportPendingForceFit = false;
+                updatePreviewViewportSize({ forceFit: shouldForceFit });
             });
         }
 
@@ -2454,7 +2809,8 @@ HOME_HTML = '''
             if (previewViewport) {
                 previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
             }
-            schedulePreviewViewportSizeUpdate();
+            previewViewportDesiredSize = null;
+            schedulePreviewViewportSizeUpdate({ forceFit: true });
             if (isExportDialogOpen()) {
                 renderExportSummary(getTimelineItems(), null);
             }
