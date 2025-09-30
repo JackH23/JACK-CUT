@@ -2524,8 +2524,8 @@ HOME_HTML = '''
             schedulePreviewViewportSizeUpdate();
         }
 
-        function computeDefaultPreviewBaseSize() {
-            if (!previewArea || !previewViewport) {
+        function getPreviewAreaInnerSize() {
+            if (!previewArea) {
                 return null;
             }
 
@@ -2535,12 +2535,27 @@ HOME_HTML = '''
             const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
             const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
 
-            const availableWidth = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
-            const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
+            const width = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
+            const height = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
 
-            if (availableWidth <= 0 || availableHeight <= 0) {
+            if (width <= 0 || height <= 0) {
                 return null;
             }
+
+            return { width, height };
+        }
+
+        function computeDefaultPreviewBaseSize() {
+            if (!previewArea || !previewViewport) {
+                return null;
+            }
+
+            const availableSize = getPreviewAreaInnerSize();
+            if (!availableSize) {
+                return null;
+            }
+
+            let { width: availableWidth, height: availableHeight } = availableSize;
 
             const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
             let width = availableWidth;
@@ -2559,6 +2574,51 @@ HOME_HTML = '''
             }
 
             return { width, height };
+        }
+
+        function constrainPreviewDisplaySize(width, height, aspectRatio) {
+            const normalizedAspect = aspectRatio > 0
+                ? aspectRatio
+                : (Number.isFinite(width) && Number.isFinite(height) && height > 0
+                    ? width / height
+                    : currentPreviewAspectRatio > 0
+                        ? currentPreviewAspectRatio
+                        : 16 / 9);
+
+            let nextWidth = Number.isFinite(width) && width > 0
+                ? width
+                : PREVIEW_MIN_SHORT_EDGE * normalizedAspect;
+            let nextHeight = Number.isFinite(height) && height > 0
+                ? height
+                : nextWidth / normalizedAspect;
+
+            const available = getPreviewAreaInnerSize();
+            const targetShortEdge = available && available.width > 0 && available.height > 0
+                ? Math.min(available.width, available.height, PREVIEW_MIN_SHORT_EDGE)
+                : PREVIEW_MIN_SHORT_EDGE;
+
+            const currentShortEdge = Math.min(nextWidth, nextHeight);
+            if (currentShortEdge > 0 && currentShortEdge < targetShortEdge) {
+                const scaleFactor = targetShortEdge / currentShortEdge;
+                nextWidth *= scaleFactor;
+                nextHeight *= scaleFactor;
+            }
+
+            if (available && available.width > 0 && available.height > 0) {
+                const widthScale = available.width / nextWidth;
+                const heightScale = available.height / nextHeight;
+                const clampScale = Math.min(1, widthScale, heightScale);
+                if (clampScale < 1) {
+                    nextWidth *= clampScale;
+                    nextHeight *= clampScale;
+                }
+            }
+
+            return {
+                width: nextWidth,
+                height: nextHeight,
+                aspectRatio: normalizedAspect,
+            };
         }
 
         function applyPreviewViewportSize() {
@@ -2589,8 +2649,17 @@ HOME_HTML = '''
             const width = previewViewportBaseWidth * normalizedScale;
             const height = previewViewportBaseHeight * normalizedScale;
 
-            previewViewport.style.width = `${width}px`;
-            previewViewport.style.height = `${height}px`;
+            const constrainedSize = constrainPreviewDisplaySize(width, height, aspectRatio);
+            const constrainedWidth = constrainedSize.width;
+            const constrainedHeight = constrainedSize.height;
+
+            previewViewport.style.width = `${constrainedWidth}px`;
+            previewViewport.style.height = `${constrainedHeight}px`;
+            updatePreviewViewportBaseSizeFromDisplayed(
+                constrainedWidth,
+                constrainedHeight,
+                constrainedSize.aspectRatio,
+            );
         }
 
         function updatePreviewViewportSize(options = {}) {
@@ -2653,12 +2722,18 @@ HOME_HTML = '''
             }
         }
 
-        function updatePreviewViewportBaseSizeFromDisplayed(displayWidth, displayHeight) {
+        function updatePreviewViewportBaseSizeFromDisplayed(displayWidth, displayHeight, aspectRatioOverride) {
             if (displayWidth <= 0 || displayHeight <= 0) {
                 return;
             }
             const normalizedScale = currentPreviewScale > 0 ? currentPreviewScale : 1;
-            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : displayWidth / displayHeight;
+            const aspectRatio = Number.isFinite(aspectRatioOverride) && aspectRatioOverride > 0
+                ? aspectRatioOverride
+                : currentPreviewAspectRatio > 0
+                    ? currentPreviewAspectRatio
+                    : displayHeight > 0
+                        ? displayWidth / Math.max(displayHeight, 1)
+                        : 16 / 9;
             const normalizedWidth = displayWidth / normalizedScale;
             previewViewportBaseWidth = normalizedWidth;
             previewViewportBaseHeight = normalizedWidth / aspectRatio;
@@ -2750,16 +2825,15 @@ HOME_HTML = '''
 
             const aspectRatio = previewResizeSession.aspectRatio > 0 ? previewResizeSession.aspectRatio : 16 / 9;
             const absoluteWidth = Math.abs(nextWidth);
-            let width = Math.max(absoluteWidth, PREVIEW_MIN_SHORT_EDGE);
-            let height = width / aspectRatio;
-            const shortEdge = Math.min(width, height);
-            if (shortEdge > 0 && shortEdge < PREVIEW_MIN_SHORT_EDGE) {
-                const scaleFactor = PREVIEW_MIN_SHORT_EDGE / shortEdge;
-                width *= scaleFactor;
-                height *= scaleFactor;
-            }
+            const widthCandidate = Math.max(absoluteWidth, PREVIEW_MIN_SHORT_EDGE);
+            const heightCandidate = widthCandidate / aspectRatio;
+            const constrainedSize = constrainPreviewDisplaySize(widthCandidate, heightCandidate, aspectRatio);
 
-            updatePreviewViewportBaseSizeFromDisplayed(width, height);
+            updatePreviewViewportBaseSizeFromDisplayed(
+                constrainedSize.width,
+                constrainedSize.height,
+                constrainedSize.aspectRatio,
+            );
             applyPreviewViewportSize();
         }
 
