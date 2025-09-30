@@ -833,7 +833,16 @@ HOME_HTML = '''
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
+            transition: aspect-ratio 0.2s ease, width 0.15s ease, height 0.15s ease;
+        }
+
+        .preview-viewport.is-resizing::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 1px dashed rgba(56, 189, 248, 0.35);
+            pointer-events: none;
         }
 
         #preview-placeholder {
@@ -855,6 +864,61 @@ HOME_HTML = '''
             object-fit: contain;
             border-radius: 16px;
             display: block;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            border: 2px solid rgba(56, 189, 248, 0.75);
+            background: rgba(15, 23, 42, 0.9);
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.45);
+            display: none;
+            z-index: 2;
+            touch-action: none;
+            user-select: none;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+
+        .preview-resize-handle:hover {
+            transform: scale(1.1);
+            border-color: rgba(124, 58, 237, 0.8);
+        }
+
+        .preview-area.has-video .preview-resize-handle,
+        .preview-area.has-image .preview-resize-handle {
+            display: block;
+        }
+
+        .preview-resize-handle--top-left,
+        .preview-resize-handle--bottom-right {
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle--top-right,
+        .preview-resize-handle--bottom-left {
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle--top-left {
+            top: 10px;
+            left: 10px;
+        }
+
+        .preview-resize-handle--top-right {
+            top: 10px;
+            right: 10px;
+        }
+
+        .preview-resize-handle--bottom-left {
+            bottom: 10px;
+            left: 10px;
+        }
+
+        .preview-resize-handle--bottom-right {
+            bottom: 10px;
+            right: 10px;
         }
 
         .timeline-card {
@@ -1226,6 +1290,10 @@ HOME_HTML = '''
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-resize-handle preview-resize-handle--top-left" data-handle="top-left" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--top-right" data-handle="top-right" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--bottom-left" data-handle="bottom-left" aria-hidden="true"></div>
+                        <div class="preview-resize-handle preview-resize-handle--bottom-right" data-handle="bottom-right" aria-hidden="true"></div>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1434,6 +1502,7 @@ HOME_HTML = '''
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
+        const previewResizeHandles = Array.from(document.querySelectorAll('.preview-resize-handle'));
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
@@ -1461,6 +1530,8 @@ HOME_HTML = '''
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
         let currentPreviewAspectRatio = 16 / 9;
+        let previewViewportManualSize = null;
+        let previewResizeState = null;
         let previewViewportResizeFrame = null;
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
@@ -1472,6 +1543,8 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const MIN_PREVIEW_WIDTH = 160;
+        const MIN_PREVIEW_HEIGHT = 120;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2387,9 +2460,9 @@ HOME_HTML = '''
             return 16 / 9;
         }
 
-        function updatePreviewViewportSize() {
-            if (!previewArea || !previewViewport) {
-                return;
+        function getPreviewAreaAvailableSize() {
+            if (!previewArea) {
+                return { width: 0, height: 0 };
             }
 
             const computedStyle = window.getComputedStyle(previewArea);
@@ -2398,8 +2471,17 @@ HOME_HTML = '''
             const paddingTop = Number.parseFloat(computedStyle.paddingTop) || 0;
             const paddingBottom = Number.parseFloat(computedStyle.paddingBottom) || 0;
 
-            const availableWidth = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
-            const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
+            const width = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
+            const height = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
+            return { width, height };
+        }
+
+        function updatePreviewViewportSize() {
+            if (!previewArea || !previewViewport || previewResizeState) {
+                return;
+            }
+
+            const { width: availableWidth, height: availableHeight } = getPreviewAreaAvailableSize();
 
             if (availableWidth <= 0 || availableHeight <= 0) {
                 previewViewport.style.removeProperty('width');
@@ -2407,17 +2489,39 @@ HOME_HTML = '''
                 return;
             }
 
-            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
-            let nextWidth = availableWidth;
-            let nextHeight = nextWidth / aspectRatio;
+            let targetWidth = null;
+            let targetHeight = null;
 
-            if (nextHeight > availableHeight) {
-                nextHeight = availableHeight;
-                nextWidth = nextHeight * aspectRatio;
+            if (previewViewportManualSize && previewViewportManualSize.width > 0 && previewViewportManualSize.height > 0) {
+                const manualWidth = previewViewportManualSize.width;
+                const manualHeight = previewViewportManualSize.height;
+                const widthScale = manualWidth > 0 ? availableWidth / manualWidth : 1;
+                const heightScale = manualHeight > 0 ? availableHeight / manualHeight : 1;
+                const scale = Math.min(1, widthScale, heightScale);
+                targetWidth = manualWidth * scale;
+                targetHeight = manualHeight * scale;
             }
 
-            previewViewport.style.width = `${nextWidth}px`;
-            previewViewport.style.height = `${nextHeight}px`;
+            if (!Number.isFinite(targetWidth) || !Number.isFinite(targetHeight) || targetWidth <= 0 || targetHeight <= 0) {
+                const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+                targetWidth = availableWidth;
+                targetHeight = targetWidth / aspectRatio;
+
+                if (targetHeight > availableHeight) {
+                    targetHeight = availableHeight;
+                    targetWidth = targetHeight * aspectRatio;
+                }
+            }
+
+            previewViewport.style.width = `${targetWidth}px`;
+            previewViewport.style.height = `${targetHeight}px`;
+        }
+
+        function resetPreviewViewportManualSize(shouldSchedule = true) {
+            previewViewportManualSize = null;
+            if (shouldSchedule) {
+                schedulePreviewViewportSizeUpdate();
+            }
         }
 
         function schedulePreviewViewportSizeUpdate() {
@@ -2427,6 +2531,304 @@ HOME_HTML = '''
             previewViewportResizeFrame = window.requestAnimationFrame(() => {
                 previewViewportResizeFrame = null;
                 updatePreviewViewportSize();
+            });
+        }
+
+        function handlePreviewResizeStart(event) {
+            if (!previewViewport || !previewArea || previewResizeState) {
+                return;
+            }
+
+            const handle = event.currentTarget;
+            if (!handle) {
+                return;
+            }
+
+            if (previewPlaceholder && !previewPlaceholder.hidden) {
+                return;
+            }
+
+            const eventType = event.type;
+            const isTouchEvent = eventType === 'touchstart';
+            const isMouseEvent = eventType === 'mousedown';
+            const isPointerEvent = !isTouchEvent && !isMouseEvent;
+
+            if ((isMouseEvent || isPointerEvent) && typeof event.button === 'number' && event.button !== 0) {
+                return;
+            }
+
+            let pointerId = null;
+            let startX = null;
+            let startY = null;
+
+            if (isTouchEvent) {
+                const touch = event.changedTouches?.[0] || event.touches?.[0];
+                if (!touch) {
+                    return;
+                }
+                pointerId = touch.identifier;
+                startX = touch.clientX;
+                startY = touch.clientY;
+            } else {
+                pointerId = isPointerEvent && typeof event.pointerId === 'number'
+                    ? event.pointerId
+                    : null;
+                startX = event.clientX;
+                startY = event.clientY;
+            }
+
+            if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+                return;
+            }
+
+            const { width: availableWidth, height: availableHeight } = getPreviewAreaAvailableSize();
+            if (availableWidth <= 0 || availableHeight <= 0) {
+                return;
+            }
+
+            const viewportRect = previewViewport.getBoundingClientRect();
+            let startWidth = viewportRect.width;
+            let startHeight = viewportRect.height;
+
+            let aspect = startWidth > 0 && startHeight > 0
+                ? startWidth / startHeight
+                : currentPreviewAspectRatio > 0
+                    ? currentPreviewAspectRatio
+                    : 16 / 9;
+
+            if (!Number.isFinite(aspect) || aspect <= 0) {
+                aspect = 16 / 9;
+            }
+
+            if (!Number.isFinite(startWidth) || startWidth <= 0) {
+                startWidth = Math.min(availableWidth, aspect * availableHeight);
+            }
+            if (!Number.isFinite(startHeight) || startHeight <= 0) {
+                startHeight = startWidth / aspect;
+            }
+
+            previewViewportManualSize = {
+                width: startWidth,
+                height: startHeight,
+            };
+
+            previewResizeState = {
+                inputType: isPointerEvent ? 'pointer' : (isTouchEvent ? 'touch' : 'mouse'),
+                pointerId,
+                handle: handle.dataset.handle || 'bottom-right',
+                startX,
+                startY,
+                startWidth,
+                startHeight,
+                aspect,
+                maxWidth: availableWidth,
+                maxHeight: availableHeight,
+                previousUserSelect: document.body.style.userSelect || '',
+            };
+
+            previewViewport.classList.add('is-resizing');
+            document.body.style.userSelect = 'none';
+
+            if (previewResizeState.inputType === 'pointer') {
+                window.addEventListener('pointermove', handlePreviewResizeMove);
+                window.addEventListener('pointerup', handlePreviewResizeEnd);
+                window.addEventListener('pointercancel', handlePreviewResizeEnd);
+            } else if (previewResizeState.inputType === 'mouse') {
+                window.addEventListener('mousemove', handlePreviewResizeMove);
+                window.addEventListener('mouseup', handlePreviewResizeEnd);
+            } else {
+                window.addEventListener('touchmove', handlePreviewResizeMove, { passive: false });
+                window.addEventListener('touchend', handlePreviewResizeEnd);
+                window.addEventListener('touchcancel', handlePreviewResizeEnd);
+            }
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+        }
+
+        function handlePreviewResizeMove(event) {
+            if (!previewResizeState || !previewViewport) {
+                return;
+            }
+
+            let clientX = null;
+            let clientY = null;
+
+            if (previewResizeState.inputType === 'pointer') {
+                if (typeof event.pointerId === 'number' && event.pointerId !== previewResizeState.pointerId) {
+                    return;
+                }
+                clientX = event.clientX;
+                clientY = event.clientY;
+            } else if (previewResizeState.inputType === 'mouse') {
+                clientX = event.clientX;
+                clientY = event.clientY;
+            } else {
+                const touches = event.touches && event.touches.length
+                    ? event.touches
+                    : event.changedTouches;
+                if (!touches) {
+                    return;
+                }
+                for (let index = 0; index < touches.length; index += 1) {
+                    const touch = touches[index];
+                    if (touch.identifier === previewResizeState.pointerId) {
+                        clientX = touch.clientX;
+                        clientY = touch.clientY;
+                        break;
+                    }
+                }
+                if (clientX === null || clientY === null) {
+                    return;
+                }
+            }
+
+            if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+                return;
+            }
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+
+            const directionX = previewResizeState.handle.includes('left') ? -1 : 1;
+            const directionY = previewResizeState.handle.includes('top') ? -1 : 1;
+
+            const deltaX = (clientX - previewResizeState.startX) * directionX;
+            const deltaY = (clientY - previewResizeState.startY) * directionY;
+
+            const useHorizontalDelta = Math.abs(deltaX) >= Math.abs(deltaY);
+            const aspect = previewResizeState.aspect > 0
+                ? previewResizeState.aspect
+                : currentPreviewAspectRatio > 0
+                    ? currentPreviewAspectRatio
+                    : 16 / 9;
+
+            let nextWidth = previewResizeState.startWidth;
+            let nextHeight = previewResizeState.startHeight;
+
+            if (useHorizontalDelta) {
+                nextWidth = previewResizeState.startWidth + deltaX;
+                nextHeight = nextWidth / aspect;
+            } else {
+                nextHeight = previewResizeState.startHeight + deltaY;
+                nextWidth = nextHeight * aspect;
+            }
+
+            if (!Number.isFinite(nextWidth) || nextWidth <= 0) {
+                nextWidth = previewResizeState.startWidth;
+                nextHeight = nextWidth / aspect;
+            }
+
+            if (!Number.isFinite(nextHeight) || nextHeight <= 0) {
+                nextHeight = previewResizeState.startHeight;
+                nextWidth = nextHeight * aspect;
+            }
+
+            const effectiveMinWidth = previewResizeState.maxWidth > 0
+                ? Math.min(MIN_PREVIEW_WIDTH, previewResizeState.maxWidth)
+                : MIN_PREVIEW_WIDTH;
+            const effectiveMinHeight = previewResizeState.maxHeight > 0
+                ? Math.min(MIN_PREVIEW_HEIGHT, previewResizeState.maxHeight)
+                : MIN_PREVIEW_HEIGHT;
+
+            if (nextWidth < effectiveMinWidth) {
+                nextWidth = effectiveMinWidth;
+                nextHeight = nextWidth / aspect;
+            }
+
+            if (nextHeight < effectiveMinHeight) {
+                nextHeight = effectiveMinHeight;
+                nextWidth = nextHeight * aspect;
+            }
+
+            const maxWidth = previewResizeState.maxWidth || nextWidth;
+            const maxHeight = previewResizeState.maxHeight || nextHeight;
+            const widthScale = maxWidth > 0 ? maxWidth / nextWidth : 1;
+            const heightScale = maxHeight > 0 ? maxHeight / nextHeight : 1;
+            const clampScale = Math.min(1, widthScale, heightScale);
+
+            if (Number.isFinite(clampScale) && clampScale > 0 && clampScale < 1) {
+                nextWidth *= clampScale;
+                nextHeight *= clampScale;
+            }
+
+            if (nextWidth <= 0 || nextHeight <= 0) {
+                return;
+            }
+
+            previewViewportManualSize = {
+                width: nextWidth,
+                height: nextHeight,
+            };
+
+            previewViewport.style.width = `${nextWidth}px`;
+            previewViewport.style.height = `${nextHeight}px`;
+        }
+
+        function handlePreviewResizeEnd(event) {
+            if (!previewResizeState || !previewViewport) {
+                return;
+            }
+
+            let shouldHandle = true;
+
+            if (previewResizeState.inputType === 'pointer') {
+                if (typeof event.pointerId === 'number' && event.pointerId !== previewResizeState.pointerId) {
+                    shouldHandle = false;
+                }
+            } else if (previewResizeState.inputType === 'touch') {
+                const touches = event.changedTouches;
+                if (touches && touches.length) {
+                    let matched = false;
+                    for (let index = 0; index < touches.length; index += 1) {
+                        if (touches[index].identifier === previewResizeState.pointerId) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    shouldHandle = matched;
+                }
+            }
+
+            if (!shouldHandle) {
+                return;
+            }
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+
+            if (previewResizeState.inputType === 'pointer') {
+                window.removeEventListener('pointermove', handlePreviewResizeMove);
+                window.removeEventListener('pointerup', handlePreviewResizeEnd);
+                window.removeEventListener('pointercancel', handlePreviewResizeEnd);
+            } else if (previewResizeState.inputType === 'mouse') {
+                window.removeEventListener('mousemove', handlePreviewResizeMove);
+                window.removeEventListener('mouseup', handlePreviewResizeEnd);
+            } else {
+                window.removeEventListener('touchmove', handlePreviewResizeMove);
+                window.removeEventListener('touchend', handlePreviewResizeEnd);
+                window.removeEventListener('touchcancel', handlePreviewResizeEnd);
+            }
+
+            previewViewport.classList.remove('is-resizing');
+            document.body.style.userSelect = previewResizeState.previousUserSelect || '';
+
+            previewResizeState = null;
+            schedulePreviewViewportSizeUpdate();
+        }
+
+        if (previewResizeHandles.length) {
+            const supportsPointerEvents = 'PointerEvent' in window;
+            previewResizeHandles.forEach((handle) => {
+                if (supportsPointerEvents) {
+                    handle.addEventListener('pointerdown', handlePreviewResizeStart);
+                } else {
+                    handle.addEventListener('mousedown', handlePreviewResizeStart);
+                    handle.addEventListener('touchstart', handlePreviewResizeStart, { passive: false });
+                }
             });
         }
 
@@ -2448,6 +2850,7 @@ HOME_HTML = '''
                 return;
             }
 
+            resetPreviewViewportManualSize(false);
             const normalized = aspectValue === '9:16' ? '9 / 16' : '16 / 9';
             currentPreviewAspectRatio = parseAspectRatio(aspectValue);
             previewArea.style.setProperty('--preview-aspect-ratio', normalized);
@@ -2631,6 +3034,7 @@ HOME_HTML = '''
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
             resetPreviewScroll();
+            resetPreviewViewportManualSize();
             setActiveTimelineItem(null);
         }
 
