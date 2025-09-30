@@ -924,6 +924,10 @@ HOME_HTML = '''
             pointer-events: none;
         }
 
+        .preview-image-layer.is-interactive {
+            pointer-events: auto;
+        }
+
         .preview-image-layer[hidden] {
             display: none;
         }
@@ -3919,12 +3923,14 @@ HOME_HTML = '''
                 return;
             }
             previewImageLayer.removeAttribute('hidden');
+            previewImageLayer.classList.add('is-interactive');
         }
 
         function hidePreviewImageLayer() {
             if (!previewImageLayer) {
                 return;
             }
+            previewImageLayer.classList.remove('is-interactive');
             if (previewImagePointerState.pointerId !== null) {
                 if (previewImageFrame?.hasPointerCapture?.(previewImagePointerState.pointerId)) {
                     previewImageFrame.releasePointerCapture(previewImagePointerState.pointerId);
