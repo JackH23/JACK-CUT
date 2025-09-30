@@ -847,12 +847,27 @@ HOME_HTML = '''
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: box-shadow 0.2s ease, transform 0.2s ease;
+            --preview-frame-highlight-color: rgba(124, 58, 237, 0.65);
+            --preview-frame-highlight-glow: rgba(124, 58, 237, 0.38);
+            --preview-frame-highlight-opacity: 0;
+            transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease, filter 0.3s ease;
             min-width: 80px;
             min-height: 80px;
             z-index: 2;
             cursor: grab;
             touch-action: none;
+        }
+
+        .preview-media-frame::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 2px solid var(--preview-frame-highlight-color);
+            opacity: var(--preview-frame-highlight-opacity);
+            pointer-events: none;
+            box-shadow: 0 0 22px var(--preview-frame-highlight-glow);
+            transition: opacity 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
         }
 
         .preview-media-frame[hidden] {
@@ -863,13 +878,18 @@ HOME_HTML = '''
             pointer-events: auto;
         }
 
-        .preview-media-frame.is-resizing,
-        .preview-media-frame:hover {
-            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.55), 0 24px 50px rgba(15, 23, 42, 0.6);
+        .preview-media-frame:is(.is-resizing, :hover) {
+            --preview-frame-highlight-opacity: 1;
+            --preview-frame-highlight-color: rgba(124, 58, 237, 0.85);
+            --preview-frame-highlight-glow: rgba(124, 58, 237, 0.4);
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.45), 0 24px 50px rgba(15, 23, 42, 0.6);
         }
 
         .preview-media-frame.is-dragging {
             cursor: grabbing;
+            --preview-frame-highlight-opacity: 1;
+            --preview-frame-highlight-color: rgba(124, 58, 237, 0.9);
+            --preview-frame-highlight-glow: rgba(124, 58, 237, 0.45);
             box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.65), 0 28px 56px rgba(15, 23, 42, 0.65);
         }
 
@@ -881,16 +901,22 @@ HOME_HTML = '''
             display: block;
             pointer-events: none;
             user-select: none;
-            transition: opacity 0.2s ease;
+            transition: opacity 0.25s ease;
         }
 
         .preview-media-frame.is-boundary {
-            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.8), 0 26px 54px rgba(15, 23, 42, 0.68);
+            --preview-frame-highlight-opacity: 1;
+            --preview-frame-highlight-color: rgba(56, 189, 248, 0.95);
+            --preview-frame-highlight-glow: rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35), 0 26px 54px rgba(8, 13, 28, 0.68);
         }
 
         .preview-media-frame.is-out-of-bounds {
             background: transparent;
-            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+            --preview-frame-highlight-opacity: 1;
+            --preview-frame-highlight-color: rgba(255, 255, 255, 0.95);
+            --preview-frame-highlight-glow: rgba(255, 255, 255, 0.45);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0), 0 26px 54px rgba(8, 13, 28, 0.6);
         }
 
         .preview-media-frame.is-out-of-bounds img {
@@ -898,9 +924,8 @@ HOME_HTML = '''
         }
 
         .preview-media-frame.is-out-of-bounds .preview-resize-handle {
-            background: rgba(255, 255, 255, 0.92);
-            box-shadow: 0 16px 32px rgba(15, 23, 42, 0.55);
-            color: rgba(15, 23, 42, 0.85);
+            opacity: 0;
+            pointer-events: none;
         }
 
         .preview-resize-handle {
@@ -918,7 +943,7 @@ HOME_HTML = '''
             cursor: pointer;
             touch-action: none;
             pointer-events: auto;
-            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.25s ease;
         }
 
         .preview-resize-handle::before {
@@ -2822,13 +2847,42 @@ HOME_HTML = '''
                 return;
             }
 
+            if (!boundaryInfo) {
+                previewMediaFrame.classList.remove('is-boundary', 'is-out-of-bounds');
+                previewMediaFrame.removeAttribute('data-boundary-state');
+                previewMediaFrame.removeAttribute('data-boundary-edges');
+                previewMediaFrame.removeAttribute('data-overflow-edges');
+                return;
+            }
+
             const touches = boundaryInfo?.touches || {};
             const overflow = boundaryInfo?.overflow || {};
-            const isTouching = Boolean(Object.values(touches).some(Boolean));
-            const isOverflow = Boolean(Object.values(overflow).some(Boolean));
+            const touchedEdges = Object.entries(touches)
+                .filter(([, value]) => Boolean(value))
+                .map(([edge]) => edge)
+                .join(' ');
+            const overflowEdges = Object.entries(overflow)
+                .filter(([, value]) => Boolean(value))
+                .map(([edge]) => edge)
+                .join(' ');
+
+            const isTouching = touchedEdges.length > 0;
+            const isOverflow = overflowEdges.length > 0;
 
             previewMediaFrame.classList.toggle('is-boundary', isTouching && !isOverflow);
             previewMediaFrame.classList.toggle('is-out-of-bounds', isOverflow);
+
+            if (touchedEdges) {
+                previewMediaFrame.setAttribute('data-boundary-edges', touchedEdges);
+            } else {
+                previewMediaFrame.removeAttribute('data-boundary-edges');
+            }
+
+            if (overflowEdges) {
+                previewMediaFrame.setAttribute('data-overflow-edges', overflowEdges);
+            } else {
+                previewMediaFrame.removeAttribute('data-overflow-edges');
+            }
 
             if (isOverflow) {
                 previewMediaFrame.setAttribute('data-boundary-state', 'out');
@@ -2911,6 +2965,8 @@ HOME_HTML = '''
                 previewMediaFrame.removeAttribute('data-object-url');
                 previewMediaFrame.classList.remove('is-boundary', 'is-out-of-bounds');
                 previewMediaFrame.removeAttribute('data-boundary-state');
+                previewMediaFrame.removeAttribute('data-boundary-edges');
+                previewMediaFrame.removeAttribute('data-overflow-edges');
             }
             previewImageFrameState = null;
         }
