@@ -857,6 +857,94 @@ HOME_HTML = '''
             display: block;
         }
 
+        .preview-image-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .preview-image-layer[hidden] {
+            display: none;
+        }
+
+        .preview-image-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow:
+                0 0 0 1px rgba(148, 163, 184, 0.35),
+                0 12px 32px rgba(15, 23, 42, 0.35);
+            pointer-events: auto;
+            cursor: grab;
+            touch-action: none;
+            transition: box-shadow 0.18s ease;
+        }
+
+        .preview-image-frame.is-dragging,
+        .preview-image-frame.is-resizing {
+            cursor: grabbing;
+            box-shadow:
+                0 0 0 1px rgba(56, 189, 248, 0.65),
+                0 18px 38px rgba(8, 12, 24, 0.45);
+        }
+
+        .preview-image-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(56, 189, 248, 0.9));
+            box-shadow:
+                0 0 0 2px rgba(15, 23, 42, 0.85),
+                0 10px 20px rgba(14, 21, 37, 0.45);
+            cursor: pointer;
+            pointer-events: auto;
+            padding: 0;
+        }
+
+        .preview-resize-handle:focus-visible {
+            outline: 2px solid rgba(56, 189, 248, 0.85);
+            outline-offset: 3px;
+        }
+
+        .preview-resize-handle.handle-nw {
+            top: -9px;
+            left: -9px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle.handle-ne {
+            top: -9px;
+            right: -9px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle.handle-se {
+            bottom: -9px;
+            right: -9px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle.handle-sw {
+            bottom: -9px;
+            left: -9px;
+            cursor: nesw-resize;
+        }
+
         .timeline-card {
             position: relative;
             overflow: hidden;
@@ -1225,7 +1313,15 @@ HOME_HTML = '''
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
-                        <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-image-layer" id="preview-image-layer" hidden>
+                            <div class="preview-image-frame" id="preview-image-frame" role="presentation">
+                                <img id="preview-image" alt="Preview" hidden>
+                                <button type="button" class="preview-resize-handle handle-nw" data-handle="nw" aria-label="Resize from top left"></button>
+                                <button type="button" class="preview-resize-handle handle-ne" data-handle="ne" aria-label="Resize from top right"></button>
+                                <button type="button" class="preview-resize-handle handle-se" data-handle="se" aria-label="Resize from bottom right"></button>
+                                <button type="button" class="preview-resize-handle handle-sw" data-handle="sw" aria-label="Resize from bottom left"></button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1433,6 +1529,11 @@ HOME_HTML = '''
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
+        const previewImageLayer = document.getElementById('preview-image-layer');
+        const previewImageFrame = document.getElementById('preview-image-frame');
+        const previewResizeHandles = previewImageFrame
+            ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
+            : [];
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -1466,12 +1567,23 @@ HOME_HTML = '''
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
         let isExportingTimeline = false;
+        let previewImageTransform = null;
+        let lastPreviewViewportSize = null;
+        let shouldResetImageFrameOnNextViewportUpdate = false;
+
+        const previewImagePointerState = {
+            pointerId: null,
+            mode: null,
+            handle: null,
+            origin: null,
+        };
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const MIN_IMAGE_FRAME_SIZE = 96;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2404,6 +2516,7 @@ HOME_HTML = '''
             if (availableWidth <= 0 || availableHeight <= 0) {
                 previewViewport.style.removeProperty('width');
                 previewViewport.style.removeProperty('height');
+                handlePreviewViewportResized();
                 return;
             }
 
@@ -2418,6 +2531,7 @@ HOME_HTML = '''
 
             previewViewport.style.width = `${nextWidth}px`;
             previewViewport.style.height = `${nextHeight}px`;
+            handlePreviewViewportResized();
         }
 
         function schedulePreviewViewportSizeUpdate() {
@@ -2430,10 +2544,381 @@ HOME_HTML = '''
             });
         }
 
+        function applyPreviewImageTransform() {
+            if (!previewImageFrame || !previewImageTransform) {
+                return;
+            }
+
+            previewImageFrame.style.transform = `translate3d(${previewImageTransform.left}px, ${previewImageTransform.top}px, 0)`;
+            previewImageFrame.style.width = `${previewImageTransform.width}px`;
+            previewImageFrame.style.height = `${previewImageTransform.height}px`;
+        }
+
+        function clearPreviewImageTransform() {
+            previewImageTransform = null;
+            if (previewImageFrame) {
+                previewImageFrame.style.removeProperty('transform');
+                previewImageFrame.style.removeProperty('width');
+                previewImageFrame.style.removeProperty('height');
+                previewImageFrame.classList.remove('is-dragging', 'is-resizing');
+            }
+        }
+
+        function resetPreviewImageFrameToFit() {
+            if (!previewImage || !previewImageFrame || !previewViewport || previewImage.hidden) {
+                return;
+            }
+
+            const viewportWidth = Math.max(0, previewViewport.clientWidth);
+            const viewportHeight = Math.max(0, previewViewport.clientHeight);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return;
+            }
+
+            const naturalWidth = Math.max(1, previewImage.naturalWidth || viewportWidth);
+            const naturalHeight = Math.max(1, previewImage.naturalHeight || viewportHeight);
+            const aspectRatio = naturalWidth / naturalHeight || 1;
+
+            let targetWidth = viewportWidth;
+            let targetHeight = targetWidth / aspectRatio;
+
+            if (targetHeight > viewportHeight) {
+                targetHeight = viewportHeight;
+                targetWidth = targetHeight * aspectRatio;
+            }
+
+            const minimumWidth = Math.min(viewportWidth, MIN_IMAGE_FRAME_SIZE);
+            if (targetWidth < minimumWidth) {
+                targetWidth = minimumWidth;
+                targetHeight = targetWidth / aspectRatio;
+            }
+
+            const left = (viewportWidth - targetWidth) / 2;
+            const top = (viewportHeight - targetHeight) / 2;
+
+            previewImageTransform = {
+                left,
+                top,
+                width: targetWidth,
+                height: targetHeight,
+                aspectRatio: aspectRatio > 0 ? aspectRatio : 1,
+            };
+
+            lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
+            applyPreviewImageTransform();
+        }
+
+        function showPreviewImageLayer() {
+            if (!previewImageLayer) {
+                return;
+            }
+            previewImageLayer.removeAttribute('hidden');
+        }
+
+        function hidePreviewImageLayer() {
+            if (!previewImageLayer) {
+                return;
+            }
+            if (previewImagePointerState.pointerId !== null) {
+                if (previewImageFrame?.hasPointerCapture?.(previewImagePointerState.pointerId)) {
+                    previewImageFrame.releasePointerCapture(previewImagePointerState.pointerId);
+                }
+                previewResizeHandles.forEach((handle) => {
+                    if (handle?.hasPointerCapture?.(previewImagePointerState.pointerId)) {
+                        handle.releasePointerCapture(previewImagePointerState.pointerId);
+                    }
+                });
+            }
+            previewImageLayer.setAttribute('hidden', '');
+            clearPreviewImageTransform();
+            shouldResetImageFrameOnNextViewportUpdate = false;
+            lastPreviewViewportSize = null;
+            previewImagePointerState.pointerId = null;
+            previewImagePointerState.mode = null;
+            previewImagePointerState.handle = null;
+            previewImagePointerState.origin = null;
+        }
+
+        function queuePreviewImageFrameReset() {
+            if (!previewImage || previewImage.hidden) {
+                return;
+            }
+            shouldResetImageFrameOnNextViewportUpdate = true;
+            schedulePreviewViewportSizeUpdate();
+        }
+
+        function handlePreviewViewportResized() {
+            if (!previewViewport) {
+                return;
+            }
+
+            const width = Math.max(0, previewViewport.clientWidth);
+            const height = Math.max(0, previewViewport.clientHeight);
+
+            if (width === 0 || height === 0) {
+                lastPreviewViewportSize = { width, height };
+                return;
+            }
+
+            if (shouldResetImageFrameOnNextViewportUpdate) {
+                shouldResetImageFrameOnNextViewportUpdate = false;
+                resetPreviewImageFrameToFit();
+                lastPreviewViewportSize = { width, height };
+                return;
+            }
+
+            if (!previewImageTransform) {
+                lastPreviewViewportSize = { width, height };
+                return;
+            }
+
+            if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
+                lastPreviewViewportSize = { width, height };
+                return;
+            }
+
+            const scale = width / lastPreviewViewportSize.width;
+
+            if (!Number.isFinite(scale) || scale <= 0) {
+                lastPreviewViewportSize = { width, height };
+                return;
+            }
+
+            const previousCenterX = previewImageTransform.left + (previewImageTransform.width / 2);
+            const previousCenterY = previewImageTransform.top + (previewImageTransform.height / 2);
+
+            const nextWidth = previewImageTransform.width * scale;
+            const nextHeight = nextWidth / (previewImageTransform.aspectRatio || 1);
+            const nextCenterX = previousCenterX * scale;
+            const nextCenterY = previousCenterY * scale;
+
+            previewImageTransform.left = nextCenterX - (nextWidth / 2);
+            previewImageTransform.top = nextCenterY - (nextHeight / 2);
+            previewImageTransform.width = nextWidth;
+            previewImageTransform.height = nextHeight;
+
+            lastPreviewViewportSize = { width, height };
+            applyPreviewImageTransform();
+        }
+
+        function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
+            const aspectRatio = origin.aspectRatio > 0 ? origin.aspectRatio : 1;
+            const baseMin = Math.max(32, MIN_IMAGE_FRAME_SIZE);
+            const minHeight = Math.max(32, baseMin / aspectRatio);
+
+            const chooseWidth = (primary, secondary) => {
+                const candidate = Math.abs(deltaX) >= Math.abs(deltaY) ? primary : secondary;
+                return Math.max(baseMin, candidate);
+            };
+
+            switch (handle) {
+                case 'nw': {
+                    const widthFromDx = origin.width - deltaX;
+                    const heightFromDy = origin.height - deltaY;
+                    let nextWidth = chooseWidth(widthFromDx, heightFromDy * aspectRatio);
+                    let nextHeight = nextWidth / aspectRatio;
+                    if (nextHeight < minHeight) {
+                        nextHeight = minHeight;
+                        nextWidth = nextHeight * aspectRatio;
+                    }
+                    return {
+                        left: origin.oppositeX - nextWidth,
+                        top: origin.oppositeY - nextHeight,
+                        width: nextWidth,
+                        height: nextHeight,
+                    };
+                }
+                case 'ne': {
+                    const widthFromDx = origin.width + deltaX;
+                    const heightFromDy = origin.height - deltaY;
+                    let nextWidth = chooseWidth(widthFromDx, heightFromDy * aspectRatio);
+                    let nextHeight = nextWidth / aspectRatio;
+                    if (nextHeight < minHeight) {
+                        nextHeight = minHeight;
+                        nextWidth = nextHeight * aspectRatio;
+                    }
+                    return {
+                        left: origin.left,
+                        top: origin.oppositeY - nextHeight,
+                        width: nextWidth,
+                        height: nextHeight,
+                    };
+                }
+                case 'sw': {
+                    const widthFromDx = origin.width - deltaX;
+                    const heightFromDy = origin.height + deltaY;
+                    let nextWidth = chooseWidth(widthFromDx, heightFromDy * aspectRatio);
+                    let nextHeight = nextWidth / aspectRatio;
+                    if (nextHeight < minHeight) {
+                        nextHeight = minHeight;
+                        nextWidth = nextHeight * aspectRatio;
+                    }
+                    return {
+                        left: origin.oppositeX - nextWidth,
+                        top: origin.top,
+                        width: nextWidth,
+                        height: nextHeight,
+                    };
+                }
+                case 'se':
+                default: {
+                    const widthFromDx = origin.width + deltaX;
+                    const heightFromDy = origin.height + deltaY;
+                    let nextWidth = chooseWidth(widthFromDx, heightFromDy * aspectRatio);
+                    let nextHeight = nextWidth / aspectRatio;
+                    if (nextHeight < minHeight) {
+                        nextHeight = minHeight;
+                        nextWidth = nextHeight * aspectRatio;
+                    }
+                    return {
+                        left: origin.left,
+                        top: origin.top,
+                        width: nextWidth,
+                        height: nextHeight,
+                    };
+                }
+            }
+        }
+
+        function endPreviewImagePointerInteraction() {
+            if (previewImageFrame) {
+                previewImageFrame.classList.remove('is-dragging', 'is-resizing');
+            }
+            previewImagePointerState.pointerId = null;
+            previewImagePointerState.mode = null;
+            previewImagePointerState.handle = null;
+            previewImagePointerState.origin = null;
+        }
+
+        function onPreviewImagePointerDown(event) {
+            if (!previewImageFrame || !previewImageTransform || previewImage.hidden) {
+                return;
+            }
+
+            if (event.button !== 0) {
+                return;
+            }
+
+            const handleElement = event.target.closest('.preview-resize-handle');
+            const captureTarget = handleElement || previewImageFrame;
+
+            if (typeof captureTarget.setPointerCapture === 'function') {
+                captureTarget.setPointerCapture(event.pointerId);
+            }
+
+            previewImagePointerState.pointerId = event.pointerId;
+            previewImagePointerState.mode = handleElement ? 'resize' : 'drag';
+            previewImagePointerState.handle = handleElement?.dataset.handle || 'se';
+            previewImagePointerState.origin = {
+                pointerX: event.clientX,
+                pointerY: event.clientY,
+                left: previewImageTransform.left,
+                top: previewImageTransform.top,
+                width: previewImageTransform.width,
+                height: previewImageTransform.height,
+                aspectRatio: previewImageTransform.aspectRatio || 1,
+                oppositeX: previewImageTransform.left + previewImageTransform.width,
+                oppositeY: previewImageTransform.top + previewImageTransform.height,
+            };
+
+            if (previewImagePointerState.mode === 'resize') {
+                previewImageFrame.classList.add('is-resizing');
+            } else {
+                previewImageFrame.classList.add('is-dragging');
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        function onPreviewImagePointerMove(event) {
+            if (previewImagePointerState.pointerId === null || event.pointerId !== previewImagePointerState.pointerId) {
+                return;
+            }
+
+            if (!previewImageTransform) {
+                return;
+            }
+
+            const deltaX = event.clientX - previewImagePointerState.origin.pointerX;
+            const deltaY = event.clientY - previewImagePointerState.origin.pointerY;
+
+            if (previewImagePointerState.mode === 'drag') {
+                previewImageTransform.left = previewImagePointerState.origin.left + deltaX;
+                previewImageTransform.top = previewImagePointerState.origin.top + deltaY;
+                applyPreviewImageTransform();
+            } else if (previewImagePointerState.mode === 'resize') {
+                const next = calculatePreviewImageResize(
+                    previewImagePointerState.handle || 'se',
+                    deltaX,
+                    deltaY,
+                    previewImagePointerState.origin,
+                );
+                previewImageTransform.left = next.left;
+                previewImageTransform.top = next.top;
+                previewImageTransform.width = next.width;
+                previewImageTransform.height = next.height;
+                previewImageTransform.aspectRatio = previewImagePointerState.origin.aspectRatio;
+                applyPreviewImageTransform();
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        function onPreviewImagePointerUp(event) {
+            if (previewImagePointerState.pointerId === null || event.pointerId !== previewImagePointerState.pointerId) {
+                return;
+            }
+
+            if (typeof event.target.releasePointerCapture === 'function' && event.target.hasPointerCapture(event.pointerId)) {
+                event.target.releasePointerCapture(event.pointerId);
+            }
+
+            endPreviewImagePointerInteraction();
+        }
+
+        function onPreviewImagePointerCancel(event) {
+            if (previewImagePointerState.pointerId === null || event.pointerId !== previewImagePointerState.pointerId) {
+                return;
+            }
+
+            if (typeof event.target.releasePointerCapture === 'function' && event.target.hasPointerCapture(event.pointerId)) {
+                event.target.releasePointerCapture(event.pointerId);
+            }
+
+            endPreviewImagePointerInteraction();
+        }
+
+        function setPreviewImageVisibility(isVisible) {
+            if (!previewImage) {
+                return;
+            }
+
+            if (isVisible) {
+                previewImage.hidden = false;
+                showPreviewImageLayer();
+                schedulePreviewViewportSizeUpdate();
+                if (previewImage.complete) {
+                    resetPreviewImageFrameToFit();
+                } else {
+                    queuePreviewImageFrameReset();
+                }
+            } else {
+                previewImage.hidden = true;
+                hidePreviewImageLayer();
+            }
+        }
+
+
         if (previewImage) {
             previewImage.addEventListener('load', () => {
                 resetPreviewScroll();
                 schedulePreviewViewportSizeUpdate();
+                if (!previewImage.hidden) {
+                    resetPreviewImageFrameToFit();
+                }
             });
         }
 
@@ -2441,6 +2926,16 @@ HOME_HTML = '''
             previewVideo.addEventListener('loadeddata', () => {
                 schedulePreviewViewportSizeUpdate();
             });
+        }
+
+        if (previewImageFrame) {
+            previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
+        }
+
+        if (window && typeof window.addEventListener === 'function') {
+            window.addEventListener('pointermove', onPreviewImagePointerMove, { passive: false });
+            window.addEventListener('pointerup', onPreviewImagePointerUp, { passive: true });
+            window.addEventListener('pointercancel', onPreviewImagePointerCancel, { passive: true });
         }
 
         function setPreviewAspect(aspectValue) {
@@ -2455,6 +2950,7 @@ HOME_HTML = '''
                 previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
             }
             schedulePreviewViewportSizeUpdate();
+            queuePreviewImageFrameReset();
             if (isExportDialogOpen()) {
                 renderExportSummary(getTimelineItems(), null);
             }
@@ -2625,7 +3121,7 @@ HOME_HTML = '''
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
             previewVideo.load();
-            previewImage.hidden = true;
+            setPreviewImageVisibility(false);
             previewImage.removeAttribute('src');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
@@ -2668,7 +3164,7 @@ HOME_HTML = '''
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
                 resetPreviewScroll();
-                previewImage.hidden = true;
+                setPreviewImageVisibility(false);
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
                 if (previewVideo.src !== objectURL) {
@@ -2682,7 +3178,7 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
-                previewImage.hidden = false;
+                setPreviewImageVisibility(true);
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
                 }
@@ -2856,7 +3352,7 @@ HOME_HTML = '''
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
                 resetPreviewScroll();
-                previewImage.hidden = true;
+                setPreviewImageVisibility(false);
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
                 previewPlaceholder.hidden = true;
@@ -2983,7 +3479,7 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
-                previewImage.hidden = false;
+                setPreviewImageVisibility(true);
                 previewPlaceholder.hidden = true;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
