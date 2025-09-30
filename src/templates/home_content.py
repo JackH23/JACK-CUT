@@ -388,6 +388,7 @@ HOME_HTML = '''
         }
 
         .preview-card {
+            position: relative;
             gap: 24px;
         }
 
@@ -459,6 +460,43 @@ HOME_HTML = '''
             pointer-events: none;
         }
 
+        .preview-outside-indicator {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 6;
+        }
+
+        .preview-outside-indicator[hidden] {
+            display: none;
+        }
+
+        .preview-outside-indicator__segment {
+            position: absolute;
+            display: none;
+            box-sizing: border-box;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            border-radius: 14px;
+            background: transparent;
+            pointer-events: none;
+        }
+
+        .preview-outside-indicator__segment--top {
+            border-radius: 14px 14px 0 0;
+        }
+
+        .preview-outside-indicator__segment--right {
+            border-radius: 0 14px 14px 0;
+        }
+
+        .preview-outside-indicator__segment--bottom {
+            border-radius: 0 0 14px 14px;
+        }
+
+        .preview-outside-indicator__segment--left {
+            border-radius: 14px 0 0 14px;
+        }
+
         .preview-meta {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -484,6 +522,12 @@ HOME_HTML = '''
         .preview-meta__item strong {
             font-weight: 600;
             font-size: 0.95rem;
+        }
+
+        .preview-reference {
+            margin: 4px 0 0;
+            font-size: 0.82rem;
+            color: rgba(203, 213, 225, 0.85);
         }
 
         .settings-card {
@@ -1344,6 +1388,12 @@ HOME_HTML = '''
                         </div>
                     </div>
                 </div>
+                <div class="preview-outside-indicator" id="preview-outside-indicator" hidden aria-hidden="true">
+                    <div class="preview-outside-indicator__segment preview-outside-indicator__segment--top" data-segment="top"></div>
+                    <div class="preview-outside-indicator__segment preview-outside-indicator__segment--right" data-segment="right"></div>
+                    <div class="preview-outside-indicator__segment preview-outside-indicator__segment--bottom" data-segment="bottom"></div>
+                    <div class="preview-outside-indicator__segment preview-outside-indicator__segment--left" data-segment="left"></div>
+                </div>
                 <div class="preview-meta">
                     <div class="preview-meta__item">
                         <span>Aspect</span>
@@ -1354,6 +1404,7 @@ HOME_HTML = '''
                         <strong>On</strong>
                     </div>
                 </div>
+                <p class="preview-reference">The Ultimate Guide to Social Media Graphic Sizes and Dimensions</p>
             </article>
 
             <article class="panel settings-card">
@@ -1554,6 +1605,16 @@ HOME_HTML = '''
         const previewResizeHandles = previewImageFrame
             ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
             : [];
+        const previewCard = document.querySelector('.preview-card');
+        const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
+        const previewOutsideSegments = previewOutsideIndicator
+            ? {
+                top: previewOutsideIndicator.querySelector('[data-segment="top"]'),
+                right: previewOutsideIndicator.querySelector('[data-segment="right"]'),
+                bottom: previewOutsideIndicator.querySelector('[data-segment="bottom"]'),
+                left: previewOutsideIndicator.querySelector('[data-segment="left"]'),
+            }
+            : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -3095,6 +3156,7 @@ HOME_HTML = '''
             const alignment = alignmentOverride
                 || evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize());
             updatePreviewViewportAlignmentState(alignment);
+            updatePreviewOutsideOutline();
         }
 
         function clearPreviewImageTransform() {
@@ -3106,6 +3168,131 @@ HOME_HTML = '''
                 previewImageFrame.classList.remove('is-dragging', 'is-resizing');
             }
             resetPreviewViewportAlignmentState();
+            hidePreviewOutsideOutline();
+        }
+
+        function hidePreviewOutsideOutline() {
+            if (!previewOutsideIndicator) {
+                return;
+            }
+
+            previewOutsideIndicator.setAttribute('hidden', '');
+
+            if (!previewOutsideSegments) {
+                return;
+            }
+
+            Object.values(previewOutsideSegments).forEach((segment) => {
+                if (!segment) {
+                    return;
+                }
+                segment.style.display = 'none';
+                segment.style.removeProperty('left');
+                segment.style.removeProperty('top');
+                segment.style.removeProperty('width');
+                segment.style.removeProperty('height');
+            });
+        }
+
+        function updatePreviewOutsideOutline() {
+            if (!previewOutsideIndicator
+                || !previewOutsideSegments
+                || !previewImageTransform
+                || !previewViewport
+                || !previewCard) {
+                hidePreviewOutsideOutline();
+                return;
+            }
+
+            const viewportWidth = Math.max(0, previewViewport.clientWidth);
+            const viewportHeight = Math.max(0, previewViewport.clientHeight);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                hidePreviewOutsideOutline();
+                return;
+            }
+
+            const frameWidth = Math.max(0, previewImageTransform.width);
+            const frameHeight = Math.max(0, previewImageTransform.height);
+
+            if (frameWidth === 0 || frameHeight === 0) {
+                hidePreviewOutsideOutline();
+                return;
+            }
+
+            const overflowLeft = Math.min(Math.max(0, -previewImageTransform.left), frameWidth);
+            const overflowTop = Math.min(Math.max(0, -previewImageTransform.top), frameHeight);
+            const overflowRight = Math.min(
+                Math.max(0, (previewImageTransform.left + frameWidth) - viewportWidth),
+                frameWidth,
+            );
+            const overflowBottom = Math.min(
+                Math.max(0, (previewImageTransform.top + frameHeight) - viewportHeight),
+                frameHeight,
+            );
+
+            if (overflowLeft <= 0 && overflowTop <= 0 && overflowRight <= 0 && overflowBottom <= 0) {
+                hidePreviewOutsideOutline();
+                return;
+            }
+
+            const viewportRect = previewViewport.getBoundingClientRect();
+            const cardRect = previewCard.getBoundingClientRect();
+
+            const frameLeft = viewportRect.left - cardRect.left + previewImageTransform.left;
+            const frameTop = viewportRect.top - cardRect.top + previewImageTransform.top;
+
+            previewOutsideIndicator.removeAttribute('hidden');
+
+            const { top, right, bottom, left } = previewOutsideSegments;
+
+            if (left) {
+                if (overflowLeft > 0) {
+                    left.style.display = 'block';
+                    left.style.left = `${frameLeft}px`;
+                    left.style.top = `${frameTop}px`;
+                    left.style.width = `${overflowLeft}px`;
+                    left.style.height = `${frameHeight}px`;
+                } else {
+                    left.style.display = 'none';
+                }
+            }
+
+            if (right) {
+                if (overflowRight > 0) {
+                    right.style.display = 'block';
+                    right.style.left = `${frameLeft + frameWidth - overflowRight}px`;
+                    right.style.top = `${frameTop}px`;
+                    right.style.width = `${overflowRight}px`;
+                    right.style.height = `${frameHeight}px`;
+                } else {
+                    right.style.display = 'none';
+                }
+            }
+
+            if (top) {
+                if (overflowTop > 0) {
+                    top.style.display = 'block';
+                    top.style.left = `${frameLeft}px`;
+                    top.style.top = `${frameTop}px`;
+                    top.style.width = `${frameWidth}px`;
+                    top.style.height = `${overflowTop}px`;
+                } else {
+                    top.style.display = 'none';
+                }
+            }
+
+            if (bottom) {
+                if (overflowBottom > 0) {
+                    bottom.style.display = 'block';
+                    bottom.style.left = `${frameLeft}px`;
+                    bottom.style.top = `${frameTop + frameHeight - overflowBottom}px`;
+                    bottom.style.width = `${frameWidth}px`;
+                    bottom.style.height = `${overflowBottom}px`;
+                } else {
+                    bottom.style.display = 'none';
+                }
+            }
         }
 
         function resetPreviewImageFrameToFit() {
@@ -3199,6 +3386,7 @@ HOME_HTML = '''
 
         function handlePreviewViewportResized() {
             if (!previewViewport) {
+                hidePreviewOutsideOutline();
                 return;
             }
 
@@ -3207,6 +3395,7 @@ HOME_HTML = '''
 
             if (width === 0 || height === 0) {
                 lastPreviewViewportSize = { width, height };
+                hidePreviewOutsideOutline();
                 return;
             }
 
@@ -3229,11 +3418,13 @@ HOME_HTML = '''
 
             if (!previewImageTransform) {
                 lastPreviewViewportSize = { width, height };
+                hidePreviewOutsideOutline();
                 return;
             }
 
             if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
                 lastPreviewViewportSize = { width, height };
+                hidePreviewOutsideOutline();
                 return;
             }
 
@@ -3241,6 +3432,7 @@ HOME_HTML = '''
 
             if (!Number.isFinite(scale) || scale <= 0) {
                 lastPreviewViewportSize = { width, height };
+                hidePreviewOutsideOutline();
                 return;
             }
 
