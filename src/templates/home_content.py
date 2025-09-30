@@ -850,12 +850,34 @@ HOME_HTML = '''
             --preview-frame-highlight-color: rgba(124, 58, 237, 0.65);
             --preview-frame-highlight-glow: rgba(124, 58, 237, 0.38);
             --preview-frame-highlight-opacity: 0;
+            --preview-frame-boundary-highlight: rgba(56, 189, 248, 0.95);
+            --preview-frame-edge-thickness: 3px;
+            --preview-frame-edge-opacity: 0;
+            --preview-frame-edge-top-color: transparent;
+            --preview-frame-edge-right-color: transparent;
+            --preview-frame-edge-bottom-color: transparent;
+            --preview-frame-edge-left-color: transparent;
             transition: background 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease, filter 0.3s ease;
             min-width: 80px;
             min-height: 80px;
             z-index: 2;
             cursor: grab;
             touch-action: none;
+        }
+
+        .preview-media-frame::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            background:
+                linear-gradient(var(--preview-frame-edge-top-color), var(--preview-frame-edge-top-color)) top / 100% var(--preview-frame-edge-thickness) no-repeat,
+                linear-gradient(to bottom, var(--preview-frame-edge-right-color), var(--preview-frame-edge-right-color)) right / var(--preview-frame-edge-thickness) 100% no-repeat,
+                linear-gradient(var(--preview-frame-edge-bottom-color), var(--preview-frame-edge-bottom-color)) bottom / 100% var(--preview-frame-edge-thickness) no-repeat,
+                linear-gradient(to bottom, var(--preview-frame-edge-left-color), var(--preview-frame-edge-left-color)) left / var(--preview-frame-edge-thickness) 100% no-repeat;
+            opacity: var(--preview-frame-edge-opacity);
+            transition: opacity 0.2s ease;
         }
 
         .preview-media-frame::after {
@@ -897,7 +919,7 @@ HOME_HTML = '''
             width: 100%;
             height: 100%;
             object-fit: contain;
-            border-radius: 14px;
+            border-radius: inherit;
             display: block;
             pointer-events: none;
             user-select: none;
@@ -2852,6 +2874,11 @@ HOME_HTML = '''
                 previewMediaFrame.removeAttribute('data-boundary-state');
                 previewMediaFrame.removeAttribute('data-boundary-edges');
                 previewMediaFrame.removeAttribute('data-overflow-edges');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-opacity');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-top-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-right-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-bottom-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-left-color');
                 return;
             }
 
@@ -2871,6 +2898,15 @@ HOME_HTML = '''
 
             previewMediaFrame.classList.toggle('is-boundary', isTouching && !isOverflow);
             previewMediaFrame.classList.toggle('is-out-of-bounds', isOverflow);
+
+            const edgeOpacity = isTouching && !isOverflow ? '1' : '0';
+            previewMediaFrame.style.setProperty('--preview-frame-edge-opacity', edgeOpacity);
+
+            const edgeColor = isTouching && !isOverflow ? 'var(--preview-frame-boundary-highlight)' : 'transparent';
+            previewMediaFrame.style.setProperty('--preview-frame-edge-top-color', touches.top && !isOverflow ? edgeColor : 'transparent');
+            previewMediaFrame.style.setProperty('--preview-frame-edge-right-color', touches.right && !isOverflow ? edgeColor : 'transparent');
+            previewMediaFrame.style.setProperty('--preview-frame-edge-bottom-color', touches.bottom && !isOverflow ? edgeColor : 'transparent');
+            previewMediaFrame.style.setProperty('--preview-frame-edge-left-color', touches.left && !isOverflow ? edgeColor : 'transparent');
 
             if (touchedEdges) {
                 previewMediaFrame.setAttribute('data-boundary-edges', touchedEdges);
@@ -2967,6 +3003,11 @@ HOME_HTML = '''
                 previewMediaFrame.removeAttribute('data-boundary-state');
                 previewMediaFrame.removeAttribute('data-boundary-edges');
                 previewMediaFrame.removeAttribute('data-overflow-edges');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-opacity');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-top-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-right-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-bottom-color');
+                previewMediaFrame.style.removeProperty('--preview-frame-edge-left-color');
             }
             previewImageFrameState = null;
         }
