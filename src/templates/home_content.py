@@ -833,7 +833,27 @@ HOME_HTML = '''
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
+            transition: aspect-ratio 0.2s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .preview-viewport.is-aligned {
+            box-shadow:
+                inset 0 0 0 1.5px rgba(56, 189, 248, 0.5),
+                0 0 0 1px rgba(56, 189, 248, 0.22);
+        }
+
+        .preview-viewport.is-fully-aligned {
+            box-shadow:
+                inset 0 0 0 2px rgba(124, 58, 237, 0.65),
+                0 0 0 1.5px rgba(56, 189, 248, 0.35),
+                0 14px 34px rgba(8, 12, 24, 0.42);
+        }
+
+        .preview-viewport.is-aligned-left,
+        .preview-viewport.is-aligned-right,
+        .preview-viewport.is-aligned-top,
+        .preview-viewport.is-aligned-bottom {
+            background: rgba(8, 13, 28, 0.96);
         }
 
         #preview-placeholder {
@@ -1576,6 +1596,22 @@ HOME_HTML = '''
             mode: null,
             handle: null,
             origin: null,
+        };
+
+        const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
+        const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
+        const PREVIEW_ALIGNMENT_CLASSES = {
+            left: 'is-aligned-left',
+            right: 'is-aligned-right',
+            top: 'is-aligned-top',
+            bottom: 'is-aligned-bottom',
+        };
+
+        let previewViewportAlignmentState = {
+            left: false,
+            right: false,
+            top: false,
+            bottom: false,
         };
 
         const IMAGE_FRAME_DURATION = 1000;
@@ -2544,14 +2580,239 @@ HOME_HTML = '''
             });
         }
 
-        function applyPreviewImageTransform() {
+        function getPreviewViewportSize() {
+            if (!previewViewport) {
+                return { width: 0, height: 0 };
+            }
+            return {
+                width: Math.max(0, previewViewport.clientWidth),
+                height: Math.max(0, previewViewport.clientHeight),
+            };
+        }
+
+        function evaluatePreviewImageAlignment(transform, viewportSize, tolerance = PREVIEW_ALIGNMENT_TOLERANCE) {
+            if (!transform || !viewportSize) {
+                return {
+                    left: false,
+                    right: false,
+                    top: false,
+                    bottom: false,
+                };
+            }
+
+            const { width: viewportWidth, height: viewportHeight } = viewportSize;
+
+            if (viewportWidth <= 0 || viewportHeight <= 0) {
+                return {
+                    left: false,
+                    right: false,
+                    top: false,
+                    bottom: false,
+                };
+            }
+
+            const safeTolerance = Number.isFinite(tolerance) && tolerance >= 0 ? tolerance : 0;
+            const leftDelta = transform.left;
+            const topDelta = transform.top;
+            const rightDelta = viewportWidth - (transform.left + transform.width);
+            const bottomDelta = viewportHeight - (transform.top + transform.height);
+
+            return {
+                left: Math.abs(leftDelta) <= safeTolerance,
+                right: Math.abs(rightDelta) <= safeTolerance,
+                top: Math.abs(topDelta) <= safeTolerance,
+                bottom: Math.abs(bottomDelta) <= safeTolerance,
+            };
+        }
+
+        function updatePreviewViewportAlignmentState(alignment) {
+            if (!previewViewport) {
+                return;
+            }
+
+            const resolved = alignment || {
+                left: false,
+                right: false,
+                top: false,
+                bottom: false,
+            };
+
+            let hasAny = false;
+            let hasAll = true;
+
+            (['left', 'right', 'top', 'bottom']).forEach((edge) => {
+                const isAligned = Boolean(resolved[edge]);
+                hasAny = hasAny || isAligned;
+                hasAll = hasAll && isAligned;
+                if (previewViewportAlignmentState[edge] !== isAligned) {
+                    previewViewport.classList.toggle(PREVIEW_ALIGNMENT_CLASSES[edge], isAligned);
+                    previewViewportAlignmentState[edge] = isAligned;
+                }
+            });
+
+            previewViewport.classList.toggle('is-aligned', hasAny);
+            previewViewport.classList.toggle('is-fully-aligned', hasAll);
+        }
+
+        function resetPreviewViewportAlignmentState() {
+            if (!previewViewport) {
+                return;
+            }
+
+            (['left', 'right', 'top', 'bottom']).forEach((edge) => {
+                previewViewport.classList.remove(PREVIEW_ALIGNMENT_CLASSES[edge]);
+                previewViewportAlignmentState[edge] = false;
+            });
+
+            previewViewport.classList.remove('is-aligned', 'is-fully-aligned');
+        }
+
+        function snapPreviewImageTransform(transform, options = {}) {
+            if (!transform) {
+                return {
+                    transform: null,
+                    alignment: evaluatePreviewImageAlignment(null, getPreviewViewportSize()),
+                };
+            }
+
+            const viewportSize = getPreviewViewportSize();
+            const snappedTransform = { ...transform };
+
+            if (viewportSize.width > 0 && viewportSize.height > 0) {
+                const threshold = PREVIEW_IMAGE_SNAP_THRESHOLD;
+                if (options.mode === 'drag') {
+                    if (Math.abs(snappedTransform.left) <= threshold) {
+                        snappedTransform.left = 0;
+                    }
+
+                    const rightDelta = viewportSize.width - (snappedTransform.left + snappedTransform.width);
+                    if (Math.abs(rightDelta) <= threshold) {
+                        snappedTransform.left += rightDelta;
+                    }
+
+                    if (Math.abs(snappedTransform.top) <= threshold) {
+                        snappedTransform.top = 0;
+                    }
+
+                    const bottomDelta = viewportSize.height - (snappedTransform.top + snappedTransform.height);
+                    if (Math.abs(bottomDelta) <= threshold) {
+                        snappedTransform.top += bottomDelta;
+                    }
+                } else if (options.mode === 'resize') {
+                    const handle = typeof options.handle === 'string' ? options.handle.toLowerCase() : '';
+
+                    if (handle) {
+                        const hasWest = handle.includes('w');
+                        const hasEast = handle.includes('e');
+                        const hasNorth = handle.includes('n');
+                        const hasSouth = handle.includes('s');
+
+                        const origin = options.origin || null;
+                        let aspectRatio = transform.aspectRatio > 0 ? transform.aspectRatio : null;
+                        if (!aspectRatio) {
+                            const ratio = transform.width / transform.height;
+                            aspectRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+                        }
+
+                        const anchorX = hasWest
+                            ? origin?.oppositeX ?? (transform.left + transform.width)
+                            : origin?.left ?? transform.left;
+                        const anchorY = hasNorth
+                            ? origin?.oppositeY ?? (transform.top + transform.height)
+                            : origin?.top ?? transform.top;
+
+                        let movingX = hasWest ? transform.left : transform.left + transform.width;
+                        let movingY = hasNorth ? transform.top : transform.top + transform.height;
+
+                        let snappedHorizontal = false;
+                        let snappedVertical = false;
+
+                        if (hasWest && Math.abs(movingX) <= threshold) {
+                            movingX = 0;
+                            snappedHorizontal = true;
+                        } else if (hasEast && Math.abs(viewportSize.width - movingX) <= threshold) {
+                            movingX = viewportSize.width;
+                            snappedHorizontal = true;
+                        }
+
+                        if (hasNorth && Math.abs(movingY) <= threshold) {
+                            movingY = 0;
+                            snappedVertical = true;
+                        } else if (hasSouth && Math.abs(viewportSize.height - movingY) <= threshold) {
+                            movingY = viewportSize.height;
+                            snappedVertical = true;
+                        }
+
+                        if (snappedHorizontal || snappedVertical) {
+                            const horizontalDelta = movingX - anchorX;
+                            const verticalDelta = movingY - anchorY;
+                            const horizontalDirection = horizontalDelta === 0
+                                ? (hasEast ? 1 : -1)
+                                : Math.sign(horizontalDelta);
+                            const verticalDirection = verticalDelta === 0
+                                ? (hasSouth ? 1 : -1)
+                                : Math.sign(verticalDelta);
+
+                            let widthMagnitude = Math.abs(horizontalDelta);
+                            let heightMagnitude = Math.abs(verticalDelta);
+
+                            const targetHeightFromWidth = widthMagnitude / aspectRatio;
+                            const targetWidthFromHeight = heightMagnitude * aspectRatio;
+
+                            if (snappedHorizontal && !snappedVertical) {
+                                heightMagnitude = targetHeightFromWidth;
+                                movingY = anchorY + (verticalDirection || 1) * heightMagnitude;
+                            } else if (snappedVertical && !snappedHorizontal) {
+                                widthMagnitude = targetWidthFromHeight;
+                                movingX = anchorX + (horizontalDirection || 1) * widthMagnitude;
+                            } else {
+                                const deltaHeight = Math.abs(targetHeightFromWidth - heightMagnitude);
+                                const deltaWidth = Math.abs(targetWidthFromHeight - widthMagnitude);
+                                if (deltaHeight <= deltaWidth) {
+                                    heightMagnitude = targetHeightFromWidth;
+                                    movingY = anchorY + (verticalDirection || 1) * heightMagnitude;
+                                } else {
+                                    widthMagnitude = targetWidthFromHeight;
+                                    movingX = anchorX + (horizontalDirection || 1) * widthMagnitude;
+                                }
+                            }
+
+                            const nextLeft = Math.min(anchorX, movingX);
+                            const nextTop = Math.min(anchorY, movingY);
+                            const nextWidth = Math.max(Math.abs(movingX - anchorX), 0);
+                            const nextHeight = Math.max(Math.abs(movingY - anchorY), 0);
+
+                            snappedTransform.left = nextLeft;
+                            snappedTransform.top = nextTop;
+                            snappedTransform.width = nextWidth;
+                            snappedTransform.height = nextHeight;
+                            snappedTransform.aspectRatio = aspectRatio;
+                        }
+                    }
+                }
+            }
+
+            const alignment = evaluatePreviewImageAlignment(snappedTransform, viewportSize);
+
+            return {
+                transform: snappedTransform,
+                alignment,
+            };
+        }
+
+        function applyPreviewImageTransform(alignmentOverride) {
             if (!previewImageFrame || !previewImageTransform) {
+                resetPreviewViewportAlignmentState();
                 return;
             }
 
             previewImageFrame.style.transform = `translate3d(${previewImageTransform.left}px, ${previewImageTransform.top}px, 0)`;
             previewImageFrame.style.width = `${previewImageTransform.width}px`;
             previewImageFrame.style.height = `${previewImageTransform.height}px`;
+
+            const alignment = alignmentOverride
+                || evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize());
+            updatePreviewViewportAlignmentState(alignment);
         }
 
         function clearPreviewImageTransform() {
@@ -2562,6 +2823,7 @@ HOME_HTML = '''
                 previewImageFrame.style.removeProperty('height');
                 previewImageFrame.classList.remove('is-dragging', 'is-resizing');
             }
+            resetPreviewViewportAlignmentState();
         }
 
         function resetPreviewImageFrameToFit() {
@@ -2847,7 +3109,6 @@ HOME_HTML = '''
             if (previewImagePointerState.mode === 'drag') {
                 previewImageTransform.left = previewImagePointerState.origin.left + deltaX;
                 previewImageTransform.top = previewImagePointerState.origin.top + deltaY;
-                applyPreviewImageTransform();
             } else if (previewImagePointerState.mode === 'resize') {
                 const next = calculatePreviewImageResize(
                     previewImagePointerState.handle || 'se',
@@ -2860,8 +3121,25 @@ HOME_HTML = '''
                 previewImageTransform.width = next.width;
                 previewImageTransform.height = next.height;
                 previewImageTransform.aspectRatio = previewImagePointerState.origin.aspectRatio;
-                applyPreviewImageTransform();
             }
+
+            const snapResult = snapPreviewImageTransform(previewImageTransform, {
+                mode: previewImagePointerState.mode,
+                handle: previewImagePointerState.handle,
+                origin: previewImagePointerState.origin,
+            });
+
+            if (snapResult?.transform) {
+                previewImageTransform.left = snapResult.transform.left;
+                previewImageTransform.top = snapResult.transform.top;
+                previewImageTransform.width = snapResult.transform.width;
+                previewImageTransform.height = snapResult.transform.height;
+                if (Number.isFinite(snapResult.transform.aspectRatio) && snapResult.transform.aspectRatio > 0) {
+                    previewImageTransform.aspectRatio = snapResult.transform.aspectRatio;
+                }
+            }
+
+            applyPreviewImageTransform(snapResult?.alignment);
 
             event.preventDefault();
             event.stopPropagation();
