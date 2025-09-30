@@ -1208,7 +1208,7 @@ HOME_HTML = '''
             position: relative;
             display: flex;
             flex-wrap: nowrap;
-            align-items: stretch;
+            align-items: flex-start;
             gap: 10px;
             padding: 16px;
             border-radius: 14px;
@@ -1219,7 +1219,7 @@ HOME_HTML = '''
             font-size: 0.95rem;
             min-height: 140px;
             overflow-x: auto;
-            overflow-y: hidden;
+            overflow-y: visible;
             scrollbar-width: thin;
             scroll-snap-type: x proximity;
             transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -1244,6 +1244,23 @@ HOME_HTML = '''
             background: rgba(8, 12, 24, 0.92);
         }
 
+        .timeline-stack {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+            flex: 0 0 auto;
+            width: 120px;
+            min-width: 120px;
+            scroll-snap-align: start;
+            transition: transform 0.2s ease;
+        }
+
+        .timeline-stack.is-stack-target {
+            transform: translateY(-4px);
+        }
+
         .timeline-item {
             position: relative;
             padding: 8px;
@@ -1261,7 +1278,11 @@ HOME_HTML = '''
             cursor: grab;
             user-select: none;
             transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-            scroll-snap-align: start;
+        }
+
+        .timeline-stack .timeline-item {
+            width: 100%;
+            min-width: 0;
         }
 
         .timeline-item[data-resize-cursor="left"],
@@ -2735,17 +2756,67 @@ HOME_HTML = '''
             timelineItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }
 
-        function getDragAfterElement(container, clientX) {
-            const siblings = Array.from(
-                container.querySelectorAll('.timeline-item:not(.dragging)'),
-            );
+        function getTimelineStack(element) {
+            return element ? element.closest('.timeline-stack') : null;
+        }
 
-            return siblings.reduce(
-                (closest, child) => {
-                    const box = child.getBoundingClientRect();
+        function createTimelineStackWithItem(timelineItem) {
+            const stack = document.createElement('div');
+            stack.className = 'timeline-stack';
+            stack.appendChild(timelineItem);
+            return stack;
+        }
+
+        function cleanupEmptyTimelineStack(stack) {
+            if (!stack || stack.querySelector('.timeline-item')) {
+                return;
+            }
+            stack.remove();
+        }
+
+        function ensureTimelineItemHasDedicatedStack(timelineItem) {
+            if (!timelineItem || !timelineTrack) {
+                return null;
+            }
+            const currentStack = getTimelineStack(timelineItem);
+            if (!currentStack) {
+                const stack = createTimelineStackWithItem(timelineItem);
+                timelineTrack.appendChild(stack);
+                return stack;
+            }
+            if (currentStack.childElementCount === 1) {
+                return currentStack;
+            }
+            const newStack = createTimelineStackWithItem(timelineItem);
+            currentStack.after(newStack);
+            cleanupEmptyTimelineStack(currentStack);
+            return newStack;
+        }
+
+        function canStackAcceptImage(timelineStack, timelineItem) {
+            if (!timelineStack || !timelineItem) {
+                return false;
+            }
+            const fileType = timelineItem.dataset.fileType || '';
+            if (!fileType.startsWith('image/')) {
+                return false;
+            }
+            const stackItems = Array.from(timelineStack.querySelectorAll('.timeline-item'));
+            return stackItems.every((item) => (item.dataset.fileType || '').startsWith('image/'));
+        }
+
+        function getDragAfterStack(container, clientX, draggingStack) {
+            const stacks = Array.from(container.querySelectorAll('.timeline-stack'));
+
+            return stacks.reduce(
+                (closest, stack) => {
+                    if (stack === draggingStack) {
+                        return closest;
+                    }
+                    const box = stack.getBoundingClientRect();
                     const offset = clientX - box.left - box.width / 2;
                     if (offset < 0 && offset > closest.offset) {
-                        return { offset, element: child };
+                        return { offset, element: stack };
                     }
                     return closest;
                 },
@@ -3008,7 +3079,20 @@ HOME_HTML = '''
         }
 
         if (timelineTrack) {
+            const wrapExistingTimelineItems = () => {
+                const directChildren = Array.from(timelineTrack.children);
+                directChildren.forEach((child) => {
+                    if (child.classList.contains('timeline-item')) {
+                        const stack = createTimelineStackWithItem(child);
+                        timelineTrack.insertBefore(stack, child);
+                    }
+                });
+            };
+
+            wrapExistingTimelineItems();
+
             let timelineFileDragDepth = 0;
+            let highlightedTimelineStack = null;
 
             const isFileDragEvent = (event) => {
                 const transfer = event?.dataTransfer;
@@ -3021,10 +3105,13 @@ HOME_HTML = '''
             const resetTimelineFileDropState = () => {
                 if (!timelineFileDragDepth) {
                     timelineTrack.classList.remove('is-dropping');
-                    return;
                 }
                 timelineFileDragDepth = 0;
                 timelineTrack.classList.remove('is-dropping');
+                if (highlightedTimelineStack) {
+                    highlightedTimelineStack.classList.remove('is-stack-target');
+                    highlightedTimelineStack = null;
+                }
             };
 
             timelineTrack.addEventListener('dragenter', (event) => {
@@ -3038,6 +3125,9 @@ HOME_HTML = '''
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = 'move';
+                    }
                 }
             });
 
@@ -3053,19 +3143,79 @@ HOME_HTML = '''
 
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (!draggingItem) {
+                    if (highlightedTimelineStack) {
+                        highlightedTimelineStack.classList.remove('is-stack-target');
+                        highlightedTimelineStack = null;
+                    }
                     return;
                 }
                 event.preventDefault();
-                const afterElement = getDragAfterElement(timelineTrack, event.clientX);
-                if (!afterElement) {
-                    timelineTrack.appendChild(draggingItem);
-                } else if (afterElement !== draggingItem) {
-                    timelineTrack.insertBefore(draggingItem, afterElement);
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'move';
+                }
+
+                const targetStack = event.target.closest('.timeline-stack');
+                const canStack = targetStack && canStackAcceptImage(targetStack, draggingItem);
+
+                if (canStack) {
+                    if (highlightedTimelineStack !== targetStack) {
+                        if (highlightedTimelineStack) {
+                            highlightedTimelineStack.classList.remove('is-stack-target');
+                        }
+                        targetStack.classList.add('is-stack-target');
+                        highlightedTimelineStack = targetStack;
+                    }
+                    const previousStack = getTimelineStack(draggingItem);
+                    const hoveredItem = event.target.closest('.timeline-item');
+                    if (hoveredItem && hoveredItem !== draggingItem) {
+                        const rect = hoveredItem.getBoundingClientRect();
+                        const insertBefore = event.clientY < rect.top + rect.height / 2;
+                        targetStack.insertBefore(draggingItem, insertBefore ? hoveredItem : hoveredItem.nextSibling);
+                    } else if (!hoveredItem) {
+                        const stackItems = Array.from(targetStack.querySelectorAll('.timeline-item'));
+                        if (stackItems.length) {
+                            const stackRect = targetStack.getBoundingClientRect();
+                            const insertAtTop = event.clientY < stackRect.top + stackRect.height / 2;
+                            if (insertAtTop) {
+                                targetStack.insertBefore(draggingItem, stackItems[0]);
+                            } else {
+                                targetStack.appendChild(draggingItem);
+                            }
+                        } else {
+                            targetStack.appendChild(draggingItem);
+                        }
+                    }
+                    if (previousStack && previousStack !== targetStack) {
+                        cleanupEmptyTimelineStack(previousStack);
+                    }
+                    return;
+                }
+
+                if (highlightedTimelineStack) {
+                    highlightedTimelineStack.classList.remove('is-stack-target');
+                    highlightedTimelineStack = null;
+                }
+
+                const draggingStack = ensureTimelineItemHasDedicatedStack(draggingItem);
+                if (!draggingStack) {
+                    return;
+                }
+                const afterStack = getDragAfterStack(timelineTrack, event.clientX, draggingStack);
+                if (!afterStack) {
+                    timelineTrack.appendChild(draggingStack);
+                } else if (afterStack !== draggingStack) {
+                    timelineTrack.insertBefore(draggingStack, afterStack);
                 }
             });
 
             timelineTrack.addEventListener('dragleave', (event) => {
                 if (!isFileDragEvent(event)) {
+                    if (!timelineTrack.contains(event.relatedTarget)) {
+                        if (highlightedTimelineStack) {
+                            highlightedTimelineStack.classList.remove('is-stack-target');
+                            highlightedTimelineStack = null;
+                        }
+                    }
                     return;
                 }
 
@@ -3099,6 +3249,10 @@ HOME_HTML = '''
                     draggingItem.classList.remove('dragging');
                     draggingItem.draggable = true;
                     updateActiveTimelineIndicators();
+                }
+                if (highlightedTimelineStack) {
+                    highlightedTimelineStack.classList.remove('is-stack-target');
+                    highlightedTimelineStack = null;
                 }
             });
 
@@ -4805,7 +4959,8 @@ HOME_HTML = '''
             }
 
             timelineItem.appendChild(label);
-            timelineTrack.appendChild(timelineItem);
+            const timelineStack = createTimelineStackWithItem(timelineItem);
+            timelineTrack.appendChild(timelineStack);
             initializeTimelineItem(timelineItem);
 
             timelineItem.addEventListener('click', () => {
