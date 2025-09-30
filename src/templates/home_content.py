@@ -832,7 +832,7 @@ HOME_HTML = '''
             border-radius: 16px;
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
-            overflow: hidden;
+            overflow: visible;
             transition: aspect-ratio 0.2s ease;
         }
 
@@ -840,21 +840,111 @@ HOME_HTML = '''
             text-align: center;
             line-height: 1.6;
             padding: 0 12px;
+            position: relative;
+            z-index: 0;
         }
 
-        .preview-viewport video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
+        .preview-media-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
             border-radius: 16px;
+            overflow: visible;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35);
+            z-index: 1;
+            touch-action: none;
         }
 
-        .preview-viewport img {
+        .preview-media-frame[hidden] {
+            display: none !important;
+        }
+
+        .preview-media-frame.is-resizing {
+            box-shadow: 0 18px 44px rgba(56, 189, 248, 0.18);
+        }
+
+        .preview-media-content {
+            position: relative;
             width: 100%;
             height: 100%;
-            object-fit: contain;
-            border-radius: 16px;
+            border-radius: inherit;
+            overflow: hidden;
+            background: rgba(8, 13, 28, 0.92);
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
+        }
+
+        .preview-media-content video,
+        .preview-media-content img {
+            width: 100%;
+            height: 100%;
             display: block;
+            object-fit: contain;
+            border-radius: inherit;
+            transition: opacity 0.15s ease;
+        }
+
+        .preview-media-frame.is-overflowing .preview-media-content video,
+        .preview-media-frame.is-overflowing .preview-media-content img {
+            opacity: 0;
+        }
+
+        .preview-media-outline {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 2px solid rgba(255, 255, 255, 0.92);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        .preview-media-frame.is-overflowing .preview-media-outline {
+            opacity: 1;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            background: rgba(15, 23, 42, 0.85);
+            box-shadow: 0 6px 14px rgba(15, 23, 42, 0.5);
+            pointer-events: auto;
+            touch-action: none;
+            z-index: 2;
+        }
+
+        .preview-resize-handle::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border-radius: inherit;
+            background: rgba(124, 58, 237, 0.45);
+        }
+
+        .preview-resize-handle.handle-top-left {
+            top: -9px;
+            left: -9px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle.handle-top-right {
+            top: -9px;
+            right: -9px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle.handle-bottom-left {
+            bottom: -9px;
+            left: -9px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle.handle-bottom-right {
+            bottom: -9px;
+            right: -9px;
+            cursor: nwse-resize;
         }
 
         .timeline-card {
@@ -1224,8 +1314,17 @@ HOME_HTML = '''
                 <div class="preview-area">
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                        <video id="preview-video" controls hidden></video>
-                        <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-media-frame" id="preview-media-frame" hidden>
+                            <div class="preview-media-content">
+                                <video id="preview-video" controls hidden playsinline></video>
+                                <img id="preview-image" alt="Preview" hidden>
+                            </div>
+                            <div class="preview-media-outline" aria-hidden="true"></div>
+                            <div class="preview-resize-handle handle-top-left" data-handle="top-left" aria-hidden="true"></div>
+                            <div class="preview-resize-handle handle-top-right" data-handle="top-right" aria-hidden="true"></div>
+                            <div class="preview-resize-handle handle-bottom-left" data-handle="bottom-left" aria-hidden="true"></div>
+                            <div class="preview-resize-handle handle-bottom-right" data-handle="bottom-right" aria-hidden="true"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1433,6 +1532,10 @@ HOME_HTML = '''
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
+        const previewMediaFrame = document.getElementById('preview-media-frame');
+        const previewResizeHandles = previewMediaFrame
+            ? Array.from(previewMediaFrame.querySelectorAll('.preview-resize-handle'))
+            : [];
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -1466,12 +1569,17 @@ HOME_HTML = '''
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
         let isExportingTimeline = false;
+        let previewFrameConstrainFrame = null;
+        let previewResizeState = null;
+        let previewFrameMetrics = { left: 0, top: 0, width: 0, height: 0 };
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const PREVIEW_MIN_FRAME_SIZE = 180;
+        const PREVIEW_MIN_VISIBLE_SIZE = 72;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2343,6 +2451,7 @@ HOME_HTML = '''
             if (previewArea && !previewAreaResizeObserver) {
                 previewAreaResizeObserver = new ResizeObserver(() => {
                     schedulePreviewViewportSizeUpdate();
+                    schedulePreviewFrameConstrain();
                 });
                 previewAreaResizeObserver.observe(previewArea);
             }
@@ -2357,6 +2466,7 @@ HOME_HTML = '''
         window.addEventListener('resize', () => {
             schedulePreviewViewportSizeUpdate();
             scheduleTimelineIndicatorUpdate();
+            schedulePreviewFrameConstrain();
         });
 
         function setPreviewMode(mode) {
@@ -2366,6 +2476,18 @@ HOME_HTML = '''
             previewArea.classList.remove('has-video', 'has-image');
             if (mode) {
                 previewArea.classList.add(mode);
+            }
+            if (!previewMediaFrame) {
+                return;
+            }
+            if (mode === 'has-video' || mode === 'has-image') {
+                previewMediaFrame.hidden = false;
+                previewMediaFrame.classList.remove('is-overflowing', 'is-resizing');
+                schedulePreviewFrameConstrain();
+            } else {
+                previewMediaFrame.hidden = true;
+                previewMediaFrame.classList.remove('is-overflowing', 'is-resizing');
+                resetPreviewFrameMetrics();
             }
         }
 
@@ -2418,6 +2540,7 @@ HOME_HTML = '''
 
             previewViewport.style.width = `${nextWidth}px`;
             previewViewport.style.height = `${nextHeight}px`;
+            schedulePreviewFrameConstrain();
         }
 
         function schedulePreviewViewportSizeUpdate() {
@@ -2430,9 +2553,324 @@ HOME_HTML = '''
             });
         }
 
+        function getPreviewMinDimension(limit) {
+            if (!Number.isFinite(limit) || limit <= 0) {
+                return PREVIEW_MIN_VISIBLE_SIZE;
+            }
+            const candidate = Math.min(PREVIEW_MIN_FRAME_SIZE, limit);
+            return Math.min(limit, Math.max(PREVIEW_MIN_VISIBLE_SIZE, candidate));
+        }
+
+        function setPreviewFrameGeometry(left, top, width, height) {
+            if (!previewMediaFrame) {
+                return;
+            }
+
+            const safeLeft = Number.isFinite(left) ? Math.max(0, left) : 0;
+            const safeTop = Number.isFinite(top) ? Math.max(0, top) : 0;
+            const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+            const safeHeight = Number.isFinite(height) ? Math.max(0, height) : 0;
+
+            previewFrameMetrics = {
+                left: safeLeft,
+                top: safeTop,
+                width: safeWidth,
+                height: safeHeight,
+            };
+
+            previewMediaFrame.style.left = `${safeLeft}px`;
+            previewMediaFrame.style.top = `${safeTop}px`;
+            previewMediaFrame.style.width = `${safeWidth}px`;
+            previewMediaFrame.style.height = `${safeHeight}px`;
+        }
+
+        function resetPreviewFrameMetrics() {
+            previewFrameMetrics = { left: 0, top: 0, width: 0, height: 0 };
+            if (previewMediaFrame) {
+                previewMediaFrame.style.left = '0px';
+                previewMediaFrame.style.top = '0px';
+                previewMediaFrame.style.width = '0px';
+                previewMediaFrame.style.height = '0px';
+            }
+        }
+
+        function constrainPreviewMediaFrame() {
+            if (!previewMediaFrame || previewMediaFrame.hidden || !previewViewport) {
+                return;
+            }
+
+            const viewportRect = previewViewport.getBoundingClientRect();
+            const viewportWidth = viewportRect.width;
+            const viewportHeight = viewportRect.height;
+
+            if (viewportWidth <= 0 || viewportHeight <= 0) {
+                return;
+            }
+
+            const minWidth = getPreviewMinDimension(viewportWidth);
+            const minHeight = getPreviewMinDimension(viewportHeight);
+
+            let { left, top, width, height } = previewFrameMetrics;
+
+            if (width <= 0 || height <= 0) {
+                width = Math.min(viewportWidth, Math.max(minWidth, Math.round(viewportWidth * 0.7)));
+                height = Math.min(viewportHeight, Math.max(minHeight, Math.round(viewportHeight * 0.7)));
+                left = Math.max(0, Math.round((viewportWidth - width) / 2));
+                top = Math.max(0, Math.round((viewportHeight - height) / 2));
+            }
+
+            width = Math.min(Math.max(width, minWidth), viewportWidth);
+            height = Math.min(Math.max(height, minHeight), viewportHeight);
+
+            left = Math.min(Math.max(left, 0), Math.max(0, viewportWidth - width));
+            top = Math.min(Math.max(top, 0), Math.max(0, viewportHeight - height));
+
+            setPreviewFrameGeometry(left, top, width, height);
+        }
+
+        function schedulePreviewFrameConstrain() {
+            if (!previewMediaFrame || previewMediaFrame.hidden || !previewViewport) {
+                return;
+            }
+            if (previewFrameConstrainFrame !== null) {
+                return;
+            }
+            previewFrameConstrainFrame = window.requestAnimationFrame(() => {
+                previewFrameConstrainFrame = null;
+                constrainPreviewMediaFrame();
+            });
+        }
+
+        function initializePreviewMediaFrame(sourceWidth, sourceHeight) {
+            if (!previewMediaFrame || !previewViewport) {
+                return;
+            }
+
+            const viewportRect = previewViewport.getBoundingClientRect();
+            if (viewportRect.width <= 0 || viewportRect.height <= 0) {
+                schedulePreviewViewportSizeUpdate();
+                schedulePreviewFrameConstrain();
+                return;
+            }
+
+            previewMediaFrame.hidden = false;
+            previewMediaFrame.classList.remove('is-overflowing', 'is-resizing');
+
+            const hasIntrinsicSize = Number.isFinite(sourceWidth)
+                && Number.isFinite(sourceHeight)
+                && sourceWidth > 0
+                && sourceHeight > 0;
+
+            if (!hasIntrinsicSize) {
+                constrainPreviewMediaFrame();
+                schedulePreviewFrameConstrain();
+                return;
+            }
+
+            const containment = computeContainDimensions(
+                sourceWidth,
+                sourceHeight,
+                viewportRect.width,
+                viewportRect.height,
+            );
+
+            const minWidth = getPreviewMinDimension(viewportRect.width);
+            const minHeight = getPreviewMinDimension(viewportRect.height);
+
+            let nextWidth = Math.max(1, Math.round(containment.width));
+            let nextHeight = Math.max(1, Math.round(containment.height));
+
+            if (nextWidth < minWidth) {
+                const scale = minWidth / nextWidth;
+                nextWidth = minWidth;
+                nextHeight = Math.min(viewportRect.height, Math.round(nextHeight * scale));
+            }
+
+            if (nextHeight < minHeight) {
+                const scale = minHeight / nextHeight;
+                nextHeight = minHeight;
+                nextWidth = Math.min(viewportRect.width, Math.round(nextWidth * scale));
+            }
+
+            nextWidth = Math.min(viewportRect.width, nextWidth);
+            nextHeight = Math.min(viewportRect.height, nextHeight);
+
+            const nextLeft = Math.max(0, Math.round((viewportRect.width - nextWidth) / 2));
+            const nextTop = Math.max(0, Math.round((viewportRect.height - nextHeight) / 2));
+
+            setPreviewFrameGeometry(nextLeft, nextTop, nextWidth, nextHeight);
+            schedulePreviewFrameConstrain();
+        }
+
+        function beginPreviewResize(event) {
+            if (!previewMediaFrame || previewMediaFrame.hidden || !previewViewport) {
+                return;
+            }
+
+            const handleElement = event.currentTarget;
+            const handlePosition = handleElement?.dataset?.handle;
+
+            if (!handlePosition || previewResizeState) {
+                return;
+            }
+
+            if (typeof event.button === 'number' && event.button !== 0) {
+                return;
+            }
+
+            constrainPreviewMediaFrame();
+
+            const viewportRect = previewViewport.getBoundingClientRect();
+            if (viewportRect.width <= 0 || viewportRect.height <= 0) {
+                return;
+            }
+
+            previewResizeState = {
+                handle: handlePosition,
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                startLeft: previewFrameMetrics.left,
+                startTop: previewFrameMetrics.top,
+                startWidth: previewFrameMetrics.width,
+                startHeight: previewFrameMetrics.height,
+                viewportWidth: viewportRect.width,
+                viewportHeight: viewportRect.height,
+            };
+
+            previewMediaFrame.classList.remove('is-overflowing');
+            previewMediaFrame.classList.add('is-resizing');
+
+            if (typeof handleElement.setPointerCapture === 'function') {
+                handleElement.setPointerCapture(event.pointerId);
+            }
+
+            event.preventDefault();
+        }
+
+        function updatePreviewResize(event) {
+            if (!previewResizeState
+                || event.pointerId !== previewResizeState.pointerId
+                || !previewMediaFrame
+                || previewMediaFrame.hidden) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const deltaX = event.clientX - previewResizeState.startX;
+            const deltaY = event.clientY - previewResizeState.startY;
+
+            const movingLeft = previewResizeState.handle.includes('left');
+            const movingRight = previewResizeState.handle.includes('right');
+            const movingTop = previewResizeState.handle.includes('top');
+            const movingBottom = previewResizeState.handle.includes('bottom');
+
+            let proposedLeft = previewResizeState.startLeft;
+            let proposedRight = previewResizeState.startLeft + previewResizeState.startWidth;
+            let proposedTop = previewResizeState.startTop;
+            let proposedBottom = previewResizeState.startTop + previewResizeState.startHeight;
+
+            if (movingLeft) {
+                proposedLeft += deltaX;
+            }
+            if (movingRight) {
+                proposedRight += deltaX;
+            }
+            if (movingTop) {
+                proposedTop += deltaY;
+            }
+            if (movingBottom) {
+                proposedBottom += deltaY;
+            }
+
+            const viewportWidth = previewResizeState.viewportWidth;
+            const viewportHeight = previewResizeState.viewportHeight;
+            const minWidth = getPreviewMinDimension(viewportWidth);
+            const minHeight = getPreviewMinDimension(viewportHeight);
+
+            const overflow = proposedLeft < 0
+                || proposedTop < 0
+                || proposedRight > viewportWidth
+                || proposedBottom > viewportHeight;
+
+            let left = proposedLeft;
+            let right = proposedRight;
+            let top = proposedTop;
+            let bottom = proposedBottom;
+
+            if (left > right) {
+                [left, right] = [right, left];
+            }
+            if (top > bottom) {
+                [top, bottom] = [bottom, top];
+            }
+
+            left = Math.max(left, 0);
+            top = Math.max(top, 0);
+            right = Math.min(right, viewportWidth);
+            bottom = Math.min(bottom, viewportHeight);
+
+            if (movingLeft && right - left < minWidth) {
+                left = Math.max(0, right - minWidth);
+            }
+            if (movingRight && right - left < minWidth) {
+                right = Math.min(viewportWidth, left + minWidth);
+            }
+            if (!movingLeft && !movingRight && right - left < minWidth) {
+                const mid = (left + right) / 2;
+                left = Math.max(0, mid - minWidth / 2);
+                right = Math.min(viewportWidth, left + minWidth);
+            }
+
+            if (movingTop && bottom - top < minHeight) {
+                top = Math.max(0, bottom - minHeight);
+            }
+            if (movingBottom && bottom - top < minHeight) {
+                bottom = Math.min(viewportHeight, top + minHeight);
+            }
+            if (!movingTop && !movingBottom && bottom - top < minHeight) {
+                const midY = (top + bottom) / 2;
+                top = Math.max(0, midY - minHeight / 2);
+                bottom = Math.min(viewportHeight, top + minHeight);
+            }
+
+            const width = Math.max(minWidth, Math.min(viewportWidth, right - left));
+            const height = Math.max(minHeight, Math.min(viewportHeight, bottom - top));
+            const clampedLeft = Math.min(Math.max(left, 0), Math.max(0, viewportWidth - width));
+            const clampedTop = Math.min(Math.max(top, 0), Math.max(0, viewportHeight - height));
+
+            setPreviewFrameGeometry(clampedLeft, clampedTop, width, height);
+            previewMediaFrame.classList.toggle('is-overflowing', overflow);
+        }
+
+        function finishPreviewResize(event) {
+            if (!previewResizeState || event.pointerId !== previewResizeState.pointerId) {
+                return;
+            }
+
+            const handleElement = event.currentTarget;
+            if (handleElement
+                && typeof handleElement.releasePointerCapture === 'function'
+                && handleElement.hasPointerCapture
+                && handleElement.hasPointerCapture(event.pointerId)) {
+                handleElement.releasePointerCapture(event.pointerId);
+            }
+
+            if (previewMediaFrame) {
+                previewMediaFrame.classList.remove('is-resizing');
+                previewMediaFrame.classList.remove('is-overflowing');
+            }
+
+            previewResizeState = null;
+            schedulePreviewFrameConstrain();
+        }
+
+
         if (previewImage) {
             previewImage.addEventListener('load', () => {
                 resetPreviewScroll();
+                initializePreviewMediaFrame(previewImage.naturalWidth, previewImage.naturalHeight);
                 schedulePreviewViewportSizeUpdate();
             });
         }
@@ -2440,6 +2878,19 @@ HOME_HTML = '''
         if (previewVideo) {
             previewVideo.addEventListener('loadeddata', () => {
                 schedulePreviewViewportSizeUpdate();
+            });
+            previewVideo.addEventListener('loadedmetadata', () => {
+                initializePreviewMediaFrame(previewVideo.videoWidth, previewVideo.videoHeight);
+            });
+        }
+
+        if (previewResizeHandles.length) {
+            previewResizeHandles.forEach((handle) => {
+                handle.addEventListener('pointerdown', beginPreviewResize);
+                handle.addEventListener('pointermove', updatePreviewResize);
+                handle.addEventListener('pointerup', finishPreviewResize);
+                handle.addEventListener('pointercancel', finishPreviewResize);
+                handle.addEventListener('lostpointercapture', finishPreviewResize);
             });
         }
 
@@ -2676,6 +3127,13 @@ HOME_HTML = '''
                     previewVideo.src = objectURL;
                     previewVideo.load();
                 }
+                if (previewVideo.readyState >= 1
+                    && previewVideo.videoWidth > 0
+                    && previewVideo.videoHeight > 0) {
+                    initializePreviewMediaFrame(previewVideo.videoWidth, previewVideo.videoHeight);
+                } else {
+                    schedulePreviewFrameConstrain();
+                }
                 playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
                 setPreviewMode('has-image');
@@ -2685,6 +3143,11 @@ HOME_HTML = '''
                 previewImage.hidden = false;
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
+                }
+                if (previewImage.complete && previewImage.naturalWidth > 0 && previewImage.naturalHeight > 0) {
+                    initializePreviewMediaFrame(previewImage.naturalWidth, previewImage.naturalHeight);
+                } else {
+                    schedulePreviewFrameConstrain();
                 }
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
