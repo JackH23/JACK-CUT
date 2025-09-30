@@ -1782,6 +1782,152 @@ HOME_HTML = '''
             return { x, y, width, height };
         }
 
+        let previewImageFrameBorderRadius = null;
+
+        function getPreviewImageFrameBorderRadius() {
+            if (previewImageFrameBorderRadius !== null) {
+                return previewImageFrameBorderRadius;
+            }
+            if (!previewImageFrame || !window.getComputedStyle) {
+                previewImageFrameBorderRadius = 0;
+                return previewImageFrameBorderRadius;
+            }
+            const computed = window.getComputedStyle(previewImageFrame).borderRadius || '';
+            const parsed = parseFloat(computed);
+            previewImageFrameBorderRadius = Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+            return previewImageFrameBorderRadius;
+        }
+
+        function clipRoundRectPath(context, x, y, width, height, radius) {
+            if (!context) {
+                return;
+            }
+            const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
+            context.beginPath();
+            if (typeof context.roundRect === 'function') {
+                context.roundRect(x, y, width, height, safeRadius);
+                return;
+            }
+            const r = safeRadius;
+            if (r === 0) {
+                context.rect(x, y, width, height);
+                return;
+            }
+            context.moveTo(x + r, y);
+            context.lineTo(x + width - r, y);
+            context.quadraticCurveTo(x + width, y, x + width, y + r);
+            context.lineTo(x + width, y + height - r);
+            context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+            context.lineTo(x + r, y + height);
+            context.quadraticCurveTo(x, y + height, x, y + height - r);
+            context.lineTo(x, y + r);
+            context.quadraticCurveTo(x, y, x + r, y);
+        }
+
+        function getActivePreviewImageTransform(viewportWidth, viewportHeight) {
+            if (previewImageTransform
+                && Number.isFinite(previewImageTransform.left)
+                && Number.isFinite(previewImageTransform.top)
+                && Number.isFinite(previewImageTransform.width)
+                && Number.isFinite(previewImageTransform.height)
+            ) {
+                return previewImageTransform;
+            }
+
+            if (!activeTimelineItem) {
+                return null;
+            }
+
+            const storedTransform = getStoredPreviewImageTransform(activeTimelineItem);
+            if (!storedTransform) {
+                return null;
+            }
+
+            return {
+                left: storedTransform.left * viewportWidth,
+                top: storedTransform.top * viewportHeight,
+                width: storedTransform.width * viewportWidth,
+                height: storedTransform.height * viewportHeight,
+            };
+        }
+
+        function drawPreviewImageToExportCanvas() {
+            if (!previewImage
+                || previewImage.hidden
+                || !previewImage.complete
+                || !previewImageFrame
+                || !previewViewport
+            ) {
+                return false;
+            }
+
+            const viewportWidth = Math.max(0, previewViewport.clientWidth);
+            const viewportHeight = Math.max(0, previewViewport.clientHeight);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return false;
+            }
+
+            const transform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
+            if (!transform) {
+                return false;
+            }
+
+            const naturalWidth = Math.max(1, previewImage.naturalWidth || 0);
+            const naturalHeight = Math.max(1, previewImage.naturalHeight || 0);
+
+            const canvasWidth = Math.max(1, exportMirrorCanvas.width);
+            const canvasHeight = Math.max(1, exportMirrorCanvas.height);
+            const scaleX = canvasWidth / viewportWidth;
+            const scaleY = canvasHeight / viewportHeight;
+
+            if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) {
+                return false;
+            }
+
+            exportMirrorContext.save();
+            exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+            exportMirrorContext.beginPath();
+            exportMirrorContext.rect(0, 0, viewportWidth, viewportHeight);
+            exportMirrorContext.clip();
+
+            exportMirrorContext.save();
+            clipRoundRectPath(
+                exportMirrorContext,
+                transform.left,
+                transform.top,
+                transform.width,
+                transform.height,
+                getPreviewImageFrameBorderRadius(),
+            );
+            exportMirrorContext.clip();
+
+            const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
+            if (!Number.isFinite(scale) || scale <= 0) {
+                exportMirrorContext.restore();
+                exportMirrorContext.restore();
+                return false;
+            }
+
+            const drawWidth = naturalWidth * scale;
+            const drawHeight = naturalHeight * scale;
+            const drawX = transform.left + (transform.width - drawWidth) / 2;
+            const drawY = transform.top + (transform.height - drawHeight) / 2;
+
+            exportMirrorContext.drawImage(
+                previewImage,
+                drawX,
+                drawY,
+                drawWidth,
+                drawHeight,
+            );
+
+            exportMirrorContext.restore();
+            exportMirrorContext.restore();
+            exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+            return true;
+        }
+
         function startPreviewMirroring(width, height) {
             if (!exportMirrorContext) {
                 throw new Error('Unable to access export canvas context.');
@@ -1798,6 +1944,7 @@ HOME_HTML = '''
                     return;
                 }
 
+                exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
                 exportMirrorContext.fillStyle = '#000000';
                 exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
 
@@ -1816,19 +1963,22 @@ HOME_HTML = '''
                         dimensions.height,
                     );
                 } else if (!previewImage.hidden && previewImage.complete) {
-                    const dimensions = computeContainDimensions(
-                        previewImage.naturalWidth,
-                        previewImage.naturalHeight,
-                        exportMirrorCanvas.width,
-                        exportMirrorCanvas.height,
-                    );
-                    exportMirrorContext.drawImage(
-                        previewImage,
-                        dimensions.x,
-                        dimensions.y,
-                        dimensions.width,
-                        dimensions.height,
-                    );
+                    const drewImage = drawPreviewImageToExportCanvas();
+                    if (!drewImage) {
+                        const fallbackDimensions = computeContainDimensions(
+                            previewImage.naturalWidth,
+                            previewImage.naturalHeight,
+                            exportMirrorCanvas.width,
+                            exportMirrorCanvas.height,
+                        );
+                        exportMirrorContext.drawImage(
+                            previewImage,
+                            fallbackDimensions.x,
+                            fallbackDimensions.y,
+                            fallbackDimensions.width,
+                            fallbackDimensions.height,
+                        );
+                    }
                 } else {
                     exportMirrorContext.fillStyle = '#1f2937';
                     exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
