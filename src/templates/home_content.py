@@ -857,6 +857,71 @@ HOME_HTML = '''
             display: block;
         }
 
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            padding: 0;
+            border: 2px solid rgba(56, 189, 248, 0.85);
+            background: rgba(15, 23, 42, 0.9);
+            box-shadow: 0 6px 16px rgba(2, 6, 23, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 2;
+            touch-action: none;
+        }
+
+        .preview-resize-handle::after {
+            content: '';
+            position: absolute;
+            inset: 3px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(56, 189, 248, 0.7));
+            opacity: 0.95;
+        }
+
+        .preview-area.has-video .preview-resize-handle,
+        .preview-area.has-image .preview-resize-handle {
+            opacity: 0.75;
+            pointer-events: auto;
+        }
+
+        .preview-area.has-video .preview-viewport:hover .preview-resize-handle,
+        .preview-area.has-image .preview-viewport:hover .preview-resize-handle {
+            opacity: 1;
+        }
+
+        .preview-resize-handle:focus-visible {
+            outline: 2px solid rgba(56, 189, 248, 0.8);
+            outline-offset: 2px;
+        }
+
+        .preview-resize-handle--top-left {
+            top: 8px;
+            left: 8px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle--top-right {
+            top: 8px;
+            right: 8px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle--bottom-right {
+            bottom: 8px;
+            right: 8px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle--bottom-left {
+            bottom: 8px;
+            left: 8px;
+            cursor: nesw-resize;
+        }
+
         .timeline-card {
             position: relative;
             overflow: hidden;
@@ -1226,6 +1291,10 @@ HOME_HTML = '''
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <img id="preview-image" alt="Preview" hidden>
+                        <button type="button" class="preview-resize-handle preview-resize-handle--top-left" data-handle="top-left" aria-label="Resize preview from the top left corner"></button>
+                        <button type="button" class="preview-resize-handle preview-resize-handle--top-right" data-handle="top-right" aria-label="Resize preview from the top right corner"></button>
+                        <button type="button" class="preview-resize-handle preview-resize-handle--bottom-right" data-handle="bottom-right" aria-label="Resize preview from the bottom right corner"></button>
+                        <button type="button" class="preview-resize-handle preview-resize-handle--bottom-left" data-handle="bottom-left" aria-label="Resize preview from the bottom left corner"></button>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1434,6 +1503,7 @@ HOME_HTML = '''
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
+        const previewResizeHandles = Array.from(document.querySelectorAll('.preview-resize-handle'));
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
@@ -1462,6 +1532,9 @@ HOME_HTML = '''
         let timelinePlaybackAbort = null;
         let currentPreviewAspectRatio = 16 / 9;
         let previewViewportResizeFrame = null;
+        let isPreviewViewportManuallyResized = false;
+        let previewViewportManualSize = null;
+        let activePreviewResizeSession = null;
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
@@ -1472,6 +1545,7 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const MIN_PREVIEW_VIEWPORT_WIDTH = 200;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2387,9 +2461,17 @@ HOME_HTML = '''
             return 16 / 9;
         }
 
-        function updatePreviewViewportSize() {
-            if (!previewArea || !previewViewport) {
-                return;
+        function getPreviewViewportBounds() {
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+
+            if (!previewArea) {
+                return {
+                    aspectRatio,
+                    maxWidth: 0,
+                    maxHeight: 0,
+                    minWidth: 0,
+                    minHeight: 0,
+                };
             }
 
             const computedStyle = window.getComputedStyle(previewArea);
@@ -2401,23 +2483,123 @@ HOME_HTML = '''
             const availableWidth = Math.max(0, previewArea.clientWidth - paddingLeft - paddingRight);
             const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
 
-            if (availableWidth <= 0 || availableHeight <= 0) {
-                previewViewport.style.removeProperty('width');
-                previewViewport.style.removeProperty('height');
+            const maxWidth = Math.max(0, availableWidth);
+            const maxHeight = Math.max(0, availableHeight);
+
+            if (maxWidth <= 0 || maxHeight <= 0) {
+                return {
+                    aspectRatio,
+                    maxWidth,
+                    maxHeight,
+                    minWidth: 0,
+                    minHeight: 0,
+                };
+            }
+
+            let minWidth = Math.max(MIN_PREVIEW_VIEWPORT_WIDTH, 0);
+            let minHeight = minWidth / aspectRatio;
+
+            if (minWidth > maxWidth || minHeight > maxHeight) {
+                if (maxWidth / aspectRatio <= maxHeight) {
+                    minWidth = maxWidth;
+                    minHeight = minWidth / aspectRatio;
+                } else {
+                    minHeight = maxHeight;
+                    minWidth = minHeight * aspectRatio;
+                }
+            }
+
+            return {
+                aspectRatio,
+                maxWidth,
+                maxHeight,
+                minWidth,
+                minHeight,
+            };
+        }
+
+        function applyPreviewViewportSize(width, height) {
+            if (!previewViewport) {
                 return;
             }
 
-            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
-            let nextWidth = availableWidth;
-            let nextHeight = nextWidth / aspectRatio;
+            previewViewport.style.width = `${width}px`;
+            previewViewport.style.height = `${height}px`;
+        }
 
-            if (nextHeight > availableHeight) {
-                nextHeight = availableHeight;
+        function clampPreviewViewportSize(width, height) {
+            const bounds = getPreviewViewportBounds();
+
+            if (bounds.maxWidth <= 0 || bounds.maxHeight <= 0) {
+                return { width: 0, height: 0 };
+            }
+
+            const aspectRatio = bounds.aspectRatio;
+            let nextWidth = Number.isFinite(width) ? width : bounds.maxWidth;
+            let nextHeight = Number.isFinite(height) ? height : nextWidth / aspectRatio;
+
+            if (nextWidth <= 0 && nextHeight > 0) {
+                nextWidth = nextHeight * aspectRatio;
+            } else if (nextHeight <= 0 && nextWidth > 0) {
+                nextHeight = nextWidth / aspectRatio;
+            }
+
+            nextWidth = Math.min(Math.max(nextWidth, bounds.minWidth), bounds.maxWidth);
+            nextHeight = nextWidth / aspectRatio;
+
+            if (nextHeight > bounds.maxHeight) {
+                nextHeight = bounds.maxHeight;
                 nextWidth = nextHeight * aspectRatio;
             }
 
-            previewViewport.style.width = `${nextWidth}px`;
-            previewViewport.style.height = `${nextHeight}px`;
+            if (nextHeight < bounds.minHeight) {
+                nextHeight = bounds.minHeight;
+                nextWidth = nextHeight * aspectRatio;
+            }
+
+            if (nextWidth > bounds.maxWidth) {
+                nextWidth = bounds.maxWidth;
+                nextHeight = nextWidth / aspectRatio;
+            }
+
+            return {
+                width: nextWidth,
+                height: nextHeight,
+            };
+        }
+
+        function resetPreviewViewportManualSize() {
+            isPreviewViewportManuallyResized = false;
+            previewViewportManualSize = null;
+        }
+
+        function updatePreviewViewportSize() {
+            if (!previewArea || !previewViewport) {
+                return;
+            }
+
+            const bounds = getPreviewViewportBounds();
+
+            if (bounds.maxWidth <= 0 || bounds.maxHeight <= 0) {
+                previewViewport.style.removeProperty('width');
+                previewViewport.style.removeProperty('height');
+                previewViewportManualSize = null;
+                return;
+            }
+
+            if (isPreviewViewportManuallyResized && previewViewportManualSize) {
+                const constrained = clampPreviewViewportSize(
+                    previewViewportManualSize.width,
+                    previewViewportManualSize.height,
+                );
+                previewViewportManualSize = constrained;
+                applyPreviewViewportSize(constrained.width, constrained.height);
+                return;
+            }
+
+            const constrained = clampPreviewViewportSize(bounds.maxWidth, bounds.maxHeight);
+            previewViewportManualSize = constrained;
+            applyPreviewViewportSize(constrained.width, constrained.height);
         }
 
         function schedulePreviewViewportSizeUpdate() {
@@ -2427,6 +2609,140 @@ HOME_HTML = '''
             previewViewportResizeFrame = window.requestAnimationFrame(() => {
                 previewViewportResizeFrame = null;
                 updatePreviewViewportSize();
+            });
+        }
+
+        function hasActivePreviewContent() {
+            if (!previewArea) {
+                return false;
+            }
+            return previewArea.classList.contains('has-video') || previewArea.classList.contains('has-image');
+        }
+
+        function onPreviewResizePointerDown(event) {
+            if (!previewViewport || !hasActivePreviewContent()) {
+                return;
+            }
+
+            const handle = event.currentTarget;
+
+            if (!(handle instanceof HTMLElement)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const handlePosition = handle.dataset.handle || 'bottom-right';
+            const directionX = handlePosition.includes('left') ? -1 : 1;
+            const directionY = handlePosition.includes('top') ? -1 : 1;
+
+            const rect = previewViewport.getBoundingClientRect();
+            const startWidth = previewViewportManualSize?.width || rect.width;
+            const startHeight = previewViewportManualSize?.height || rect.height;
+
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+
+            activePreviewResizeSession = {
+                pointerId: event.pointerId,
+                directionX,
+                directionY,
+                startX: event.clientX,
+                startY: event.clientY,
+                startWidth,
+                startHeight,
+                aspectRatio,
+                handle,
+            };
+
+            isPreviewViewportManuallyResized = true;
+
+            const constrainedStart = clampPreviewViewportSize(startWidth, startHeight);
+            previewViewportManualSize = constrainedStart;
+            applyPreviewViewportSize(constrainedStart.width, constrainedStart.height);
+
+            try {
+                handle.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // Ignore pointer capture errors (e.g., unsupported browsers).
+            }
+
+            window.addEventListener('pointermove', onPreviewResizePointerMove);
+            window.addEventListener('pointerup', onPreviewResizePointerUp);
+            window.addEventListener('pointercancel', onPreviewResizePointerUp);
+        }
+
+        function onPreviewResizePointerMove(event) {
+            if (!activePreviewResizeSession || event.pointerId !== activePreviewResizeSession.pointerId) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const state = activePreviewResizeSession;
+            const deltaX = (event.clientX - state.startX) * state.directionX;
+            const deltaY = (event.clientY - state.startY) * state.directionY;
+
+            let nextWidth = state.startWidth + deltaX;
+            let nextHeight = state.startHeight + deltaY;
+
+            if (!Number.isFinite(nextWidth)) {
+                nextWidth = state.startWidth;
+            }
+
+            if (!Number.isFinite(nextHeight)) {
+                nextHeight = state.startHeight;
+            }
+
+            const widthScale = state.startWidth !== 0 ? nextWidth / state.startWidth : 1;
+            const heightScale = state.startHeight !== 0 ? nextHeight / state.startHeight : 1;
+
+            if (Math.abs(widthScale - 1) > Math.abs(heightScale - 1)) {
+                nextHeight = nextWidth / state.aspectRatio;
+            } else {
+                nextWidth = nextHeight * state.aspectRatio;
+            }
+
+            const constrained = clampPreviewViewportSize(nextWidth, nextHeight);
+            previewViewportManualSize = constrained;
+            applyPreviewViewportSize(constrained.width, constrained.height);
+        }
+
+        function onPreviewResizePointerUp(event) {
+            if (!activePreviewResizeSession || event.pointerId !== activePreviewResizeSession.pointerId) {
+                return;
+            }
+
+            const { handle } = activePreviewResizeSession;
+
+            if (handle && typeof handle.releasePointerCapture === 'function') {
+                try {
+                    handle.releasePointerCapture(event.pointerId);
+                } catch (error) {
+                    // Ignore release errors.
+                }
+            }
+
+            activePreviewResizeSession = null;
+
+            window.removeEventListener('pointermove', onPreviewResizePointerMove);
+            window.removeEventListener('pointerup', onPreviewResizePointerUp);
+            window.removeEventListener('pointercancel', onPreviewResizePointerUp);
+
+            if (previewViewportManualSize) {
+                const constrained = clampPreviewViewportSize(
+                    previewViewportManualSize.width,
+                    previewViewportManualSize.height,
+                );
+                previewViewportManualSize = constrained;
+                applyPreviewViewportSize(constrained.width, constrained.height);
+            }
+
+            event.preventDefault();
+        }
+
+        if (previewResizeHandles.length) {
+            previewResizeHandles.forEach((handle) => {
+                handle.addEventListener('pointerdown', onPreviewResizePointerDown);
             });
         }
 
@@ -2453,6 +2769,12 @@ HOME_HTML = '''
             previewArea.style.setProperty('--preview-aspect-ratio', normalized);
             if (previewViewport) {
                 previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
+            }
+            if (isPreviewViewportManuallyResized && previewViewportManualSize) {
+                previewViewportManualSize = clampPreviewViewportSize(
+                    previewViewportManualSize.width,
+                    previewViewportManualSize.height,
+                );
             }
             schedulePreviewViewportSizeUpdate();
             if (isExportDialogOpen()) {
@@ -2631,6 +2953,8 @@ HOME_HTML = '''
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
             resetPreviewScroll();
+            resetPreviewViewportManualSize();
+            schedulePreviewViewportSizeUpdate();
             setActiveTimelineItem(null);
         }
 
