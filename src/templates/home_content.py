@@ -3560,6 +3560,21 @@ HOME_HTML = '''
                 }
             }
 
+            if (viewportSize.width > 0 && viewportSize.height > 0) {
+                const viewportCenterX = viewportSize.width / 2;
+                const viewportCenterY = viewportSize.height / 2;
+                const currentCenterX = snappedTransform.left + (snappedTransform.width / 2);
+                const currentCenterY = snappedTransform.top + (snappedTransform.height / 2);
+
+                if (Math.abs(currentCenterX - viewportCenterX) <= PREVIEW_SMART_GUIDE_TOLERANCE) {
+                    snappedTransform.left = viewportCenterX - (snappedTransform.width / 2);
+                }
+
+                if (Math.abs(currentCenterY - viewportCenterY) <= PREVIEW_SMART_GUIDE_TOLERANCE) {
+                    snappedTransform.top = viewportCenterY - (snappedTransform.height / 2);
+                }
+            }
+
             const alignment = evaluatePreviewImageAlignment(snappedTransform, viewportSize);
 
             return {
