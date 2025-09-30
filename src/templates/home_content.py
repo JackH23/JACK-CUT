@@ -924,8 +924,20 @@ HOME_HTML = '''
             pointer-events: none;
         }
 
+        .preview-image-layer.has-background {
+            pointer-events: none;
+        }
+
         .preview-image-layer[hidden] {
             display: none;
+        }
+
+        .preview-background-image {
+            position: absolute;
+            inset: 0;
+            object-fit: cover;
+            opacity: 0.95;
+            transition: transform 0.18s ease, width 0.18s ease, height 0.18s ease;
         }
 
         .preview-image-frame {
@@ -943,6 +955,7 @@ HOME_HTML = '''
             cursor: grab;
             touch-action: none;
             transition: box-shadow 0.18s ease;
+            z-index: 2;
         }
 
         .preview-image-frame.is-dragging,
@@ -1280,6 +1293,42 @@ HOME_HTML = '''
             box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
         }
 
+        .timeline-stack {
+            position: relative;
+            display: inline-flex;
+            align-items: stretch;
+            justify-content: center;
+            padding-right: 16px;
+            flex: 0 0 auto;
+        }
+
+        .timeline-stack .timeline-item {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto;
+        }
+
+        .timeline-stack .timeline-item--overlay-bottom {
+            z-index: 1;
+        }
+
+        .timeline-stack .timeline-item--overlay-top {
+            z-index: 3;
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35);
+        }
+
+        .timeline-stack .timeline-item:not(.timeline-item--overlay-bottom) {
+            cursor: grab;
+        }
+
+        .timeline-item--overlay-target {
+            outline: 2px dashed rgba(124, 58, 237, 0.6);
+            outline-offset: 3px;
+        }
+
         .timeline-item img,
         .timeline-item video,
         .timeline-thumbnail {
@@ -1568,6 +1617,7 @@ HOME_HTML = '''
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
+                            <img id="preview-background-image" class="preview-background-image" alt="Background" hidden>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
                                 <img id="preview-image" alt="Preview" hidden>
                                 <button type="button" class="preview-resize-handle handle-nw" data-handle="nw" aria-label="Resize from top left"></button>
@@ -1811,6 +1861,7 @@ HOME_HTML = '''
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
+        const previewBackgroundImage = document.getElementById('preview-background-image');
         const previewImageLayer = document.getElementById('preview-image-layer');
         const previewImageFrame = document.getElementById('preview-image-frame');
         const previewResizeHandles = previewImageFrame
@@ -1894,6 +1945,9 @@ HOME_HTML = '''
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
+        let previewBackgroundItem = null;
+        let overlayDropTarget = null;
+        let timelineItemIdCounter = 0;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -1926,6 +1980,8 @@ HOME_HTML = '''
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
         const MIN_IMAGE_FRAME_SIZE = 96;
+        const OVERLAY_STACK_OFFSET = 14;
+        const OVERLAY_STACK_LIFT = 12;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2598,6 +2654,10 @@ HOME_HTML = '''
 
             applyTimelineItemDurationStyles(timelineItem, applied);
             updateTimelineItemDurationBadge(timelineItem, applied);
+            const stack = timelineItem.closest('.timeline-stack');
+            if (stack) {
+                syncTimelineStackGeometry(stack);
+            }
             return applied;
         }
 
@@ -2605,17 +2665,236 @@ HOME_HTML = '''
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
 
+        function findTimelineItemById(itemId) {
+            if (!itemId || !timelineTrack) {
+                return null;
+            }
+            return Array.from(timelineTrack.querySelectorAll('.timeline-item')).find(
+                (item) => item.dataset.itemId === itemId,
+            ) || null;
+        }
+
+        function isOverlayChild(timelineItem) {
+            return Boolean(timelineItem?.dataset.overlayParentId);
+        }
+
+        function getOverlayParent(timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+            const parentId = timelineItem.dataset.overlayParentId;
+            return parentId ? findTimelineItemById(parentId) : null;
+        }
+
+        function getOverlayRoot(timelineItem) {
+            let current = timelineItem || null;
+            let parent = getOverlayParent(current);
+            while (parent) {
+                current = parent;
+                parent = getOverlayParent(current);
+            }
+            return current;
+        }
+
+        function getTopOverlayItem(timelineItem) {
+            let current = timelineItem || null;
+            while (current?.dataset.overlayChildId) {
+                const next = findTimelineItemById(current.dataset.overlayChildId);
+                if (!next) {
+                    delete current.dataset.overlayChildId;
+                    break;
+                }
+                current = next;
+            }
+            return current;
+        }
+
+        function getTimelinePlayableItems() {
+            return getTimelineItems().filter((item) => !isOverlayChild(item));
+        }
+
+        function clearOverlayDropPreview() {
+            if (overlayDropTarget) {
+                overlayDropTarget.classList.remove('timeline-item--overlay-target');
+                overlayDropTarget = null;
+            }
+        }
+
+        function ensureTimelineStackFor(timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+            let stack = timelineItem.closest('.timeline-stack');
+            if (stack) {
+                return stack;
+            }
+            stack = document.createElement('div');
+            stack.className = 'timeline-stack';
+            const parent = timelineItem.parentElement;
+            if (parent) {
+                parent.insertBefore(stack, timelineItem);
+                stack.appendChild(timelineItem);
+            }
+            return stack;
+        }
+
+        function removeTimelineStackIfUnused(stack) {
+            if (!stack) {
+                return;
+            }
+            const items = Array.from(stack.querySelectorAll('.timeline-item'));
+            if (items.length > 1) {
+                syncTimelineStackGeometry(stack);
+                return;
+            }
+            const singleItem = items[0];
+            if (singleItem && stack.parentElement) {
+                singleItem.classList.remove('timeline-item--overlay-bottom', 'timeline-item--overlay-top');
+                singleItem.style.removeProperty('transform');
+                singleItem.style.removeProperty('z-index');
+                stack.parentElement.insertBefore(singleItem, stack);
+            }
+            stack.remove();
+        }
+
+        function syncTimelineStackGeometry(stack) {
+            if (!stack) {
+                return;
+            }
+            const items = Array.from(stack.querySelectorAll('.timeline-item'));
+            if (!items.length) {
+                stack.remove();
+                return;
+            }
+            let maxWidth = 0;
+            let maxHeight = 0;
+            items.forEach((item, index) => {
+                item.classList.remove('timeline-item--overlay-bottom', 'timeline-item--overlay-top');
+                item.style.removeProperty('transform');
+                item.style.removeProperty('z-index');
+                const rect = item.getBoundingClientRect();
+                maxWidth = Math.max(maxWidth, rect.width || item.offsetWidth || MIN_TIMELINE_ITEM_WIDTH);
+                maxHeight = Math.max(maxHeight, rect.height || item.offsetHeight || 0);
+                if (index === 0) {
+                    item.classList.add('timeline-item--overlay-bottom');
+                } else {
+                    item.classList.add('timeline-item--overlay-top');
+                }
+            });
+
+            const stackWidth = maxWidth + Math.max(0, (items.length - 1) * OVERLAY_STACK_OFFSET);
+            const stackHeight = maxHeight + Math.max(0, (items.length - 1) * OVERLAY_STACK_LIFT);
+            stack.style.width = `${stackWidth}px`;
+            stack.style.minWidth = `${stackWidth}px`;
+            stack.style.height = `${stackHeight}px`;
+
+            items.forEach((item, index) => {
+                const offsetX = index * OVERLAY_STACK_OFFSET;
+                const offsetY = index * -OVERLAY_STACK_LIFT;
+                item.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0)`;
+                item.style.zIndex = String(index + 1);
+            });
+        }
+
+        function detachTimelineItemFromOverlay(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const parentId = timelineItem.dataset.overlayParentId;
+            if (parentId) {
+                const parentItem = findTimelineItemById(parentId);
+                if (parentItem) {
+                    delete parentItem.dataset.overlayChildId;
+                    parentItem.classList.remove('timeline-item--overlay-bottom');
+                    parentItem.style.removeProperty('transform');
+                    parentItem.style.removeProperty('z-index');
+                    const parentStack = parentItem.closest('.timeline-stack');
+                    removeTimelineStackIfUnused(parentStack);
+                }
+                delete timelineItem.dataset.overlayParentId;
+            }
+
+            const childId = timelineItem.dataset.overlayChildId;
+            if (childId) {
+                const childItem = findTimelineItemById(childId);
+                if (childItem) {
+                    delete childItem.dataset.overlayParentId;
+                    childItem.classList.remove('timeline-item--overlay-top', 'timeline-item--overlay-bottom');
+                    childItem.style.removeProperty('transform');
+                    childItem.style.removeProperty('z-index');
+                    timelineTrack.insertBefore(childItem, timelineItem.nextSibling);
+                }
+                delete timelineItem.dataset.overlayChildId;
+            }
+
+            timelineItem.classList.remove('timeline-item--overlay-top', 'timeline-item--overlay-bottom');
+            timelineItem.style.removeProperty('transform');
+            timelineItem.style.removeProperty('z-index');
+
+            const stack = timelineItem.closest('.timeline-stack');
+            if (stack && stack.parentElement) {
+                stack.parentElement.insertBefore(timelineItem, stack.nextSibling);
+                removeTimelineStackIfUnused(stack);
+            }
+        }
+
+        function createTimelineOverlay(topItem, targetItem) {
+            if (!topItem || !targetItem || topItem === targetItem) {
+                return;
+            }
+
+            const overlayRoot = getOverlayRoot(targetItem) || targetItem;
+            const overlayParent = getTopOverlayItem(overlayRoot) || overlayRoot;
+            const parentId = overlayParent.dataset.itemId;
+
+            detachTimelineItemFromOverlay(topItem);
+
+            const stack = ensureTimelineStackFor(overlayRoot);
+            const parentStack = overlayParent.closest('.timeline-stack');
+            if (parentStack && parentStack !== stack) {
+                parentStack.appendChild(overlayParent);
+            }
+
+            if (!topItem.dataset.itemId) {
+                topItem.dataset.itemId = `timeline-item-${timelineItemIdCounter += 1}`;
+            }
+
+            overlayParent.dataset.overlayChildId = topItem.dataset.itemId;
+            topItem.dataset.overlayParentId = parentId;
+
+            stack.appendChild(topItem);
+            syncTimelineStackGeometry(stack);
+        }
+
         function getTotalTimelineDuration() {
             return getTimelineItems().reduce(
-                (total, item) => total + getTimelineItemPlaybackDuration(item),
+                (total, item) => {
+                    if (isOverlayChild(item)) {
+                        return total;
+                    }
+                    return total + getTimelineItemPlaybackDuration(item);
+                },
                 0,
             );
         }
 
         function getTimelineItemStartTime(timelineItem) {
+            if (!timelineItem) {
+                return 0;
+            }
+
+            if (isOverlayChild(timelineItem)) {
+                const parent = getOverlayParent(timelineItem);
+                return parent ? getTimelineItemStartTime(parent) : 0;
+            }
+
             const items = getTimelineItems();
             let elapsed = 0;
             for (const item of items) {
+                if (isOverlayChild(item)) {
+                    continue;
+                }
                 if (item === timelineItem) {
                     return elapsed;
                 }
@@ -2879,6 +3158,11 @@ HOME_HTML = '''
 
             timelineItem.addEventListener('dragstart', (event) => {
                 stopTimelinePlayback();
+                detachTimelineItemFromOverlay(timelineItem);
+                clearOverlayDropPreview();
+                if (!timelineItem.dataset.itemId) {
+                    timelineItem.dataset.itemId = `timeline-item-${timelineItemIdCounter += 1}`;
+                }
                 timelineItem.classList.add('dragging');
                 const transfer = event.dataTransfer;
                 if (transfer) {
@@ -2890,7 +3174,9 @@ HOME_HTML = '''
             timelineItem.addEventListener('dragend', () => {
                 timelineItem.classList.remove('dragging');
                 timelineItem.draggable = true;
+                clearOverlayDropPreview();
                 updateActiveTimelineIndicators();
+                updatePreviewOverlayElements(activeTimelineItem);
             });
         }
 
@@ -2916,15 +3202,44 @@ HOME_HTML = '''
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     event.preventDefault();
+                } else {
+                    clearOverlayDropPreview();
                 }
             });
 
             timelineTrack.addEventListener('dragover', (event) => {
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (!draggingItem) {
+                    clearOverlayDropPreview();
                     return;
                 }
                 event.preventDefault();
+
+                const potentialTarget = event.target.closest('.timeline-item');
+                if (potentialTarget && potentialTarget !== draggingItem) {
+                    const rect = potentialTarget.getBoundingClientRect();
+                    const horizontalLowerBound = rect.left + (rect.width * 0.25);
+                    const horizontalUpperBound = rect.right - (rect.width * 0.25);
+                    const withinHorizontal = event.clientX >= horizontalLowerBound
+                        && event.clientX <= horizontalUpperBound;
+                    const withinVertical = event.clientY >= rect.top && event.clientY <= rect.bottom;
+
+                    if (withinHorizontal && withinVertical) {
+                        const rootTarget = getOverlayRoot(potentialTarget) || potentialTarget;
+                        const parentType = (rootTarget.dataset.fileType || '').toLowerCase();
+                        const childType = (draggingItem.dataset.fileType || '').toLowerCase();
+                        if (parentType.startsWith('image/') && childType.startsWith('image/')) {
+                            if (overlayDropTarget !== potentialTarget) {
+                                clearOverlayDropPreview();
+                                overlayDropTarget = potentialTarget;
+                                overlayDropTarget.classList.add('timeline-item--overlay-target');
+                            }
+                            return;
+                        }
+                    }
+                }
+
+                clearOverlayDropPreview();
                 const afterElement = getDragAfterElement(timelineTrack, event.clientX);
                 if (!afterElement) {
                     timelineTrack.appendChild(draggingItem);
@@ -2938,8 +3253,25 @@ HOME_HTML = '''
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     draggingItem.classList.remove('dragging');
+                    draggingItem.draggable = true;
+                    if (overlayDropTarget) {
+                        const overlayTargetRoot = getOverlayRoot(overlayDropTarget) || overlayDropTarget;
+                        const parentType = (overlayTargetRoot.dataset.fileType || '').toLowerCase();
+                        const childType = (draggingItem.dataset.fileType || '').toLowerCase();
+                        if (parentType.startsWith('image/') && childType.startsWith('image/')) {
+                            createTimelineOverlay(draggingItem, overlayDropTarget);
+                            setActiveTimelineItem(draggingItem);
+                            loadPreviewFromTimeline(draggingItem);
+                        } else {
+                            const stackContainer = overlayTargetRoot.closest('.timeline-stack');
+                            const referenceNode = stackContainer ? stackContainer.nextSibling : overlayTargetRoot.nextSibling;
+                            timelineTrack.insertBefore(draggingItem, referenceNode);
+                        }
+                    }
                 }
+                clearOverlayDropPreview();
                 updateActiveTimelineIndicators();
+                updatePreviewOverlayElements(activeTimelineItem);
             });
         }
 
@@ -3044,6 +3376,123 @@ HOME_HTML = '''
                 width: Math.max(0, previewViewport.clientWidth),
                 height: Math.max(0, previewViewport.clientHeight),
             };
+        }
+
+        function clearPreviewBackgroundImage() {
+            if (!previewBackgroundImage) {
+                return;
+            }
+            previewBackgroundImage.hidden = true;
+            previewBackgroundImage.removeAttribute('src');
+            previewBackgroundImage.style.removeProperty('transform');
+            previewBackgroundImage.style.removeProperty('width');
+            previewBackgroundImage.style.removeProperty('height');
+            previewBackgroundItem = null;
+            if (previewImageLayer) {
+                previewImageLayer.classList.remove('has-background');
+            }
+        }
+
+        function getPreviewImageTransformForItem(timelineItem) {
+            if (!timelineItem || !previewViewport) {
+                return null;
+            }
+
+            const fileType = timelineItem.dataset.fileType || '';
+            if (!fileType.startsWith('image/')) {
+                return null;
+            }
+
+            const viewportSize = getPreviewViewportSize();
+            const viewportWidth = Math.max(0, viewportSize.width || 0);
+            const viewportHeight = Math.max(0, viewportSize.height || 0);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return null;
+            }
+
+            const storedTransform = getStoredPreviewImageTransform(timelineItem);
+            if (storedTransform) {
+                return {
+                    left: storedTransform.left * viewportWidth,
+                    top: storedTransform.top * viewportHeight,
+                    width: storedTransform.width * viewportWidth,
+                    height: storedTransform.height * viewportHeight,
+                    aspectRatio: storedTransform.aspectRatio && storedTransform.aspectRatio > 0
+                        ? storedTransform.aspectRatio
+                        : null,
+                };
+            }
+
+            const naturalWidth = Number(timelineItem.dataset.imageNaturalWidth);
+            const naturalHeight = Number(timelineItem.dataset.imageNaturalHeight);
+            if (Number.isFinite(naturalWidth) && Number.isFinite(naturalHeight)
+                && naturalWidth > 0 && naturalHeight > 0) {
+                const fitted = computeContainDimensions(
+                    naturalWidth,
+                    naturalHeight,
+                    viewportWidth,
+                    viewportHeight,
+                );
+                return {
+                    left: fitted.x,
+                    top: fitted.y,
+                    width: fitted.width,
+                    height: fitted.height,
+                    aspectRatio: naturalWidth / naturalHeight,
+                };
+            }
+
+            return null;
+        }
+
+        function syncPreviewBackgroundTransform() {
+            if (!previewBackgroundImage || !previewBackgroundItem) {
+                return;
+            }
+
+            const transform = getPreviewImageTransformForItem(previewBackgroundItem);
+            if (!transform) {
+                clearPreviewBackgroundImage();
+                return;
+            }
+
+            previewBackgroundImage.style.transform = `translate3d(${transform.left}px, ${transform.top}px, 0)`;
+            previewBackgroundImage.style.width = `${transform.width}px`;
+            previewBackgroundImage.style.height = `${transform.height}px`;
+            previewBackgroundImage.hidden = false;
+            if (previewImageLayer) {
+                previewImageLayer.classList.add('has-background');
+            }
+        }
+
+        function updatePreviewOverlayElements(timelineItem) {
+            if (!previewImageLayer || !previewBackgroundImage) {
+                return;
+            }
+
+            if (!timelineItem) {
+                clearPreviewBackgroundImage();
+                return;
+            }
+
+            const parentItem = getOverlayParent(timelineItem);
+
+            if (!parentItem || !(parentItem.dataset.fileType || '').startsWith('image/')) {
+                clearPreviewBackgroundImage();
+                return;
+            }
+
+            previewBackgroundItem = parentItem;
+
+            const objectURL = parentItem.dataset.objectUrl || '';
+            if (objectURL && previewBackgroundImage.src !== objectURL) {
+                previewBackgroundImage.src = objectURL;
+            }
+
+            previewBackgroundImage.hidden = false;
+            previewImageLayer.classList.add('has-background');
+            syncPreviewBackgroundTransform();
         }
 
         function evaluatePreviewImageAlignment(transform, viewportSize, tolerance = PREVIEW_ALIGNMENT_TOLERANCE) {
@@ -3726,6 +4175,7 @@ HOME_HTML = '''
             updatePreviewViewportAlignmentState(alignment);
             updatePreviewOutsideOutline();
             updatePreviewGuides(previewImageTransform, alignment);
+            syncPreviewBackgroundTransform();
         }
 
         function clearPreviewImageTransform() {
@@ -3912,6 +4362,7 @@ HOME_HTML = '''
 
             lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
             applyPreviewImageTransform();
+            syncPreviewBackgroundTransform();
         }
 
         function showPreviewImageLayer() {
@@ -3936,6 +4387,7 @@ HOME_HTML = '''
                 });
             }
             previewImageLayer.setAttribute('hidden', '');
+            clearPreviewBackgroundImage();
             clearPreviewImageTransform();
             pendingPreviewImageTransform = null;
             shouldResetImageFrameOnNextViewportUpdate = false;
@@ -4255,9 +4707,11 @@ HOME_HTML = '''
                 } else {
                     queuePreviewImageFrameReset();
                 }
+                updatePreviewOverlayElements(activeTimelineItem);
             } else {
                 previewImage.hidden = true;
                 hidePreviewImageLayer();
+                clearPreviewBackgroundImage();
             }
         }
 
@@ -4269,6 +4723,13 @@ HOME_HTML = '''
                 if (!previewImage.hidden) {
                     resetPreviewImageFrameToFit();
                 }
+                if (activeTimelineItem && !activeTimelineItem.dataset.imageNaturalWidth) {
+                    if (previewImage.naturalWidth && previewImage.naturalHeight) {
+                        activeTimelineItem.dataset.imageNaturalWidth = String(previewImage.naturalWidth);
+                        activeTimelineItem.dataset.imageNaturalHeight = String(previewImage.naturalHeight);
+                    }
+                }
+                syncPreviewBackgroundTransform();
             });
         }
 
@@ -4302,7 +4763,7 @@ HOME_HTML = '''
             schedulePreviewViewportSizeUpdate();
             queuePreviewImageFrameReset();
             if (isExportDialogOpen()) {
-                renderExportSummary(getTimelineItems(), null);
+                renderExportSummary(getTimelinePlayableItems(), null);
             }
             updatePreviewAspectLabel();
         }
@@ -4321,7 +4782,7 @@ HOME_HTML = '''
         if (videoQualitySelect) {
             videoQualitySelect.addEventListener('change', () => {
                 if (isExportDialogOpen()) {
-                    renderExportSummary(getTimelineItems(), null);
+                    renderExportSummary(getTimelinePlayableItems(), null);
                 }
             });
         }
@@ -4493,6 +4954,7 @@ HOME_HTML = '''
                 scrollTimelineItemIntoView(activeTimelineItem);
             }
             updateActiveTimelineIndicators();
+            updatePreviewOverlayElements(activeTimelineItem);
         }
 
         function loadPreviewFromTimeline(timelineItem) {
@@ -4526,6 +4988,7 @@ HOME_HTML = '''
                     previewVideo.load();
                 }
                 playVideoButton.textContent = 'Play Back';
+                clearPreviewBackgroundImage();
             } else if (fileType.startsWith('image/')) {
                 setPreviewMode('has-image');
                 previewVideo.pause();
@@ -4538,6 +5001,7 @@ HOME_HTML = '''
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
             }
+            updatePreviewOverlayElements(timelineItem);
         }
 
         async function showPreview(file) {
@@ -4587,6 +5051,7 @@ HOME_HTML = '''
             timelineItem.dataset.fileType = file.type;
             timelineItem.dataset.objectUrl = objectURL;
             timelineItem.dataset.displayName = file.name;
+            timelineItem.dataset.itemId = `timeline-item-${timelineItemIdCounter += 1}`;
 
             const label = document.createElement('span');
             label.textContent = file.name;
@@ -4633,6 +5098,12 @@ HOME_HTML = '''
                 imageThumb.src = await generateImageThumbnail(objectURL);
                 imageThumb.alt = file.name;
                 timelineItem.appendChild(imageThumb);
+                const naturalImage = new Image();
+                naturalImage.addEventListener('load', () => {
+                    timelineItem.dataset.imageNaturalWidth = String(naturalImage.naturalWidth || 0);
+                    timelineItem.dataset.imageNaturalHeight = String(naturalImage.naturalHeight || 0);
+                });
+                naturalImage.src = objectURL;
                 setTimelineItemDuration(
                     timelineItem,
                     'imageDuration',
@@ -4868,7 +5339,7 @@ HOME_HTML = '''
         }
 
         async function playTimelineSequence(startIndex = 0) {
-            const timelineItems = getTimelineItems();
+            const timelineItems = getTimelinePlayableItems();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return false;
@@ -4934,7 +5405,7 @@ HOME_HTML = '''
 
                 try {
                     const refreshedTimelineItems = getTimelineItems();
-                    renderExportSummary(refreshedTimelineItems, null);
+                    renderExportSummary(refreshedTimelineItems.filter((item) => !isOverlayChild(item)), null);
                 } finally {
                     exportButton.disabled = false;
                     exportButton.textContent = originalLabel || 'Export video';
@@ -5212,13 +5683,20 @@ HOME_HTML = '''
                 return;
             }
 
-            const timelineItems = getTimelineItems();
+            const timelineItems = getTimelinePlayableItems();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return;
             }
 
-            const startIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : 0;
+            let startIndex = 0;
+            if (activeTimelineItem) {
+                const playableTarget = isOverlayChild(activeTimelineItem)
+                    ? getOverlayRoot(activeTimelineItem)
+                    : activeTimelineItem;
+                startIndex = timelineItems.indexOf(playableTarget);
+            }
+
             playTimelineSequence(startIndex >= 0 ? startIndex : 0).catch((error) => {
                 console.error('Timeline playback failed.', error);
             });
