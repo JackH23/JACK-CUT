@@ -20,6 +20,8 @@ HOME_HTML = '''
             --border-color: rgba(148, 163, 184, 0.18);
             --shadow-soft: 0 24px 60px rgba(2, 6, 23, 0.55);
             --shadow-inner: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+            --preview-guide-base: rgba(148, 163, 184, 0.18);
+            --preview-guide-strong: rgba(56, 189, 248, 0.8);
             font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
         }
 
@@ -836,6 +838,112 @@ HOME_HTML = '''
             transition: aspect-ratio 0.2s ease;
         }
 
+        .preview-guides {
+            position: absolute;
+            inset: clamp(8px, 2vw, 18px);
+            border-radius: 12px;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transform: scale(0.995);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+
+        .preview-guides::before,
+        .preview-guides::after,
+        .preview-guide-edge {
+            content: '';
+            position: absolute;
+            background: var(--preview-guide-base);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease, background 0.25s ease;
+        }
+
+        .preview-guides::before {
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+
+        .preview-guides::after {
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            transform: translateX(-50%);
+        }
+
+        .preview-guide-edge.top {
+            top: 0;
+            left: 0;
+            height: 3px;
+            width: 100%;
+        }
+
+        .preview-guide-edge.bottom {
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            width: 100%;
+        }
+
+        .preview-guide-edge.left {
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+        }
+
+        .preview-guide-edge.right {
+            top: 0;
+            right: 0;
+            width: 3px;
+            height: 100%;
+        }
+
+        .preview-guides.is-visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .preview-guides.is-visible::before,
+        .preview-guides.is-visible::after {
+            opacity: 0.35;
+        }
+
+        .preview-guides.is-visible .preview-guide-edge {
+            opacity: 0.18;
+        }
+
+        .preview-guides.is-aligned::before,
+        .preview-guides.is-aligned::after {
+            opacity: 0.5;
+            background: var(--preview-guide-strong);
+        }
+
+        .preview-guides[data-active-edges~="top"] .preview-guide-edge.top,
+        .preview-guides[data-active-edges~="bottom"] .preview-guide-edge.bottom,
+        .preview-guides[data-active-edges~="left"] .preview-guide-edge.left,
+        .preview-guides[data-active-edges~="right"] .preview-guide-edge.right {
+            opacity: 0.85;
+            background: var(--preview-guide-strong);
+        }
+
+        .preview-guides.is-out-of-bounds {
+            opacity: 0.08;
+            transform: scale(0.99);
+        }
+
+        .preview-guides.is-out-of-bounds::before,
+        .preview-guides.is-out-of-bounds::after,
+        .preview-guides.is-out-of-bounds .preview-guide-edge {
+            opacity: 0.12;
+            background: rgba(255, 255, 255, 0.45);
+        }
+
         .preview-media-frame {
             position: absolute;
             top: 0;
@@ -938,11 +1046,13 @@ HOME_HTML = '''
             --preview-frame-highlight-opacity: 1;
             --preview-frame-highlight-color: rgba(255, 255, 255, 0.95);
             --preview-frame-highlight-glow: rgba(255, 255, 255, 0.45);
+            --preview-frame-edge-opacity: 0;
             box-shadow: 0 0 0 2px rgba(255, 255, 255, 0), 0 26px 54px rgba(8, 13, 28, 0.6);
         }
 
         .preview-media-frame.is-out-of-bounds img {
             opacity: 0;
+            transition: opacity 0.25s ease;
         }
 
         .preview-media-frame.is-out-of-bounds .preview-resize-handle {
@@ -1434,6 +1544,12 @@ HOME_HTML = '''
                 </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
+                        <div class="preview-guides" id="preview-guides" aria-hidden="true">
+                            <span class="preview-guide-edge top"></span>
+                            <span class="preview-guide-edge right"></span>
+                            <span class="preview-guide-edge bottom"></span>
+                            <span class="preview-guide-edge left"></span>
+                        </div>
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <div class="preview-media-frame" id="preview-media-frame" hidden>
@@ -1652,6 +1768,7 @@ HOME_HTML = '''
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
         const previewPlaceholder = document.getElementById('preview-placeholder');
+        const previewGuides = document.getElementById('preview-guides');
         const timelineTrack = document.getElementById('timeline-track');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
@@ -2790,10 +2907,12 @@ HOME_HTML = '''
                 }
 
                 if (!boundaries.overflow.left && Math.abs(left - horizontalMin) <= 0.5) {
+                    left = horizontalMin;
                     boundaries.touches.left = true;
                 }
 
                 if (!boundaries.overflow.right && Math.abs(left - horizontalMax) <= 0.5) {
+                    left = horizontalMax;
                     boundaries.touches.right = true;
                 }
             } else {
@@ -2815,10 +2934,12 @@ HOME_HTML = '''
                 }
 
                 if (!boundaries.overflow.top && Math.abs(top - verticalMin) <= 0.5) {
+                    top = verticalMin;
                     boundaries.touches.top = true;
                 }
 
                 if (!boundaries.overflow.bottom && Math.abs(top - verticalMax) <= 0.5) {
+                    top = verticalMax;
                     boundaries.touches.bottom = true;
                 }
             } else {
@@ -2879,6 +3000,10 @@ HOME_HTML = '''
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-right-color');
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-bottom-color');
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-left-color');
+                if (previewGuides) {
+                    previewGuides.classList.remove('is-visible', 'is-aligned', 'is-out-of-bounds');
+                    previewGuides.removeAttribute('data-active-edges');
+                }
                 return;
             }
 
@@ -2898,6 +3023,14 @@ HOME_HTML = '''
 
             previewMediaFrame.classList.toggle('is-boundary', isTouching && !isOverflow);
             previewMediaFrame.classList.toggle('is-out-of-bounds', isOverflow);
+
+            if (isOverflow) {
+                previewMediaFrame.setAttribute('data-boundary-state', 'out-of-bounds');
+            } else if (isTouching) {
+                previewMediaFrame.setAttribute('data-boundary-state', 'aligned');
+            } else {
+                previewMediaFrame.removeAttribute('data-boundary-state');
+            }
 
             const edgeOpacity = isTouching && !isOverflow ? '1' : '0';
             previewMediaFrame.style.setProperty('--preview-frame-edge-opacity', edgeOpacity);
@@ -2920,12 +3053,21 @@ HOME_HTML = '''
                 previewMediaFrame.removeAttribute('data-overflow-edges');
             }
 
-            if (isOverflow) {
-                previewMediaFrame.setAttribute('data-boundary-state', 'out');
-            } else if (isTouching) {
-                previewMediaFrame.setAttribute('data-boundary-state', 'edge');
-            } else {
-                previewMediaFrame.removeAttribute('data-boundary-state');
+            if (previewGuides) {
+                if (isOverflow) {
+                    previewGuides.classList.add('is-visible', 'is-out-of-bounds');
+                    previewGuides.classList.remove('is-aligned');
+                    previewGuides.removeAttribute('data-active-edges');
+                } else {
+                    previewGuides.classList.add('is-visible');
+                    previewGuides.classList.remove('is-out-of-bounds');
+                    previewGuides.classList.toggle('is-aligned', isTouching);
+                    if (isTouching && touchedEdges) {
+                        previewGuides.setAttribute('data-active-edges', touchedEdges);
+                    } else {
+                        previewGuides.removeAttribute('data-active-edges');
+                    }
+                }
             }
         }
 
@@ -3008,6 +3150,10 @@ HOME_HTML = '''
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-right-color');
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-bottom-color');
                 previewMediaFrame.style.removeProperty('--preview-frame-edge-left-color');
+            }
+            if (previewGuides) {
+                previewGuides.classList.remove('is-visible', 'is-aligned', 'is-out-of-bounds');
+                previewGuides.removeAttribute('data-active-edges');
             }
             previewImageFrameState = null;
         }
