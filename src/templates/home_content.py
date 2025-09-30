@@ -1222,6 +1222,7 @@ HOME_HTML = '''
             overflow-y: hidden;
             scrollbar-width: thin;
             scroll-snap-type: x proximity;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
         }
 
         .timeline-track::-webkit-scrollbar {
@@ -1235,6 +1236,12 @@ HOME_HTML = '''
 
         .timeline-track::-webkit-scrollbar-track {
             background: rgba(15, 23, 42, 0.6);
+        }
+
+        .timeline-track.is-dropping {
+            border: 1px solid rgba(56, 189, 248, 0.65);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+            background: rgba(8, 12, 24, 0.92);
         }
 
         .timeline-item {
@@ -1901,6 +1908,95 @@ HOME_HTML = '''
             handle: null,
             origin: null,
         };
+
+        function isSupportedMediaFile(file) {
+            return Boolean(file)
+                && typeof file.type === 'string'
+                && (file.type.startsWith('video/') || file.type.startsWith('image/'));
+        }
+
+        function normalizeMediaFileList(fileList) {
+            return Array.from(fileList || []).filter((file) => file && typeof file === 'object');
+        }
+
+        function truncateFileName(name, maxLength = 42) {
+            if (!name || typeof name !== 'string') {
+                return null;
+            }
+            if (name.length <= maxLength) {
+                return name;
+            }
+            return `${name.slice(0, Math.max(0, maxLength - 3))}…`;
+        }
+
+        function updateUploadMetaForFiles(files, { source = 'upload-input', unsupportedCount = 0 } = {}) {
+            const items = Array.isArray(files) ? files : [];
+            if (uploadMetaStatus) {
+                if (!items.length) {
+                    uploadMetaStatus.textContent = 'No clips added yet';
+                } else {
+                    const clipLabel = items.length === 1 ? 'clip' : 'clips';
+                    uploadMetaStatus.textContent = source === 'timeline-drop'
+                        ? `${items.length} ${clipLabel} added to the timeline`
+                        : `${items.length} ${clipLabel} ready to preview`;
+                }
+            }
+
+            if (uploadMetaHint) {
+                let hintText = 'Tip: drop multiple files to keep your story flowing.';
+                if (items.length) {
+                    const latestFile = items[items.length - 1];
+                    const truncatedName = truncateFileName(latestFile?.name || '');
+                    if (source === 'timeline-drop') {
+                        if (truncatedName) {
+                            hintText = items.length === 1
+                                ? `Dropped: ${truncatedName}`
+                                : `Dropped: ${truncatedName} and ${items.length - 1} more`;
+                        } else {
+                            hintText = 'Dropped files added to the timeline.';
+                        }
+                    } else if (truncatedName) {
+                        hintText = items.length === 1
+                            ? `Ready: ${truncatedName}`
+                            : `${truncatedName} and ${items.length - 1} more`;
+                    }
+                }
+
+                if (unsupportedCount > 0) {
+                    hintText = `${hintText} (${unsupportedCount} unsupported file${unsupportedCount === 1 ? '' : 's'} skipped)`;
+                }
+
+                uploadMetaHint.textContent = hintText;
+            }
+        }
+
+        async function importMediaFiles(files, { source = 'upload-input' } = {}) {
+            const normalized = normalizeMediaFileList(files);
+            if (!normalized.length) {
+                updateUploadMetaForFiles([], { source });
+                return;
+            }
+
+            const supported = normalized.filter((file) => isSupportedMediaFile(file));
+            const unsupportedCount = normalized.length - supported.length;
+
+            if (!supported.length) {
+                if (uploadMetaStatus) {
+                    uploadMetaStatus.textContent = 'Only images and videos can be added to your timeline.';
+                }
+                if (uploadMetaHint) {
+                    uploadMetaHint.textContent = 'Try dropping PNG, JPG, GIF, MP4, or MOV files.';
+                }
+                return;
+            }
+
+            updateUploadMetaForFiles(supported, { source, unsupportedCount });
+
+            for (const file of supported) {
+                // eslint-disable-next-line no-await-in-loop
+                await showPreview(file);
+            }
+        }
 
         const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
         const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
@@ -2912,7 +3008,33 @@ HOME_HTML = '''
         }
 
         if (timelineTrack) {
+            let timelineFileDragDepth = 0;
+
+            const isFileDragEvent = (event) => {
+                const transfer = event?.dataTransfer;
+                if (!transfer) {
+                    return false;
+                }
+                return Array.from(transfer.types || []).includes('Files');
+            };
+
+            const resetTimelineFileDropState = () => {
+                if (!timelineFileDragDepth) {
+                    timelineTrack.classList.remove('is-dropping');
+                    return;
+                }
+                timelineFileDragDepth = 0;
+                timelineTrack.classList.remove('is-dropping');
+            };
+
             timelineTrack.addEventListener('dragenter', (event) => {
+                if (isFileDragEvent(event)) {
+                    timelineFileDragDepth += 1;
+                    timelineTrack.classList.add('is-dropping');
+                    event.preventDefault();
+                    return;
+                }
+
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     event.preventDefault();
@@ -2920,6 +3042,15 @@ HOME_HTML = '''
             });
 
             timelineTrack.addEventListener('dragover', (event) => {
+                if (isFileDragEvent(event)) {
+                    event.preventDefault();
+                    if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = 'copy';
+                    }
+                    timelineTrack.classList.add('is-dropping');
+                    return;
+                }
+
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (!draggingItem) {
                     return;
@@ -2933,14 +3064,46 @@ HOME_HTML = '''
                 }
             });
 
-            timelineTrack.addEventListener('drop', (event) => {
+            timelineTrack.addEventListener('dragleave', (event) => {
+                if (!isFileDragEvent(event)) {
+                    return;
+                }
+
+                timelineFileDragDepth = Math.max(0, timelineFileDragDepth - 1);
+                if (!timelineFileDragDepth) {
+                    timelineTrack.classList.remove('is-dropping');
+                }
+            });
+
+            timelineTrack.addEventListener('drop', async (event) => {
+                const fileDrop = isFileDragEvent(event);
+                if (fileDrop) {
+                    event.preventDefault();
+                    const transfer = event.dataTransfer;
+                    const files = transfer ? Array.from(transfer.files || []) : [];
+                    timelineFileDragDepth = 0;
+                    timelineTrack.classList.remove('is-dropping');
+                    if (files.length) {
+                        try {
+                            await importMediaFiles(files, { source: 'timeline-drop' });
+                        } catch (error) {
+                            console.error('Failed to add dropped media to the timeline.', error);
+                        }
+                    }
+                    return;
+                }
+
                 event.preventDefault();
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     draggingItem.classList.remove('dragging');
+                    draggingItem.draggable = true;
+                    updateActiveTimelineIndicators();
                 }
-                updateActiveTimelineIndicators();
             });
+
+            document.addEventListener('drop', resetTimelineFileDropState);
+            document.addEventListener('dragend', resetTimelineFileDropState);
         }
 
         if (window.ResizeObserver) {
@@ -4656,38 +4819,8 @@ HOME_HTML = '''
         }
 
         uploadInput.addEventListener('change', async (event) => {
-            const files = Array.from(event.target.files || []);
-            if (!files.length) {
-                if (uploadMetaStatus) {
-                    uploadMetaStatus.textContent = 'No clips added yet';
-                }
-                if (uploadMetaHint) {
-                    uploadMetaHint.textContent = 'Tip: drop multiple files to keep your story flowing.';
-                }
-                return;
-            }
-
-            if (uploadMetaStatus) {
-                const clipLabel = files.length === 1 ? 'clip' : 'clips';
-                uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
-            }
-
-            if (uploadMetaHint) {
-                const latestFile = files[files.length - 1];
-                if (latestFile?.name) {
-                    const truncatedName = latestFile.name.length > 42
-                        ? `${latestFile.name.slice(0, 39)}…`
-                        : latestFile.name;
-                    uploadMetaHint.textContent = files.length === 1
-                        ? `Ready: ${truncatedName}`
-                        : `${truncatedName} and ${files.length - 1} more`;
-                }
-            }
-
-            for (const file of files) {
-                // eslint-disable-next-line no-await-in-loop
-                await showPreview(file);
-            }
+            await importMediaFiles(event.target.files || [], { source: 'upload-input' });
+            event.target.value = '';
         });
 
         uploadButton.addEventListener('click', () => uploadInput.click());
