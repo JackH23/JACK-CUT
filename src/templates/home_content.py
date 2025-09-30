@@ -881,6 +881,26 @@ HOME_HTML = '''
             display: block;
             pointer-events: none;
             user-select: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .preview-media-frame.is-boundary {
+            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.8), 0 26px 54px rgba(15, 23, 42, 0.68);
+        }
+
+        .preview-media-frame.is-out-of-bounds {
+            background: transparent;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+        }
+
+        .preview-media-frame.is-out-of-bounds img {
+            opacity: 0;
+        }
+
+        .preview-media-frame.is-out-of-bounds .preview-resize-handle {
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 16px 32px rgba(15, 23, 42, 0.55);
+            color: rgba(15, 23, 42, 0.85);
         }
 
         .preview-resize-handle {
@@ -2598,8 +2618,27 @@ HOME_HTML = '''
         }
 
         function clampPreviewFrameRect(rect) {
+            const createBoundaryState = () => ({
+                touches: { left: false, right: false, top: false, bottom: false },
+                overflow: { left: false, right: false, top: false, bottom: false },
+            });
+
             if (!previewViewport) {
-                return { ...rect };
+                const aspectFallback = rect && rect.aspect && rect.aspect > 0
+                    ? rect.aspect
+                    : getPreviewImageAspect();
+                const width = Number.isFinite(rect?.width) ? rect.width : 0;
+                const height = Number.isFinite(rect?.height) ? rect.height : 0;
+                const left = Number.isFinite(rect?.left) ? rect.left : 0;
+                const top = Number.isFinite(rect?.top) ? rect.top : 0;
+                return {
+                    width,
+                    height,
+                    left,
+                    top,
+                    aspect: aspectFallback,
+                    boundaries: createBoundaryState(),
+                };
             }
 
             const viewportWidth = Math.max(0, previewViewport.clientWidth || 0);
@@ -2608,6 +2647,7 @@ HOME_HTML = '''
                 ? rect.aspect
                 : getPreviewImageAspect();
             const aspect = aspectSource > 0 ? aspectSource : 1;
+            const boundaries = createBoundaryState();
 
             if (viewportWidth === 0 || viewportHeight === 0) {
                 return {
@@ -2616,6 +2656,7 @@ HOME_HTML = '''
                     left: Number.isFinite(rect?.left) ? rect.left : 0,
                     top: Number.isFinite(rect?.top) ? rect.top : 0,
                     aspect,
+                    boundaries,
                 };
             }
 
@@ -2673,6 +2714,9 @@ HOME_HTML = '''
                 top = (viewportHeight - height) / 2;
             }
 
+            const proposedLeft = left;
+            const proposedTop = top;
+
             const visibilityPaddingX = Math.max(
                 16,
                 Math.min(120, (Math.min(width, viewportWidth) * 0.25) + 12),
@@ -2688,17 +2732,69 @@ HOME_HTML = '''
             const verticalMax = viewportHeight - visibilityPaddingY;
 
             if (horizontalMin <= horizontalMax) {
-                left = Math.min(Math.max(horizontalMin, left), horizontalMax);
+                if (left < horizontalMin) {
+                    left = horizontalMin;
+                    boundaries.overflow.left = true;
+                    boundaries.touches.left = true;
+                } else if (left > horizontalMax) {
+                    left = horizontalMax;
+                    boundaries.overflow.right = true;
+                    boundaries.touches.right = true;
+                }
+
+                if (!boundaries.overflow.left && Math.abs(left - horizontalMin) <= 0.5) {
+                    boundaries.touches.left = true;
+                }
+
+                if (!boundaries.overflow.right && Math.abs(left - horizontalMax) <= 0.5) {
+                    boundaries.touches.right = true;
+                }
             } else {
                 const fallback = (horizontalMin + horizontalMax) / 2;
                 left = Number.isFinite(fallback) ? fallback : 0;
+                boundaries.touches.left = true;
+                boundaries.touches.right = true;
             }
 
             if (verticalMin <= verticalMax) {
-                top = Math.min(Math.max(verticalMin, top), verticalMax);
+                if (top < verticalMin) {
+                    top = verticalMin;
+                    boundaries.overflow.top = true;
+                    boundaries.touches.top = true;
+                } else if (top > verticalMax) {
+                    top = verticalMax;
+                    boundaries.overflow.bottom = true;
+                    boundaries.touches.bottom = true;
+                }
+
+                if (!boundaries.overflow.top && Math.abs(top - verticalMin) <= 0.5) {
+                    boundaries.touches.top = true;
+                }
+
+                if (!boundaries.overflow.bottom && Math.abs(top - verticalMax) <= 0.5) {
+                    boundaries.touches.bottom = true;
+                }
             } else {
                 const fallback = (verticalMin + verticalMax) / 2;
                 top = Number.isFinite(fallback) ? fallback : 0;
+                boundaries.touches.top = true;
+                boundaries.touches.bottom = true;
+            }
+
+            if (horizontalMin <= horizontalMax) {
+                if (!boundaries.overflow.left && proposedLeft < horizontalMin) {
+                    boundaries.overflow.left = true;
+                } else if (!boundaries.overflow.right && proposedLeft > horizontalMax) {
+                    boundaries.overflow.right = true;
+                }
+            }
+
+            if (verticalMin <= verticalMax) {
+                if (!boundaries.overflow.top && proposedTop < verticalMin) {
+                    boundaries.overflow.top = true;
+                } else if (!boundaries.overflow.bottom && proposedTop > verticalMax) {
+                    boundaries.overflow.bottom = true;
+                }
             }
 
             return {
@@ -2707,6 +2803,7 @@ HOME_HTML = '''
                 left,
                 top,
                 aspect,
+                boundaries,
             };
         }
 
@@ -2720,6 +2817,28 @@ HOME_HTML = '''
             previewMediaFrame.style.top = `${state.top}px`;
         }
 
+        function updatePreviewFrameBoundaryState(boundaryInfo) {
+            if (!previewMediaFrame) {
+                return;
+            }
+
+            const touches = boundaryInfo?.touches || {};
+            const overflow = boundaryInfo?.overflow || {};
+            const isTouching = Boolean(Object.values(touches).some(Boolean));
+            const isOverflow = Boolean(Object.values(overflow).some(Boolean));
+
+            previewMediaFrame.classList.toggle('is-boundary', isTouching && !isOverflow);
+            previewMediaFrame.classList.toggle('is-out-of-bounds', isOverflow);
+
+            if (isOverflow) {
+                previewMediaFrame.setAttribute('data-boundary-state', 'out');
+            } else if (isTouching) {
+                previewMediaFrame.setAttribute('data-boundary-state', 'edge');
+            } else {
+                previewMediaFrame.removeAttribute('data-boundary-state');
+            }
+        }
+
         function setPreviewFrameState(nextState) {
             if (!previewMediaFrame) {
                 return;
@@ -2727,6 +2846,7 @@ HOME_HTML = '''
             const constrained = clampPreviewFrameRect(nextState || previewImageFrameState);
             previewImageFrameState = constrained;
             applyPreviewFrameState(constrained);
+            updatePreviewFrameBoundaryState(constrained?.boundaries);
         }
 
         function initializePreviewImageFrame() {
@@ -2764,6 +2884,7 @@ HOME_HTML = '''
 
             previewMediaFrame.removeAttribute('hidden');
             previewMediaFrame.classList.add('is-active');
+            updatePreviewFrameBoundaryState(previewImageFrameState?.boundaries);
         }
 
         function showPreviewImageFrame() {
@@ -2774,6 +2895,8 @@ HOME_HTML = '''
             previewMediaFrame.classList.add('is-active');
             if (previewImageFrameState) {
                 setPreviewFrameState({ ...previewImageFrameState, aspect: getPreviewImageAspect() });
+            } else {
+                updatePreviewFrameBoundaryState(null);
             }
         }
 
@@ -2786,6 +2909,8 @@ HOME_HTML = '''
                 previewMediaFrame.style.removeProperty('left');
                 previewMediaFrame.style.removeProperty('top');
                 previewMediaFrame.removeAttribute('data-object-url');
+                previewMediaFrame.classList.remove('is-boundary', 'is-out-of-bounds');
+                previewMediaFrame.removeAttribute('data-boundary-state');
             }
             previewImageFrameState = null;
         }
