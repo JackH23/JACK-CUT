@@ -961,6 +961,22 @@ HOME_HTML = '''
             pointer-events: none;
         }
 
+        .preview-image-frame:not(.is-active) {
+            pointer-events: none;
+            opacity: 0.85;
+        }
+
+        .preview-image-frame:not(.is-active) .preview-resize-handle {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .preview-image-frame.is-active {
+            box-shadow:
+                0 0 0 1px rgba(124, 58, 237, 0.55),
+                0 16px 32px rgba(8, 12, 24, 0.4);
+        }
+
         .preview-resize-handle {
             position: absolute;
             width: 18px;
@@ -1384,6 +1400,104 @@ HOME_HTML = '''
             border: 1px solid rgba(148, 163, 184, 0.18);
         }
 
+        .timeline-layers {
+            margin-top: 16px;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+            padding-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .timeline-layers__header h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .timeline-layers__header p {
+            margin: 4px 0 0;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .timeline-layers__list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 56px;
+        }
+
+        .timeline-layers__empty {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .timeline-layer-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(30, 41, 59, 0.6);
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .timeline-layer-item:active {
+            cursor: grabbing;
+        }
+
+        .timeline-layer-item.dragging {
+            opacity: 0.65;
+            transform: scale(0.98);
+            box-shadow: 0 18px 32px rgba(8, 12, 24, 0.45);
+        }
+
+        .timeline-layer-item.is-active {
+            border-color: rgba(124, 58, 237, 0.6);
+            box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
+        }
+
+        .timeline-layer-item__thumb {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: rgba(15, 23, 42, 0.6);
+            display: grid;
+            place-items: center;
+            font-size: 1.2rem;
+            color: rgba(148, 163, 184, 0.8);
+        }
+
+        .timeline-layer-item__thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .timeline-layer-item__label {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .timeline-layer-item__meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(8, 12, 24, 0.55);
+        }
+
         .timeline-progress label {
             font-size: 0.9rem;
             color: var(--text-secondary);
@@ -1567,15 +1681,16 @@ HOME_HTML = '''
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
-                        <div class="preview-image-layer" id="preview-image-layer" hidden>
-                            <div class="preview-image-frame" id="preview-image-frame" role="presentation">
-                                <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-image-layer" id="preview-image-layer" hidden aria-live="off"></div>
+                        <template id="preview-image-frame-template">
+                            <div class="preview-image-frame" role="presentation" aria-label="Image layer">
+                                <img class="preview-image" alt="Preview layer" hidden>
                                 <button type="button" class="preview-resize-handle handle-nw" data-handle="nw" aria-label="Resize from top left"></button>
                                 <button type="button" class="preview-resize-handle handle-ne" data-handle="ne" aria-label="Resize from top right"></button>
                                 <button type="button" class="preview-resize-handle handle-se" data-handle="se" aria-label="Resize from bottom right"></button>
                                 <button type="button" class="preview-resize-handle handle-sw" data-handle="sw" aria-label="Resize from bottom left"></button>
                             </div>
-                        </div>
+                        </template>
                         <div class="preview-guides-layer" id="preview-guides-layer" hidden aria-hidden="true">
                             <div class="preview-ruler preview-ruler--horizontal" data-ruler="horizontal">
                                 <span class="preview-ruler__label" data-ruler-value="horizontal"></span>
@@ -1759,6 +1874,14 @@ HOME_HTML = '''
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
+            <div class="timeline-layers" id="timeline-layers" aria-live="polite">
+                <div class="timeline-layers__header">
+                    <h3>Layer stack</h3>
+                    <p>Drag to reorder layered images between foreground and background.</p>
+                </div>
+                <div class="timeline-layers__list" id="timeline-layers-list" role="listbox" aria-label="Timeline layer stack"></div>
+                <span class="timeline-layers__empty" id="timeline-layers-empty">Add images to manage composited layers.</span>
+            </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
                 <input type="range" id="timeline-progress" min="0" max="100" value="0">
@@ -1810,12 +1933,17 @@ HOME_HTML = '''
         const previewArea = document.querySelector('.preview-area');
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
-        const previewImage = document.getElementById('preview-image');
         const previewImageLayer = document.getElementById('preview-image-layer');
-        const previewImageFrame = document.getElementById('preview-image-frame');
-        const previewResizeHandles = previewImageFrame
-            ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
-            : [];
+        const previewImageTemplate = document.getElementById('preview-image-frame-template');
+        const timelineLayersContainer = document.getElementById('timeline-layers');
+        const timelineLayersList = document.getElementById('timeline-layers-list');
+        const timelineLayersEmpty = document.getElementById('timeline-layers-empty');
+        let previewImage = null;
+        let previewImageFrame = null;
+        let previewResizeHandles = [];
+        const previewLayers = new Map();
+        const timelineItemsById = new Map();
+        const layerEntriesByTimelineId = new Map();
         const previewCard = document.querySelector('.preview-card');
         const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
         const previewOutsideSegments = previewOutsideIndicator
@@ -1926,6 +2054,349 @@ HOME_HTML = '''
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
         const MIN_IMAGE_FRAME_SIZE = 96;
+
+        function generateTimelineItemId() {
+            return `timeline-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        }
+
+        function updateTimelineLayersEmptyState() {
+            if (!timelineLayersContainer || !timelineLayersEmpty) {
+                return;
+            }
+
+            const hasLayers = Boolean(timelineLayersList && timelineLayersList.children.length > 0);
+            timelineLayersEmpty.hidden = hasLayers;
+            timelineLayersContainer.dataset.hasLayers = hasLayers ? '1' : '0';
+        }
+
+        function getLayerEntryAfterPointer(container, pointerY) {
+            if (!container) {
+                return null;
+            }
+
+            const items = Array.from(container.querySelectorAll('.timeline-layer-item:not(.dragging)'));
+            return items.reduce((closest, child) => {
+                const rect = child.getBoundingClientRect();
+                const offset = pointerY - (rect.top + rect.height / 2);
+                if (offset < 0 && offset > (closest?.offset ?? Number.NEGATIVE_INFINITY)) {
+                    return { element: child, offset };
+                }
+                return closest;
+            }, null)?.element || null;
+        }
+
+        function applyLayerZOrdering() {
+            if (!timelineLayersList) {
+                return;
+            }
+
+            const entries = Array.from(timelineLayersList.children);
+            const total = entries.length;
+
+            entries.forEach((entry, index) => {
+                const timelineId = entry.dataset.timelineId || '';
+                const timelineItem = timelineItemsById.get(timelineId);
+                if (!timelineItem) {
+                    return;
+                }
+
+                const layerIndex = total - index;
+                timelineItem.dataset.layerIndex = String(layerIndex);
+
+                const previewLayer = previewLayers.get(timelineItem);
+                if (previewLayer?.frame) {
+                    previewLayer.frame.style.zIndex = String(100 + layerIndex);
+                }
+
+                const meta = entry.querySelector('.timeline-layer-item__meta');
+                if (meta) {
+                    if (index === 0) {
+                        meta.textContent = 'Foreground';
+                    } else if (index === total - 1) {
+                        meta.textContent = 'Background';
+                    } else {
+                        meta.textContent = 'Layer';
+                    }
+                }
+            });
+
+            updateTimelineLayersEmptyState();
+            highlightActiveLayerEntry();
+        }
+
+        function highlightActiveLayerEntry() {
+            const activeId = activeTimelineItem?.dataset.timelineId || '';
+            if (!timelineLayersList) {
+                return;
+            }
+
+            layerEntriesByTimelineId.forEach((entry) => {
+                if (!entry || !entry.parentElement) {
+                    return;
+                }
+                const isActive = entry.dataset.timelineId === activeId;
+                entry.classList.toggle('is-active', isActive);
+                entry.setAttribute('aria-selected', String(isActive));
+            });
+        }
+
+        function updatePreviewImageLayerVisibility() {
+            if (!previewImageLayer) {
+                return;
+            }
+
+            if (previewLayers.size > 0) {
+                previewImageLayer.removeAttribute('hidden');
+            } else {
+                previewImageLayer.setAttribute('hidden', '');
+            }
+        }
+
+        updateTimelineLayersEmptyState();
+
+        function attachPreviewFrameInteractions(frame, handles) {
+            if (!frame) {
+                return;
+            }
+
+            frame.addEventListener('pointerdown', onPreviewImagePointerDown);
+            handles.forEach((handle) => {
+                handle.addEventListener('pointerdown', onPreviewImagePointerDown);
+            });
+        }
+
+        function attachPreviewImageListeners(image, timelineItem) {
+            if (!image) {
+                return;
+            }
+
+            image.addEventListener('load', () => {
+                if (previewImage === image && !image.hidden) {
+                    resetPreviewScroll();
+                    schedulePreviewViewportSizeUpdate();
+                    resetPreviewImageFrameToFit();
+                } else if (timelineItem) {
+                    applyStoredTransformToLayer(timelineItem);
+                }
+            });
+        }
+
+        function createLayerStackEntry(timelineItem) {
+            if (!timelineLayersList || !timelineItem) {
+                return null;
+            }
+
+            const entry = document.createElement('div');
+            entry.className = 'timeline-layer-item';
+            entry.draggable = true;
+            entry.dataset.timelineId = timelineItem.dataset.timelineId || '';
+            entry.setAttribute('role', 'option');
+            entry.tabIndex = 0;
+
+            const thumb = document.createElement('div');
+            thumb.className = 'timeline-layer-item__thumb';
+
+            const thumbnailSource = timelineItem.querySelector('img.timeline-thumbnail');
+            if (thumbnailSource) {
+                const thumbImage = document.createElement('img');
+                thumbImage.src = thumbnailSource.src;
+                thumbImage.alt = timelineItem.dataset.displayName || 'Layer preview';
+                thumb.appendChild(thumbImage);
+            } else {
+                thumb.textContent = '🖼️';
+            }
+
+            const label = document.createElement('span');
+            label.className = 'timeline-layer-item__label';
+            label.textContent = timelineItem.dataset.displayName || timelineItem.dataset.fileName || 'Image layer';
+
+            const meta = document.createElement('span');
+            meta.className = 'timeline-layer-item__meta';
+            meta.textContent = 'Layer';
+
+            entry.appendChild(thumb);
+            entry.appendChild(label);
+            entry.appendChild(meta);
+
+            entry.addEventListener('click', () => {
+                setActiveTimelineItem(timelineItem);
+                loadPreviewFromTimeline(timelineItem);
+            });
+
+            entry.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setActiveTimelineItem(timelineItem);
+                    loadPreviewFromTimeline(timelineItem);
+                }
+            });
+
+            entry.addEventListener('dragstart', (event) => {
+                entry.classList.add('dragging');
+                const transfer = event.dataTransfer;
+                if (transfer) {
+                    transfer.effectAllowed = 'move';
+                    transfer.setData('text/plain', entry.dataset.timelineId || 'layer');
+                }
+            });
+
+            entry.addEventListener('dragend', () => {
+                entry.classList.remove('dragging');
+                applyLayerZOrdering();
+            });
+
+            return entry;
+        }
+
+        function ensurePreviewLayerForTimelineItem(timelineItem, objectURL = null) {
+            if (!timelineItem || !timelineItem.dataset.fileType?.startsWith('image/')) {
+                return null;
+            }
+
+            let layer = previewLayers.get(timelineItem);
+            if (layer) {
+                if (objectURL && layer.image && layer.image.src !== objectURL) {
+                    layer.image.src = objectURL;
+                }
+                return layer;
+            }
+
+            if (!previewImageTemplate || !previewImageLayer) {
+                return null;
+            }
+
+            const fragment = previewImageTemplate.content.cloneNode(true);
+            const frame = fragment.querySelector('.preview-image-frame');
+            const image = frame?.querySelector('.preview-image');
+            const handles = frame ? Array.from(frame.querySelectorAll('.preview-resize-handle')) : [];
+
+            if (!frame || !image) {
+                return null;
+            }
+
+            frame.dataset.timelineId = timelineItem.dataset.timelineId || '';
+
+            if (objectURL) {
+                image.src = objectURL;
+            } else if (timelineItem.dataset.objectUrl) {
+                image.src = timelineItem.dataset.objectUrl;
+            }
+
+            image.alt = timelineItem.dataset.displayName || timelineItem.dataset.fileName || 'Image layer';
+            image.hidden = false;
+
+            previewImageLayer.appendChild(fragment);
+
+            layer = { frame, image, handles };
+            previewLayers.set(timelineItem, layer);
+
+            attachPreviewFrameInteractions(frame, handles);
+            attachPreviewImageListeners(image, timelineItem);
+
+            if (!timelineItem.dataset.previewImageTransform) {
+                timelineItem.dataset.previewImageTransform = JSON.stringify({
+                    left: 0,
+                    top: 0,
+                    width: 1,
+                    height: 1,
+                    aspectRatio: null,
+                });
+            }
+
+            applyStoredTransformToLayer(timelineItem);
+            updatePreviewImageLayerVisibility();
+
+            return layer;
+        }
+
+        function clearActivePreviewLayer() {
+            if (!previewImageLayer) {
+                return;
+            }
+
+            Array.from(previewImageLayer.querySelectorAll('.preview-image-frame')).forEach((frame) => {
+                frame.classList.remove('is-active');
+            });
+
+            previewImage = null;
+            previewImageFrame = null;
+            previewResizeHandles = [];
+            previewImageTransform = null;
+            updatePreviewImageLayerVisibility();
+        }
+
+        function setActivePreviewLayer(timelineItem) {
+            if (!timelineItem) {
+                clearActivePreviewLayer();
+                return;
+            }
+
+            const layer = ensurePreviewLayerForTimelineItem(timelineItem);
+            if (!layer) {
+                clearActivePreviewLayer();
+                return;
+            }
+
+            Array.from(previewImageLayer.querySelectorAll('.preview-image-frame')).forEach((frame) => {
+                frame.classList.toggle('is-active', frame === layer.frame);
+            });
+
+            previewImage = layer.image;
+            previewImageFrame = layer.frame;
+            previewResizeHandles = layer.handles;
+
+            if (timelineItem.dataset.previewImageTransform) {
+                const stored = getStoredPreviewImageTransform(timelineItem);
+                if (stored) {
+                    applyStoredPreviewImageTransform(stored);
+                }
+            } else {
+                resetPreviewImageFrameToFit();
+                persistPreviewImageTransformForActiveTimelineItem();
+            }
+        }
+
+        function applyStoredTransformToLayer(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+
+            const layer = previewLayers.get(timelineItem);
+            if (!layer) {
+                return;
+            }
+
+            const storedTransform = getStoredPreviewImageTransform(timelineItem);
+            if (!storedTransform) {
+                return;
+            }
+
+            const viewportSize = getPreviewViewportSize();
+            const viewportWidth = Math.max(0, viewportSize.width || 0);
+            const viewportHeight = Math.max(0, viewportSize.height || 0);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return;
+            }
+
+            const width = storedTransform.width * viewportWidth;
+            const height = storedTransform.height * viewportHeight;
+            const left = storedTransform.left * viewportWidth;
+            const top = storedTransform.top * viewportHeight;
+
+            layer.frame.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+            layer.frame.style.width = `${width}px`;
+            layer.frame.style.height = `${height}px`;
+        }
+
+        function updateAllLayerTransforms() {
+            previewLayers.forEach((_, timelineItem) => {
+                if (timelineItem !== activeTimelineItem) {
+                    applyStoredTransformToLayer(timelineItem);
+                }
+            });
+        }
+
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2943,6 +3414,37 @@ HOME_HTML = '''
             });
         }
 
+        if (timelineLayersList) {
+            timelineLayersList.addEventListener('dragenter', (event) => {
+                if (timelineLayersList.querySelector('.timeline-layer-item.dragging')) {
+                    event.preventDefault();
+                }
+            });
+
+            timelineLayersList.addEventListener('dragover', (event) => {
+                const dragging = timelineLayersList.querySelector('.timeline-layer-item.dragging');
+                if (!dragging) {
+                    return;
+                }
+                event.preventDefault();
+                const after = getLayerEntryAfterPointer(timelineLayersList, event.clientY);
+                if (!after) {
+                    timelineLayersList.appendChild(dragging);
+                } else if (after !== dragging) {
+                    timelineLayersList.insertBefore(dragging, after);
+                }
+            });
+
+            timelineLayersList.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const dragging = timelineLayersList.querySelector('.timeline-layer-item.dragging');
+                if (dragging) {
+                    dragging.classList.remove('dragging');
+                }
+                applyLayerZOrdering();
+            });
+        }
+
         if (window.ResizeObserver) {
             if (previewArea && !previewAreaResizeObserver) {
                 previewAreaResizeObserver = new ResizeObserver(() => {
@@ -3708,6 +4210,7 @@ HOME_HTML = '''
             }
 
             activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
+            applyStoredTransformToLayer(activeTimelineItem);
         }
 
         function applyPreviewImageTransform(alignmentOverride) {
@@ -3957,6 +4460,7 @@ HOME_HTML = '''
         function handlePreviewViewportResized() {
             if (!previewViewport) {
                 hidePreviewOutsideOutline();
+                updateAllLayerTransforms();
                 return;
             }
 
@@ -3966,6 +4470,7 @@ HOME_HTML = '''
             if (width === 0 || height === 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                updateAllLayerTransforms();
                 return;
             }
 
@@ -3975,6 +4480,7 @@ HOME_HTML = '''
                 if (applied) {
                     pendingPreviewImageTransform = null;
                     lastPreviewViewportSize = { width, height };
+                    updateAllLayerTransforms();
                     return;
                 }
             }
@@ -3983,18 +4489,21 @@ HOME_HTML = '''
                 shouldResetImageFrameOnNextViewportUpdate = false;
                 resetPreviewImageFrameToFit();
                 lastPreviewViewportSize = { width, height };
+                updateAllLayerTransforms();
                 return;
             }
 
             if (!previewImageTransform) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                updateAllLayerTransforms();
                 return;
             }
 
             if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                updateAllLayerTransforms();
                 return;
             }
 
@@ -4003,6 +4512,7 @@ HOME_HTML = '''
             if (!Number.isFinite(scale) || scale <= 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                updateAllLayerTransforms();
                 return;
             }
 
@@ -4021,6 +4531,7 @@ HOME_HTML = '''
 
             lastPreviewViewportSize = { width, height };
             applyPreviewImageTransform();
+            updateAllLayerTransforms();
         }
 
         function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
@@ -4243,6 +4754,9 @@ HOME_HTML = '''
 
         function setPreviewImageVisibility(isVisible) {
             if (!previewImage) {
+                if (isVisible) {
+                    showPreviewImageLayer();
+                }
                 return;
             }
 
@@ -4257,29 +4771,16 @@ HOME_HTML = '''
                 }
             } else {
                 previewImage.hidden = true;
-                hidePreviewImageLayer();
-            }
-        }
-
-
-        if (previewImage) {
-            previewImage.addEventListener('load', () => {
-                resetPreviewScroll();
-                schedulePreviewViewportSizeUpdate();
-                if (!previewImage.hidden) {
-                    resetPreviewImageFrameToFit();
+                if (previewLayers.size === 0) {
+                    hidePreviewImageLayer();
                 }
-            });
+            }
         }
 
         if (previewVideo) {
             previewVideo.addEventListener('loadeddata', () => {
                 schedulePreviewViewportSizeUpdate();
             });
-        }
-
-        if (previewImageFrame) {
-            previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
         }
 
         if (window && typeof window.addEventListener === 'function') {
@@ -4471,13 +4972,18 @@ HOME_HTML = '''
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
             previewVideo.load();
-            setPreviewImageVisibility(false);
-            previewImage.removeAttribute('src');
+            if (previewImage) {
+                setPreviewImageVisibility(false);
+                previewImage.removeAttribute('src');
+            } else {
+                hidePreviewImageLayer();
+            }
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
             resetPreviewScroll();
             setActiveTimelineItem(null);
+            updatePreviewImageLayerVisibility();
         }
 
         function setActiveTimelineItem(item) {
@@ -4492,6 +4998,12 @@ HOME_HTML = '''
                 activeTimelineItem.classList.add('active');
                 scrollTimelineItemIntoView(activeTimelineItem);
             }
+            if (activeTimelineItem && activeTimelineItem.dataset.fileType?.startsWith('image/')) {
+                setActivePreviewLayer(activeTimelineItem);
+            } else {
+                clearActivePreviewLayer();
+            }
+            highlightActiveLayerEntry();
             updateActiveTimelineIndicators();
         }
 
@@ -4518,7 +5030,11 @@ HOME_HTML = '''
                 setPreviewMode('has-video');
                 resetPreviewScroll();
                 setPreviewImageVisibility(false);
-                previewImage.removeAttribute('src');
+                if (previewImage) {
+                    previewImage.removeAttribute('src');
+                }
+                clearActivePreviewLayer();
+                hidePreviewImageLayer();
                 previewVideo.hidden = false;
                 if (previewVideo.src !== objectURL) {
                     previewVideo.pause();
@@ -4531,9 +5047,11 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
+                const layer = ensurePreviewLayerForTimelineItem(timelineItem, objectURL);
+                setActivePreviewLayer(timelineItem);
                 setPreviewImageVisibility(true);
-                if (previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
+                if (layer?.image && layer.image.src !== objectURL) {
+                    layer.image.src = objectURL;
                 }
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
@@ -4587,6 +5105,9 @@ HOME_HTML = '''
             timelineItem.dataset.fileType = file.type;
             timelineItem.dataset.objectUrl = objectURL;
             timelineItem.dataset.displayName = file.name;
+            const timelineId = generateTimelineItemId();
+            timelineItem.dataset.timelineId = timelineId;
+            timelineItemsById.set(timelineId, timelineItem);
 
             const label = document.createElement('span');
             label.textContent = file.name;
@@ -4639,11 +5160,21 @@ HOME_HTML = '''
                     IMAGE_FRAME_DURATION,
                     { markCustom: false },
                 );
+                ensurePreviewLayerForTimelineItem(timelineItem, objectURL);
+                if (timelineLayersList) {
+                    const entry = createLayerStackEntry(timelineItem);
+                    if (entry) {
+                        timelineLayersList.prepend(entry);
+                        layerEntriesByTimelineId.set(timelineId, entry);
+                        applyLayerZOrdering();
+                    }
+                }
             }
 
             timelineItem.appendChild(label);
             timelineTrack.appendChild(timelineItem);
             initializeTimelineItem(timelineItem);
+            updateTimelineLayersEmptyState();
 
             timelineItem.addEventListener('click', () => {
                 stopTimelinePlayback();
@@ -4706,7 +5237,11 @@ HOME_HTML = '''
                 setPreviewMode('has-video');
                 resetPreviewScroll();
                 setPreviewImageVisibility(false);
-                previewImage.removeAttribute('src');
+                if (previewImage) {
+                    previewImage.removeAttribute('src');
+                }
+                clearActivePreviewLayer();
+                hidePreviewImageLayer();
                 previewVideo.hidden = false;
                 previewPlaceholder.hidden = true;
 
@@ -4832,10 +5367,12 @@ HOME_HTML = '''
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
+                const layer = ensurePreviewLayerForTimelineItem(timelineItem, objectURL);
+                setActivePreviewLayer(timelineItem);
                 setPreviewImageVisibility(true);
                 previewPlaceholder.hidden = true;
-                if (previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
+                if (layer?.image && layer.image.src !== objectURL) {
+                    layer.image.src = objectURL;
                 }
                 resetPreviewScroll();
 
