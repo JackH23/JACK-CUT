@@ -407,6 +407,7 @@ HOME_HTML = '''
             border-radius: 12px;
             background: rgba(15, 23, 42, 0.7);
             border: 1px solid rgba(148, 163, 184, 0.22);
+            flex-wrap: wrap;
         }
 
         .preview-toolbar label {
@@ -427,6 +428,18 @@ HOME_HTML = '''
             min-width: 150px;
         }
 
+        .preview-toolbar input[type="range"] {
+            accent-color: var(--accent-1);
+            width: clamp(120px, 18vw, 180px);
+        }
+
+        .preview-toolbar output {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            min-width: 3.5ch;
+            text-align: right;
+        }
+
         .preview-toolbar select:focus {
             outline: none;
             border-color: rgba(56, 189, 248, 0.6);
@@ -435,6 +448,7 @@ HOME_HTML = '''
 
         .preview-area {
             --preview-aspect-ratio: 16 / 9;
+            --preview-scale: 1;
             position: relative;
             border-radius: 20px;
             background: linear-gradient(145deg, rgba(15, 23, 42, 0.8), rgba(36, 48, 69, 0.9));
@@ -447,7 +461,21 @@ HOME_HTML = '''
             font-size: 1.1rem;
             padding: 16px;
             min-height: clamp(200px, 32vh, 280px);
-            overflow: hidden;
+            overflow: auto;
+        }
+
+        .preview-area::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .preview-area::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 999px;
+        }
+
+        .preview-area::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
         }
 
         .preview-area::after {
@@ -826,14 +854,14 @@ HOME_HTML = '''
             justify-content: center;
             width: 100%;
             height: 100%;
-            max-width: 100%;
-            max-height: 100%;
+            max-width: none;
+            max-height: none;
             aspect-ratio: var(--preview-aspect-ratio);
             border-radius: 16px;
             background: rgba(8, 13, 28, 0.92);
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.45);
             overflow: hidden;
-            transition: aspect-ratio 0.2s ease;
+            transition: aspect-ratio 0.2s ease, width 0.2s ease, height 0.2s ease;
         }
 
         #preview-placeholder {
@@ -1219,6 +1247,9 @@ HOME_HTML = '''
                             <option value="16:9" selected>16:9 (Landscape)</option>
                             <option value="9:16">9:16 (Portrait)</option>
                         </select>
+                        <label for="preview-scale">Zoom</label>
+                        <input type="range" id="preview-scale" min="50" max="200" value="100" step="10">
+                        <output id="preview-scale-value" for="preview-scale" aria-live="polite">100%</output>
                     </div>
                 </div>
                 <div class="preview-area">
@@ -1441,6 +1472,8 @@ HOME_HTML = '''
         const timelineProgressInput = document.getElementById('timeline-progress');
         const previewAspectSelect = document.getElementById('preview-aspect');
         const previewAspectLabel = document.getElementById('preview-aspect-label');
+        const previewScaleControl = document.getElementById('preview-scale');
+        const previewScaleValue = document.getElementById('preview-scale-value');
         const playbackTimeDisplay = document.getElementById('playback-time');
         const exportButton = document.querySelector('.export-button');
         const exportDialog = document.getElementById('export-dialog');
@@ -1461,6 +1494,7 @@ HOME_HTML = '''
         let isTimelinePlaying = false;
         let timelinePlaybackAbort = null;
         let currentPreviewAspectRatio = 16 / 9;
+        let currentPreviewScale = 1;
         let previewViewportResizeFrame = null;
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
@@ -1472,6 +1506,9 @@ HOME_HTML = '''
         const MIN_IMAGE_DURATION = 400;
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
+        const PREVIEW_SCALE_DEFAULT = 100;
+        const PREVIEW_SCALE_MIN = 50;
+        const PREVIEW_SCALE_MAX = 200;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2387,6 +2424,43 @@ HOME_HTML = '''
             return 16 / 9;
         }
 
+        function clampPreviewScale(percentValue) {
+            const numericValue = Number(percentValue);
+            if (!Number.isFinite(numericValue)) {
+                return PREVIEW_SCALE_DEFAULT;
+            }
+            return Math.min(PREVIEW_SCALE_MAX, Math.max(PREVIEW_SCALE_MIN, Math.round(numericValue)));
+        }
+
+        function updatePreviewScaleLabel(percentValue) {
+            if (!previewScaleValue) {
+                return;
+            }
+            previewScaleValue.textContent = `${percentValue}%`;
+        }
+
+        function setPreviewScale(percentValue) {
+            const clampedPercent = clampPreviewScale(percentValue);
+            const normalizedScale = clampedPercent / 100;
+            currentPreviewScale = normalizedScale;
+
+            if (previewScaleControl && previewScaleControl.value !== String(clampedPercent)) {
+                previewScaleControl.value = String(clampedPercent);
+            }
+
+            if (previewArea) {
+                previewArea.style.setProperty('--preview-scale', normalizedScale.toString());
+            }
+
+            if (previewViewport) {
+                previewViewport.style.setProperty('--preview-scale', normalizedScale.toString());
+            }
+
+            updatePreviewScaleLabel(clampedPercent);
+            resetPreviewScroll();
+            schedulePreviewViewportSizeUpdate();
+        }
+
         function updatePreviewViewportSize() {
             if (!previewArea || !previewViewport) {
                 return;
@@ -2416,8 +2490,11 @@ HOME_HTML = '''
                 nextWidth = nextHeight * aspectRatio;
             }
 
-            previewViewport.style.width = `${nextWidth}px`;
-            previewViewport.style.height = `${nextHeight}px`;
+            const scaledWidth = nextWidth * (currentPreviewScale > 0 ? currentPreviewScale : 1);
+            const scaledHeight = nextHeight * (currentPreviewScale > 0 ? currentPreviewScale : 1);
+
+            previewViewport.style.width = `${scaledWidth}px`;
+            previewViewport.style.height = `${scaledHeight}px`;
         }
 
         function schedulePreviewViewportSizeUpdate() {
@@ -2470,6 +2547,15 @@ HOME_HTML = '''
         } else {
             setPreviewAspect('16:9');
             updatePreviewAspectLabel();
+        }
+
+        if (previewScaleControl) {
+            previewScaleControl.addEventListener('input', (event) => {
+                setPreviewScale(event.target.value);
+            });
+            setPreviewScale(previewScaleControl.value || PREVIEW_SCALE_DEFAULT);
+        } else {
+            setPreviewScale(PREVIEW_SCALE_DEFAULT);
         }
 
         if (videoQualitySelect) {
