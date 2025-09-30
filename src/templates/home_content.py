@@ -864,6 +864,57 @@ HOME_HTML = '''
             transition: aspect-ratio 0.2s ease, width 0.2s ease, height 0.2s ease;
         }
 
+        .preview-viewport.is-resizing {
+            transition: aspect-ratio 0.2s ease;
+        }
+
+        .preview-resize-handle {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(56, 189, 248, 0.85));
+            border: 2px solid rgba(8, 13, 28, 0.85);
+            box-shadow: 0 6px 18px rgba(8, 13, 28, 0.55);
+            display: grid;
+            place-items: center;
+            pointer-events: auto;
+            touch-action: none;
+            z-index: 2;
+        }
+
+        .preview-resize-handle::after {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(249, 250, 251, 0.9);
+        }
+
+        .preview-resize-handle[data-handle="nw"] {
+            top: 10px;
+            left: 10px;
+            cursor: nwse-resize;
+        }
+
+        .preview-resize-handle[data-handle="ne"] {
+            top: 10px;
+            right: 10px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle[data-handle="sw"] {
+            bottom: 10px;
+            left: 10px;
+            cursor: nesw-resize;
+        }
+
+        .preview-resize-handle[data-handle="se"] {
+            bottom: 10px;
+            right: 10px;
+            cursor: nwse-resize;
+        }
+
         #preview-placeholder {
             text-align: center;
             line-height: 1.6;
@@ -1257,6 +1308,10 @@ HOME_HTML = '''
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden></video>
                         <img id="preview-image" alt="Preview" hidden>
+                        <div class="preview-resize-handle" data-handle="nw" aria-hidden="true"></div>
+                        <div class="preview-resize-handle" data-handle="ne" aria-hidden="true"></div>
+                        <div class="preview-resize-handle" data-handle="sw" aria-hidden="true"></div>
+                        <div class="preview-resize-handle" data-handle="se" aria-hidden="true"></div>
                     </div>
                 </div>
                 <div class="preview-meta">
@@ -1474,6 +1529,7 @@ HOME_HTML = '''
         const previewAspectLabel = document.getElementById('preview-aspect-label');
         const previewScaleControl = document.getElementById('preview-scale');
         const previewScaleValue = document.getElementById('preview-scale-value');
+        const previewResizeHandles = Array.from(document.querySelectorAll('.preview-resize-handle'));
         const playbackTimeDisplay = document.getElementById('playback-time');
         const exportButton = document.querySelector('.export-button');
         const exportDialog = document.getElementById('export-dialog');
@@ -1495,7 +1551,12 @@ HOME_HTML = '''
         let timelinePlaybackAbort = null;
         let currentPreviewAspectRatio = 16 / 9;
         let currentPreviewScale = 1;
+        let previewViewportBaseWidth = null;
+        let previewViewportBaseHeight = null;
+        let previewViewportUserResized = false;
         let previewViewportResizeFrame = null;
+        let previewViewportResizeFrameOptions = null;
+        let previewResizeSession = null;
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
@@ -1509,6 +1570,7 @@ HOME_HTML = '''
         const PREVIEW_SCALE_DEFAULT = 100;
         const PREVIEW_SCALE_MIN = 50;
         const PREVIEW_SCALE_MAX = 200;
+        const PREVIEW_MIN_SHORT_EDGE = 80;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2458,12 +2520,13 @@ HOME_HTML = '''
 
             updatePreviewScaleLabel(clampedPercent);
             resetPreviewScroll();
+            applyPreviewViewportSize();
             schedulePreviewViewportSizeUpdate();
         }
 
-        function updatePreviewViewportSize() {
+        function computeDefaultPreviewBaseSize() {
             if (!previewArea || !previewViewport) {
-                return;
+                return null;
             }
 
             const computedStyle = window.getComputedStyle(previewArea);
@@ -2476,35 +2539,253 @@ HOME_HTML = '''
             const availableHeight = Math.max(0, previewArea.clientHeight - paddingTop - paddingBottom);
 
             if (availableWidth <= 0 || availableHeight <= 0) {
-                previewViewport.style.removeProperty('width');
-                previewViewport.style.removeProperty('height');
-                return;
+                return null;
             }
 
             const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
-            let nextWidth = availableWidth;
-            let nextHeight = nextWidth / aspectRatio;
+            let width = availableWidth;
+            let height = width / aspectRatio;
 
-            if (nextHeight > availableHeight) {
-                nextHeight = availableHeight;
-                nextWidth = nextHeight * aspectRatio;
+            if (height > availableHeight) {
+                height = availableHeight;
+                width = height * aspectRatio;
             }
 
-            const scaledWidth = nextWidth * (currentPreviewScale > 0 ? currentPreviewScale : 1);
-            const scaledHeight = nextHeight * (currentPreviewScale > 0 ? currentPreviewScale : 1);
+            const shortEdge = Math.min(width, height);
+            if (shortEdge > 0 && shortEdge < PREVIEW_MIN_SHORT_EDGE) {
+                const scaleFactor = PREVIEW_MIN_SHORT_EDGE / shortEdge;
+                width *= scaleFactor;
+                height *= scaleFactor;
+            }
 
-            previewViewport.style.width = `${scaledWidth}px`;
-            previewViewport.style.height = `${scaledHeight}px`;
+            return { width, height };
         }
 
-        function schedulePreviewViewportSizeUpdate() {
+        function applyPreviewViewportSize() {
+            if (!previewViewport) {
+                return;
+            }
+
+            const normalizedScale = currentPreviewScale > 0 ? currentPreviewScale : 1;
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+
+            if (!Number.isFinite(previewViewportBaseWidth) || previewViewportBaseWidth <= 0
+                || !Number.isFinite(previewViewportBaseHeight) || previewViewportBaseHeight <= 0) {
+                const defaultSize = computeDefaultPreviewBaseSize();
+                if (!defaultSize) {
+                    previewViewport.style.removeProperty('width');
+                    previewViewport.style.removeProperty('height');
+                    return;
+                }
+                previewViewportBaseWidth = defaultSize.width;
+                previewViewportBaseHeight = defaultSize.height;
+            }
+
+            const expectedHeight = previewViewportBaseWidth / aspectRatio;
+            if (!Number.isFinite(previewViewportBaseHeight) || Math.abs(previewViewportBaseHeight - expectedHeight) > 0.5) {
+                previewViewportBaseHeight = expectedHeight;
+            }
+
+            const width = previewViewportBaseWidth * normalizedScale;
+            const height = previewViewportBaseHeight * normalizedScale;
+
+            previewViewport.style.width = `${width}px`;
+            previewViewport.style.height = `${height}px`;
+        }
+
+        function updatePreviewViewportSize(options = {}) {
+            if (!previewViewport) {
+                return;
+            }
+
+            const { forceRecalculateBase = false } = options;
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
+
+            if (forceRecalculateBase) {
+                previewViewportUserResized = false;
+            }
+
+            if (!previewViewportUserResized || forceRecalculateBase) {
+                const defaultSize = computeDefaultPreviewBaseSize();
+                if (defaultSize) {
+                    previewViewportBaseWidth = defaultSize.width;
+                    previewViewportBaseHeight = defaultSize.height;
+                }
+            }
+
+            if (Number.isFinite(previewViewportBaseWidth) && previewViewportBaseWidth > 0) {
+                previewViewportBaseHeight = previewViewportBaseWidth / aspectRatio;
+            } else if (Number.isFinite(previewViewportBaseHeight) && previewViewportBaseHeight > 0) {
+                previewViewportBaseWidth = previewViewportBaseHeight * aspectRatio;
+            }
+
+            applyPreviewViewportSize();
+        }
+
+        function schedulePreviewViewportSizeUpdate(options = {}) {
+            const pending = previewViewportResizeFrameOptions || { forceRecalculateBase: false };
+            if (options.forceRecalculateBase) {
+                pending.forceRecalculateBase = true;
+            }
+            previewViewportResizeFrameOptions = pending;
             if (previewViewportResizeFrame !== null) {
                 return;
             }
             previewViewportResizeFrame = window.requestAnimationFrame(() => {
+                const resolvedOptions = previewViewportResizeFrameOptions || { forceRecalculateBase: false };
                 previewViewportResizeFrame = null;
-                updatePreviewViewportSize();
+                previewViewportResizeFrameOptions = null;
+                updatePreviewViewportSize(resolvedOptions);
             });
+        }
+
+        function getResizeHandleDirections(handleName) {
+            switch (handleName) {
+                case 'nw':
+                    return { x: -1, y: -1 };
+                case 'ne':
+                    return { x: 1, y: -1 };
+                case 'sw':
+                    return { x: -1, y: 1 };
+                case 'se':
+                default:
+                    return { x: 1, y: 1 };
+            }
+        }
+
+        function updatePreviewViewportBaseSizeFromDisplayed(displayWidth, displayHeight) {
+            if (displayWidth <= 0 || displayHeight <= 0) {
+                return;
+            }
+            const normalizedScale = currentPreviewScale > 0 ? currentPreviewScale : 1;
+            const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : displayWidth / displayHeight;
+            const normalizedWidth = displayWidth / normalizedScale;
+            previewViewportBaseWidth = normalizedWidth;
+            previewViewportBaseHeight = normalizedWidth / aspectRatio;
+        }
+
+        function handlePreviewResizeStart(event) {
+            if (!previewViewport || !(event.currentTarget instanceof HTMLElement)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const rect = previewViewport.getBoundingClientRect();
+            const normalizedScale = currentPreviewScale > 0 ? currentPreviewScale : 1;
+            if (!Number.isFinite(previewViewportBaseWidth) || previewViewportBaseWidth <= 0) {
+                previewViewportBaseWidth = rect.width / normalizedScale;
+            }
+            if (!Number.isFinite(previewViewportBaseHeight) || previewViewportBaseHeight <= 0) {
+                previewViewportBaseHeight = rect.height / normalizedScale;
+            }
+
+            previewViewportUserResized = true;
+            previewViewport.classList.add('is-resizing');
+
+            const aspectRatio = currentPreviewAspectRatio > 0
+                ? currentPreviewAspectRatio
+                : rect.width / Math.max(rect.height, 1);
+
+            previewResizeSession = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                startWidth: rect.width,
+                startHeight: rect.height,
+                aspectRatio,
+                handleName: event.currentTarget.dataset.handle || 'se',
+                handleElement: event.currentTarget,
+            };
+
+            try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // Pointer capture may not be supported; ignore.
+            }
+
+            document.addEventListener('pointermove', handlePreviewResizeMove);
+            document.addEventListener('pointerup', handlePreviewResizeEnd);
+            document.addEventListener('pointercancel', handlePreviewResizeEnd);
+        }
+
+        function handlePreviewResizeMove(event) {
+            if (!previewResizeSession || event.pointerId !== previewResizeSession.pointerId || !previewViewport) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const directions = getResizeHandleDirections(previewResizeSession.handleName);
+            const deltaX = (event.clientX - previewResizeSession.startX) * directions.x;
+            const deltaY = (event.clientY - previewResizeSession.startY) * directions.y;
+
+            const widthFromX = previewResizeSession.startWidth + deltaX;
+            const heightFromY = previewResizeSession.startHeight + deltaY;
+
+            const candidateWidths = [];
+            if (directions.x !== 0 && Number.isFinite(widthFromX)) {
+                candidateWidths.push(widthFromX);
+            }
+            if (directions.y !== 0 && Number.isFinite(heightFromY)) {
+                candidateWidths.push(heightFromY * previewResizeSession.aspectRatio);
+            }
+
+            let nextWidth = previewResizeSession.startWidth;
+            let largestDelta = 0;
+            for (const candidate of candidateWidths) {
+                if (!Number.isFinite(candidate)) {
+                    continue;
+                }
+                const delta = Math.abs(candidate - previewResizeSession.startWidth);
+                if (delta >= largestDelta) {
+                    largestDelta = delta;
+                    nextWidth = candidate;
+                }
+            }
+
+            if (!Number.isFinite(nextWidth)) {
+                return;
+            }
+
+            const aspectRatio = previewResizeSession.aspectRatio > 0 ? previewResizeSession.aspectRatio : 16 / 9;
+            const absoluteWidth = Math.abs(nextWidth);
+            let width = Math.max(absoluteWidth, PREVIEW_MIN_SHORT_EDGE);
+            let height = width / aspectRatio;
+            const shortEdge = Math.min(width, height);
+            if (shortEdge > 0 && shortEdge < PREVIEW_MIN_SHORT_EDGE) {
+                const scaleFactor = PREVIEW_MIN_SHORT_EDGE / shortEdge;
+                width *= scaleFactor;
+                height *= scaleFactor;
+            }
+
+            updatePreviewViewportBaseSizeFromDisplayed(width, height);
+            applyPreviewViewportSize();
+        }
+
+        function handlePreviewResizeEnd(event) {
+            if (!previewResizeSession || event.pointerId !== previewResizeSession.pointerId) {
+                return;
+            }
+
+            if (previewResizeSession.handleElement && typeof previewResizeSession.handleElement.releasePointerCapture === 'function') {
+                try {
+                    previewResizeSession.handleElement.releasePointerCapture(event.pointerId);
+                } catch (error) {
+                    // Ignore release errors.
+                }
+            }
+
+            previewResizeSession = null;
+            if (previewViewport) {
+                previewViewport.classList.remove('is-resizing');
+                applyPreviewViewportSize();
+            }
+
+            document.removeEventListener('pointermove', handlePreviewResizeMove);
+            document.removeEventListener('pointerup', handlePreviewResizeEnd);
+            document.removeEventListener('pointercancel', handlePreviewResizeEnd);
+            schedulePreviewViewportSizeUpdate();
         }
 
         if (previewImage) {
@@ -2531,7 +2812,8 @@ HOME_HTML = '''
             if (previewViewport) {
                 previewViewport.style.setProperty('--preview-aspect-ratio', normalized);
             }
-            schedulePreviewViewportSizeUpdate();
+            previewViewportUserResized = false;
+            schedulePreviewViewportSizeUpdate({ forceRecalculateBase: true });
             if (isExportDialogOpen()) {
                 renderExportSummary(getTimelineItems(), null);
             }
@@ -2556,6 +2838,12 @@ HOME_HTML = '''
             setPreviewScale(previewScaleControl.value || PREVIEW_SCALE_DEFAULT);
         } else {
             setPreviewScale(PREVIEW_SCALE_DEFAULT);
+        }
+
+        if (previewResizeHandles.length) {
+            previewResizeHandles.forEach((handle) => {
+                handle.addEventListener('pointerdown', handlePreviewResizeStart);
+            });
         }
 
         if (videoQualitySelect) {
