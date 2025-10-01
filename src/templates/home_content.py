@@ -2864,10 +2864,11 @@ HOME_HTML = '''
             const preferDurationOver = Number.isFinite(options.preferDurationOver)
                 ? options.preferDurationOver
                 : 0;
+            const requireLongerDuration = preferDurationOver > 0;
             const isConnectedTimelineItem = (item) => Boolean(item?.isConnected);
 
             if (isConnectedTimelineItem(lastMainTrackTimelineItem)) {
-                if (preferDurationOver <= 0) {
+                if (!requireLongerDuration) {
                     return lastMainTrackTimelineItem;
                 }
                 const lastDuration = getTimelineItemPlaybackDuration(lastMainTrackTimelineItem);
@@ -2883,7 +2884,7 @@ HOME_HTML = '''
                 return null;
             }
 
-            if (preferDurationOver > 0) {
+            if (requireLongerDuration) {
                 const longerCandidates = mainTrackItems
                     .map((item) => ({ item, duration: getTimelineItemPlaybackDuration(item) }))
                     .filter((entry) => entry.duration > preferDurationOver)
@@ -2891,6 +2892,7 @@ HOME_HTML = '''
                 if (longerCandidates.length) {
                     return longerCandidates[0].item;
                 }
+                return null;
             }
 
             return mainTrackItems[0];
@@ -4864,7 +4866,9 @@ HOME_HTML = '''
                 const baseTimelineItem = resolveMainTrackPreviewItem({
                     preferDurationOver: overlayDuration,
                 });
-                const baseType = ensureMainTrackMediaLoaded(baseTimelineItem);
+                const baseType = baseTimelineItem
+                    ? ensureMainTrackMediaLoaded(baseTimelineItem)
+                    : null;
                 if (baseTimelineItem) {
                     lastMainTrackTimelineItem = baseTimelineItem;
                 }
