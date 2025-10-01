@@ -1204,24 +1204,26 @@ HOME_HTML = '''
             overflow: hidden;
         }
 
+        .timeline-track-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
         .timeline-track {
             position: relative;
-            display: flex;
-            flex-wrap: nowrap;
-            align-items: stretch;
-            gap: 10px;
+            display: block;
             padding: 16px;
             border-radius: 14px;
             background: rgba(8, 12, 24, 0.75);
             border: 1px dashed rgba(148, 163, 184, 0.24);
             color: var(--text-secondary);
-            text-align: center;
             font-size: 0.95rem;
-            min-height: 140px;
+            min-height: 160px;
             overflow-x: auto;
             overflow-y: hidden;
             scrollbar-width: thin;
-            scroll-snap-type: x proximity;
         }
 
         .timeline-track::-webkit-scrollbar {
@@ -1235,6 +1237,77 @@ HOME_HTML = '''
 
         .timeline-track::-webkit-scrollbar-track {
             background: rgba(15, 23, 42, 0.6);
+        }
+
+        .timeline-lanes {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-height: 120px;
+            width: max-content;
+            min-width: 100%;
+            padding-right: 16px;
+        }
+
+        .timeline-lane {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 14px;
+            align-items: stretch;
+            min-height: 120px;
+        }
+
+        .timeline-lane__label {
+            position: sticky;
+            left: 0;
+            align-self: flex-start;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            font-size: 0.75rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            min-width: 108px;
+            box-shadow: var(--shadow-inner);
+        }
+
+        .timeline-lane__items {
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            min-height: 120px;
+            padding-bottom: 10px;
+            width: max-content;
+            min-width: 100%;
+        }
+
+        .timeline-lane.is-drop-target .timeline-lane__items {
+            outline: 2px dashed rgba(124, 58, 237, 0.55);
+            outline-offset: 6px;
+        }
+
+        .timeline-add-track {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            background: rgba(15, 23, 42, 0.55);
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: border 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .timeline-add-track:hover {
+            background: rgba(30, 41, 59, 0.8);
+            border-color: rgba(124, 58, 237, 0.6);
+            transform: translateY(-1px);
         }
 
         .timeline-item {
@@ -1358,7 +1431,14 @@ HOME_HTML = '''
         }
 
         #timeline-empty-state {
-            margin: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 120px;
+            padding: 12px 0;
+            color: var(--text-secondary);
+            opacity: 0.75;
+            font-size: 0.95rem;
             pointer-events: none;
         }
 
@@ -1410,7 +1490,7 @@ HOME_HTML = '''
 
         .timeline-progress-line {
             position: absolute;
-            top: 6px;
+            top: 12px;
             left: var(--timeline-progress-offset, 16px);
             height: 3px;
             width: var(--timeline-progress-span, calc(100% - 32px));
@@ -1755,9 +1835,13 @@ HOME_HTML = '''
 
         <section class="panel timeline-card timeline-footer">
             <h2>Timeline overview</h2>
-            <div class="timeline-track" id="timeline-track">
-                <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
-                <span id="timeline-empty-state">Upload media to build your timeline</span>
+            <div class="timeline-track-wrapper">
+                <div class="timeline-track" id="timeline-track">
+                    <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
+                    <div class="timeline-lanes" id="timeline-lanes" data-role="timeline-lanes"></div>
+                    <span id="timeline-empty-state">Upload media to build your timeline</span>
+                </div>
+                <button type="button" class="timeline-add-track" id="add-timeline-lane">+ Add track</button>
             </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
@@ -1858,6 +1942,8 @@ HOME_HTML = '''
             : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
+        const timelineLanesContainer = document.getElementById('timeline-lanes');
+        const addTimelineLaneButton = document.getElementById('add-timeline-lane');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
         const timelineProgressLine = document.getElementById('timeline-progress-line');
@@ -1894,6 +1980,7 @@ HOME_HTML = '''
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
+        let timelineLaneCount = 0;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -2601,6 +2688,161 @@ HOME_HTML = '''
             return applied;
         }
 
+        function getTimelineLanes() {
+            if (!timelineLanesContainer) {
+                return [];
+            }
+            return Array.from(timelineLanesContainer.querySelectorAll('.timeline-lane'));
+        }
+
+        function updateTimelineItemLaneMetadata(timelineItem) {
+            if (!timelineItem) {
+                return;
+            }
+            const lane = timelineItem.closest('.timeline-lane');
+            if (!lane) {
+                delete timelineItem.dataset.laneIndex;
+                return;
+            }
+            const lanes = getTimelineLanes();
+            const laneIndex = lanes.indexOf(lane);
+            if (laneIndex >= 0) {
+                timelineItem.dataset.laneIndex = String(laneIndex);
+            } else {
+                delete timelineItem.dataset.laneIndex;
+            }
+        }
+
+        function refreshLaneMetadata() {
+            const lanes = getTimelineLanes();
+            lanes.forEach((lane, index) => {
+                lane.dataset.laneIndex = String(index);
+                const label = lane.querySelector('.timeline-lane__label');
+                if (label && !label.dataset.customLabel) {
+                    label.textContent = index === 0 ? 'Main track' : `Overlay ${index}`;
+                }
+                Array.from(lane.querySelectorAll('.timeline-item')).forEach((item) => {
+                    updateTimelineItemLaneMetadata(item);
+                });
+            });
+        }
+
+        function getDraggingTimelineItem() {
+            if (!timelineTrack) {
+                return null;
+            }
+            return timelineTrack.querySelector('.timeline-item.dragging');
+        }
+
+        function clearLaneDropStates() {
+            getTimelineLanes().forEach((lane) => lane.classList.remove('is-drop-target'));
+        }
+
+        function attachLaneDragHandlers(laneRoot) {
+            if (!laneRoot || laneRoot.dataset.dragHandlersAttached === '1') {
+                return;
+            }
+            laneRoot.dataset.dragHandlersAttached = '1';
+            const itemsContainer = laneRoot.querySelector('[data-role="timeline-lane-items"]');
+
+            laneRoot.addEventListener('dragenter', (event) => {
+                const draggingItem = getDraggingTimelineItem();
+                if (!draggingItem) {
+                    return;
+                }
+                event.preventDefault();
+                laneRoot.classList.add('is-drop-target');
+            });
+
+            laneRoot.addEventListener('dragover', (event) => {
+                const draggingItem = getDraggingTimelineItem();
+                if (!draggingItem || !itemsContainer) {
+                    return;
+                }
+                event.preventDefault();
+                laneRoot.classList.add('is-drop-target');
+                const afterElement = getDragAfterElement(itemsContainer, event.clientX);
+                if (!afterElement) {
+                    itemsContainer.appendChild(draggingItem);
+                } else if (afterElement !== draggingItem) {
+                    itemsContainer.insertBefore(draggingItem, afterElement);
+                }
+            });
+
+            laneRoot.addEventListener('dragleave', (event) => {
+                if (laneRoot.contains(event.relatedTarget)) {
+                    return;
+                }
+                laneRoot.classList.remove('is-drop-target');
+            });
+
+            laneRoot.addEventListener('drop', (event) => {
+                const draggingItem = getDraggingTimelineItem();
+                if (!draggingItem || !itemsContainer) {
+                    laneRoot.classList.remove('is-drop-target');
+                    clearLaneDropStates();
+                    return;
+                }
+                event.preventDefault();
+                if (draggingItem.parentElement !== itemsContainer) {
+                    itemsContainer.appendChild(draggingItem);
+                }
+                laneRoot.classList.remove('is-drop-target');
+                clearLaneDropStates();
+                updateTimelineItemLaneMetadata(draggingItem);
+                updateTimelineEmptyStateVisibility();
+                updateActiveTimelineIndicators();
+                scheduleTimelineIndicatorUpdate();
+            });
+        }
+
+        function createTimelineLane(label) {
+            const laneIndex = timelineLaneCount;
+            timelineLaneCount += 1;
+
+            const lane = document.createElement('div');
+            lane.className = 'timeline-lane';
+            lane.dataset.laneIndex = String(laneIndex);
+
+            const laneLabel = document.createElement('div');
+            laneLabel.className = 'timeline-lane__label';
+            if (label) {
+                laneLabel.dataset.customLabel = '1';
+            }
+            const defaultLabel = label || (laneIndex === 0 ? 'Main track' : `Overlay ${laneIndex}`);
+            laneLabel.textContent = defaultLabel;
+
+            const laneItems = document.createElement('div');
+            laneItems.className = 'timeline-lane__items';
+            laneItems.dataset.role = 'timeline-lane-items';
+
+            lane.appendChild(laneLabel);
+            lane.appendChild(laneItems);
+            attachLaneDragHandlers(lane);
+            return lane;
+        }
+
+        function ensureTimelineLane(index = 0) {
+            if (!timelineLanesContainer) {
+                return null;
+            }
+            while (getTimelineLanes().length <= index) {
+                const lane = createTimelineLane();
+                timelineLanesContainer.appendChild(lane);
+            }
+            refreshLaneMetadata();
+            const lanes = getTimelineLanes();
+            return lanes[index]?.querySelector('[data-role="timeline-lane-items"]') || null;
+        }
+
+        function updateTimelineEmptyStateVisibility() {
+            if (!timelineEmptyState) {
+                return;
+            }
+            const hasItems = getTimelineItems().length > 0;
+            timelineEmptyState.hidden = hasItems;
+        }
+
         function getTimelineItems() {
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
@@ -2879,6 +3121,7 @@ HOME_HTML = '''
 
             timelineItem.addEventListener('dragstart', (event) => {
                 stopTimelinePlayback();
+                clearLaneDropStates();
                 timelineItem.classList.add('dragging');
                 const transfer = event.dataTransfer;
                 if (transfer) {
@@ -2890,7 +3133,11 @@ HOME_HTML = '''
             timelineItem.addEventListener('dragend', () => {
                 timelineItem.classList.remove('dragging');
                 timelineItem.draggable = true;
+                updateTimelineItemLaneMetadata(timelineItem);
+                updateTimelineEmptyStateVisibility();
+                clearLaneDropStates();
                 updateActiveTimelineIndicators();
+                scheduleTimelineIndicatorUpdate();
             });
         }
 
@@ -2911,38 +3158,6 @@ HOME_HTML = '''
             }
         }
 
-        if (timelineTrack) {
-            timelineTrack.addEventListener('dragenter', (event) => {
-                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-                if (draggingItem) {
-                    event.preventDefault();
-                }
-            });
-
-            timelineTrack.addEventListener('dragover', (event) => {
-                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-                if (!draggingItem) {
-                    return;
-                }
-                event.preventDefault();
-                const afterElement = getDragAfterElement(timelineTrack, event.clientX);
-                if (!afterElement) {
-                    timelineTrack.appendChild(draggingItem);
-                } else if (afterElement !== draggingItem) {
-                    timelineTrack.insertBefore(draggingItem, afterElement);
-                }
-            });
-
-            timelineTrack.addEventListener('drop', (event) => {
-                event.preventDefault();
-                const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-                if (draggingItem) {
-                    draggingItem.classList.remove('dragging');
-                }
-                updateActiveTimelineIndicators();
-            });
-        }
-
         if (window.ResizeObserver) {
             if (previewArea && !previewAreaResizeObserver) {
                 previewAreaResizeObserver = new ResizeObserver(() => {
@@ -2957,6 +3172,33 @@ HOME_HTML = '''
                 timelineTrackResizeObserver.observe(timelineTrack);
             }
         }
+
+        if (timelineLanesContainer) {
+            const existingLanes = getTimelineLanes();
+            if (existingLanes.length) {
+                timelineLaneCount = existingLanes.length;
+                existingLanes.forEach((lane) => attachLaneDragHandlers(lane));
+                refreshLaneMetadata();
+            } else {
+                ensureTimelineLane(0);
+            }
+        }
+
+        if (addTimelineLaneButton) {
+            addTimelineLaneButton.addEventListener('click', () => {
+                if (!timelineLanesContainer) {
+                    return;
+                }
+                const newLane = createTimelineLane();
+                timelineLanesContainer.appendChild(newLane);
+                refreshLaneMetadata();
+                updateTimelineEmptyStateVisibility();
+                scheduleTimelineIndicatorUpdate();
+                newLane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+        }
+
+        updateTimelineEmptyStateVisibility();
 
         window.addEventListener('resize', () => {
             schedulePreviewViewportSizeUpdate();
@@ -4578,10 +4820,6 @@ HOME_HTML = '''
         }
 
         async function addToTimeline(file, objectURL) {
-            if (timelineEmptyState) {
-                timelineEmptyState.remove();
-            }
-
             const timelineItem = document.createElement('div');
             timelineItem.className = 'timeline-item';
             timelineItem.dataset.fileType = file.type;
@@ -4642,8 +4880,16 @@ HOME_HTML = '''
             }
 
             timelineItem.appendChild(label);
-            timelineTrack.appendChild(timelineItem);
+            const defaultLane = ensureTimelineLane(0);
+            if (defaultLane) {
+                defaultLane.appendChild(timelineItem);
+            } else if (timelineTrack) {
+                timelineTrack.appendChild(timelineItem);
+            }
             initializeTimelineItem(timelineItem);
+            updateTimelineItemLaneMetadata(timelineItem);
+            updateTimelineEmptyStateVisibility();
+            scheduleTimelineIndicatorUpdate();
 
             timelineItem.addEventListener('click', () => {
                 stopTimelinePlayback();
