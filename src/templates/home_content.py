@@ -2860,11 +2860,40 @@ HOME_HTML = '''
             return Number.isFinite(value) ? value : 0;
         }
 
-        function resolveMainTrackPreviewItem() {
-            if (lastMainTrackTimelineItem?.isConnected) {
-                return lastMainTrackTimelineItem;
+        function resolveMainTrackPreviewItem(options = {}) {
+            const preferDurationOver = Number.isFinite(options.preferDurationOver)
+                ? options.preferDurationOver
+                : 0;
+            const isConnectedTimelineItem = (item) => Boolean(item?.isConnected);
+
+            if (isConnectedTimelineItem(lastMainTrackTimelineItem)) {
+                if (preferDurationOver <= 0) {
+                    return lastMainTrackTimelineItem;
+                }
+                const lastDuration = getTimelineItemPlaybackDuration(lastMainTrackTimelineItem);
+                if (lastDuration > preferDurationOver) {
+                    return lastMainTrackTimelineItem;
+                }
             }
-            return getTimelineItems().find((item) => parseLaneIndexFromTimelineItem(item) === 0) || null;
+
+            const mainTrackItems = getTimelineItems().filter(
+                (item) => parseLaneIndexFromTimelineItem(item) === 0,
+            );
+            if (!mainTrackItems.length) {
+                return null;
+            }
+
+            if (preferDurationOver > 0) {
+                const longerCandidates = mainTrackItems
+                    .map((item) => ({ item, duration: getTimelineItemPlaybackDuration(item) }))
+                    .filter((entry) => entry.duration > preferDurationOver)
+                    .sort((a, b) => b.duration - a.duration);
+                if (longerCandidates.length) {
+                    return longerCandidates[0].item;
+                }
+            }
+
+            return mainTrackItems[0];
         }
 
         function ensureMainTrackMediaLoaded(timelineItem) {
@@ -4831,7 +4860,10 @@ HOME_HTML = '''
             const isOverlayTrack = laneIndex > 0;
 
             if (isOverlayTrack && fileType.startsWith('image/')) {
-                const baseTimelineItem = resolveMainTrackPreviewItem();
+                const overlayDuration = getTimelineItemPlaybackDuration(timelineItem);
+                const baseTimelineItem = resolveMainTrackPreviewItem({
+                    preferDurationOver: overlayDuration,
+                });
                 const baseType = ensureMainTrackMediaLoaded(baseTimelineItem);
                 if (baseTimelineItem) {
                     lastMainTrackTimelineItem = baseTimelineItem;
