@@ -1642,7 +1642,7 @@ HOME_HTML = '''
                 <div class="preview-area">
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                        <video id="preview-video" controls hidden></video>
+                        <video id="preview-video" controls hidden preload="auto" playsinline></video>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
                                 <img id="preview-image" alt="Preview" hidden>
@@ -1983,6 +1983,74 @@ HOME_HTML = '''
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
+
+        const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
+            && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
+                ? HTMLMediaElement.HAVE_ENOUGH_DATA
+                : 4;
+        const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
+
+        function waitForMediaReady(mediaElement, options = {}) {
+            const { signal } = options;
+
+            return new Promise((resolve, reject) => {
+                if (!mediaElement) {
+                    resolve();
+                    return;
+                }
+
+                if (mediaElement.readyState >= MEDIA_READY_STATE_ENOUGH) {
+                    resolve();
+                    return;
+                }
+
+                let settled = false;
+
+                const finish = (callback) => (value) => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    cleanup();
+                    callback(value);
+                };
+
+                const handleReady = finish(() => resolve());
+                const handleError = finish((event) => {
+                    const error = event?.error || new Error('Unable to buffer media for preview.');
+                    reject(error);
+                });
+                const handleAbort = finish(() => {
+                    const abortError = typeof DOMException === 'function'
+                        ? new DOMException('Playback aborted', 'AbortError')
+                        : new Error('Playback aborted');
+                    reject(abortError);
+                });
+
+                function cleanup() {
+                    MEDIA_READY_EVENTS.forEach((eventName) => {
+                        mediaElement.removeEventListener(eventName, handleReady);
+                    });
+                    mediaElement.removeEventListener('error', handleError);
+                    if (signal) {
+                        signal.removeEventListener('abort', handleAbort);
+                    }
+                }
+
+                MEDIA_READY_EVENTS.forEach((eventName) => {
+                    mediaElement.addEventListener(eventName, handleReady);
+                });
+                mediaElement.addEventListener('error', handleError);
+
+                if (signal) {
+                    if (signal.aborted) {
+                        handleAbort();
+                        return;
+                    }
+                    signal.addEventListener('abort', handleAbort);
+                }
+            });
+        }
 
         const previewImagePointerState = {
             pointerId: null,
@@ -5059,17 +5127,18 @@ HOME_HTML = '''
                     let timeoutId = 0;
                     let onEnded = null;
                     let onError = null;
-                    let onLoaded = null;
+                    const abortController = new AbortController();
+                    let playbackStarted = false;
 
                     const cleanup = () => {
                         if (onEnded) {
                             previewVideo.removeEventListener('ended', onEnded);
                         }
-                        if (onLoaded) {
-                            previewVideo.removeEventListener('loadeddata', onLoaded);
-                        }
                         if (onError) {
                             previewVideo.removeEventListener('error', onError);
+                        }
+                        if (!abortController.signal.aborted) {
+                            abortController.abort();
                         }
                     };
 
@@ -5114,11 +5183,17 @@ HOME_HTML = '''
                         };
                     };
 
-                    const beginPlayback = () => {
+                    const beginPlayback = async () => {
+                        if (playbackStarted) {
+                            return;
+                        }
+                        playbackStarted = true;
+
                         if (!isTimelinePlaying) {
                             finalize();
                             return;
                         }
+
                         const { intrinsicDuration, targetDuration } = ensureVideoDuration();
                         const shouldLoop = intrinsicDuration > 0 && targetDuration > intrinsicDuration + 50;
                         previewVideo.loop = shouldLoop;
@@ -5128,27 +5203,32 @@ HOME_HTML = '''
                                 finalize();
                             }, targetDuration);
                         }
-                        previewVideo.currentTime = 0;
-                        const playPromise = previewVideo.play();
-                        if (playPromise && typeof playPromise.then === 'function') {
-                            playPromise.catch(() => finalize());
-                        }
-                    };
 
-                    onEnded = () => {
-                        if (!previewVideo.loop) {
+                        previewVideo.currentTime = 0;
+
+                        try {
+                            await waitForMediaReady(previewVideo, { signal: abortController.signal });
+                        } catch (error) {
+                            if (abortController.signal.aborted) {
+                                return;
+                            }
+                            console.warn('Preview video was unable to buffer before playback.', error);
+                            finalize();
+                            return;
+                        }
+
+                        try {
+                            const playPromise = previewVideo.play();
+                            if (playPromise && typeof playPromise.then === 'function') {
+                                await playPromise;
+                            }
+                        } catch (error) {
+                            if (abortController.signal.aborted) {
+                                return;
+                            }
+                            console.warn('Preview video failed to start playback.', error);
                             finalize();
                         }
-                    };
-
-                    onLoaded = () => {
-                        previewVideo.removeEventListener('loadeddata', onLoaded);
-                        onLoaded = null;
-                        beginPlayback();
-                    };
-
-                    onError = () => {
-                        finalize();
                     };
 
                     const abortPlayback = () => {
@@ -5157,18 +5237,36 @@ HOME_HTML = '''
 
                     timelinePlaybackAbort = abortPlayback;
 
+                    onEnded = () => {
+                        if (!previewVideo.loop) {
+                            finalize();
+                        }
+                    };
+
+                    onError = () => {
+                        finalize();
+                    };
+
                     previewVideo.addEventListener('ended', onEnded);
-                    previewVideo.addEventListener('error', onError, { once: true });
-                    previewVideo.addEventListener('loadeddata', onLoaded, { once: true });
+                    previewVideo.addEventListener('error', onError);
+
+                    const startPlayback = () => {
+                        if (resolved) {
+                            return;
+                        }
+                        void beginPlayback();
+                    };
 
                     if (previewVideo.src !== objectURL) {
                         previewVideo.pause();
                         previewVideo.src = objectURL;
                         previewVideo.load();
+                        startPlayback();
                     } else if (previewVideo.readyState >= 2) {
-                        beginPlayback();
+                        startPlayback();
                     } else {
                         previewVideo.load();
+                        startPlayback();
                     }
                 });
             } else if (fileType.startsWith('image/')) {
