@@ -1220,6 +1220,31 @@ HOME_HTML = '''
             scrollbar-width: thin;
         }
 
+        .timeline-empty-state-button {
+            align-self: center;
+            padding: 12px 20px;
+            border-radius: 999px;
+            border: 1px dashed rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.55);
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+        }
+
+        .timeline-empty-state-button:hover,
+        .timeline-empty-state-button:focus-visible {
+            border-color: rgba(124, 58, 237, 0.55);
+            background: rgba(30, 41, 59, 0.65);
+            transform: translateY(-1px);
+            outline: none;
+        }
+
+        .timeline-empty-state-button:focus-visible {
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.3);
+        }
+
         .timeline-lane-list {
             position: relative;
             display: inline-flex;
@@ -1836,7 +1861,9 @@ HOME_HTML = '''
                 <div class="timeline-lane-list" id="timeline-lane-list" role="list">
                     <div class="timeline-lane" data-lane-index="0"></div>
                 </div>
-                <span id="timeline-empty-state">Upload media to build your timeline</span>
+                <button type="button" id="timeline-empty-state" class="timeline-empty-state-button">
+                    Upload media to build your timeline
+                </button>
             </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>
@@ -3046,6 +3073,28 @@ HOME_HTML = '''
                 timelineAutoExtendFrame = null;
                 applyTimelineAutoExtend(pointerClientX);
             });
+        }
+
+        function extendTimelineTrack(step = TIMELINE_AUTO_EXTEND_STEP) {
+            if (!timelineTrack || !timelineLaneList) {
+                return;
+            }
+
+            const safeStep = Number.isFinite(step) && step > 0 ? step : TIMELINE_AUTO_EXTEND_STEP;
+            const laneRect = timelineLaneList.getBoundingClientRect();
+            const currentWidth = laneRect?.width ? laneRect.width : timelineLaneList.scrollWidth;
+            const storedWidth = Number.parseFloat(timelineLaneList.dataset.extendedWidth || '0') || 0;
+            const baseline = Math.max(currentWidth, storedWidth, timelineTrack.clientWidth);
+            const desiredWidth = Math.ceil(baseline + safeStep);
+
+            if (desiredWidth <= storedWidth) {
+                return;
+            }
+
+            timelineLaneList.style.minWidth = `${desiredWidth}px`;
+            timelineLaneList.dataset.extendedWidth = String(desiredWidth);
+            timelineTrack.scrollLeft = Math.max(0, timelineTrack.scrollWidth - timelineTrack.clientWidth);
+            scheduleTimelineIndicatorUpdate();
         }
 
         function updateActiveTimelineIndicators() {
@@ -5191,6 +5240,15 @@ HOME_HTML = '''
         });
 
         uploadButton.addEventListener('click', () => uploadInput.click());
+
+        if (timelineEmptyState) {
+            timelineEmptyState.addEventListener('click', () => {
+                extendTimelineTrack();
+                if (uploadInput) {
+                    uploadInput.click();
+                }
+            });
+        }
 
         async function playTimelineItem(timelineItem) {
             const fileType = timelineItem.dataset.fileType || '';
