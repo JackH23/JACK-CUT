@@ -2085,6 +2085,7 @@ HOME_HTML = '''
         const MIN_IMAGE_FRAME_SIZE = 96;
         const TIMELINE_AUTO_EXTEND_THRESHOLD = 96;
         const TIMELINE_AUTO_EXTEND_STEP = 240;
+        const MAX_TIMELINE_LANES = 4;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2859,15 +2860,18 @@ HOME_HTML = '''
                 return null;
             }
 
+            const clampedIndex = Math.max(0, Math.min(index, MAX_TIMELINE_LANES - 1));
+
             let lanes = getTimelineLanes();
-            while (lanes.length <= index) {
+            while (lanes.length <= clampedIndex && lanes.length < MAX_TIMELINE_LANES) {
                 const lane = document.createElement('div');
                 lane.className = 'timeline-lane';
                 timelineLaneList.appendChild(lane);
                 lanes = getTimelineLanes();
             }
             refreshTimelineLaneIndices();
-            return getTimelineLanes()[index] || null;
+            lanes = getTimelineLanes();
+            return lanes[clampedIndex] || lanes[lanes.length - 1] || null;
         }
 
         function cleanupEmptyTimelineLanes() {
@@ -2949,7 +2953,10 @@ HOME_HTML = '''
             if (lastLane) {
                 const rect = lastLane.getBoundingClientRect();
                 if (rect && pointerY > rect.bottom + 32) {
-                    return ensureTimelineLane(lanes.length);
+                    if (lanes.length < MAX_TIMELINE_LANES) {
+                        return ensureTimelineLane(lanes.length);
+                    }
+                    return lastLane;
                 }
             }
 
