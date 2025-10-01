@@ -1999,6 +1999,7 @@ HOME_HTML = '''
         const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
         const PREVIEW_GUIDE_NEAR_THRESHOLD = Math.max(PREVIEW_IMAGE_SNAP_THRESHOLD, 14);
         const PREVIEW_SMART_GUIDE_TOLERANCE = 6;
+        const OVERLAY_DURATION_ALIGNMENT_TOLERANCE = 0.25;
         const PREVIEW_ALIGNMENT_CLASSES = {
             left: 'is-aligned-left',
             right: 'is-aligned-right',
@@ -2018,6 +2019,20 @@ HOME_HTML = '''
                 window.clearTimeout(overlayPreviewTimeoutId);
                 overlayPreviewTimeoutId = null;
             }
+        }
+
+        function isDurationEffectivelyShorter(duration, comparison) {
+            if (!Number.isFinite(duration) || !Number.isFinite(comparison)) {
+                return false;
+            }
+            return comparison - duration > OVERLAY_DURATION_ALIGNMENT_TOLERANCE;
+        }
+
+        function isDurationEffectivelyLonger(duration, comparison) {
+            if (!Number.isFinite(duration) || !Number.isFinite(comparison)) {
+                return false;
+            }
+            return duration - comparison > OVERLAY_DURATION_ALIGNMENT_TOLERANCE;
         }
 
         const IMAGE_FRAME_DURATION = 1000;
@@ -2978,7 +2993,7 @@ HOME_HTML = '''
             const overlayIsShorterThanBase = safeOverlayDuration > 0
                 && Number.isFinite(baseDuration)
                 && baseDuration > 0
-                && safeOverlayDuration < baseDuration;
+                && isDurationEffectivelyShorter(safeOverlayDuration, baseDuration);
             let longestOtherOverlayDuration = 0;
             let hasComparableOverlays = false;
             if (overlayTimelineItem) {
@@ -2996,10 +3011,12 @@ HOME_HTML = '''
                 }
             }
             const overlayExtendsBeyondBase = safeOverlayDuration > 0
-                && (!Number.isFinite(baseDuration) || baseDuration === 0 || safeOverlayDuration > baseDuration);
+                && (!Number.isFinite(baseDuration)
+                    || baseDuration <= OVERLAY_DURATION_ALIGNMENT_TOLERANCE
+                    || isDurationEffectivelyLonger(safeOverlayDuration, baseDuration));
             const overlayExtendsBeyondOtherOverlay = hasComparableOverlays
                 && safeOverlayDuration > 0
-                && safeOverlayDuration > longestOtherOverlayDuration;
+                && isDurationEffectivelyLonger(safeOverlayDuration, longestOtherOverlayDuration);
             const shouldExtendBeyondPlayback = overlayExtendsBeyondBase
                 || overlayExtendsBeyondOtherOverlay;
             return {
@@ -3033,7 +3050,13 @@ HOME_HTML = '''
                 if (!context.shouldExtendBeyondPlayback || context.overlayDuration <= 0) {
                     return;
                 }
-                if (context.overlayDuration > longestDuration) {
+                if (
+                    context.overlayDuration > 0
+                    && (
+                        longestDuration <= 0
+                        || isDurationEffectivelyLonger(context.overlayDuration, longestDuration)
+                    )
+                ) {
                     longestDuration = context.overlayDuration;
                 }
                 const laneIndex = parseLaneIndexFromTimelineItem(item);
@@ -3042,7 +3065,10 @@ HOME_HTML = '''
                     || laneIndex > highestLaneIndex
                     || (
                         laneIndex === highestLaneIndex
-                        && context.overlayDuration > selectedDuration
+                        && (
+                            selectedDuration <= 0
+                            || isDurationEffectivelyLonger(context.overlayDuration, selectedDuration)
+                        )
                     )
                 ) {
                     overlayItem = item;
