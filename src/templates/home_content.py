@@ -2852,6 +2852,15 @@ HOME_HTML = '''
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
 
+        function getTimelineItemsForPlayback() {
+            const items = getTimelineItems();
+            if (!items.length) {
+                return [];
+            }
+            const mainTrackItems = items.filter((item) => parseLaneIndexFromTimelineItem(item) === 0);
+            return mainTrackItems.length ? mainTrackItems : items;
+        }
+
         function parseLaneIndexFromTimelineItem(timelineItem) {
             if (!timelineItem) {
                 return 0;
@@ -2944,14 +2953,14 @@ HOME_HTML = '''
         }
 
         function getTotalTimelineDuration() {
-            return getTimelineItems().reduce(
+            return getTimelineItemsForPlayback().reduce(
                 (total, item) => total + getTimelineItemPlaybackDuration(item),
                 0,
             );
         }
 
         function getTimelineItemStartTime(timelineItem) {
-            const items = getTimelineItems();
+            const items = getTimelineItemsForPlayback();
             let elapsed = 0;
             for (const item of items) {
                 if (item === timelineItem) {
@@ -4689,7 +4698,7 @@ HOME_HTML = '''
                 return { offset: 0, width: 0 };
             }
 
-            const items = getTimelineItems();
+            const items = getTimelineItemsForPlayback();
             if (!items.length) {
                 const computedStyle = window.getComputedStyle(timelineTrack);
                 const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
@@ -4698,11 +4707,25 @@ HOME_HTML = '''
                 return { offset: paddingLeft, width };
             }
 
-            const firstItem = items[0];
-            const lastItem = items[items.length - 1];
-            const offset = firstItem.offsetLeft;
-            const width = (lastItem.offsetLeft + lastItem.offsetWidth) - offset;
-            return { offset, width: Math.max(0, width) };
+            let minOffset = Number.POSITIVE_INFINITY;
+            let maxExtent = 0;
+            items.forEach((item) => {
+                const itemOffset = item.offsetLeft;
+                const itemExtent = itemOffset + item.offsetWidth;
+                if (itemOffset < minOffset) {
+                    minOffset = itemOffset;
+                }
+                if (itemExtent > maxExtent) {
+                    maxExtent = itemExtent;
+                }
+            });
+
+            if (!Number.isFinite(minOffset)) {
+                minOffset = 0;
+            }
+
+            const width = Math.max(0, maxExtent - minOffset);
+            return { offset: minOffset, width };
         }
 
         function applyTimelineProgressGeometry() {
@@ -5373,7 +5396,7 @@ HOME_HTML = '''
         }
 
         async function playTimelineSequence(startIndex = 0) {
-            const timelineItems = getTimelineItems();
+            const timelineItems = getTimelineItemsForPlayback();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return false;
@@ -5717,7 +5740,7 @@ HOME_HTML = '''
                 return;
             }
 
-            const timelineItems = getTimelineItems();
+            const timelineItems = getTimelineItemsForPlayback();
             if (!timelineItems.length) {
                 alert('Upload an image or video to build your timeline.');
                 return;
