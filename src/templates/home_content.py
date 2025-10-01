@@ -1986,6 +1986,7 @@ HOME_HTML = '''
         let previewGuidesHideTimeout = null;
         let timelineLaneCount = 0;
         let lastMainTrackTimelineItem = null;
+        let overlayPreviewTimeoutId = null;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -2011,6 +2012,13 @@ HOME_HTML = '''
             top: false,
             bottom: false,
         };
+
+        function clearOverlayPreviewTimeout() {
+            if (overlayPreviewTimeoutId !== null) {
+                window.clearTimeout(overlayPreviewTimeoutId);
+                overlayPreviewTimeoutId = null;
+            }
+        }
 
         const IMAGE_FRAME_DURATION = 1000;
         const DEFAULT_VIDEO_DURATION = 3000;
@@ -4817,6 +4825,8 @@ HOME_HTML = '''
                 abort();
             }
 
+            clearOverlayPreviewTimeout();
+
             const wasPlaying = isTimelinePlaying;
             isTimelinePlaying = false;
 
@@ -4853,6 +4863,7 @@ HOME_HTML = '''
             resetPreviewScroll();
             setActiveTimelineItem(null);
             lastMainTrackTimelineItem = null;
+            clearOverlayPreviewTimeout();
         }
 
         function setActiveTimelineItem(item) {
@@ -4884,6 +4895,7 @@ HOME_HTML = '''
             }
 
             previewPlaceholder.hidden = true;
+            clearOverlayPreviewTimeout();
 
             if (isTimelinePlaying) {
                 stopTimelinePlayback();
@@ -4934,6 +4946,35 @@ HOME_HTML = '''
                     setPreviewImageVisibility(true);
                     if (previewImage && previewImage.src !== objectURL) {
                         previewImage.src = objectURL;
+                    }
+                    const baseDuration = baseTimelineItem
+                        ? getTimelineItemPlaybackDuration(baseTimelineItem)
+                        : 0;
+                    const overlayExtendsBeyondBase = Number.isFinite(baseDuration)
+                        && baseDuration > 0
+                        && overlayDuration > 0
+                        && baseDuration > overlayDuration;
+                    if (overlayExtendsBeyondBase) {
+                        const overlayObjectUrl = objectURL;
+                        overlayPreviewTimeoutId = window.setTimeout(() => {
+                            overlayPreviewTimeoutId = null;
+                            const overlayStillActive = previewImage
+                                && previewImage.src === overlayObjectUrl;
+                            if (!overlayStillActive) {
+                                return;
+                            }
+                            previewImage.removeAttribute('src');
+                            setPreviewImageVisibility(false);
+                            if (baseTimelineItem?.isConnected) {
+                                ensureMainTrackMediaLoaded(baseTimelineItem);
+                                setPreviewMode(isBaseVideo ? 'has-video' : 'has-image');
+                            } else if (!overlayHandledByBase) {
+                                setPreviewMode(null);
+                                if (previewPlaceholder) {
+                                    previewPlaceholder.hidden = false;
+                                }
+                            }
+                        }, overlayDuration);
                     }
                 } else if (!overlayHandledByBase && previewImage && previewImage.src === objectURL) {
                     previewImage.removeAttribute('src');
