@@ -2882,6 +2882,7 @@ HOME_HTML = '''
                 ? options.preferDurationOver
                 : 0;
             const requireLongerDuration = preferDurationOver > 0;
+            const allowShorterMatch = Boolean(options.allowShorterMatch);
             const isConnectedTimelineItem = (item) => Boolean(item?.isConnected);
 
             if (isConnectedTimelineItem(lastMainTrackTimelineItem)) {
@@ -2902,17 +2903,50 @@ HOME_HTML = '''
             }
 
             if (requireLongerDuration) {
-                const longerCandidates = mainTrackItems
+                const durationEntries = mainTrackItems
                     .map((item) => ({ item, duration: getTimelineItemPlaybackDuration(item) }))
+                    .filter((entry) => Number.isFinite(entry.duration) && entry.duration > 0);
+                const longerCandidates = durationEntries
                     .filter((entry) => entry.duration > preferDurationOver)
                     .sort((a, b) => b.duration - a.duration);
                 if (longerCandidates.length) {
                     return longerCandidates[0].item;
                 }
+                if (allowShorterMatch) {
+                    const fallbackCandidates = durationEntries.sort((a, b) => b.duration - a.duration);
+                    if (fallbackCandidates.length) {
+                        return fallbackCandidates[0].item;
+                    }
+                    return mainTrackItems[0];
+                }
                 return null;
             }
 
             return mainTrackItems[0];
+        }
+
+        function resolveOverlayPlaybackContext(preferDurationOver = 0) {
+            const safeOverlayDuration = Number.isFinite(preferDurationOver)
+                && preferDurationOver > 0
+                ? preferDurationOver
+                : 0;
+            const baseTimelineItem = resolveMainTrackPreviewItem({
+                preferDurationOver: safeOverlayDuration,
+                allowShorterMatch: true,
+            });
+            const baseDuration = baseTimelineItem
+                ? getTimelineItemPlaybackDuration(baseTimelineItem)
+                : 0;
+            const overlayIsShorterThanBase = safeOverlayDuration > 0
+                && Number.isFinite(baseDuration)
+                && baseDuration > 0
+                && safeOverlayDuration < baseDuration;
+            return {
+                baseTimelineItem,
+                baseDuration,
+                overlayDuration: safeOverlayDuration,
+                overlayIsShorterThanBase,
+            };
         }
 
         function ensureMainTrackMediaLoaded(timelineItem) {
@@ -4906,15 +4940,18 @@ HOME_HTML = '''
 
             if (isOverlayTrack && fileType.startsWith('image/')) {
                 const overlayDuration = getTimelineItemPlaybackDuration(timelineItem);
-                const baseTimelineItem = resolveMainTrackPreviewItem({
-                    preferDurationOver: overlayDuration,
-                });
-                const baseFileType = getTimelineItemFileType(baseTimelineItem);
+                const {
+                    baseTimelineItem,
+                    baseDuration,
+                    overlayDuration: safeOverlayDuration,
+                    overlayIsShorterThanBase,
+                } = resolveOverlayPlaybackContext(overlayDuration);
+                const baseFileType = (getTimelineItemFileType(baseTimelineItem) || '');
                 const isBaseVideo = baseFileType.startsWith('video/');
                 const baseType = baseTimelineItem
                     ? ensureMainTrackMediaLoaded(baseTimelineItem)
                     : null;
-                const shouldShowOverlay = overlayDuration > 0 || !baseTimelineItem;
+                const shouldShowOverlay = safeOverlayDuration > 0 || !baseTimelineItem;
 
                 if (baseTimelineItem) {
                     lastMainTrackTimelineItem = baseTimelineItem;
@@ -4947,15 +4984,12 @@ HOME_HTML = '''
                     if (previewImage && previewImage.src !== objectURL) {
                         previewImage.src = objectURL;
                     }
-                    const baseDuration = baseTimelineItem
-                        ? getTimelineItemPlaybackDuration(baseTimelineItem)
-                        : 0;
-                    const overlayExtendsBeyondBase = Number.isFinite(baseDuration)
-                        && baseDuration > 0
-                        && overlayDuration > 0
-                        && baseDuration > overlayDuration;
-                    if (overlayExtendsBeyondBase) {
+                    if (overlayIsShorterThanBase) {
                         const overlayObjectUrl = objectURL;
+                        const overlayVisibilityDuration = Math.min(
+                            safeOverlayDuration,
+                            baseDuration || safeOverlayDuration,
+                        );
                         overlayPreviewTimeoutId = window.setTimeout(() => {
                             overlayPreviewTimeoutId = null;
                             const overlayStillActive = previewImage
@@ -4974,7 +5008,7 @@ HOME_HTML = '''
                                     previewPlaceholder.hidden = false;
                                 }
                             }
-                        }, overlayDuration);
+                        }, overlayVisibilityDuration);
                     }
                 } else if (!overlayHandledByBase && previewImage && previewImage.src === objectURL) {
                     previewImage.removeAttribute('src');
@@ -5319,12 +5353,15 @@ HOME_HTML = '''
                     || IMAGE_FRAME_DURATION;
 
                 if (isOverlayTrack) {
-                    const baseTimelineItem = resolveMainTrackPreviewItem({
-                        preferDurationOver: imageDuration,
-                    });
-                    const baseFileType = getTimelineItemFileType(baseTimelineItem);
+                    const {
+                        baseTimelineItem,
+                        baseDuration,
+                        overlayDuration: safeOverlayDuration,
+                        overlayIsShorterThanBase,
+                    } = resolveOverlayPlaybackContext(imageDuration);
+                    const baseFileType = (getTimelineItemFileType(baseTimelineItem) || '');
                     const isBaseVideo = baseFileType.startsWith('video/');
-                    const shouldShowOverlay = imageDuration > 0 || !baseTimelineItem;
+                    const shouldShowOverlay = safeOverlayDuration > 0 || !baseTimelineItem;
 
                     if (baseTimelineItem) {
                         lastMainTrackTimelineItem = baseTimelineItem;
@@ -5355,6 +5392,9 @@ HOME_HTML = '''
 
                     await new Promise((resolve) => {
                         let resolved = false;
+                        const overlayPlaybackDuration = overlayIsShorterThanBase
+                            ? Math.min(safeOverlayDuration, baseDuration || safeOverlayDuration)
+                            : safeOverlayDuration;
                         const timeoutId = window.setTimeout(() => {
                             if (resolved) {
                                 return;
@@ -5364,7 +5404,7 @@ HOME_HTML = '''
                                 timelinePlaybackAbort = null;
                             }
                             resolve();
-                        }, imageDuration);
+                        }, overlayPlaybackDuration);
 
                         const abortPlayback = () => {
                             if (resolved) {
