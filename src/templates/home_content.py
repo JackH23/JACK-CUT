@@ -1288,6 +1288,11 @@ HOME_HTML = '''
             scroll-snap-align: start;
         }
 
+        .timeline-item:focus {
+            outline: 3px solid rgba(124, 58, 237, 0.8);
+            outline-offset: 2px;
+        }
+
         .timeline-item-remove {
             position: absolute;
             top: 6px;
@@ -1828,7 +1833,7 @@ HOME_HTML = '''
             <h2>Timeline overview</h2>
             <div class="timeline-track" id="timeline-track">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
-                <div class="timeline-lane-list" id="timeline-lane-list">
+                <div class="timeline-lane-list" id="timeline-lane-list" role="list">
                     <div class="timeline-lane" data-lane-index="0"></div>
                 </div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
@@ -4732,7 +4737,8 @@ HOME_HTML = '''
             setActiveTimelineItem(null);
         }
 
-        function setActiveTimelineItem(item) {
+        function setActiveTimelineItem(item, options = {}) {
+            const shouldFocus = Boolean(options.focus);
             if (item !== activeTimelineItem) {
                 persistPreviewImageTransformForActiveTimelineItem();
             }
@@ -4743,6 +4749,9 @@ HOME_HTML = '''
             if (activeTimelineItem) {
                 activeTimelineItem.classList.add('active');
                 scrollTimelineItemIntoView(activeTimelineItem);
+                if (shouldFocus && typeof activeTimelineItem.focus === 'function') {
+                    activeTimelineItem.focus();
+                }
             }
             updateActiveTimelineIndicators();
         }
@@ -4837,6 +4846,8 @@ HOME_HTML = '''
 
             const timelineItem = document.createElement('div');
             timelineItem.className = 'timeline-item';
+            timelineItem.setAttribute('role', 'listitem');
+            timelineItem.tabIndex = 0;
             timelineItem.dataset.fileType = file.type;
             timelineItem.dataset.objectUrl = objectURL;
             timelineItem.dataset.displayName = file.name;
@@ -4918,6 +4929,48 @@ HOME_HTML = '''
                 stopTimelinePlayback();
                 setActiveTimelineItem(timelineItem);
                 loadPreviewFromTimeline(timelineItem);
+            });
+
+            timelineItem.addEventListener('keydown', (event) => {
+                const { key } = event;
+                if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+                    event.preventDefault();
+                    stopTimelinePlayback();
+                    setActiveTimelineItem(timelineItem, { focus: true });
+                    loadPreviewFromTimeline(timelineItem);
+                    return;
+                }
+
+                if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') {
+                    return;
+                }
+
+                event.preventDefault();
+                const items = getTimelineItems();
+                const currentIndex = items.indexOf(timelineItem);
+                if (currentIndex === -1) {
+                    return;
+                }
+
+                let nextIndex = currentIndex;
+                if (key === 'ArrowLeft' || key === 'ArrowUp') {
+                    nextIndex = Math.max(0, currentIndex - 1);
+                } else if (key === 'ArrowRight' || key === 'ArrowDown') {
+                    nextIndex = Math.min(items.length - 1, currentIndex + 1);
+                }
+
+                if (nextIndex === currentIndex) {
+                    return;
+                }
+
+                const nextItem = items[nextIndex];
+                if (!nextItem) {
+                    return;
+                }
+
+                stopTimelinePlayback();
+                setActiveTimelineItem(nextItem, { focus: true });
+                loadPreviewFromTimeline(nextItem);
             });
 
             removeButton.addEventListener('click', (event) => {
