@@ -2083,6 +2083,8 @@ HOME_HTML = '''
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
         const MIN_IMAGE_FRAME_SIZE = 96;
+        const TIMELINE_AUTO_EXTEND_THRESHOLD = 96;
+        const TIMELINE_AUTO_EXTEND_STEP = 240;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2090,6 +2092,7 @@ HOME_HTML = '''
         let playbackClockTotalDuration = 0;
         let playbackDisplayCurrentMs = 0;
         let playbackDisplayTotalMs = 0;
+        let timelineAutoExtendFrame = null;
 
         function activateSettingsSection(sectionName) {
             if (!settingsTabs.length || !settingsSections.length) {
@@ -2892,6 +2895,11 @@ HOME_HTML = '''
                 timelineTrack.classList.remove('timeline-track--empty');
             } else {
                 timelineTrack.classList.add('timeline-track--empty');
+                if (timelineLaneList) {
+                    timelineLaneList.style.minWidth = '';
+                    delete timelineLaneList.dataset.extendedWidth;
+                }
+                cancelTimelineAutoExtend();
             }
         }
 
@@ -2964,6 +2972,73 @@ HOME_HTML = '''
                 },
                 { offset: Number.NEGATIVE_INFINITY, element: null },
             ).element;
+        }
+
+        function cancelTimelineAutoExtend() {
+            if (timelineAutoExtendFrame !== null) {
+                window.cancelAnimationFrame(timelineAutoExtendFrame);
+                timelineAutoExtendFrame = null;
+            }
+        }
+
+        function applyTimelineAutoExtend(pointerClientX) {
+            if (!timelineTrack || !timelineLaneList) {
+                return;
+            }
+
+            if (!Number.isFinite(pointerClientX)) {
+                return;
+            }
+
+            const trackRect = timelineTrack.getBoundingClientRect();
+            if (!trackRect) {
+                return;
+            }
+
+            const extendThreshold = TIMELINE_AUTO_EXTEND_THRESHOLD;
+            const extendStep = TIMELINE_AUTO_EXTEND_STEP;
+
+            if (pointerClientX >= trackRect.right - extendThreshold) {
+                const pointerOffset = pointerClientX - trackRect.left;
+                const laneRect = timelineLaneList.getBoundingClientRect();
+                const currentWidth = laneRect ? laneRect.width : timelineLaneList.scrollWidth;
+                const storedWidth = Number.parseFloat(timelineLaneList.dataset.extendedWidth || '0') || 0;
+                const effectiveWidth = Math.max(currentWidth, storedWidth);
+                const desiredWidth = Math.max(pointerOffset + extendStep, effectiveWidth);
+
+                if (desiredWidth > storedWidth) {
+                    const applied = Math.ceil(desiredWidth);
+                    timelineLaneList.style.minWidth = `${applied}px`;
+                    timelineLaneList.dataset.extendedWidth = String(applied);
+                }
+
+                const maxScrollLeft = Math.max(0, timelineTrack.scrollWidth - timelineTrack.clientWidth);
+                timelineTrack.scrollLeft = maxScrollLeft;
+                scheduleTimelineIndicatorUpdate();
+                return;
+            }
+
+            if (pointerClientX <= trackRect.left + extendThreshold) {
+                const nextScroll = Math.max(0, timelineTrack.scrollLeft - extendStep);
+                if (nextScroll !== timelineTrack.scrollLeft) {
+                    timelineTrack.scrollLeft = nextScroll;
+                }
+            }
+        }
+
+        function scheduleTimelineAutoExtend(pointerClientX) {
+            if (!Number.isFinite(pointerClientX)) {
+                return;
+            }
+
+            if (timelineAutoExtendFrame !== null) {
+                window.cancelAnimationFrame(timelineAutoExtendFrame);
+            }
+
+            timelineAutoExtendFrame = window.requestAnimationFrame(() => {
+                timelineAutoExtendFrame = null;
+                applyTimelineAutoExtend(pointerClientX);
+            });
         }
 
         function updateActiveTimelineIndicators() {
@@ -3200,6 +3275,7 @@ HOME_HTML = '''
                 timelineItem.classList.remove('dragging');
                 timelineItem.draggable = true;
                 setActiveDropLane(null);
+                cancelTimelineAutoExtend();
                 cleanupEmptyTimelineLanes();
                 updateTimelineEmptyState();
                 updateActiveTimelineIndicators();
@@ -3249,6 +3325,7 @@ HOME_HTML = '''
                     lane.insertBefore(draggingItem, afterElement);
                 }
                 draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+                scheduleTimelineAutoExtend(event.clientX);
             });
 
             timelineTrack.addEventListener('drop', (event) => {
@@ -3259,6 +3336,7 @@ HOME_HTML = '''
                     draggingItem.draggable = true;
                 }
                 setActiveDropLane(null);
+                cancelTimelineAutoExtend();
                 cleanupEmptyTimelineLanes();
                 updateTimelineEmptyState();
                 updateActiveTimelineIndicators();
