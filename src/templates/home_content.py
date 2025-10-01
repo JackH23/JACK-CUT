@@ -1207,21 +1207,52 @@ HOME_HTML = '''
         .timeline-track {
             position: relative;
             display: flex;
-            flex-wrap: nowrap;
-            align-items: stretch;
-            gap: 10px;
+            flex-direction: column;
+            gap: 12px;
             padding: 16px;
             border-radius: 14px;
             background: rgba(8, 12, 24, 0.75);
             border: 1px dashed rgba(148, 163, 184, 0.24);
             color: var(--text-secondary);
-            text-align: center;
             font-size: 0.95rem;
-            min-height: 140px;
-            overflow-x: auto;
-            overflow-y: hidden;
+            min-height: 180px;
+            overflow: auto;
             scrollbar-width: thin;
-            scroll-snap-type: x proximity;
+        }
+
+        .timeline-lane-list {
+            position: relative;
+            display: inline-flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 100%;
+            z-index: 2;
+        }
+
+        .timeline-lane {
+            position: relative;
+            display: inline-flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: stretch;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px dashed rgba(148, 163, 184, 0.22);
+            min-height: 110px;
+            min-width: 100%;
+            width: max-content;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .timeline-lane.is-drop-target {
+            border-color: rgba(124, 58, 237, 0.55);
+            background: rgba(30, 41, 59, 0.6);
+        }
+
+        .timeline-track.timeline-track--empty .timeline-lane {
+            opacity: 0.65;
         }
 
         .timeline-track::-webkit-scrollbar {
@@ -1358,8 +1389,15 @@ HOME_HTML = '''
         }
 
         #timeline-empty-state {
-            margin: auto;
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            margin: 0;
+            padding: 0 24px;
+            text-align: center;
             pointer-events: none;
+            z-index: 4;
         }
 
         .playback-time {
@@ -1421,6 +1459,7 @@ HOME_HTML = '''
             pointer-events: none;
             transition: transform 0.2s linear;
             opacity: 0.85;
+            z-index: 3;
         }
 
         .timeline-progress button:hover {
@@ -1757,6 +1796,9 @@ HOME_HTML = '''
             <h2>Timeline overview</h2>
             <div class="timeline-track" id="timeline-track">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
+                <div class="timeline-lane-list" id="timeline-lane-list">
+                    <div class="timeline-lane" data-lane-index="0"></div>
+                </div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
             <div class="timeline-progress">
@@ -1858,6 +1900,7 @@ HOME_HTML = '''
             : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
         const timelineTrack = document.getElementById('timeline-track');
+        const timelineLaneList = document.getElementById('timeline-lane-list');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
         const playVideoButton = document.getElementById('play-video-button');
         const timelineProgressLine = document.getElementById('timeline-progress-line');
@@ -1888,6 +1931,7 @@ HOME_HTML = '''
         let timelineIndicatorResizeFrame = null;
         let previewAreaResizeObserver = null;
         let timelineTrackResizeObserver = null;
+        let activeDropLane = null;
         let isExportingTimeline = false;
         let previewImageTransform = null;
         let pendingPreviewImageTransform = null;
@@ -2639,6 +2683,120 @@ HOME_HTML = '''
             timelineItem.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         }
 
+        function getTimelineLanes() {
+            if (!timelineLaneList) {
+                return [];
+            }
+            return Array.from(timelineLaneList.querySelectorAll('.timeline-lane'));
+        }
+
+        function refreshTimelineLaneIndices() {
+            getTimelineLanes().forEach((lane, index) => {
+                const laneIndex = String(index);
+                lane.dataset.laneIndex = laneIndex;
+                lane.querySelectorAll('.timeline-item').forEach((item) => {
+                    item.dataset.laneIndex = laneIndex;
+                });
+            });
+        }
+
+        function ensureTimelineLane(index = 0) {
+            if (!timelineLaneList) {
+                return null;
+            }
+
+            let lanes = getTimelineLanes();
+            while (lanes.length <= index) {
+                const lane = document.createElement('div');
+                lane.className = 'timeline-lane';
+                timelineLaneList.appendChild(lane);
+                lanes = getTimelineLanes();
+            }
+            refreshTimelineLaneIndices();
+            return getTimelineLanes()[index] || null;
+        }
+
+        function cleanupEmptyTimelineLanes() {
+            if (!timelineLaneList) {
+                return;
+            }
+
+            const lanes = getTimelineLanes();
+            lanes.forEach((lane) => {
+                if (lane && !lane.querySelector('.timeline-item') && lanes.length > 1) {
+                    lane.remove();
+                }
+            });
+            refreshTimelineLaneIndices();
+            updateTimelineEmptyState();
+        }
+
+        function updateTimelineEmptyState() {
+            if (!timelineEmptyState || !timelineTrack) {
+                return;
+            }
+            const hasItems = Boolean(timelineTrack.querySelector('.timeline-item'));
+            timelineEmptyState.hidden = hasItems;
+            if (hasItems) {
+                timelineTrack.classList.remove('timeline-track--empty');
+            } else {
+                timelineTrack.classList.add('timeline-track--empty');
+            }
+        }
+
+        function setActiveDropLane(nextLane) {
+            if (activeDropLane === nextLane) {
+                return;
+            }
+            if (activeDropLane) {
+                activeDropLane.classList.remove('is-drop-target');
+            }
+            activeDropLane = nextLane || null;
+            if (activeDropLane) {
+                activeDropLane.classList.add('is-drop-target');
+            }
+        }
+
+        function getTimelineLaneFromEvent(event) {
+            const lanes = getTimelineLanes();
+            if (!lanes.length) {
+                return ensureTimelineLane(0);
+            }
+
+            const pointerY = event.clientY;
+            let closestLane = null;
+            let closestDistance = Number.POSITIVE_INFINITY;
+
+            lanes.forEach((lane) => {
+                const rect = lane.getBoundingClientRect();
+                if (!rect) {
+                    return;
+                }
+                const { top, bottom, height } = rect;
+                const center = top + height / 2;
+                if (pointerY >= top && pointerY <= bottom) {
+                    closestLane = lane;
+                    closestDistance = 0;
+                } else {
+                    const distance = Math.abs(pointerY - center);
+                    if (distance < closestDistance) {
+                        closestLane = lane;
+                        closestDistance = distance;
+                    }
+                }
+            });
+
+            const lastLane = lanes[lanes.length - 1];
+            if (lastLane) {
+                const rect = lastLane.getBoundingClientRect();
+                if (rect && pointerY > rect.bottom + 32) {
+                    return ensureTimelineLane(lanes.length);
+                }
+            }
+
+            return closestLane || ensureTimelineLane(0);
+        }
+
         function getDragAfterElement(container, clientX) {
             const siblings = Array.from(
                 container.querySelectorAll('.timeline-item:not(.dragging)'),
@@ -2890,6 +3048,9 @@ HOME_HTML = '''
             timelineItem.addEventListener('dragend', () => {
                 timelineItem.classList.remove('dragging');
                 timelineItem.draggable = true;
+                setActiveDropLane(null);
+                cleanupEmptyTimelineLanes();
+                updateTimelineEmptyState();
                 updateActiveTimelineIndicators();
             });
         }
@@ -2925,12 +3086,18 @@ HOME_HTML = '''
                     return;
                 }
                 event.preventDefault();
-                const afterElement = getDragAfterElement(timelineTrack, event.clientX);
-                if (!afterElement) {
-                    timelineTrack.appendChild(draggingItem);
-                } else if (afterElement !== draggingItem) {
-                    timelineTrack.insertBefore(draggingItem, afterElement);
+                const lane = getTimelineLaneFromEvent(event);
+                if (!lane) {
+                    return;
                 }
+                setActiveDropLane(lane);
+                const afterElement = getDragAfterElement(lane, event.clientX);
+                if (!afterElement) {
+                    lane.appendChild(draggingItem);
+                } else if (afterElement !== draggingItem) {
+                    lane.insertBefore(draggingItem, afterElement);
+                }
+                draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
             });
 
             timelineTrack.addEventListener('drop', (event) => {
@@ -2938,10 +3105,17 @@ HOME_HTML = '''
                 const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
                 if (draggingItem) {
                     draggingItem.classList.remove('dragging');
+                    draggingItem.draggable = true;
                 }
+                setActiveDropLane(null);
+                cleanupEmptyTimelineLanes();
+                updateTimelineEmptyState();
                 updateActiveTimelineIndicators();
             });
         }
+
+        ensureTimelineLane(0);
+        updateTimelineEmptyState();
 
         if (window.ResizeObserver) {
             if (previewArea && !previewAreaResizeObserver) {
@@ -4578,8 +4752,9 @@ HOME_HTML = '''
         }
 
         async function addToTimeline(file, objectURL) {
+            const defaultLane = ensureTimelineLane(0);
             if (timelineEmptyState) {
-                timelineEmptyState.remove();
+                timelineEmptyState.hidden = true;
             }
 
             const timelineItem = document.createElement('div');
@@ -4642,8 +4817,17 @@ HOME_HTML = '''
             }
 
             timelineItem.appendChild(label);
-            timelineTrack.appendChild(timelineItem);
+
+            const targetLane = defaultLane || ensureTimelineLane(0);
+            if (targetLane) {
+                timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
+                targetLane.appendChild(timelineItem);
+            } else {
+                timelineItem.dataset.laneIndex = '0';
+                timelineTrack.appendChild(timelineItem);
+            }
             initializeTimelineItem(timelineItem);
+            updateTimelineEmptyState();
 
             timelineItem.addEventListener('click', () => {
                 stopTimelinePlayback();
