@@ -2968,6 +2968,40 @@ HOME_HTML = '''
             };
         }
 
+        function getExtendingOverlayPlaybackInfo() {
+            const overlayItems = getTimelineItems().filter((item) => {
+                const laneIndex = parseLaneIndexFromTimelineItem(item);
+                const fileType = item?.dataset?.fileType || '';
+                return laneIndex > 0 && fileType.startsWith('image/');
+            });
+
+            let overlayItem = null;
+            let overlayContext = null;
+            let longestDuration = 0;
+
+            overlayItems.forEach((item) => {
+                const rawDuration = getTimelineItemPlaybackDuration(item);
+                if (!Number.isFinite(rawDuration) || rawDuration <= 0) {
+                    return;
+                }
+                const context = resolveOverlayPlaybackContext(rawDuration, { overlayTimelineItem: item });
+                if (!context.shouldExtendBeyondPlayback || context.overlayDuration <= 0) {
+                    return;
+                }
+                if (context.overlayDuration > longestDuration) {
+                    overlayItem = item;
+                    overlayContext = context;
+                    longestDuration = context.overlayDuration;
+                }
+            });
+
+            return {
+                overlayItem,
+                overlayContext,
+                longestDuration,
+            };
+        }
+
         function ensureMainTrackMediaLoaded(timelineItem) {
             if (!timelineItem) {
                 return null;
@@ -3014,10 +3048,12 @@ HOME_HTML = '''
         }
 
         function getTotalTimelineDuration() {
-            return getTimelineItemsForPlayback().reduce(
+            const mainTrackDuration = getTimelineItemsForPlayback().reduce(
                 (total, item) => total + getTimelineItemPlaybackDuration(item),
                 0,
             );
+            const { longestDuration } = getExtendingOverlayPlaybackInfo();
+            return Math.max(mainTrackDuration, longestDuration || 0);
         }
 
         function getTimelineItemStartTime(timelineItem) {
@@ -5228,7 +5264,7 @@ HOME_HTML = '''
 
         uploadButton.addEventListener('click', () => uploadInput.click());
 
-        async function playTimelineItem(timelineItem) {
+        async function playTimelineItem(timelineItem, options = {}) {
             const fileType = timelineItem.dataset.fileType || '';
             const objectURL = timelineItem.dataset.objectUrl;
             const laneIndex = parseLaneIndexFromTimelineItem(timelineItem);
@@ -5373,16 +5409,22 @@ HOME_HTML = '''
                     || IMAGE_FRAME_DURATION;
 
                 if (isOverlayTrack) {
+                    const providedContext = options?.overlayContext;
                     const {
                         baseTimelineItem,
                         baseDuration,
                         overlayDuration: safeOverlayDuration,
                         overlayIsShorterThanBase,
                         shouldExtendBeyondPlayback,
-                    } = resolveOverlayPlaybackContext(imageDuration, { overlayTimelineItem: timelineItem });
+                    } = providedContext
+                        || resolveOverlayPlaybackContext(imageDuration, { overlayTimelineItem: timelineItem });
                     const baseFileType = (getTimelineItemFileType(baseTimelineItem) || '');
                     const isBaseVideo = baseFileType.startsWith('video/');
                     const shouldShowOverlay = safeOverlayDuration > 0 || !baseTimelineItem;
+                    const requestedDuration = Number.isFinite(options?.overrideDuration)
+                        && options.overrideDuration > 0
+                        ? options.overrideDuration
+                        : null;
 
                     if (baseTimelineItem) {
                         lastMainTrackTimelineItem = baseTimelineItem;
@@ -5413,9 +5455,9 @@ HOME_HTML = '''
 
                     await new Promise((resolve) => {
                         let resolved = false;
-                        const overlayPlaybackDuration = overlayIsShorterThanBase
+                        const overlayPlaybackDuration = requestedDuration ?? (overlayIsShorterThanBase
                             ? Math.min(safeOverlayDuration, baseDuration || safeOverlayDuration)
-                            : safeOverlayDuration;
+                            : safeOverlayDuration);
                         const timeoutId = window.setTimeout(() => {
                             if (resolved) {
                                 return;
@@ -5441,7 +5483,7 @@ HOME_HTML = '''
                     });
 
                     if (shouldShowOverlay) {
-                        if (!shouldExtendBeyondPlayback) {
+                        if (!shouldExtendBeyondPlayback && !requestedDuration) {
                             if (previewImage && previewImage.src === objectURL) {
                                 previewImage.removeAttribute('src');
                             }
@@ -5516,7 +5558,17 @@ HOME_HTML = '''
             }
 
             const initialIndex = Math.min(Math.max(0, startIndex), timelineItems.length - 1);
-            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+            const mainTrackTotalDuration = timelineItems.reduce(
+                (total, item) => total + getTimelineItemPlaybackDuration(item),
+                0,
+            );
+            const {
+                overlayItem: extendingOverlayItem,
+                overlayContext: extendingOverlayContext,
+                longestDuration: longestOverlayDuration,
+            } = getExtendingOverlayPlaybackInfo();
+            const totalDuration = Math.max(mainTrackTotalDuration, longestOverlayDuration || 0);
+            const overlayTailDuration = Math.max(0, totalDuration - mainTrackTotalDuration);
             const initialItem = timelineItems[initialIndex];
             const startElapsed = initialItem ? getTimelineItemStartTime(initialItem) : 0;
 
@@ -5543,6 +5595,21 @@ HOME_HTML = '''
                     // eslint-disable-next-line no-await-in-loop
                     await playTimelineItem(timelineItem);
                     timelineOffset += duration;
+                }
+                if (
+                    completedNaturally
+                    && overlayTailDuration > 0
+                    && extendingOverlayItem
+                    && isTimelinePlaying
+                ) {
+                    const startFraction = getTimelineFractionForTime(timelineOffset);
+                    const endFraction = getTimelineFractionForTime(timelineOffset + overlayTailDuration);
+                    animateTimelineProgress(startFraction, endFraction, overlayTailDuration);
+                    await playTimelineItem(extendingOverlayItem, {
+                        overrideDuration: overlayTailDuration,
+                        overlayContext: extendingOverlayContext,
+                    });
+                    timelineOffset += overlayTailDuration;
                 }
             } finally {
                 stopTimelinePlayback(true, false);
