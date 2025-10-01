@@ -2925,11 +2925,12 @@ HOME_HTML = '''
             return mainTrackItems[0];
         }
 
-        function resolveOverlayPlaybackContext(preferDurationOver = 0) {
+        function resolveOverlayPlaybackContext(preferDurationOver = 0, options = {}) {
             const safeOverlayDuration = Number.isFinite(preferDurationOver)
                 && preferDurationOver > 0
                 ? preferDurationOver
                 : 0;
+            const overlayTimelineItem = options?.overlayTimelineItem || null;
             const baseTimelineItem = resolveMainTrackPreviewItem({
                 preferDurationOver: safeOverlayDuration,
                 allowShorterMatch: true,
@@ -2941,11 +2942,29 @@ HOME_HTML = '''
                 && Number.isFinite(baseDuration)
                 && baseDuration > 0
                 && safeOverlayDuration < baseDuration;
+            let longestOtherOverlayDuration = 0;
+            if (overlayTimelineItem) {
+                const allOverlayItems = getTimelineItems().filter(
+                    (item) => parseLaneIndexFromTimelineItem(item) > 0,
+                );
+                longestOtherOverlayDuration = allOverlayItems
+                    .filter((item) => item !== overlayTimelineItem)
+                    .map((item) => getTimelineItemPlaybackDuration(item))
+                    .filter((duration) => Number.isFinite(duration) && duration > 0)
+                    .reduce((longest, duration) => Math.max(longest, duration), 0);
+            }
+            const overlayExtendsBeyondBase = safeOverlayDuration > 0
+                && (!Number.isFinite(baseDuration) || baseDuration === 0 || safeOverlayDuration > baseDuration);
+            const overlayExtendsBeyondOtherOverlay = safeOverlayDuration > 0
+                && safeOverlayDuration > longestOtherOverlayDuration;
+            const shouldExtendBeyondPlayback = overlayExtendsBeyondBase
+                || overlayExtendsBeyondOtherOverlay;
             return {
                 baseTimelineItem,
                 baseDuration,
                 overlayDuration: safeOverlayDuration,
                 overlayIsShorterThanBase,
+                shouldExtendBeyondPlayback,
             };
         }
 
@@ -4945,7 +4964,8 @@ HOME_HTML = '''
                     baseDuration,
                     overlayDuration: safeOverlayDuration,
                     overlayIsShorterThanBase,
-                } = resolveOverlayPlaybackContext(overlayDuration);
+                    shouldExtendBeyondPlayback,
+                } = resolveOverlayPlaybackContext(overlayDuration, { overlayTimelineItem: timelineItem });
                 const baseFileType = (getTimelineItemFileType(baseTimelineItem) || '');
                 const isBaseVideo = baseFileType.startsWith('video/');
                 const baseType = baseTimelineItem
@@ -4984,7 +5004,7 @@ HOME_HTML = '''
                     if (previewImage && previewImage.src !== objectURL) {
                         previewImage.src = objectURL;
                     }
-                    if (overlayIsShorterThanBase) {
+                    if (overlayIsShorterThanBase && !shouldExtendBeyondPlayback) {
                         const overlayObjectUrl = objectURL;
                         const overlayVisibilityDuration = Math.min(
                             safeOverlayDuration,
@@ -5358,7 +5378,8 @@ HOME_HTML = '''
                         baseDuration,
                         overlayDuration: safeOverlayDuration,
                         overlayIsShorterThanBase,
-                    } = resolveOverlayPlaybackContext(imageDuration);
+                        shouldExtendBeyondPlayback,
+                    } = resolveOverlayPlaybackContext(imageDuration, { overlayTimelineItem: timelineItem });
                     const baseFileType = (getTimelineItemFileType(baseTimelineItem) || '');
                     const isBaseVideo = baseFileType.startsWith('video/');
                     const shouldShowOverlay = safeOverlayDuration > 0 || !baseTimelineItem;
@@ -5420,17 +5441,28 @@ HOME_HTML = '''
                     });
 
                     if (shouldShowOverlay) {
-                        if (previewImage && previewImage.src === objectURL) {
-                            previewImage.removeAttribute('src');
-                        }
-                        setPreviewImageVisibility(false);
-                        if (baseTimelineItem) {
-                            ensureMainTrackMediaLoaded(baseTimelineItem);
-                            setPreviewMode(isBaseVideo ? 'has-video' : 'has-image');
-                        } else {
-                            setPreviewMode(null);
-                            if (previewPlaceholder) {
-                                previewPlaceholder.hidden = false;
+                        if (!shouldExtendBeyondPlayback) {
+                            if (previewImage && previewImage.src === objectURL) {
+                                previewImage.removeAttribute('src');
+                            }
+                            setPreviewImageVisibility(false);
+                            if (baseTimelineItem) {
+                                ensureMainTrackMediaLoaded(baseTimelineItem);
+                                setPreviewMode(isBaseVideo ? 'has-video' : 'has-image');
+                            } else {
+                                setPreviewMode(null);
+                                if (previewPlaceholder) {
+                                    previewPlaceholder.hidden = false;
+                                }
+                            }
+                        } else if (!previewArea.classList.contains('has-overlay')) {
+                            const overlayMode = isBaseVideo
+                                ? ['has-video', 'has-overlay']
+                                : ['has-image', 'has-overlay'];
+                            setPreviewMode(overlayMode);
+                            setPreviewImageVisibility(true);
+                            if (previewImage.src !== objectURL) {
+                                previewImage.src = objectURL;
                             }
                         }
                     }
