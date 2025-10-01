@@ -2965,9 +2965,6 @@ HOME_HTML = '''
                 ? preferDurationOver
                 : 0;
             const overlayTimelineItem = options?.overlayTimelineItem || null;
-            const overlayLaneIndex = overlayTimelineItem
-                ? parseLaneIndexFromTimelineItem(overlayTimelineItem)
-                : 0;
             let baseTimelineItem = resolveOverlayAlignedMainTrackItem(overlayTimelineItem);
             if (!baseTimelineItem) {
                 baseTimelineItem = resolveMainTrackPreviewItem({
@@ -2983,22 +2980,25 @@ HOME_HTML = '''
                 && baseDuration > 0
                 && safeOverlayDuration < baseDuration;
             let longestOtherOverlayDuration = 0;
+            let hasComparableOverlays = false;
             if (overlayTimelineItem) {
                 const allOverlayItems = getTimelineItems().filter(
-                    (item) => parseLaneIndexFromTimelineItem(item) > 0,
+                    (item) => parseLaneIndexFromTimelineItem(item) > 0
+                        && item !== overlayTimelineItem,
                 );
-                longestOtherOverlayDuration = allOverlayItems
-                    .filter(
-                        (item) => item !== overlayTimelineItem
-                            && parseLaneIndexFromTimelineItem(item) < overlayLaneIndex,
-                    )
+                const overlayDurations = allOverlayItems
                     .map((item) => getTimelineItemPlaybackDuration(item))
-                    .filter((duration) => Number.isFinite(duration) && duration > 0)
-                    .reduce((longest, duration) => Math.max(longest, duration), 0);
+                    .filter((duration) => Number.isFinite(duration) && duration > 0);
+                if (overlayDurations.length) {
+                    hasComparableOverlays = true;
+                    longestOtherOverlayDuration = overlayDurations
+                        .reduce((longest, duration) => Math.max(longest, duration), 0);
+                }
             }
             const overlayExtendsBeyondBase = safeOverlayDuration > 0
                 && (!Number.isFinite(baseDuration) || baseDuration === 0 || safeOverlayDuration > baseDuration);
-            const overlayExtendsBeyondOtherOverlay = safeOverlayDuration > 0
+            const overlayExtendsBeyondOtherOverlay = hasComparableOverlays
+                && safeOverlayDuration > 0
                 && safeOverlayDuration > longestOtherOverlayDuration;
             const shouldExtendBeyondPlayback = overlayExtendsBeyondBase
                 || overlayExtendsBeyondOtherOverlay;
