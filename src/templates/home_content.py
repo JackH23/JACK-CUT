@@ -4874,16 +4874,12 @@ HOME_HTML = '''
                 const baseTimelineItem = resolveMainTrackPreviewItem({
                     preferDurationOver: overlayDuration,
                 });
-                const baseDuration = baseTimelineItem
-                    ? getTimelineItemPlaybackDuration(baseTimelineItem)
-                    : 0;
                 const baseFileType = getTimelineItemFileType(baseTimelineItem);
                 const isBaseVideo = baseFileType.startsWith('video/');
                 const baseType = baseTimelineItem
                     ? ensureMainTrackMediaLoaded(baseTimelineItem)
                     : null;
-                const shouldShowOverlay = !baseTimelineItem
-                    || overlayDuration >= baseDuration;
+                const shouldShowOverlay = overlayDuration > 0 || !baseTimelineItem;
 
                 if (baseTimelineItem) {
                     lastMainTrackTimelineItem = baseTimelineItem;
@@ -5262,13 +5258,9 @@ HOME_HTML = '''
                     const baseTimelineItem = resolveMainTrackPreviewItem({
                         preferDurationOver: imageDuration,
                     });
-                    const baseDuration = baseTimelineItem
-                        ? getTimelineItemPlaybackDuration(baseTimelineItem)
-                        : 0;
                     const baseFileType = getTimelineItemFileType(baseTimelineItem);
                     const isBaseVideo = baseFileType.startsWith('video/');
-                    const shouldShowOverlay = !baseTimelineItem
-                        || imageDuration >= baseDuration;
+                    const shouldShowOverlay = imageDuration > 0 || !baseTimelineItem;
 
                     if (baseTimelineItem) {
                         lastMainTrackTimelineItem = baseTimelineItem;
@@ -5322,6 +5314,22 @@ HOME_HTML = '''
 
                         timelinePlaybackAbort = abortPlayback;
                     });
+
+                    if (shouldShowOverlay) {
+                        if (previewImage && previewImage.src === objectURL) {
+                            previewImage.removeAttribute('src');
+                        }
+                        setPreviewImageVisibility(false);
+                        if (baseTimelineItem) {
+                            ensureMainTrackMediaLoaded(baseTimelineItem);
+                            setPreviewMode(isBaseVideo ? 'has-video' : 'has-image');
+                        } else {
+                            setPreviewMode(null);
+                            if (previewPlaceholder) {
+                                previewPlaceholder.hidden = false;
+                            }
+                        }
+                    }
                 } else {
                     setPreviewMode('has-image');
                     previewVideo.pause();
