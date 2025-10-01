@@ -928,6 +928,10 @@ HOME_HTML = '''
             display: none;
         }
 
+        .preview-area.has-overlay .preview-image-layer {
+            pointer-events: auto;
+        }
+
         .preview-image-frame {
             position: absolute;
             top: 0;
@@ -1981,6 +1985,7 @@ HOME_HTML = '''
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
         let timelineLaneCount = 0;
+        let lastMainTrackTimelineItem = null;
 
         const previewImagePointerState = {
             pointerId: null,
@@ -2847,6 +2852,66 @@ HOME_HTML = '''
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
 
+        function parseLaneIndexFromTimelineItem(timelineItem) {
+            if (!timelineItem) {
+                return 0;
+            }
+            const value = Number.parseInt(timelineItem.dataset?.laneIndex || '0', 10);
+            return Number.isFinite(value) ? value : 0;
+        }
+
+        function resolveMainTrackPreviewItem() {
+            if (lastMainTrackTimelineItem?.isConnected) {
+                return lastMainTrackTimelineItem;
+            }
+            return getTimelineItems().find((item) => parseLaneIndexFromTimelineItem(item) === 0) || null;
+        }
+
+        function ensureMainTrackMediaLoaded(timelineItem) {
+            if (!timelineItem) {
+                return null;
+            }
+
+            const fileType = timelineItem.dataset.fileType || '';
+            const objectURL = timelineItem.dataset.objectUrl;
+            if (!objectURL) {
+                return null;
+            }
+
+            if (previewPlaceholder) {
+                previewPlaceholder.hidden = true;
+            }
+
+            if (fileType.startsWith('video/')) {
+                if (previewVideo) {
+                    previewVideo.hidden = false;
+                    if (previewVideo.src !== objectURL) {
+                        previewVideo.pause();
+                        previewVideo.src = objectURL;
+                        previewVideo.load();
+                    }
+                }
+                return 'video';
+            }
+
+            if (fileType.startsWith('image/')) {
+                if (previewImage) {
+                    if (previewImage.src !== objectURL) {
+                        previewImage.src = objectURL;
+                    }
+                    setPreviewImageVisibility(true);
+                }
+                if (previewVideo) {
+                    previewVideo.pause();
+                    previewVideo.hidden = true;
+                    previewVideo.removeAttribute('src');
+                }
+                return 'image';
+            }
+
+            return null;
+        }
+
         function getTotalTimelineDuration() {
             return getTimelineItems().reduce(
                 (total, item) => total + getTimelineItemPlaybackDuration(item),
@@ -3209,9 +3274,14 @@ HOME_HTML = '''
             if (!previewArea) {
                 return;
             }
-            previewArea.classList.remove('has-video', 'has-image');
-            if (mode) {
-                previewArea.classList.add(mode);
+            const modes = Array.isArray(mode)
+                ? mode.filter((value) => typeof value === 'string' && value.length)
+                : mode
+                    ? [mode]
+                    : [];
+            previewArea.classList.remove('has-video', 'has-image', 'has-overlay');
+            if (modes.length) {
+                previewArea.classList.add(...modes);
             }
         }
 
@@ -4720,6 +4790,7 @@ HOME_HTML = '''
             setPreviewMode(null);
             resetPreviewScroll();
             setActiveTimelineItem(null);
+            lastMainTrackTimelineItem = null;
         }
 
         function setActiveTimelineItem(item) {
@@ -4756,25 +4827,62 @@ HOME_HTML = '''
                 stopTimelinePlayback();
             }
 
+            const laneIndex = parseLaneIndexFromTimelineItem(timelineItem);
+            const isOverlayTrack = laneIndex > 0;
+
+            if (isOverlayTrack && fileType.startsWith('image/')) {
+                const baseTimelineItem = resolveMainTrackPreviewItem();
+                const baseType = ensureMainTrackMediaLoaded(baseTimelineItem);
+                if (baseTimelineItem) {
+                    lastMainTrackTimelineItem = baseTimelineItem;
+                }
+                if (baseType === 'video') {
+                    setPreviewMode(['has-video', 'has-overlay']);
+                } else if (baseType === 'image') {
+                    setPreviewMode(['has-image', 'has-overlay']);
+                } else {
+                    setPreviewMode('has-image');
+                    if (previewVideo) {
+                        previewVideo.pause();
+                        previewVideo.hidden = true;
+                        previewVideo.removeAttribute('src');
+                    }
+                }
+                setPreviewImageVisibility(true);
+                if (previewImage && previewImage.src !== objectURL) {
+                    previewImage.src = objectURL;
+                }
+                resetPreviewScroll();
+                playVideoButton.textContent = 'Play Back';
+                return;
+            }
+
             if (fileType.startsWith('video/')) {
+                ensureMainTrackMediaLoaded(timelineItem);
+                if (laneIndex === 0) {
+                    lastMainTrackTimelineItem = timelineItem;
+                }
                 setPreviewMode('has-video');
                 resetPreviewScroll();
                 setPreviewImageVisibility(false);
-                previewImage.removeAttribute('src');
-                previewVideo.hidden = false;
-                if (previewVideo.src !== objectURL) {
-                    previewVideo.pause();
-                    previewVideo.src = objectURL;
-                    previewVideo.load();
+                if (previewImage) {
+                    previewImage.removeAttribute('src');
                 }
                 playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
-                setPreviewMode('has-image');
-                previewVideo.pause();
-                previewVideo.hidden = true;
-                previewVideo.removeAttribute('src');
+                if (laneIndex === 0) {
+                    lastMainTrackTimelineItem = timelineItem;
+                    setPreviewMode('has-image');
+                    if (previewVideo) {
+                        previewVideo.pause();
+                        previewVideo.hidden = true;
+                        previewVideo.removeAttribute('src');
+                    }
+                } else {
+                    setPreviewMode('has-image');
+                }
                 setPreviewImageVisibility(true);
-                if (previewImage.src !== objectURL) {
+                if (previewImage && previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
                 }
                 resetPreviewScroll();
