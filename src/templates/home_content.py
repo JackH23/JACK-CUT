@@ -3006,7 +3006,7 @@ HOME_HTML = '''
             const extendStep = TIMELINE_AUTO_EXTEND_STEP;
 
             if (pointerClientX >= trackRect.right - extendThreshold) {
-                const pointerOffset = pointerClientX - trackRect.left;
+                const pointerOffset = pointerClientX - trackRect.left + timelineTrack.scrollLeft;
                 const laneRect = timelineLaneList.getBoundingClientRect();
                 const currentWidth = laneRect ? laneRect.width : timelineLaneList.scrollWidth;
                 const storedWidth = Number.parseFloat(timelineLaneList.dataset.extendedWidth || '0') || 0;
