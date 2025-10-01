@@ -2965,6 +2965,9 @@ HOME_HTML = '''
                 ? preferDurationOver
                 : 0;
             const overlayTimelineItem = options?.overlayTimelineItem || null;
+            const overlayLaneIndex = overlayTimelineItem
+                ? parseLaneIndexFromTimelineItem(overlayTimelineItem)
+                : 0;
             let baseTimelineItem = resolveOverlayAlignedMainTrackItem(overlayTimelineItem);
             if (!baseTimelineItem) {
                 baseTimelineItem = resolveMainTrackPreviewItem({
@@ -2985,7 +2988,10 @@ HOME_HTML = '''
                     (item) => parseLaneIndexFromTimelineItem(item) > 0,
                 );
                 longestOtherOverlayDuration = allOverlayItems
-                    .filter((item) => item !== overlayTimelineItem)
+                    .filter(
+                        (item) => item !== overlayTimelineItem
+                            && parseLaneIndexFromTimelineItem(item) < overlayLaneIndex,
+                    )
                     .map((item) => getTimelineItemPlaybackDuration(item))
                     .filter((duration) => Number.isFinite(duration) && duration > 0)
                     .reduce((longest, duration) => Math.max(longest, duration), 0);
@@ -3015,6 +3021,8 @@ HOME_HTML = '''
             let overlayItem = null;
             let overlayContext = null;
             let longestDuration = 0;
+            let selectedDuration = 0;
+            let highestLaneIndex = -1;
 
             overlayItems.forEach((item) => {
                 const rawDuration = getTimelineItemPlaybackDuration(item);
@@ -3026,9 +3034,21 @@ HOME_HTML = '''
                     return;
                 }
                 if (context.overlayDuration > longestDuration) {
+                    longestDuration = context.overlayDuration;
+                }
+                const laneIndex = parseLaneIndexFromTimelineItem(item);
+                if (
+                    overlayItem === null
+                    || laneIndex > highestLaneIndex
+                    || (
+                        laneIndex === highestLaneIndex
+                        && context.overlayDuration > selectedDuration
+                    )
+                ) {
                     overlayItem = item;
                     overlayContext = context;
-                    longestDuration = context.overlayDuration;
+                    highestLaneIndex = laneIndex;
+                    selectedDuration = context.overlayDuration;
                 }
             });
 
@@ -3036,6 +3056,7 @@ HOME_HTML = '''
                 overlayItem,
                 overlayContext,
                 longestDuration,
+                selectedDuration,
             };
         }
 
@@ -3089,8 +3110,12 @@ HOME_HTML = '''
                 (total, item) => total + getTimelineItemPlaybackDuration(item),
                 0,
             );
-            const { longestDuration } = getExtendingOverlayPlaybackInfo();
-            return Math.max(mainTrackDuration, longestDuration || 0);
+            const {
+                longestDuration,
+                selectedDuration,
+            } = getExtendingOverlayPlaybackInfo();
+            const overlayDurationForTotal = selectedDuration || longestDuration || 0;
+            return Math.max(mainTrackDuration, overlayDurationForTotal);
         }
 
         function getTimelineItemStartTime(timelineItem) {
@@ -5603,9 +5628,19 @@ HOME_HTML = '''
                 overlayItem: extendingOverlayItem,
                 overlayContext: extendingOverlayContext,
                 longestDuration: longestOverlayDuration,
+                selectedDuration: selectedOverlayDuration,
             } = getExtendingOverlayPlaybackInfo();
-            const totalDuration = Math.max(mainTrackTotalDuration, longestOverlayDuration || 0);
-            const overlayTailDuration = Math.max(0, totalDuration - mainTrackTotalDuration);
+            const overlayDurationForTotal = Math.max(
+                selectedOverlayDuration || 0,
+                longestOverlayDuration || 0,
+            );
+            const totalDuration = Math.max(mainTrackTotalDuration, overlayDurationForTotal);
+            const overlayTailDuration = Math.max(
+                0,
+                (extendingOverlayContext?.overlayDuration
+                    ? Math.min(extendingOverlayContext.overlayDuration, totalDuration)
+                    : totalDuration) - mainTrackTotalDuration,
+            );
             const initialItem = timelineItems[initialIndex];
             const startElapsed = initialItem ? getTimelineItemStartTime(initialItem) : 0;
 
