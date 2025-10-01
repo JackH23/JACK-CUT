@@ -1288,6 +1288,38 @@ HOME_HTML = '''
             scroll-snap-align: start;
         }
 
+        .timeline-item-remove {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 24px;
+            height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.68);
+            color: rgba(226, 232, 240, 0.85);
+            font-size: 0.75rem;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0.75;
+            transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+
+        .timeline-item-remove:hover,
+        .timeline-item-remove:focus-visible {
+            opacity: 1;
+            background: rgba(30, 41, 59, 0.9);
+            color: rgba(248, 250, 252, 0.95);
+        }
+
+        .timeline-item-remove:focus-visible {
+            outline: 2px solid rgba(124, 58, 237, 0.7);
+            outline-offset: 2px;
+        }
+
         .timeline-item[data-resize-cursor="left"],
         .timeline-item[data-resize-cursor="right"] {
             cursor: ew-resize;
@@ -4812,6 +4844,12 @@ HOME_HTML = '''
             const label = document.createElement('span');
             label.textContent = file.name;
 
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'timeline-item-remove';
+            removeButton.setAttribute('aria-label', 'Remove clip');
+            removeButton.textContent = '✕';
+
             if (file.type.startsWith('video/')) {
                 const videoThumb = document.createElement('video');
                 videoThumb.src = objectURL;
@@ -4863,6 +4901,7 @@ HOME_HTML = '''
             }
 
             timelineItem.appendChild(label);
+            timelineItem.appendChild(removeButton);
 
             const targetLane = defaultLane || ensureTimelineLane(0);
             if (targetLane) {
@@ -4879,6 +4918,28 @@ HOME_HTML = '''
                 stopTimelinePlayback();
                 setActiveTimelineItem(timelineItem);
                 loadPreviewFromTimeline(timelineItem);
+            });
+
+            removeButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const targetItem = removeButton.closest('.timeline-item');
+                if (!targetItem) {
+                    return;
+                }
+                const wasActive = targetItem === activeTimelineItem;
+                const url = targetItem.dataset.objectUrl;
+                targetItem.remove();
+                if (url) {
+                    URL.revokeObjectURL(url);
+                }
+                if (wasActive) {
+                    setActiveTimelineItem(null);
+                    clearPreview();
+                }
+                cleanupEmptyTimelineLanes();
+                updateTimelineEmptyState();
+                updateActiveTimelineIndicators();
+                renderExportSummary(getTimelineItems(), null);
             });
 
             setActiveTimelineItem(timelineItem);
