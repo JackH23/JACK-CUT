@@ -2925,16 +2925,53 @@ HOME_HTML = '''
             return mainTrackItems[0];
         }
 
+        function resolveOverlayAlignedMainTrackItem(overlayTimelineItem) {
+            if (!overlayTimelineItem) {
+                return null;
+            }
+
+            const overlayLaneItemsContainer = overlayTimelineItem.closest('[data-role="timeline-lane-items"]');
+            if (!overlayLaneItemsContainer) {
+                return null;
+            }
+
+            const overlayLaneItems = Array.from(overlayLaneItemsContainer.querySelectorAll('.timeline-item'));
+            if (!overlayLaneItems.length) {
+                return null;
+            }
+
+            const overlayIndex = overlayLaneItems.indexOf(overlayTimelineItem);
+            if (overlayIndex < 0) {
+                return null;
+            }
+
+            const mainTrackItems = getTimelineItems().filter(
+                (item) => parseLaneIndexFromTimelineItem(item) === 0,
+            );
+            if (!mainTrackItems.length) {
+                return null;
+            }
+
+            if (overlayIndex >= mainTrackItems.length) {
+                return mainTrackItems[mainTrackItems.length - 1];
+            }
+
+            return mainTrackItems[overlayIndex] || null;
+        }
+
         function resolveOverlayPlaybackContext(preferDurationOver = 0, options = {}) {
             const safeOverlayDuration = Number.isFinite(preferDurationOver)
                 && preferDurationOver > 0
                 ? preferDurationOver
                 : 0;
             const overlayTimelineItem = options?.overlayTimelineItem || null;
-            const baseTimelineItem = resolveMainTrackPreviewItem({
-                preferDurationOver: safeOverlayDuration,
-                allowShorterMatch: true,
-            });
+            let baseTimelineItem = resolveOverlayAlignedMainTrackItem(overlayTimelineItem);
+            if (!baseTimelineItem) {
+                baseTimelineItem = resolveMainTrackPreviewItem({
+                    preferDurationOver: safeOverlayDuration,
+                    allowShorterMatch: true,
+                });
+            }
             const baseDuration = baseTimelineItem
                 ? getTimelineItemPlaybackDuration(baseTimelineItem)
                 : 0;
