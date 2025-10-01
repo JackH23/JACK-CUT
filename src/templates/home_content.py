@@ -3169,6 +3169,8 @@ HOME_HTML = '''
                     }
                 }
 
+                scheduleTimelineAutoExtend(moveEvent.clientX);
+
                 const currentScrollLeft = timelineTrack ? timelineTrack.scrollLeft : initialScrollLeft;
                 const scrollDelta = currentScrollLeft - initialScrollLeft;
                 let deltaX = moveEvent.clientX - startX + scrollDelta;
@@ -3189,6 +3191,7 @@ HOME_HTML = '''
                 timelineItem.classList.remove('is-resizing');
                 timelineItem.draggable = previousDraggable;
                 delete timelineItem.dataset.resizeCursor;
+                cancelTimelineAutoExtend();
                 updateActiveTimelineIndicators();
             };
 
