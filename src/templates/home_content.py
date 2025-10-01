@@ -1905,6 +1905,14 @@ HOME_HTML = '''
         const playVideoButton = document.getElementById('play-video-button');
         const timelineProgressLine = document.getElementById('timeline-progress-line');
         const timelineProgressInput = document.getElementById('timeline-progress');
+        if (timelineProgressInput) {
+            timelineProgressInput.addEventListener('input', () => {
+                stopTimelinePlayback(true, false);
+                const rawValue = Number(timelineProgressInput.value);
+                const fraction = Number.isFinite(rawValue) ? rawValue / 100 : 0;
+                seekTimelineToFraction(fraction);
+            });
+        }
         const previewAspectSelect = document.getElementById('preview-aspect');
         const previewAspectLabel = document.getElementById('preview-aspect-label');
         const playbackTimeDisplay = document.getElementById('playback-time');
@@ -2674,6 +2682,44 @@ HOME_HTML = '''
                 return 0;
             }
             return clampProgress(Math.max(0, timeMs) / total);
+        }
+
+        function seekTimelineToFraction(fraction) {
+            const items = getTimelineItems();
+            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+            const clampedFraction = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+
+            if (!items.length || totalDuration <= 0) {
+                setActiveTimelineItem(null);
+                loadPreviewFromTimeline(null);
+                resetTimelineProgressLine(0);
+                updatePlaybackTimeDisplay(0, totalDuration);
+                renderExportSummary(items, null);
+                return;
+            }
+
+            const targetTime = clampedFraction * totalDuration;
+            let activeItem = items[items.length - 1];
+
+            for (const item of items) {
+                const startTime = getTimelineItemStartTime(item);
+                const duration = getTimelineItemPlaybackDuration(item);
+                const endTime = startTime + duration;
+                if (targetTime < endTime || item === items[items.length - 1]) {
+                    activeItem = item;
+                    break;
+                }
+            }
+
+            setActiveTimelineItem(activeItem);
+            loadPreviewFromTimeline(activeItem);
+
+            resetTimelineProgressLine(clampedFraction);
+
+            const displayTime = Math.min(Math.max(targetTime, 0), totalDuration);
+            updatePlaybackTimeDisplay(displayTime, totalDuration);
+
+            renderExportSummary(items, null);
         }
 
         function scrollTimelineItemIntoView(timelineItem) {
