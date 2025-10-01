@@ -4866,16 +4866,28 @@ HOME_HTML = '''
                 const baseTimelineItem = resolveMainTrackPreviewItem({
                     preferDurationOver: overlayDuration,
                 });
+                const baseDuration = baseTimelineItem
+                    ? getTimelineItemPlaybackDuration(baseTimelineItem)
+                    : 0;
                 const baseType = baseTimelineItem
                     ? ensureMainTrackMediaLoaded(baseTimelineItem)
                     : null;
+                const shouldShowOverlay = !baseTimelineItem || baseDuration <= overlayDuration;
+
                 if (baseTimelineItem) {
                     lastMainTrackTimelineItem = baseTimelineItem;
                 }
+
                 if (baseType === 'video') {
-                    setPreviewMode(['has-video', 'has-overlay']);
+                    setPreviewMode(shouldShowOverlay ? ['has-video', 'has-overlay'] : 'has-video');
+                    if (!shouldShowOverlay) {
+                        setPreviewImageVisibility(false);
+                        if (previewImage) {
+                            previewImage.removeAttribute('src');
+                        }
+                    }
                 } else if (baseType === 'image') {
-                    setPreviewMode(['has-image', 'has-overlay']);
+                    setPreviewMode(shouldShowOverlay ? ['has-image', 'has-overlay'] : 'has-image');
                 } else {
                     setPreviewMode('has-image');
                     if (previewVideo) {
@@ -4884,10 +4896,14 @@ HOME_HTML = '''
                         previewVideo.removeAttribute('src');
                     }
                 }
-                setPreviewImageVisibility(true);
-                if (previewImage && previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
+
+                if (shouldShowOverlay) {
+                    setPreviewImageVisibility(true);
+                    if (previewImage && previewImage.src !== objectURL) {
+                        previewImage.src = objectURL;
+                    }
                 }
+
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
                 return;
