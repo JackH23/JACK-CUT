@@ -2884,6 +2884,157 @@ HOME_HTML = '''
             return mainTrackItems.length ? mainTrackItems : items;
         }
 
+        function getOverlayPlaybackSchedule() {
+            const mainTrackItems = getTimelineItemsForPlayback();
+            const coverageByItem = new Map();
+
+            if (!mainTrackItems.length) {
+                return {
+                    coverageByItem,
+                    totalMainDuration: 0,
+                    overlayTotalDuration: 0,
+                    overlayTailSegments: [],
+                };
+            }
+
+            const mainTimelineWindows = [];
+            let accumulatedMainDuration = 0;
+
+            mainTrackItems.forEach((item) => {
+                const rawDuration = getTimelineItemPlaybackDuration(item);
+                const safeDuration = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0;
+                const windowStart = accumulatedMainDuration;
+                const windowEnd = windowStart + safeDuration;
+                coverageByItem.set(item, []);
+                mainTimelineWindows.push({
+                    item,
+                    start: windowStart,
+                    end: windowEnd,
+                    duration: safeDuration,
+                });
+                accumulatedMainDuration = windowEnd;
+            });
+
+            const lanes = getTimelineLanes();
+            const overlaySegments = [];
+            const overlayTailSegments = [];
+            let overlayTotalDuration = 0;
+
+            lanes.forEach((lane) => {
+                const laneIndex = Number.parseInt(lane.dataset?.laneIndex || '0', 10);
+                if (!Number.isFinite(laneIndex) || laneIndex <= 0) {
+                    return;
+                }
+
+                const laneItems = Array.from(lane.querySelectorAll('.timeline-item'));
+                if (!laneItems.length) {
+                    return;
+                }
+
+                let laneOffset = 0;
+                laneItems.forEach((overlayItem) => {
+                    const rawDuration = getTimelineItemPlaybackDuration(overlayItem);
+                    const safeDuration = Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0;
+                    if (safeDuration <= 0) {
+                        return;
+                    }
+                    const segmentStart = laneOffset;
+                    const segmentEnd = segmentStart + safeDuration;
+                    overlaySegments.push({
+                        laneIndex,
+                        overlayItem,
+                        start: segmentStart,
+                        end: segmentEnd,
+                    });
+                    laneOffset = segmentEnd;
+                });
+
+                overlayTotalDuration = Math.max(overlayTotalDuration, laneOffset);
+            });
+
+            if (!overlaySegments.length) {
+                return {
+                    coverageByItem,
+                    totalMainDuration: accumulatedMainDuration,
+                    overlayTotalDuration,
+                    overlayTailSegments,
+                };
+            }
+
+            const windowCount = mainTimelineWindows.length;
+
+            overlaySegments.forEach((segment) => {
+                if (!windowCount) {
+                    return;
+                }
+
+                let windowIndex = 0;
+                while (
+                    windowIndex < windowCount
+                    && mainTimelineWindows[windowIndex].end <= segment.start
+                ) {
+                    windowIndex += 1;
+                }
+
+                for (let index = windowIndex; index < windowCount; index += 1) {
+                    const windowEntry = mainTimelineWindows[index];
+                    if (windowEntry.start >= segment.end) {
+                        break;
+                    }
+                    const overlapStart = Math.max(segment.start, windowEntry.start);
+                    const overlapEnd = Math.min(segment.end, windowEntry.end);
+                    if (overlapEnd <= overlapStart) {
+                        continue;
+                    }
+                    const segmentsForItem = coverageByItem.get(windowEntry.item);
+                    if (!segmentsForItem) {
+                        continue;
+                    }
+                    segmentsForItem.push({
+                        overlayItem: segment.overlayItem,
+                        laneIndex: segment.laneIndex,
+                        startOffset: overlapStart - windowEntry.start,
+                        endOffset: overlapEnd - windowEntry.start,
+                    });
+                }
+
+                if (segment.end > accumulatedMainDuration) {
+                    const tailStart = Math.max(accumulatedMainDuration, segment.start);
+                    if (segment.end > tailStart) {
+                        overlayTailSegments.push({
+                            overlayItem: segment.overlayItem,
+                            laneIndex: segment.laneIndex,
+                            startOffset: tailStart - accumulatedMainDuration,
+                            endOffset: segment.end - accumulatedMainDuration,
+                        });
+                    }
+                }
+            });
+
+            coverageByItem.forEach((segments) => {
+                segments.sort((a, b) => {
+                    if (a.startOffset === b.startOffset) {
+                        return a.laneIndex - b.laneIndex;
+                    }
+                    return a.startOffset - b.startOffset;
+                });
+            });
+
+            overlayTailSegments.sort((a, b) => {
+                if (a.startOffset === b.startOffset) {
+                    return a.laneIndex - b.laneIndex;
+                }
+                return a.startOffset - b.startOffset;
+            });
+
+            return {
+                coverageByItem,
+                totalMainDuration: accumulatedMainDuration,
+                overlayTotalDuration,
+                overlayTailSegments,
+            };
+        }
+
         function parseLaneIndexFromTimelineItem(timelineItem) {
             if (!timelineItem) {
                 return 0;
@@ -5352,11 +5503,233 @@ HOME_HTML = '''
 
         uploadButton.addEventListener('click', () => uploadInput.click());
 
+        function applyOverlayPreviewDuringPlayback(overlayTimelineItem, baseState = {}) {
+            if (!overlayTimelineItem) {
+                return () => {};
+            }
+
+            const objectURL = overlayTimelineItem.dataset?.objectUrl;
+            if (!objectURL) {
+                return () => {};
+            }
+
+            const baseModes = Array.isArray(baseState?.modes)
+                ? baseState.modes.filter((mode) => typeof mode === 'string' && mode.length)
+                : [];
+            const overlayModes = baseModes.length ? [...baseModes, 'has-overlay'] : ['has-overlay'];
+
+            setPreviewMode(overlayModes);
+
+            if (previewPlaceholder) {
+                previewPlaceholder.hidden = true;
+            }
+
+            const baseImageWasVisible = !previewImage.hidden;
+            setPreviewImageVisibility(true);
+
+            if (previewImage.src !== objectURL) {
+                previewImage.src = objectURL;
+            }
+
+            const storedTransform = getStoredPreviewImageTransform(overlayTimelineItem);
+            if (storedTransform) {
+                applyStoredPreviewImageTransform(storedTransform);
+            } else {
+                resetPreviewImageFrameToFit();
+            }
+
+            return () => {
+                const baseImageUrl = baseState?.baseImageUrl || '';
+                const baseTimelineItem = baseState?.timelineItem || null;
+                const baseImageVisible = Boolean(baseState?.baseImageVisible);
+
+                if (previewImage && previewImage.src === objectURL) {
+                    if (baseImageUrl && baseModes.includes('has-image')) {
+                        if (previewImage.src !== baseImageUrl) {
+                            previewImage.src = baseImageUrl;
+                        }
+                    } else {
+                        previewImage.removeAttribute('src');
+                    }
+                }
+
+                if (baseModes.includes('has-image')) {
+                    if (baseImageUrl) {
+                        if (previewImage.src !== baseImageUrl) {
+                            previewImage.src = baseImageUrl;
+                        }
+                        setPreviewImageVisibility(true);
+                    } else if (baseImageVisible || baseImageWasVisible) {
+                        setPreviewImageVisibility(true);
+                    } else {
+                        setPreviewImageVisibility(false);
+                    }
+                    if (baseTimelineItem) {
+                        tryRestorePreviewImageTransform(baseTimelineItem);
+                    }
+                } else {
+                    setPreviewImageVisibility(false);
+                }
+
+                setPreviewMode(baseModes.length ? baseModes : null);
+            };
+        }
+
+        function scheduleOverlaySegmentsDuringPlayback(
+            baseTimelineItem,
+            baseDuration,
+            segments,
+            baseModes = [],
+        ) {
+            if (!Array.isArray(segments) || !segments.length) {
+                return () => {};
+            }
+
+            const safeDuration = Number.isFinite(baseDuration) && baseDuration > 0 ? baseDuration : 0;
+            if (safeDuration <= 0) {
+                return () => {};
+            }
+
+            const sanitizedModes = Array.isArray(baseModes)
+                ? baseModes.filter((mode) => typeof mode === 'string' && mode.length)
+                : [];
+
+            const normalizedSegments = segments
+                .map((segment) => {
+                    const rawStart = Number(segment?.startOffset);
+                    const rawEnd = Number(segment?.endOffset);
+                    const start = Number.isFinite(rawStart) ? rawStart : 0;
+                    const end = Number.isFinite(rawEnd) ? rawEnd : start;
+                    const clampedStart = Math.max(0, Math.min(safeDuration, start));
+                    const clampedEnd = Math.max(clampedStart, Math.min(safeDuration, end));
+                    return {
+                        overlayItem: segment?.overlayItem || null,
+                        laneIndex: Number.isFinite(segment?.laneIndex) ? segment.laneIndex : 0,
+                        start: clampedStart,
+                        end: clampedEnd,
+                    };
+                })
+                .filter((segment) => segment.overlayItem && segment.end > segment.start);
+
+            if (!normalizedSegments.length) {
+                return () => {};
+            }
+
+            const events = [];
+            normalizedSegments.forEach((segment) => {
+                events.push({
+                    time: segment.start,
+                    type: 'start',
+                    laneIndex: segment.laneIndex,
+                    overlayItem: segment.overlayItem,
+                });
+                events.push({
+                    time: segment.end,
+                    type: 'end',
+                    laneIndex: segment.laneIndex,
+                    overlayItem: segment.overlayItem,
+                });
+            });
+
+            events.sort((a, b) => {
+                if (a.time !== b.time) {
+                    return a.time - b.time;
+                }
+                if (a.type !== b.type) {
+                    return a.type === 'end' ? -1 : 1;
+                }
+                return a.laneIndex - b.laneIndex;
+            });
+
+            const activeOverlays = new Map();
+            const scheduledTimeouts = [];
+            let currentCleanup = null;
+            let currentOverlayItem = null;
+
+            const baseState = {
+                modes: sanitizedModes,
+                baseImageUrl: '',
+                baseImageVisible: false,
+                timelineItem: baseTimelineItem || null,
+            };
+
+            if (sanitizedModes.includes('has-image')) {
+                baseState.baseImageUrl = previewImage?.src || '';
+                baseState.baseImageVisible = !previewImage.hidden;
+            }
+
+            const updateOverlayDisplay = () => {
+                if (!activeOverlays.size) {
+                    if (currentCleanup) {
+                        currentCleanup();
+                        currentCleanup = null;
+                    }
+                    currentOverlayItem = null;
+                    return;
+                }
+
+                let highestLaneIndex = Number.NEGATIVE_INFINITY;
+                let nextOverlayItem = null;
+
+                activeOverlays.forEach((value, laneIndex) => {
+                    if (laneIndex > highestLaneIndex) {
+                        highestLaneIndex = laneIndex;
+                        nextOverlayItem = value;
+                    }
+                });
+
+                if (nextOverlayItem === currentOverlayItem) {
+                    return;
+                }
+
+                if (currentCleanup) {
+                    currentCleanup();
+                    currentCleanup = null;
+                }
+
+                currentOverlayItem = nextOverlayItem;
+                currentCleanup = applyOverlayPreviewDuringPlayback(currentOverlayItem, baseState);
+            };
+
+            events.forEach((event) => {
+                const clampedTime = Math.max(0, Math.min(safeDuration, Math.round(event.time)));
+                const timeoutId = window.setTimeout(() => {
+                    if (event.type === 'start') {
+                        activeOverlays.set(event.laneIndex, event.overlayItem);
+                    } else {
+                        activeOverlays.delete(event.laneIndex);
+                    }
+                    updateOverlayDisplay();
+                }, clampedTime);
+                scheduledTimeouts.push(timeoutId);
+            });
+
+            const finalTimeoutId = window.setTimeout(() => {
+                activeOverlays.clear();
+                updateOverlayDisplay();
+            }, Math.max(0, Math.round(safeDuration)));
+            scheduledTimeouts.push(finalTimeoutId);
+
+            return () => {
+                scheduledTimeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+                scheduledTimeouts.length = 0;
+                activeOverlays.clear();
+                if (currentCleanup) {
+                    currentCleanup();
+                    currentCleanup = null;
+                }
+                currentOverlayItem = null;
+            };
+        }
+
         async function playTimelineItem(timelineItem, options = {}) {
             const fileType = timelineItem.dataset.fileType || '';
             const objectURL = timelineItem.dataset.objectUrl;
             const laneIndex = parseLaneIndexFromTimelineItem(timelineItem);
             const isOverlayTrack = laneIndex > 0;
+            const overlaySegmentsForPlayback = !isOverlayTrack && Array.isArray(options?.overlaySegments)
+                ? options.overlaySegments
+                : [];
 
             if (!objectURL) {
                 return;
@@ -5381,6 +5754,7 @@ HOME_HTML = '''
                     let onEnded = null;
                     let onError = null;
                     let onLoaded = null;
+                    let stopOverlayPlayback = null;
 
                     const cleanup = () => {
                         if (onEnded) {
@@ -5401,6 +5775,10 @@ HOME_HTML = '''
                         resolved = true;
                         window.clearTimeout(timeoutId);
                         cleanup();
+                        if (typeof stopOverlayPlayback === 'function') {
+                            stopOverlayPlayback();
+                            stopOverlayPlayback = null;
+                        }
                         previewVideo.pause();
                         previewVideo.loop = false;
                         previewVideo.currentTime = 0;
@@ -5448,6 +5826,14 @@ HOME_HTML = '''
                             timeoutId = window.setTimeout(() => {
                                 finalize();
                             }, targetDuration);
+                        }
+                        if (!stopOverlayPlayback && overlaySegmentsForPlayback.length && targetDuration > 0) {
+                            stopOverlayPlayback = scheduleOverlaySegmentsDuringPlayback(
+                                timelineItem,
+                                targetDuration,
+                                overlaySegmentsForPlayback,
+                                ['has-video'],
+                            );
                         }
                         previewVideo.currentTime = 0;
                         const playPromise = previewVideo.play();
@@ -5611,28 +5997,42 @@ HOME_HTML = '''
 
                     await new Promise((resolve) => {
                         let resolved = false;
-                        const timeoutId = window.setTimeout(() => {
-                            if (resolved) {
-                                return;
-                            }
-                            resolved = true;
-                            if (timelinePlaybackAbort === abortPlayback) {
-                                timelinePlaybackAbort = null;
-                            }
-                            resolve();
-                        }, imageDuration);
+                        let timeoutId = 0;
+                        let stopOverlayPlayback = null;
 
-                        const abortPlayback = () => {
+                        if (overlaySegmentsForPlayback.length && imageDuration > 0) {
+                            stopOverlayPlayback = scheduleOverlaySegmentsDuringPlayback(
+                                timelineItem,
+                                imageDuration,
+                                overlaySegmentsForPlayback,
+                                ['has-image'],
+                            );
+                        }
+
+                        const finalize = () => {
                             if (resolved) {
                                 return;
                             }
                             resolved = true;
                             window.clearTimeout(timeoutId);
-                            timelinePlaybackAbort = null;
+                            if (typeof stopOverlayPlayback === 'function') {
+                                stopOverlayPlayback();
+                                stopOverlayPlayback = null;
+                            }
+                            if (timelinePlaybackAbort === abortPlayback) {
+                                timelinePlaybackAbort = null;
+                            }
                             resolve();
                         };
 
+                        const abortPlayback = () => {
+                            finalize();
+                        };
+
                         timelinePlaybackAbort = abortPlayback;
+                        timeoutId = window.setTimeout(() => {
+                            finalize();
+                        }, imageDuration);
                     });
                 }
             }
@@ -5645,11 +6045,16 @@ HOME_HTML = '''
                 return false;
             }
 
+            const overlaySchedule = getOverlayPlaybackSchedule();
+            const overlaySegmentsByItem = overlaySchedule?.coverageByItem || new Map();
             const initialIndex = Math.min(Math.max(0, startIndex), timelineItems.length - 1);
-            const mainTrackTotalDuration = timelineItems.reduce(
-                (total, item) => total + getTimelineItemPlaybackDuration(item),
-                0,
-            );
+            const mainTrackTotalDuration = Number.isFinite(overlaySchedule?.totalMainDuration)
+                && overlaySchedule.totalMainDuration > 0
+                ? overlaySchedule.totalMainDuration
+                : timelineItems.reduce(
+                    (total, item) => total + getTimelineItemPlaybackDuration(item),
+                    0,
+                );
             const {
                 overlayItem: extendingOverlayItem,
                 overlayContext: extendingOverlayContext,
@@ -5659,6 +6064,7 @@ HOME_HTML = '''
             const overlayDurationForTotal = Math.max(
                 selectedOverlayDuration || 0,
                 longestOverlayDuration || 0,
+                overlaySchedule?.overlayTotalDuration || 0,
             );
             const totalDuration = Math.max(mainTrackTotalDuration, overlayDurationForTotal);
             const overlayTailDuration = Math.max(
@@ -5691,7 +6097,8 @@ HOME_HTML = '''
                     const endFraction = getTimelineFractionForTime(timelineOffset + duration);
                     animateTimelineProgress(startFraction, endFraction, duration);
                     // eslint-disable-next-line no-await-in-loop
-                    await playTimelineItem(timelineItem);
+                    const overlaySegments = overlaySegmentsByItem.get(timelineItem) || [];
+                    await playTimelineItem(timelineItem, { overlaySegments });
                     timelineOffset += duration;
                 }
                 if (
