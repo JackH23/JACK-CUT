@@ -1983,6 +1983,7 @@ HOME_HTML = '''
         let lastPreviewViewportSize = null;
         let shouldResetImageFrameOnNextViewportUpdate = false;
         let previewGuidesHideTimeout = null;
+        let pendingPreviewVideoLoad = null;
 
         const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
             && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
@@ -4947,8 +4948,85 @@ HOME_HTML = '''
             }
         }
 
+        function abortPendingPreviewVideoLoad() {
+            if (pendingPreviewVideoLoad?.controller) {
+                try {
+                    pendingPreviewVideoLoad.controller.abort();
+                } catch (error) {
+                    // Ignore abort errors; a stale controller may not support aborting.
+                }
+            }
+            pendingPreviewVideoLoad = null;
+        }
+
+        async function preparePreviewVideoSource(objectURL) {
+            if (!previewVideo) {
+                return;
+            }
+
+            abortPendingPreviewVideoLoad();
+
+            if (!objectURL) {
+                previewVideo.pause();
+                previewVideo.hidden = true;
+                previewVideo.removeAttribute('src');
+                previewVideo.load();
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = false;
+                }
+                return;
+            }
+
+            const controller = typeof AbortController === 'function'
+                ? new AbortController()
+                : null;
+            const loadContext = {
+                controller,
+            };
+            pendingPreviewVideoLoad = loadContext;
+
+            previewVideo.pause();
+            previewVideo.hidden = true;
+            if (previewVideo.src !== objectURL) {
+                previewVideo.src = objectURL;
+            }
+            previewVideo.currentTime = 0;
+            previewVideo.load();
+
+            try {
+                const waitOptions = controller ? { signal: controller.signal } : {};
+                await waitForMediaReady(previewVideo, waitOptions);
+                if (pendingPreviewVideoLoad !== loadContext) {
+                    return;
+                }
+
+                previewVideo.pause();
+                previewVideo.currentTime = 0;
+                previewVideo.hidden = false;
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = true;
+                }
+            } catch (error) {
+                if (controller && controller.signal.aborted) {
+                    return;
+                }
+                if (pendingPreviewVideoLoad === loadContext) {
+                    console.warn('Preview video failed to prepare for display.', error);
+                    previewVideo.hidden = true;
+                    if (previewPlaceholder) {
+                        previewPlaceholder.hidden = false;
+                    }
+                }
+            } finally {
+                if (pendingPreviewVideoLoad === loadContext) {
+                    pendingPreviewVideoLoad = null;
+                }
+            }
+        }
+
         function clearPreview() {
             stopTimelinePlayback();
+            abortPendingPreviewVideoLoad();
             previewVideo.pause();
             previewVideo.hidden = true;
             previewVideo.removeAttribute('src');
@@ -4994,8 +5072,6 @@ HOME_HTML = '''
                 return;
             }
 
-            previewPlaceholder.hidden = true;
-
             if (isTimelinePlaying) {
                 stopTimelinePlayback();
             }
@@ -5005,18 +5081,20 @@ HOME_HTML = '''
                 resetPreviewScroll();
                 setPreviewImageVisibility(false);
                 previewImage.removeAttribute('src');
-                previewVideo.hidden = false;
-                if (previewVideo.src !== objectURL) {
-                    previewVideo.pause();
-                    previewVideo.src = objectURL;
-                    previewVideo.load();
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = false;
                 }
+                void preparePreviewVideoSource(objectURL);
                 playVideoButton.textContent = 'Play Back';
             } else if (fileType.startsWith('image/')) {
+                abortPendingPreviewVideoLoad();
                 setPreviewMode('has-image');
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = true;
+                }
                 setPreviewImageVisibility(true);
                 if (previewImage.src !== objectURL) {
                     previewImage.src = objectURL;
@@ -5275,12 +5353,15 @@ HOME_HTML = '''
             setActiveTimelineItem(timelineItem);
 
             if (fileType.startsWith('video/')) {
+                abortPendingPreviewVideoLoad();
                 setPreviewMode('has-video');
                 resetPreviewScroll();
                 setPreviewImageVisibility(false);
                 previewImage.removeAttribute('src');
                 previewVideo.hidden = false;
-                previewPlaceholder.hidden = true;
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = true;
+                }
 
                 await new Promise((resolve) => {
                     let resolved = false;
