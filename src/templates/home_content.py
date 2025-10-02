@@ -2858,24 +2858,51 @@ HOME_HTML = '''
         }
 
         function getTimelinePlaybackSegments() {
-            const entries = getTimelineLaneEntries();
-            const totalDuration = entries.reduce(
+            const rawEntries = getTimelineLaneEntries();
+            const normalizedEntries = rawEntries.map((entry) => {
+                const start = Math.max(0, Number(entry.start) || 0);
+                const end = Math.max(start, Number(entry.end) || 0);
+                const laneIndex = Number.isFinite(Number(entry?.laneIndex))
+                    ? Number(entry.laneIndex)
+                    : Number.POSITIVE_INFINITY;
+
+                return {
+                    item: entry.item || null,
+                    start,
+                    end,
+                    laneIndex,
+                };
+            });
+
+            const totalDuration = normalizedEntries.reduce(
                 (max, entry) => Math.max(max, entry.end),
                 0,
             );
 
-            if (!entries.length || totalDuration <= 0) {
+            if (!normalizedEntries.length || totalDuration <= 0) {
                 return {
                     segments: [],
                     totalDuration,
-                    entries,
+                    entries: normalizedEntries,
                 };
             }
 
             const changePoints = new Set([0, totalDuration]);
-            entries.forEach((entry) => {
+            const startBuckets = new Map();
+            const endBuckets = new Map();
+
+            const addToBucket = (bucketMap, key, value) => {
+                if (!bucketMap.has(key)) {
+                    bucketMap.set(key, []);
+                }
+                bucketMap.get(key).push(value);
+            };
+
+            normalizedEntries.forEach((entry) => {
                 changePoints.add(entry.start);
                 changePoints.add(entry.end);
+                addToBucket(startBuckets, entry.start, entry);
+                addToBucket(endBuckets, entry.end, entry);
             });
 
             const sortedPoints = Array.from(changePoints)
@@ -2883,31 +2910,41 @@ HOME_HTML = '''
                 .sort((a, b) => a - b);
 
             const segments = [];
+            const activeEntries = new Map();
 
             for (let index = 0; index < sortedPoints.length - 1; index += 1) {
-                const start = sortedPoints[index];
-                const end = sortedPoints[index + 1];
-                if (end <= start) {
+                const point = sortedPoints[index];
+                const nextPoint = sortedPoints[index + 1];
+
+                const endingEntries = endBuckets.get(point);
+                if (endingEntries) {
+                    endingEntries.forEach((entry) => {
+                        if (activeEntries.get(entry.laneIndex) === entry) {
+                            activeEntries.delete(entry.laneIndex);
+                        }
+                    });
+                }
+
+                const startingEntries = startBuckets.get(point);
+                if (startingEntries) {
+                    startingEntries.forEach((entry) => {
+                        activeEntries.set(entry.laneIndex, entry);
+                    });
+                }
+
+                if (nextPoint <= point) {
                     continue;
                 }
-                const activeEntries = entries.filter(
-                    (entry) => start >= entry.start && start < entry.end,
-                );
-                
-                const orderedEntries = activeEntries
-                    .slice()
-                    .sort((a, b) => {
-                        const aIndex = Number.isFinite(a?.laneIndex) ? a.laneIndex : Number.POSITIVE_INFINITY;
-                        const bIndex = Number.isFinite(b?.laneIndex) ? b.laneIndex : Number.POSITIVE_INFINITY;
-                        return aIndex - bIndex;
-                    });
 
-                const activeEntry = orderedEntries[0] || null;
+                const orderedActiveEntries = Array.from(activeEntries.values())
+                    .sort((a, b) => a.laneIndex - b.laneIndex);
+
+                const activeEntry = orderedActiveEntries[0] || null;
 
                 segments.push({
-                    start,
-                    end,
-                    duration: end - start,
+                    start: point,
+                    end: nextPoint,
+                    duration: nextPoint - point,
                     item: activeEntry ? activeEntry.item : null,
                 });
             }
@@ -2915,7 +2952,7 @@ HOME_HTML = '''
             return {
                 segments,
                 totalDuration,
-                entries,
+                entries: normalizedEntries,
             };
         }
 
