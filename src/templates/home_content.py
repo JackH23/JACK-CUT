@@ -918,6 +918,21 @@ HOME_HTML = '''
             display: block;
         }
 
+        .preview-image-layer img {
+            opacity: 0;
+            transition: opacity 180ms ease;
+        }
+
+        .preview-image-layer img.is-visible {
+            opacity: 1;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .preview-image-layer img {
+                transition-duration: 0ms;
+            }
+        }
+
         .preview-image-layer {
             position: absolute;
             inset: 0;
@@ -1895,6 +1910,7 @@ HOME_HTML = '''
         const previewResizeHandles = previewImageFrame
             ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
             : [];
+        const timelineImagePreloadCache = new Map();
         const previewCard = document.querySelector('.preview-card');
         const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
         const previewOutsideSegments = previewOutsideIndicator
@@ -1936,6 +1952,14 @@ HOME_HTML = '''
             }
             : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
+
+        if (previewImage) {
+            try {
+                previewImage.decoding = 'async';
+            } catch (error) {
+                // Some browsers do not support setting the decoding hint.
+            }
+        }
         const timelineTrack = document.getElementById('timeline-track');
         const timelineLaneList = document.getElementById('timeline-lane-list');
         const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -1989,6 +2013,103 @@ HOME_HTML = '''
                 ? HTMLMediaElement.HAVE_ENOUGH_DATA
                 : 4;
         const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
+
+        function preloadTimelineImage(objectURL) {
+            if (!objectURL) {
+                return Promise.resolve(null);
+            }
+
+            if (timelineImagePreloadCache.has(objectURL)) {
+                return timelineImagePreloadCache.get(objectURL);
+            }
+
+            const preloadPromise = new Promise((resolve, reject) => {
+                const image = new Image();
+                image.decoding = 'async';
+
+                const finalize = () => {
+                    resolve(image);
+                };
+
+                image.addEventListener('load', () => {
+                    if (typeof image.decode === 'function') {
+                        image.decode().catch(() => {}).finally(finalize);
+                        return;
+                    }
+                    finalize();
+                }, { once: true });
+
+                image.addEventListener('error', (event) => {
+                    reject(event?.error || new Error('Failed to preload image.'));
+                }, { once: true });
+
+                image.src = objectURL;
+            }).catch((error) => {
+                timelineImagePreloadCache.delete(objectURL);
+                throw error;
+            });
+
+            timelineImagePreloadCache.set(objectURL, preloadPromise);
+            return preloadPromise;
+        }
+
+        function releaseTimelineImage(objectURL) {
+            if (!objectURL) {
+                return;
+            }
+            timelineImagePreloadCache.delete(objectURL);
+        }
+
+        async function revealPreviewImageSource(objectURL, options = {}) {
+            const { immediate = false } = options;
+
+            if (!previewImage || !objectURL) {
+                return;
+            }
+
+            if (!previewImage.hidden && previewImage.src === objectURL) {
+                previewImage.classList.add('is-visible');
+                return;
+            }
+
+            try {
+                await preloadTimelineImage(objectURL);
+            } catch (error) {
+                console.warn('Unable to preload timeline image before preview.', error);
+            }
+
+            previewImage.classList.remove('is-visible');
+
+            await new Promise((resolve) => {
+                let settled = false;
+
+                const finish = () => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    previewImage.removeEventListener('load', finish);
+                    previewImage.removeEventListener('error', finish);
+                    if (immediate) {
+                        previewImage.classList.add('is-visible');
+                    } else {
+                        requestAnimationFrame(() => {
+                            previewImage.classList.add('is-visible');
+                        });
+                    }
+                    resolve();
+                };
+
+                previewImage.addEventListener('load', finish, { once: true });
+                previewImage.addEventListener('error', finish, { once: true });
+
+                if (previewImage.src !== objectURL) {
+                    previewImage.src = objectURL;
+                } else if (previewImage.complete && previewImage.naturalWidth > 0) {
+                    finish();
+                }
+            });
+        }
 
         function waitForMediaReady(mediaElement, options = {}) {
             const { signal } = options;
@@ -4738,6 +4859,7 @@ HOME_HTML = '''
                     queuePreviewImageFrameReset();
                 }
             } else {
+                previewImage.classList.remove('is-visible');
                 previewImage.hidden = true;
                 hidePreviewImageLayer();
             }
@@ -4955,6 +5077,7 @@ HOME_HTML = '''
             previewVideo.load();
             setPreviewImageVisibility(false);
             previewImage.removeAttribute('src');
+            previewImage.classList.remove('is-visible');
             previewPlaceholder.hidden = false;
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
@@ -5018,9 +5141,7 @@ HOME_HTML = '''
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
                 setPreviewImageVisibility(true);
-                if (previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
-                }
+                void revealPreviewImageSource(objectURL, { immediate: true });
                 resetPreviewScroll();
                 playVideoButton.textContent = 'Play Back';
             }
@@ -5134,6 +5255,9 @@ HOME_HTML = '''
                     IMAGE_FRAME_DURATION,
                     { markCustom: false },
                 );
+                preloadTimelineImage(objectURL).catch((error) => {
+                    console.warn('Failed to warm timeline image for playback.', error);
+                });
             }
 
             timelineItem.appendChild(label);
@@ -5205,9 +5329,13 @@ HOME_HTML = '''
                     return;
                 }
                 const wasActive = targetItem === activeTimelineItem;
+                const fileType = targetItem.dataset.fileType || '';
                 const url = targetItem.dataset.objectUrl;
                 targetItem.remove();
                 if (url) {
+                    if (fileType.startsWith('image/')) {
+                        releaseTimelineImage(url);
+                    }
                     URL.revokeObjectURL(url);
                 }
                 if (wasActive) {
@@ -5448,9 +5576,7 @@ HOME_HTML = '''
                 previewVideo.removeAttribute('src');
                 setPreviewImageVisibility(true);
                 previewPlaceholder.hidden = true;
-                if (previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
-                }
+                await revealPreviewImageSource(objectURL);
                 resetPreviewScroll();
 
                 await new Promise((resolve) => {
@@ -5568,6 +5694,14 @@ HOME_HTML = '''
                     const { item, start, end, duration } = segment;
                     if (duration <= 0) {
                         continue;
+                    }
+                    const nextSegment = segments[index + 1];
+                    if (nextSegment?.item) {
+                        const nextUrl = nextSegment.item.dataset?.objectUrl;
+                        const nextType = nextSegment.item.dataset?.fileType || '';
+                        if (nextUrl && nextType.startsWith('image/')) {
+                            preloadTimelineImage(nextUrl).catch(() => {});
+                        }
                     }
                     const startFraction = getTimelineFractionForTime(start);
                     const endFraction = getTimelineFractionForTime(end);
