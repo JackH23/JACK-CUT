@@ -5261,9 +5261,12 @@ HOME_HTML = '''
 
         uploadButton.addEventListener('click', () => uploadInput.click());
 
-        async function playTimelineItem(timelineItem) {
+        async function playTimelineItem(timelineItem, segmentDurationMs = null) {
             const fileType = timelineItem.dataset.fileType || '';
             const objectURL = timelineItem.dataset.objectUrl;
+            const playbackWindow = Number.isFinite(segmentDurationMs)
+                ? Math.max(0, Math.round(segmentDurationMs))
+                : null;
 
             if (!objectURL) {
                 return;
@@ -5328,6 +5331,13 @@ HOME_HTML = '''
                         const nextDuration = Number.isFinite(currentDuration) && currentDuration > 0
                             ? Math.max(currentDuration, minimum)
                             : minimum;
+                        const limitedDuration = playbackWindow === null
+                            ? nextDuration
+                            : Math.min(nextDuration, playbackWindow);
+                        const effectiveDuration = Math.max(
+                            0,
+                            Number.isFinite(limitedDuration) ? Math.round(limitedDuration) : 0,
+                        );
                         if (nextDuration !== currentDuration) {
                             setTimelineItemDuration(timelineItem, 'videoDuration', nextDuration);
                             updateActiveTimelineIndicators();
@@ -5337,6 +5347,7 @@ HOME_HTML = '''
                         return {
                             intrinsicDuration: intrinsic,
                             targetDuration: nextDuration,
+                            effectiveDuration,
                         };
                     };
 
@@ -5351,14 +5362,18 @@ HOME_HTML = '''
                             return;
                         }
 
-                        const { intrinsicDuration, targetDuration } = ensureVideoDuration();
-                        const shouldLoop = intrinsicDuration > 0 && targetDuration > intrinsicDuration + 50;
+                        const { intrinsicDuration, targetDuration, effectiveDuration } = ensureVideoDuration();
+                        const shouldLoop = intrinsicDuration > 0
+                            && effectiveDuration > intrinsicDuration + 50;
                         previewVideo.loop = shouldLoop;
                         window.clearTimeout(timeoutId);
-                        if (targetDuration > 0) {
+                        if (effectiveDuration > 0) {
                             timeoutId = window.setTimeout(() => {
                                 finalize();
-                            }, targetDuration);
+                            }, effectiveDuration);
+                        } else if (playbackWindow === 0) {
+                            finalize();
+                            return;
                         }
 
                         previewVideo.currentTime = 0;
@@ -5440,6 +5455,11 @@ HOME_HTML = '''
 
                 await new Promise((resolve) => {
                     let resolved = false;
+                    const clipDuration = Number(timelineItem.dataset.imageDuration)
+                        || IMAGE_FRAME_DURATION;
+                    const effectiveDuration = playbackWindow === null
+                        ? clipDuration
+                        : Math.min(clipDuration, playbackWindow);
                     const timeoutId = window.setTimeout(() => {
                         if (resolved) {
                             return;
@@ -5449,7 +5469,7 @@ HOME_HTML = '''
                             timelinePlaybackAbort = null;
                         }
                         resolve();
-                    }, Number(timelineItem.dataset.imageDuration) || IMAGE_FRAME_DURATION);
+                    }, Math.max(0, Math.round(effectiveDuration)));
 
                     const abortPlayback = () => {
                         if (resolved) {
@@ -5554,7 +5574,7 @@ HOME_HTML = '''
                     animateTimelineProgress(startFraction, endFraction, duration);
                     if (item) {
                         // eslint-disable-next-line no-await-in-loop
-                        await playTimelineItem(item);
+                        await playTimelineItem(item, duration);
                     } else {
                         // eslint-disable-next-line no-await-in-loop
                         await waitForGapDuration(duration);
