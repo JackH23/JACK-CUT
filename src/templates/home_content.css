@@ -992,12 +992,25 @@ body {
     z-index: 40;
 }
 
+
 .preview-image-frame.is-dragging,
 .preview-image-frame.is-resizing {
-    cursor: grabbing;
     box-shadow:
         0 0 0 1px rgba(56, 189, 248, 0.65),
         0 18px 38px rgba(8, 12, 24, 0.45);
+}
+
+.preview-image-frame.is-dragging {
+    cursor: grabbing;
+}
+
+.preview-image-frame.is-resizing {
+    cursor: nwse-resize;
+}
+
+.preview-image-frame.is-resizing[data-resize-handle='ne'],
+.preview-image-frame.is-resizing[data-resize-handle='sw'] {
+    cursor: nesw-resize;
 }
 
 .preview-image-frame img {

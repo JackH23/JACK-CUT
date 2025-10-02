@@ -301,6 +301,7 @@ const previewImagePointerState = {
 };
 
 const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
+const PREVIEW_IMAGE_RESIZE_EDGE_THRESHOLD = 28;
 const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
 const PREVIEW_GUIDE_NEAR_THRESHOLD = Math.max(PREVIEW_IMAGE_SNAP_THRESHOLD, 14);
 const PREVIEW_SMART_GUIDE_TOLERANCE = 6;
@@ -317,6 +318,113 @@ let previewViewportAlignmentState = {
     top: false,
     bottom: false,
 };
+
+function setPreviewImageFrameCursor(handle, options = {}) {
+    if (!previewImageFrame) {
+        return;
+    }
+
+    const { persistHandle = false } = options;
+
+    if (handle) {
+        const cursor = handle === 'ne' || handle === 'sw' ? 'nesw-resize' : 'nwse-resize';
+        previewImageFrame.style.cursor = cursor;
+        if (persistHandle) {
+            previewImageFrame.dataset.resizeHandle = handle;
+        }
+    } else {
+        previewImageFrame.style.removeProperty('cursor');
+        if (persistHandle) {
+            previewImageFrame.removeAttribute('data-resize-handle');
+        }
+    }
+}
+
+function resolvePreviewResizeHandleFromPoint(pointerX, pointerY, width, height) {
+    const corners = [
+        { handle: 'nw', x: 0, y: 0 },
+        { handle: 'ne', x: width, y: 0 },
+        { handle: 'se', x: width, y: height },
+        { handle: 'sw', x: 0, y: height },
+    ];
+
+    let closestHandle = 'se';
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    corners.forEach((corner) => {
+        const distance = Math.hypot(pointerX - corner.x, pointerY - corner.y);
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestHandle = corner.handle;
+        }
+    });
+
+    return closestHandle;
+}
+
+function resolvePreviewImagePointerInteraction(event, handleElement) {
+    if (handleElement) {
+        return {
+            mode: 'resize',
+            handle: handleElement.dataset.handle || 'se',
+            target: handleElement,
+        };
+    }
+
+    if (!previewImageFrame) {
+        return null;
+    }
+
+    const rect = previewImageFrame.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+
+    if (width <= 0 || height <= 0) {
+        return {
+            mode: 'drag',
+            handle: 'se',
+            target: previewImageFrame,
+        };
+    }
+
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+
+    if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
+        return {
+            mode: 'drag',
+            handle: 'se',
+            target: previewImageFrame,
+        };
+    }
+
+    const thresholdX = Math.min(PREVIEW_IMAGE_RESIZE_EDGE_THRESHOLD, width / 2);
+    const thresholdY = Math.min(PREVIEW_IMAGE_RESIZE_EDGE_THRESHOLD, height / 2);
+    const nearHorizontalEdge = pointerX <= thresholdX || pointerX >= width - thresholdX;
+    const nearVerticalEdge = pointerY <= thresholdY || pointerY >= height - thresholdY;
+
+    if (nearHorizontalEdge || nearVerticalEdge) {
+        const handle = resolvePreviewResizeHandleFromPoint(pointerX, pointerY, width, height);
+        return {
+            mode: 'resize',
+            handle,
+            target: previewImageFrame,
+        };
+    }
+
+    return {
+        mode: 'drag',
+        handle: 'se',
+        target: previewImageFrame,
+    };
+}
+
+function getPreviewResizeHandleFromTarget(target) {
+    if (!target || typeof target.closest !== 'function') {
+        return null;
+    }
+    return target.closest('.preview-resize-handle');
+}
 
 const IMAGE_FRAME_DURATION = 1000;
 const DEFAULT_VIDEO_DURATION = 3000;
@@ -2841,6 +2949,7 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
 function endPreviewImagePointerInteraction() {
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
+        setPreviewImageFrameCursor(null, { persistHandle: true });
     }
     const hadInteraction = previewImagePointerState.mode !== null;
     previewImagePointerState.pointerId = null;
@@ -2862,16 +2971,22 @@ function onPreviewImagePointerDown(event) {
         return;
     }
 
-    const handleElement = event.target.closest('.preview-resize-handle');
-    const captureTarget = handleElement || previewImageFrame;
+    const handleElement = getPreviewResizeHandleFromTarget(event.target);
+    const interaction = resolvePreviewImagePointerInteraction(event, handleElement);
+
+    if (!interaction) {
+        return;
+    }
+
+    const captureTarget = interaction.target || previewImageFrame;
 
     if (typeof captureTarget.setPointerCapture === 'function') {
         captureTarget.setPointerCapture(event.pointerId);
     }
 
     previewImagePointerState.pointerId = event.pointerId;
-    previewImagePointerState.mode = handleElement ? 'resize' : 'drag';
-    previewImagePointerState.handle = handleElement?.dataset.handle || 'se';
+    previewImagePointerState.mode = interaction.mode;
+    previewImagePointerState.handle = interaction.handle || 'se';
     previewImagePointerState.origin = {
         pointerX: event.clientX,
         pointerY: event.clientY,
@@ -2886,8 +3001,10 @@ function onPreviewImagePointerDown(event) {
 
     if (previewImagePointerState.mode === 'resize') {
         previewImageFrame.classList.add('is-resizing');
+        setPreviewImageFrameCursor(previewImagePointerState.handle, { persistHandle: true });
     } else {
         previewImageFrame.classList.add('is-dragging');
+        setPreviewImageFrameCursor(null, { persistHandle: true });
     }
 
     setPreviewGuidesVisible(true);
@@ -2898,6 +3015,28 @@ function onPreviewImagePointerDown(event) {
 
     event.preventDefault();
     event.stopPropagation();
+}
+
+function onPreviewImageFrameHover(event) {
+    if (previewImagePointerState.pointerId !== null || previewImage.hidden) {
+        return;
+    }
+
+    const handleElement = getPreviewResizeHandleFromTarget(event.target);
+    const interaction = resolvePreviewImagePointerInteraction(event, handleElement);
+
+    if (interaction?.mode === 'resize' && interaction.handle) {
+        setPreviewImageFrameCursor(interaction.handle);
+    } else {
+        setPreviewImageFrameCursor(null);
+    }
+}
+
+function onPreviewImageFrameLeave() {
+    if (previewImagePointerState.pointerId !== null) {
+        return;
+    }
+    setPreviewImageFrameCursor(null);
 }
 
 function onPreviewImagePointerMove(event) {
@@ -3285,6 +3424,8 @@ if (previewVideo) {
 
 if (previewImageFrame) {
     previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
+    previewImageFrame.addEventListener('pointermove', onPreviewImageFrameHover);
+    previewImageFrame.addEventListener('pointerleave', onPreviewImageFrameLeave);
 }
 
 if (previewOverlayStack) {
