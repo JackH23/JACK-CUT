@@ -2765,23 +2765,105 @@ HOME_HTML = '''
             return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
         }
 
+        function getTimelineLaneEntries() {
+            const entries = [];
+            const lanes = getTimelineLanes();
+            lanes.forEach((lane, index) => {
+                const laneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
+                    ? Number(lane.dataset.laneIndex)
+                    : index;
+                const laneItems = lane
+                    ? Array.from(lane.querySelectorAll('.timeline-item'))
+                    : [];
+                let elapsed = 0;
+                laneItems.forEach((item) => {
+                    const duration = Math.max(0, getTimelineItemPlaybackDuration(item));
+                    const start = elapsed;
+                    const end = start + duration;
+                    entries.push({
+                        item,
+                        laneIndex,
+                        start,
+                        end,
+                    });
+                    elapsed = end;
+                });
+            });
+            return entries;
+        }
+
+        function getTimelinePlaybackSegments() {
+            const entries = getTimelineLaneEntries();
+            const totalDuration = entries.reduce(
+                (max, entry) => Math.max(max, entry.end),
+                0,
+            );
+
+            if (!entries.length || totalDuration <= 0) {
+                return {
+                    segments: [],
+                    totalDuration,
+                    entries,
+                };
+            }
+
+            const changePoints = new Set([0, totalDuration]);
+            entries.forEach((entry) => {
+                changePoints.add(entry.start);
+                changePoints.add(entry.end);
+            });
+
+            const sortedPoints = Array.from(changePoints)
+                .filter((point) => Number.isFinite(point))
+                .sort((a, b) => a - b);
+
+            const segments = [];
+
+            for (let index = 0; index < sortedPoints.length - 1; index += 1) {
+                const start = sortedPoints[index];
+                const end = sortedPoints[index + 1];
+                if (end <= start) {
+                    continue;
+                }
+                const activeEntries = entries.filter(
+                    (entry) => start >= entry.start && start < entry.end,
+                );
+                let activeEntry = null;
+                for (const entry of activeEntries) {
+                    if (!activeEntry || entry.laneIndex < activeEntry.laneIndex) {
+                        activeEntry = entry;
+                    }
+                }
+                segments.push({
+                    start,
+                    end,
+                    duration: end - start,
+                    item: activeEntry ? activeEntry.item : null,
+                });
+            }
+
+            return {
+                segments,
+                totalDuration,
+                entries,
+            };
+        }
+
         function getTotalTimelineDuration() {
-            return getTimelineItems().reduce(
-                (total, item) => total + getTimelineItemPlaybackDuration(item),
+            return getTimelineLaneEntries().reduce(
+                (max, entry) => Math.max(max, entry.end),
                 0,
             );
         }
 
         function getTimelineItemStartTime(timelineItem) {
-            const items = getTimelineItems();
-            let elapsed = 0;
-            for (const item of items) {
-                if (item === timelineItem) {
-                    return elapsed;
-                }
-                elapsed += getTimelineItemPlaybackDuration(item);
+            if (!timelineItem) {
+                return 0;
             }
-            return 0;
+            const entry = getTimelineLaneEntries().find(
+                (candidate) => candidate.item === timelineItem,
+            );
+            return entry ? entry.start : 0;
         }
 
         function getTimelineFractionForTime(timeMs) {
@@ -2793,41 +2875,42 @@ HOME_HTML = '''
         }
 
         function seekTimelineToFraction(fraction) {
-            const items = getTimelineItems();
-            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+            const { segments, totalDuration } = getTimelinePlaybackSegments();
             const clampedFraction = clampProgress(Number.isFinite(fraction) ? fraction : 0);
 
-            if (!items.length || totalDuration <= 0) {
+            if (!segments.length || totalDuration <= 0) {
                 setActiveTimelineItem(null);
                 loadPreviewFromTimeline(null);
                 resetTimelineProgressLine(0);
                 updatePlaybackTimeDisplay(0, totalDuration);
-                renderExportSummary(items, null);
+                renderExportSummary(getTimelineItems(), null);
                 return;
             }
 
             const targetTime = clampedFraction * totalDuration;
-            let activeItem = items[items.length - 1];
+            const safeTarget = Math.min(
+                Math.max(targetTime, 0),
+                Math.max(totalDuration - 1, 0),
+            );
 
-            for (const item of items) {
-                const startTime = getTimelineItemStartTime(item);
-                const duration = getTimelineItemPlaybackDuration(item);
-                const endTime = startTime + duration;
-                if (targetTime < endTime || item === items[items.length - 1]) {
-                    activeItem = item;
+            let activeSegment = null;
+            for (let index = 0; index < segments.length; index += 1) {
+                const segment = segments[index];
+                const isLastSegment = index === segments.length - 1;
+                if (safeTarget >= segment.start && (safeTarget < segment.end || isLastSegment)) {
+                    activeSegment = segment;
                     break;
                 }
             }
 
+            const activeItem = activeSegment ? activeSegment.item : null;
             setActiveTimelineItem(activeItem);
             loadPreviewFromTimeline(activeItem);
 
-            resetTimelineProgressLine(clampedFraction);
-
-            const displayTime = Math.min(Math.max(targetTime, 0), totalDuration);
-            updatePlaybackTimeDisplay(displayTime, totalDuration);
-
-            renderExportSummary(items, null);
+            const safeFraction = totalDuration > 0 ? safeTarget / totalDuration : 0;
+            resetTimelineProgressLine(safeFraction);
+            updatePlaybackTimeDisplay(safeTarget, totalDuration);
+            renderExportSummary(getTimelineItems(), null);
         }
 
         function scrollTimelineItemIntoView(timelineItem) {
@@ -5378,6 +5461,40 @@ HOME_HTML = '''
             }
         }
 
+        function waitForGapDuration(durationMs) {
+            return new Promise((resolve) => {
+                const safeDuration = Math.max(0, Math.round(Number(durationMs) || 0));
+                if (safeDuration <= 0) {
+                    resolve();
+                    return;
+                }
+
+                let resolved = false;
+                const timeoutId = window.setTimeout(() => {
+                    if (resolved) {
+                        return;
+                    }
+                    resolved = true;
+                    if (timelinePlaybackAbort === abortGapPlayback) {
+                        timelinePlaybackAbort = null;
+                    }
+                    resolve();
+                }, safeDuration);
+
+                const abortGapPlayback = () => {
+                    if (resolved) {
+                        return;
+                    }
+                    resolved = true;
+                    window.clearTimeout(timeoutId);
+                    timelinePlaybackAbort = null;
+                    resolve();
+                };
+
+                timelinePlaybackAbort = abortGapPlayback;
+            });
+        }
+
         async function playTimelineSequence(startIndex = 0) {
             const timelineItems = getTimelineItems();
             if (!timelineItems.length) {
@@ -5385,10 +5502,28 @@ HOME_HTML = '''
                 return false;
             }
 
-            const initialIndex = Math.min(Math.max(0, startIndex), timelineItems.length - 1);
-            const totalDuration = Math.max(getTotalTimelineDuration(), 0);
-            const initialItem = timelineItems[initialIndex];
-            const startElapsed = initialItem ? getTimelineItemStartTime(initialItem) : 0;
+            const { segments, totalDuration } = getTimelinePlaybackSegments();
+            if (!segments.length || totalDuration <= 0) {
+                alert('Upload an image or video to build your timeline.');
+                return false;
+            }
+
+            const boundedIndex = Math.min(
+                Math.max(0, startIndex),
+                Math.max(timelineItems.length - 1, 0),
+            );
+            const initialItem = timelineItems[boundedIndex] || null;
+            let initialSegmentIndex = 0;
+            if (initialItem) {
+                const foundSegmentIndex = segments.findIndex(
+                    (segment) => segment.item === initialItem,
+                );
+                if (foundSegmentIndex >= 0) {
+                    initialSegmentIndex = foundSegmentIndex;
+                }
+            }
+            const startSegment = segments[initialSegmentIndex] || null;
+            const startElapsed = startSegment ? startSegment.start : 0;
 
             isTimelinePlaying = true;
             playVideoButton.textContent = 'Pause playback';
@@ -5396,28 +5531,34 @@ HOME_HTML = '''
             updatePlaybackTimeDisplay(startElapsed, totalDuration);
             startPlaybackClock(startElapsed, totalDuration);
 
-            let timelineOffset = startElapsed;
             let completedNaturally = true;
 
             try {
-                for (let index = initialIndex; index < timelineItems.length; index += 1) {
+                for (let index = initialSegmentIndex; index < segments.length; index += 1) {
                     if (!isTimelinePlaying) {
                         completedNaturally = false;
                         break;
                     }
-                    const timelineItem = timelineItems[index];
-                    const duration = getTimelineItemPlaybackDuration(timelineItem);
-                    const startFraction = getTimelineFractionForTime(timelineOffset);
-                    const endFraction = getTimelineFractionForTime(timelineOffset + duration);
+                    const segment = segments[index];
+                    const { item, start, end, duration } = segment;
+                    if (duration <= 0) {
+                        continue;
+                    }
+                    const startFraction = getTimelineFractionForTime(start);
+                    const endFraction = getTimelineFractionForTime(end);
                     animateTimelineProgress(startFraction, endFraction, duration);
-                    // eslint-disable-next-line no-await-in-loop
-                    await playTimelineItem(timelineItem);
-                    timelineOffset += duration;
+                    if (item) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await playTimelineItem(item);
+                    } else {
+                        // eslint-disable-next-line no-await-in-loop
+                        await waitForGapDuration(duration);
+                    }
                 }
             } finally {
                 stopTimelinePlayback(true, false);
                 if (completedNaturally) {
-                    resetTimelineProgressLine(1);
+                    resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
                     updatePlaybackTimeDisplay(totalDuration, totalDuration);
                 } else {
                     updateActiveTimelineIndicators();
