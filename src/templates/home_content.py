@@ -933,6 +933,43 @@ HOME_HTML = '''
             }
         }
 
+        .preview-overlay-stack {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .preview-overlay-stack[hidden] {
+            display: none;
+        }
+
+        .preview-overlay-stack__group {
+            position: absolute;
+            inset: 0;
+        }
+
+        .preview-overlay-stack__group--below {
+            z-index: 10;
+        }
+
+        .preview-overlay-stack__group--above {
+            z-index: 60;
+        }
+
+        .preview-overlay-layer {
+            position: absolute;
+            display: block;
+            overflow: hidden;
+        }
+
+        .preview-overlay-layer img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            pointer-events: none;
+        }
+
         .preview-image-layer {
             position: absolute;
             inset: 0;
@@ -958,6 +995,7 @@ HOME_HTML = '''
             cursor: grab;
             touch-action: none;
             transition: box-shadow 0.18s ease;
+            z-index: 40;
         }
 
         .preview-image-frame.is-dragging,
@@ -989,6 +1027,7 @@ HOME_HTML = '''
             cursor: pointer;
             pointer-events: auto;
             padding: 0;
+            z-index: 80;
         }
 
         .preview-resize-handle:focus-visible {
@@ -1024,7 +1063,7 @@ HOME_HTML = '''
             position: absolute;
             inset: 0;
             pointer-events: none;
-            z-index: 12;
+            z-index: 70;
             display: none;
         }
 
@@ -1301,6 +1340,23 @@ HOME_HTML = '''
             user-select: none;
             transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
             scroll-snap-align: start;
+        }
+
+        .timeline-blend-mode {
+            width: 100%;
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text-secondary);
+            font-family: inherit;
+        }
+
+        .timeline-blend-mode:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.6);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
         }
 
         .timeline-item:focus {
@@ -1658,6 +1714,10 @@ HOME_HTML = '''
                     <div class="preview-viewport">
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden preload="auto" playsinline></video>
+                        <div class="preview-overlay-stack" id="preview-overlay-stack" hidden aria-hidden="true">
+                            <div class="preview-overlay-stack__group preview-overlay-stack__group--below" data-layer-group="below"></div>
+                            <div class="preview-overlay-stack__group preview-overlay-stack__group--above" data-layer-group="above"></div>
+                        </div>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
                                 <img id="preview-image" alt="Preview" hidden>
@@ -1912,6 +1972,13 @@ HOME_HTML = '''
             : [];
         const timelineImagePreloadCache = new Map();
         const previewCard = document.querySelector('.preview-card');
+        const previewOverlayStack = document.getElementById('preview-overlay-stack');
+        const previewOverlayGroups = previewOverlayStack
+            ? {
+                below: previewOverlayStack.querySelector('[data-layer-group="below"]'),
+                above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
+            }
+            : null;
         const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
         const previewOutsideSegments = previewOutsideIndicator
             ? {
@@ -1952,6 +2019,17 @@ HOME_HTML = '''
             }
             : null;
         const previewPlaceholder = document.getElementById('preview-placeholder');
+
+        const BLEND_MODE_OPTIONS = [
+            { value: 'normal', label: 'Normal' },
+            { value: 'screen', label: 'Screen' },
+            { value: 'overlay', label: 'Overlay' },
+            { value: 'multiply', label: 'Multiply' },
+            { value: 'lighten', label: 'Lighten' },
+            { value: 'darken', label: 'Darken' },
+        ];
+
+        const SUPPORTED_BLEND_MODE_VALUES = new Set(BLEND_MODE_OPTIONS.map((option) => option.value));
 
         if (previewImage) {
             try {
@@ -2965,6 +3043,7 @@ HOME_HTML = '''
                     end,
                     duration: end - start,
                     item: activeEntry ? activeEntry.item : null,
+                    items: orderedEntries,
                 });
             }
 
@@ -3031,7 +3110,7 @@ HOME_HTML = '''
 
             const activeItem = activeSegment ? activeSegment.item : null;
             setActiveTimelineItem(activeItem);
-            loadPreviewFromTimeline(activeItem);
+            loadPreviewFromTimeline(activeItem, activeSegment?.items || null);
 
             const safeFraction = totalDuration > 0 ? safeTarget / totalDuration : 0;
             resetTimelineProgressLine(safeFraction);
@@ -3260,6 +3339,10 @@ HOME_HTML = '''
             } else {
                 resetTimelineProgressLine();
                 updatePlaybackTimeDisplay(0, getTotalTimelineDuration());
+            }
+
+            if (!isTimelinePlaying) {
+                refreshActiveOverlayLayers();
             }
         }
 
@@ -4560,6 +4643,7 @@ HOME_HTML = '''
         function handlePreviewViewportResized() {
             if (!previewViewport) {
                 hidePreviewOutsideOutline();
+                refreshActiveOverlayLayers();
                 return;
             }
 
@@ -4569,6 +4653,7 @@ HOME_HTML = '''
             if (width === 0 || height === 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                refreshActiveOverlayLayers();
                 return;
             }
 
@@ -4578,6 +4663,7 @@ HOME_HTML = '''
                 if (applied) {
                     pendingPreviewImageTransform = null;
                     lastPreviewViewportSize = { width, height };
+                    refreshActiveOverlayLayers();
                     return;
                 }
             }
@@ -4586,18 +4672,21 @@ HOME_HTML = '''
                 shouldResetImageFrameOnNextViewportUpdate = false;
                 resetPreviewImageFrameToFit();
                 lastPreviewViewportSize = { width, height };
+                refreshActiveOverlayLayers();
                 return;
             }
 
             if (!previewImageTransform) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                refreshActiveOverlayLayers();
                 return;
             }
 
             if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                refreshActiveOverlayLayers();
                 return;
             }
 
@@ -4606,6 +4695,7 @@ HOME_HTML = '''
             if (!Number.isFinite(scale) || scale <= 0) {
                 lastPreviewViewportSize = { width, height };
                 hidePreviewOutsideOutline();
+                refreshActiveOverlayLayers();
                 return;
             }
 
@@ -4624,6 +4714,7 @@ HOME_HTML = '''
 
             lastPreviewViewportSize = { width, height };
             applyPreviewImageTransform();
+            refreshActiveOverlayLayers();
         }
 
         function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
@@ -4865,6 +4956,248 @@ HOME_HTML = '''
             }
         }
 
+        function normalizeBlendMode(value) {
+            const normalized = String(value || '').toLowerCase();
+            return SUPPORTED_BLEND_MODE_VALUES.has(normalized) ? normalized : 'normal';
+        }
+
+        function clearPreviewOverlayLayers() {
+            if (!previewOverlayStack) {
+                return;
+            }
+
+            if (previewOverlayGroups) {
+                const { below, above } = previewOverlayGroups;
+                if (below) {
+                    below.innerHTML = '';
+                }
+                if (above) {
+                    above.innerHTML = '';
+                }
+            }
+
+            previewOverlayStack.setAttribute('hidden', '');
+            previewOverlayStack.setAttribute('aria-hidden', 'true');
+        }
+
+        function resolveLaneIndex(laneValue) {
+            const parsed = Number.parseInt(laneValue ?? '', 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight) {
+            if (!timelineItem || viewportWidth <= 0 || viewportHeight <= 0) {
+                return null;
+            }
+
+            const stored = getStoredPreviewImageTransform(timelineItem);
+            if (!stored) {
+                return null;
+            }
+
+            const left = stored.left * viewportWidth;
+            const top = stored.top * viewportHeight;
+            const width = stored.width * viewportWidth;
+            const height = stored.height * viewportHeight;
+
+            if ([left, top, width, height].some((value) => !Number.isFinite(value))) {
+                return null;
+            }
+
+            if (width <= 0 || height <= 0) {
+                return null;
+            }
+
+            return { left, top, width, height };
+        }
+
+        function applyPrimaryImageBlendMode(primaryTimelineItem) {
+            if (!previewImage) {
+                return;
+            }
+
+            const fileType = primaryTimelineItem?.dataset?.fileType || '';
+            if (fileType.startsWith('image/')) {
+                const blendMode = normalizeBlendMode(primaryTimelineItem?.dataset?.blendMode);
+                if (blendMode && blendMode !== 'normal') {
+                    previewImage.style.mixBlendMode = blendMode;
+                } else {
+                    previewImage.style.removeProperty('mix-blend-mode');
+                }
+            } else {
+                previewImage.style.removeProperty('mix-blend-mode');
+            }
+        }
+
+        function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
+            applyPrimaryImageBlendMode(primaryTimelineItem);
+
+            if (!previewOverlayStack || !previewOverlayGroups) {
+                return;
+            }
+
+            clearPreviewOverlayLayers();
+
+            if (!primaryTimelineItem) {
+                return;
+            }
+
+            const viewportSize = getPreviewViewportSize();
+            const viewportWidth = Math.max(0, viewportSize.width || 0);
+            const viewportHeight = Math.max(0, viewportSize.height || 0);
+
+            if (viewportWidth === 0 || viewportHeight === 0) {
+                return;
+            }
+
+            const primaryLaneIndex = resolveLaneIndex(primaryTimelineItem.dataset?.laneIndex);
+
+            const overlayEntries = (Array.isArray(entries) ? entries : [])
+                .filter((entry) => entry && entry.item)
+                .map((entry) => ({
+                    item: entry.item,
+                    laneIndex: resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex),
+                }))
+                .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
+                .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'));
+
+            if (!overlayEntries.length) {
+                return;
+            }
+
+            const borderRadius = getPreviewImageFrameBorderRadius();
+            const overlayGroups = { below: [], above: [] };
+
+            overlayEntries.forEach((descriptor) => {
+                if (descriptor.laneIndex < primaryLaneIndex) {
+                    overlayGroups.above.push(descriptor);
+                } else if (descriptor.laneIndex > primaryLaneIndex) {
+                    overlayGroups.below.push(descriptor);
+                } else {
+                    overlayGroups.above.push(descriptor);
+                }
+            });
+
+            overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
+            overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+
+            const { below, above } = previewOverlayGroups;
+
+            const createLayerForDescriptor = (descriptor, zIndex) => {
+                const objectURL = descriptor.item.dataset.objectUrl || '';
+                if (!objectURL) {
+                    return null;
+                }
+
+                const layer = document.createElement('div');
+                layer.className = 'preview-overlay-layer';
+                layer.dataset.laneIndex = String(descriptor.laneIndex);
+                layer.style.zIndex = String(zIndex);
+
+                if (borderRadius > 0) {
+                    layer.style.borderRadius = `${borderRadius}px`;
+                }
+
+                const frame = resolveOverlayFramePixels(descriptor.item, viewportWidth, viewportHeight);
+                if (frame) {
+                    layer.style.left = `${frame.left}px`;
+                    layer.style.top = `${frame.top}px`;
+                    layer.style.width = `${frame.width}px`;
+                    layer.style.height = `${frame.height}px`;
+                } else {
+                    layer.style.left = '0px';
+                    layer.style.top = '0px';
+                    layer.style.width = '100%';
+                    layer.style.height = '100%';
+                }
+
+                const image = document.createElement('img');
+                image.src = objectURL;
+                image.alt = descriptor.item.dataset.displayName
+                    || descriptor.item.querySelector('span')?.textContent
+                    || 'Overlay layer';
+                try {
+                    image.decoding = 'async';
+                } catch (error) {
+                    // Ignore unsupported decoding hint.
+                }
+                image.loading = 'lazy';
+                image.draggable = false;
+                const blendMode = normalizeBlendMode(descriptor.item.dataset.blendMode);
+                if (blendMode && blendMode !== 'normal') {
+                    image.style.mixBlendMode = blendMode;
+                }
+                layer.dataset.blendMode = blendMode || 'normal';
+                layer.appendChild(image);
+                return layer;
+            };
+
+            if (overlayGroups.below.length && below) {
+                overlayGroups.below.forEach((descriptor, index) => {
+                    const zIndex = 10 + overlayGroups.below.length - index;
+                    const layer = createLayerForDescriptor(descriptor, zIndex);
+                    if (layer) {
+                        below.appendChild(layer);
+                    }
+                });
+            }
+
+            if (overlayGroups.above.length && above) {
+                overlayGroups.above.forEach((descriptor, index) => {
+                    const zIndex = 60 + (overlayGroups.above.length - index);
+                    const layer = createLayerForDescriptor(descriptor, zIndex);
+                    if (layer) {
+                        above.appendChild(layer);
+                    }
+                });
+            }
+
+            const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
+
+            if (hasLayers) {
+                previewOverlayStack.removeAttribute('hidden');
+                previewOverlayStack.setAttribute('aria-hidden', 'false');
+            }
+        }
+
+        function refreshActiveOverlayLayers() {
+            if (!activeTimelineItem) {
+                applyPrimaryImageBlendMode(null);
+                clearPreviewOverlayLayers();
+                return;
+            }
+            const entries = getOverlayEntriesForTimelineItem(activeTimelineItem);
+            renderPreviewOverlayLayers(activeTimelineItem, entries);
+        }
+
+        function getOverlayEntriesForTimelineItem(timelineItem, entriesOverride = null) {
+            if (!timelineItem) {
+                return [];
+            }
+
+            const candidateEntries = Array.isArray(entriesOverride) && entriesOverride.length
+                ? entriesOverride
+                : getTimelineLaneEntries();
+
+            if (!candidateEntries.length) {
+                return [];
+            }
+
+            const start = getTimelineItemStartTime(timelineItem);
+            const duration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+            const end = start + duration;
+            const safeEnd = end > start ? end : start + 1;
+
+            return candidateEntries
+                .filter((entry) => entry && entry.item)
+                .filter((entry) => entry.end > start && entry.start < safeEnd)
+                .sort((a, b) => {
+                    const aIndex = resolveLaneIndex(a.laneIndex ?? a.item?.dataset?.laneIndex);
+                    const bIndex = resolveLaneIndex(b.laneIndex ?? b.item?.dataset?.laneIndex);
+                    return aIndex - bIndex;
+                });
+        }
+
 
         if (previewImage) {
             previewImage.addEventListener('load', () => {
@@ -5082,6 +5415,10 @@ HOME_HTML = '''
             playVideoButton.textContent = 'Play Back';
             setPreviewMode(null);
             resetPreviewScroll();
+            if (previewImage) {
+                previewImage.style.removeProperty('mix-blend-mode');
+            }
+            clearPreviewOverlayLayers();
             setActiveTimelineItem(null);
         }
 
@@ -5104,7 +5441,7 @@ HOME_HTML = '''
             updateActiveTimelineIndicators();
         }
 
-        function loadPreviewFromTimeline(timelineItem) {
+        function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
             if (!timelineItem) {
                 clearPreview();
                 return;
@@ -5112,6 +5449,9 @@ HOME_HTML = '''
 
             const fileType = timelineItem.dataset.fileType || '';
             const objectURL = timelineItem.dataset.objectUrl;
+
+            const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
+            renderPreviewOverlayLayers(timelineItem, overlayEntries);
 
             if (!objectURL) {
                 return;
@@ -5258,6 +5598,27 @@ HOME_HTML = '''
                 preloadTimelineImage(objectURL).catch((error) => {
                     console.warn('Failed to warm timeline image for playback.', error);
                 });
+                timelineItem.dataset.blendMode = 'normal';
+                const blendSelect = document.createElement('select');
+                blendSelect.className = 'timeline-blend-mode';
+                blendSelect.setAttribute('aria-label', 'Blend mode');
+                blendSelect.title = 'Blend mode';
+                BLEND_MODE_OPTIONS.forEach((option) => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.label;
+                    blendSelect.appendChild(optionElement);
+                });
+                blendSelect.value = 'normal';
+                blendSelect.addEventListener('change', () => {
+                    const normalized = normalizeBlendMode(blendSelect.value);
+                    timelineItem.dataset.blendMode = normalized;
+                    if (blendSelect.value !== normalized) {
+                        blendSelect.value = normalized;
+                    }
+                    refreshActiveOverlayLayers();
+                });
+                timelineItem.appendChild(blendSelect);
             }
 
             timelineItem.appendChild(label);
@@ -5389,18 +5750,21 @@ HOME_HTML = '''
 
         uploadButton.addEventListener('click', () => uploadInput.click());
 
-        async function playTimelineItem(timelineItem, segmentDurationMs = null) {
+        async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
             const fileType = timelineItem.dataset.fileType || '';
             const objectURL = timelineItem.dataset.objectUrl;
             const playbackWindow = Number.isFinite(segmentDurationMs)
                 ? Math.max(0, Math.round(segmentDurationMs))
                 : null;
 
+            setActiveTimelineItem(timelineItem);
+
+            const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
+            renderPreviewOverlayLayers(timelineItem, overlayEntries);
+
             if (!objectURL) {
                 return;
             }
-
-            setActiveTimelineItem(timelineItem);
 
             if (fileType.startsWith('video/')) {
                 setPreviewMode('has-video');
@@ -5708,7 +6072,7 @@ HOME_HTML = '''
                     animateTimelineProgress(startFraction, endFraction, duration);
                     if (item) {
                         // eslint-disable-next-line no-await-in-loop
-                        await playTimelineItem(item, duration);
+                        await playTimelineItem(item, duration, segment.items || null);
                     } else {
                         // eslint-disable-next-line no-await-in-loop
                         await waitForGapDuration(duration);
