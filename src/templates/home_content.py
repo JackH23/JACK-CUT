@@ -2946,13 +2946,31 @@ HOME_HTML = '''
                 }
 
                 const { top, bottom } = rect;
+                const laneHeight = Math.max(0, bottom - top);
+
                 if (pointerY < top - laneCreationThreshold) {
                     return insertTimelineLane(index);
                 }
 
-                if (pointerY <= bottom + laneCreationThreshold) {
-                    return lane;
+                const isWithinLane = pointerY >= top - laneCreationThreshold && pointerY <= bottom + laneCreationThreshold;
+                if (!isWithinLane) {
+                    continue; // eslint-disable-line no-continue
                 }
+
+                const distanceFromTop = pointerY - top;
+                const distanceFromBottom = bottom - pointerY;
+                const isNearTop = distanceFromTop <= Math.max(laneCreationThreshold, laneHeight * 0.25);
+                const isNearBottom = distanceFromBottom <= Math.max(laneCreationThreshold, laneHeight * 0.25);
+
+                if (isNearTop) {
+                    return insertTimelineLane(index);
+                }
+
+                if (isNearBottom) {
+                    return insertTimelineLane(index + 1);
+                }
+
+                return lane;
             }
 
             return ensureTimelineLane(lanes.length);
