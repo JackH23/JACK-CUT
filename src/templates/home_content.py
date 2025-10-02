@@ -1890,6 +1890,9 @@ HOME_HTML = '''
         const previewViewport = document.querySelector('.preview-viewport');
         const previewVideo = document.getElementById('preview-video');
         const previewImage = document.getElementById('preview-image');
+        if (previewImage && 'decoding' in previewImage) {
+            previewImage.decoding = 'async';
+        }
         const previewImageLayer = document.getElementById('preview-image-layer');
         const previewImageFrame = document.getElementById('preview-image-frame');
         const previewResizeHandles = previewImageFrame
@@ -2051,6 +2054,106 @@ HOME_HTML = '''
                     signal.addEventListener('abort', handleAbort);
                 }
             });
+        }
+
+        function waitForImageReady(imageElement, options = {}) {
+            const { signal } = options;
+
+            return new Promise((resolve, reject) => {
+                if (!imageElement) {
+                    resolve();
+                    return;
+                }
+
+                const isLoaded = imageElement.complete
+                    && Number.isFinite(imageElement.naturalWidth)
+                    && imageElement.naturalWidth > 0
+                    && Number.isFinite(imageElement.naturalHeight)
+                    && imageElement.naturalHeight > 0;
+
+                const resolveWhenDecoded = () => {
+                    if (typeof imageElement.decode === 'function') {
+                        imageElement.decode().catch(() => {}).finally(resolve);
+                    } else {
+                        resolve();
+                    }
+                };
+
+                if (isLoaded) {
+                    resolveWhenDecoded();
+                    return;
+                }
+
+                let settled = false;
+
+                const finish = (callback) => (value) => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    cleanup();
+                    callback(value);
+                };
+
+                const handleLoad = finish(() => {
+                    resolveWhenDecoded();
+                });
+                const handleError = finish(() => {
+                    reject(new Error('Unable to load preview image.'));
+                });
+                const handleAbort = finish(() => {
+                    const abortError = typeof DOMException === 'function'
+                        ? new DOMException('Image load aborted', 'AbortError')
+                        : new Error('Image load aborted');
+                    reject(abortError);
+                });
+
+                function cleanup() {
+                    imageElement.removeEventListener('load', handleLoad);
+                    imageElement.removeEventListener('error', handleError);
+                    if (signal) {
+                        signal.removeEventListener('abort', handleAbort);
+                    }
+                }
+
+                imageElement.addEventListener('load', handleLoad);
+                imageElement.addEventListener('error', handleError);
+
+                if (signal) {
+                    if (signal.aborted) {
+                        handleAbort();
+                        return;
+                    }
+                    signal.addEventListener('abort', handleAbort);
+                }
+            });
+        }
+
+        async function preparePreviewImageSource(objectURL, options = {}) {
+            if (!previewImage || !objectURL) {
+                return;
+            }
+
+            const { signal } = options;
+
+            if (previewImage.src === objectURL) {
+                await waitForImageReady(previewImage, options);
+                return;
+            }
+
+            const loader = new Image();
+            loader.decoding = 'async';
+
+            const loadPromise = waitForImageReady(loader, options);
+            loader.src = objectURL;
+            await loadPromise;
+
+            if (signal?.aborted) {
+                return;
+            }
+
+            previewImage.src = objectURL;
+            await waitForImageReady(previewImage, options);
         }
 
         const previewImagePointerState = {
@@ -5523,46 +5626,93 @@ HOME_HTML = '''
                     }
                 });
             } else if (fileType.startsWith('image/')) {
+                abortPendingPreviewVideoLoad();
                 setPreviewMode('has-image');
                 previewVideo.pause();
                 previewVideo.hidden = true;
                 previewVideo.removeAttribute('src');
                 setPreviewImageVisibility(true);
-                previewPlaceholder.hidden = true;
-                if (previewImage.src !== objectURL) {
-                    previewImage.src = objectURL;
+
+                const abortController = new AbortController();
+                let resolved = false;
+                let timeoutId = 0;
+                let resolvePlayback = null;
+
+                const completePlayback = () => {
+                    if (resolved) {
+                        return;
+                    }
+                    resolved = true;
+                    if (timeoutId) {
+                        window.clearTimeout(timeoutId);
+                        timeoutId = 0;
+                    }
+                    if (timelinePlaybackAbort === abortPlayback) {
+                        timelinePlaybackAbort = null;
+                    }
+                    if (resolvePlayback) {
+                        const resolveFn = resolvePlayback;
+                        resolvePlayback = null;
+                        resolveFn();
+                    }
+                };
+
+                const abortPlayback = () => {
+                    if (!abortController.signal.aborted) {
+                        abortController.abort();
+                    }
+                    completePlayback();
+                };
+
+                timelinePlaybackAbort = abortPlayback;
+
+                const existingSource = previewImage.getAttribute('src');
+                if (previewPlaceholder && !existingSource) {
+                    previewPlaceholder.hidden = false;
                 }
+
+                try {
+                    await preparePreviewImageSource(objectURL, { signal: abortController.signal });
+                } catch (error) {
+                    if (!abortController.signal.aborted) {
+                        console.warn('Preview image was unable to load before playback.', error);
+                    }
+                    completePlayback();
+                    return;
+                }
+
+                if (abortController.signal.aborted || !isTimelinePlaying) {
+                    completePlayback();
+                    return;
+                }
+
                 resetPreviewScroll();
 
+                if (previewPlaceholder) {
+                    previewPlaceholder.hidden = true;
+                }
+
+                const clipDuration = Number(timelineItem.dataset.imageDuration)
+                    || IMAGE_FRAME_DURATION;
+                const effectiveDuration = playbackWindow === null
+                    ? clipDuration
+                    : Math.min(clipDuration, playbackWindow);
+                const safeDuration = Math.max(0, Math.round(effectiveDuration));
+
+                if (safeDuration <= 0) {
+                    completePlayback();
+                    return;
+                }
+
                 await new Promise((resolve) => {
-                    let resolved = false;
-                    const clipDuration = Number(timelineItem.dataset.imageDuration)
-                        || IMAGE_FRAME_DURATION;
-                    const effectiveDuration = playbackWindow === null
-                        ? clipDuration
-                        : Math.min(clipDuration, playbackWindow);
-                    const timeoutId = window.setTimeout(() => {
-                        if (resolved) {
-                            return;
-                        }
-                        resolved = true;
-                        if (timelinePlaybackAbort === abortPlayback) {
-                            timelinePlaybackAbort = null;
-                        }
+                    if (resolved) {
                         resolve();
-                    }, Math.max(0, Math.round(effectiveDuration)));
-
-                    const abortPlayback = () => {
-                        if (resolved) {
-                            return;
-                        }
-                        resolved = true;
-                        window.clearTimeout(timeoutId);
-                        timelinePlaybackAbort = null;
-                        resolve();
-                    };
-
-                    timelinePlaybackAbort = abortPlayback;
+                        return;
+                    }
+                    resolvePlayback = resolve;
+                    timeoutId = window.setTimeout(() => {
+                        completePlayback();
+                    }, safeDuration);
                 });
             }
         }
