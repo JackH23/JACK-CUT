@@ -2083,6 +2083,9 @@ HOME_HTML = '''
         const TIMELINE_DURATION_PER_PIXEL = 12;
         const MIN_TIMELINE_ITEM_WIDTH = 96;
         const MIN_IMAGE_FRAME_SIZE = 96;
+        const MAX_TIMELINE_STACK_LANES = 4;
+        const TIMELINE_LANE_INSERT_HOTZONE = 28;
+        const TIMELINE_LANE_INSERT_SPACING = 32;
 
         let playbackClockAnimationFrame = null;
         let playbackClockStartTimestamp = 0;
@@ -2851,20 +2854,64 @@ HOME_HTML = '''
             });
         }
 
+        function createTimelineLaneElement() {
+            const lane = document.createElement('div');
+            lane.className = 'timeline-lane';
+            return lane;
+        }
+
+        function insertTimelineLaneAt(index) {
+            if (!timelineLaneList) {
+                return null;
+            }
+
+            const lanes = getTimelineLanes();
+            if (!lanes.length) {
+                return ensureTimelineLane(0);
+            }
+
+            if (lanes.length >= MAX_TIMELINE_STACK_LANES) {
+                const boundedIndex = Math.max(0, Math.min(index, lanes.length - 1));
+                return lanes[boundedIndex] || lanes[lanes.length - 1] || null;
+            }
+
+            const insertionIndex = Math.max(0, Math.min(index, lanes.length));
+            const lane = createTimelineLaneElement();
+            const referenceLane = lanes[insertionIndex] || null;
+            if (referenceLane) {
+                timelineLaneList.insertBefore(lane, referenceLane);
+            } else {
+                timelineLaneList.appendChild(lane);
+            }
+
+            refreshTimelineLaneIndices();
+            const updatedLanes = getTimelineLanes();
+            return updatedLanes[insertionIndex] || updatedLanes[updatedLanes.length - 1] || lane;
+        }
+
         function ensureTimelineLane(index = 0) {
             if (!timelineLaneList) {
                 return null;
             }
 
+            const clampedIndex = Math.max(
+                0,
+                Math.min(index, Math.max(0, MAX_TIMELINE_STACK_LANES - 1)),
+            );
+
             let lanes = getTimelineLanes();
-            while (lanes.length <= index) {
-                const lane = document.createElement('div');
-                lane.className = 'timeline-lane';
-                timelineLaneList.appendChild(lane);
+            while (lanes.length <= clampedIndex && lanes.length < MAX_TIMELINE_STACK_LANES) {
+                timelineLaneList.appendChild(createTimelineLaneElement());
                 lanes = getTimelineLanes();
             }
+
             refreshTimelineLaneIndices();
-            return getTimelineLanes()[index] || null;
+            const updatedLanes = getTimelineLanes();
+            return (
+                updatedLanes[clampedIndex] ||
+                updatedLanes[updatedLanes.length - 1] ||
+                null
+            );
         }
 
         function cleanupEmptyTimelineLanes() {
@@ -2915,32 +2962,54 @@ HOME_HTML = '''
             }
 
             const pointerY = event.clientY;
-            let closestLane = null;
+            let closestLane = lanes[0] || null;
             let closestDistance = Number.POSITIVE_INFINITY;
 
-            lanes.forEach((lane) => {
+            for (let index = 0; index < lanes.length; index += 1) {
+                const lane = lanes[index];
                 const rect = lane.getBoundingClientRect();
                 if (!rect) {
-                    return;
+                    continue;
                 }
+
                 const { top, bottom, height } = rect;
                 const center = top + height / 2;
+                const hotzone = Math.min(TIMELINE_LANE_INSERT_HOTZONE, height / 2);
+
                 if (pointerY >= top && pointerY <= bottom) {
+                    if (pointerY <= top + hotzone) {
+                        const targetLane = insertTimelineLaneAt(index);
+                        return targetLane || lane;
+                    }
+                    if (pointerY >= bottom - hotzone) {
+                        const targetLane = insertTimelineLaneAt(index + 1);
+                        return targetLane || lane;
+                    }
+                    return lane;
+                }
+
+                const distance = Math.abs(pointerY - center);
+                if (distance < closestDistance) {
                     closestLane = lane;
-                    closestDistance = 0;
-                } else {
-                    const distance = Math.abs(pointerY - center);
-                    if (distance < closestDistance) {
-                        closestLane = lane;
-                        closestDistance = distance;
+                    closestDistance = distance;
+                }
+            }
+
+            const firstLane = lanes[0];
+            if (firstLane) {
+                const rect = firstLane.getBoundingClientRect();
+                if (rect && pointerY < rect.top - TIMELINE_LANE_INSERT_SPACING) {
+                    const targetLane = insertTimelineLaneAt(0);
+                    if (targetLane) {
+                        return targetLane;
                     }
                 }
-            });
+            }
 
             const lastLane = lanes[lanes.length - 1];
             if (lastLane) {
                 const rect = lastLane.getBoundingClientRect();
-                if (rect && pointerY > rect.bottom + 32) {
+                if (rect && pointerY > rect.bottom + TIMELINE_LANE_INSERT_SPACING) {
                     return ensureTimelineLane(lanes.length);
                 }
             }
