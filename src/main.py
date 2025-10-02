@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from flask import Flask, render_template_string, request, redirect, url_for, session
 from pymongo import MongoClient
 
-from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML
+from templates import HOME_HTML, LOGIN_HTML, SIGNUP_HTML, load_home_css
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
@@ -51,7 +51,11 @@ users_collection = get_users_collection()
 @app.route('/')
 def home():
     username = session.get('username')
-    return render_template_string(HOME_HTML, username=username)
+    return render_template_string(
+        HOME_HTML,
+        username=username,
+        home_css=load_home_css(),
+    )
 
 
 @app.route('/login', methods=['GET', 'POST'])

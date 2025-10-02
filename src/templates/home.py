@@ -1,5 +1,9 @@
 """Home template exports."""
 
-from .home_content import HOME_HTML
+from __future__ import annotations
 
-__all__ = ["HOME_HTML"]
+from .functions import build_home_template, load_home_css
+
+HOME_HTML = build_home_template()
+
+__all__ = ["HOME_HTML", "load_home_css"]
