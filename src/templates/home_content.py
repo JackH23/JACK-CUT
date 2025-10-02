@@ -960,6 +960,8 @@ HOME_HTML = '''
             position: absolute;
             display: block;
             overflow: hidden;
+            pointer-events: auto;
+            cursor: pointer;
         }
 
         .preview-overlay-layer img {
@@ -1979,6 +1981,7 @@ HOME_HTML = '''
                 above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
             }
             : null;
+        const overlayLayerToTimelineItem = new WeakMap();
         const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
         const previewOutsideSegments = previewOutsideIndicator
             ? {
@@ -5129,6 +5132,8 @@ HOME_HTML = '''
                 }
                 layer.dataset.blendMode = blendMode || 'normal';
                 layer.appendChild(image);
+                layer.title = image.alt;
+                overlayLayerToTimelineItem.set(layer, descriptor.item);
                 return layer;
             };
 
@@ -5158,6 +5163,30 @@ HOME_HTML = '''
                 previewOverlayStack.removeAttribute('hidden');
                 previewOverlayStack.setAttribute('aria-hidden', 'false');
             }
+        }
+
+        function onPreviewOverlayPointerDown(event) {
+            const target = event.target;
+            if (!target || typeof target.closest !== 'function') {
+                return;
+            }
+
+            const layer = target.closest('.preview-overlay-layer');
+            if (!layer) {
+                return;
+            }
+
+            const timelineItem = overlayLayerToTimelineItem.get(layer);
+            if (!timelineItem || !timelineItem.isConnected) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            stopTimelinePlayback();
+            setActiveTimelineItem(timelineItem);
+            loadPreviewFromTimeline(timelineItem);
         }
 
         function refreshActiveOverlayLayers() {
@@ -5217,6 +5246,10 @@ HOME_HTML = '''
 
         if (previewImageFrame) {
             previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
+        }
+
+        if (previewOverlayStack) {
+            previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
         }
 
         if (window && typeof window.addEventListener === 'function') {
