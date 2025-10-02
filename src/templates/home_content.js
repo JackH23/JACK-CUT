@@ -376,6 +376,9 @@ function resolvePreviewImagePointerInteraction(event, handleElement) {
     }
 
     const rect = previewImageFrame.getBoundingClientRect();
+    const viewportRect = previewViewport?.getBoundingClientRect
+        ? previewViewport.getBoundingClientRect()
+        : null;
     const width = rect.width;
     const height = rect.height;
 
@@ -390,21 +393,72 @@ function resolvePreviewImagePointerInteraction(event, handleElement) {
     const pointerX = event.clientX - rect.left;
     const pointerY = event.clientY - rect.top;
 
-    if (pointerX < 0 || pointerY < 0 || pointerX > width || pointerY > height) {
-        return {
-            mode: 'drag',
-            handle: 'se',
-            target: previewImageFrame,
-        };
-    }
-
     const thresholdX = Math.min(PREVIEW_IMAGE_RESIZE_EDGE_THRESHOLD, width / 2);
     const thresholdY = Math.min(PREVIEW_IMAGE_RESIZE_EDGE_THRESHOLD, height / 2);
-    const nearHorizontalEdge = pointerX <= thresholdX || pointerX >= width - thresholdX;
-    const nearVerticalEdge = pointerY <= thresholdY || pointerY >= height - thresholdY;
+    let nearLeftEdge = pointerX <= thresholdX;
+    let nearRightEdge = pointerX >= width - thresholdX;
+    let nearTopEdge = pointerY <= thresholdY;
+    let nearBottomEdge = pointerY >= height - thresholdY;
+
+    if (viewportRect) {
+        const pointerViewportX = event.clientX - viewportRect.left;
+        const pointerViewportY = event.clientY - viewportRect.top;
+
+        if (!nearLeftEdge && rect.left < viewportRect.left) {
+            nearLeftEdge = pointerViewportX <= thresholdX;
+        }
+
+        if (!nearRightEdge && rect.right > viewportRect.right) {
+            nearRightEdge = (viewportRect.right - event.clientX) <= thresholdX;
+        }
+
+        if (!nearTopEdge && rect.top < viewportRect.top) {
+            nearTopEdge = pointerViewportY <= thresholdY;
+        }
+
+        if (!nearBottomEdge && rect.bottom > viewportRect.bottom) {
+            nearBottomEdge = (viewportRect.bottom - event.clientY) <= thresholdY;
+        }
+    }
+
+    const nearHorizontalEdge = nearLeftEdge || nearRightEdge;
+    const nearVerticalEdge = nearTopEdge || nearBottomEdge;
 
     if (nearHorizontalEdge || nearVerticalEdge) {
-        const handle = resolvePreviewResizeHandleFromPoint(pointerX, pointerY, width, height);
+        const clampedPointerX = Math.min(Math.max(pointerX, 0), width);
+        const clampedPointerY = Math.min(Math.max(pointerY, 0), height);
+        let handle = resolvePreviewResizeHandleFromPoint(clampedPointerX, clampedPointerY, width, height);
+
+        if (!nearLeftEdge && handle === 'nw') {
+            handle = 'ne';
+        } else if (!nearRightEdge && handle === 'ne') {
+            handle = 'nw';
+        } else if (!nearRightEdge && handle === 'se') {
+            handle = 'sw';
+        } else if (!nearLeftEdge && handle === 'sw') {
+            handle = 'se';
+        }
+
+        if (handle === 'nw' && !nearTopEdge) {
+            handle = nearLeftEdge ? 'sw' : 'ne';
+        } else if (handle === 'ne' && !nearTopEdge) {
+            handle = nearRightEdge ? 'se' : 'nw';
+        } else if (handle === 'se' && !nearBottomEdge) {
+            handle = nearRightEdge ? 'ne' : 'sw';
+        } else if (handle === 'sw' && !nearBottomEdge) {
+            handle = nearLeftEdge ? 'nw' : 'se';
+        }
+
+        if (!nearLeftEdge && !nearRightEdge) {
+            handle = nearTopEdge
+                ? (pointerX < width / 2 ? 'nw' : 'ne')
+                : (pointerX < width / 2 ? 'sw' : 'se');
+        } else if (!nearTopEdge && !nearBottomEdge) {
+            handle = nearLeftEdge
+                ? (pointerY < height / 2 ? 'nw' : 'sw')
+                : (pointerY < height / 2 ? 'ne' : 'se');
+        }
+
         return {
             mode: 'resize',
             handle,
