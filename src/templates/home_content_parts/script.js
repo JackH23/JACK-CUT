@@ -99,6 +99,7 @@ let pendingPreviewImageTransform = null;
 let lastPreviewViewportSize = null;
 let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
+let cancelActivePlaybackTimer = null;
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
@@ -2928,6 +2929,47 @@ function clampProgress(value) {
     return Math.min(Math.max(value, 0), 1);
 }
 
+function startSmoothPlaybackTimer(durationMs, onComplete) {
+    const safeDuration = Math.max(0, Math.round(Number(durationMs) || 0));
+    if (safeDuration <= 0) {
+        onComplete();
+        return () => {};
+    }
+
+    let cancelled = false;
+    let frameId = null;
+    let startTimestamp = null;
+
+    const cancel = () => {
+        cancelled = true;
+        if (frameId !== null) {
+            window.cancelAnimationFrame(frameId);
+            frameId = null;
+        }
+    };
+
+    const tick = (now) => {
+        if (cancelled) {
+            return;
+        }
+        if (startTimestamp === null) {
+            startTimestamp = now;
+        }
+
+        const elapsed = now - startTimestamp;
+        if (elapsed >= safeDuration) {
+            cancel();
+            onComplete();
+            return;
+        }
+
+        frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return cancel;
+}
+
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
         return;
@@ -3400,9 +3442,9 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null) {
 
         await new Promise((resolve) => {
             let resolved = false;
-            let timeoutId = 0;
             let onEnded = null;
             let onError = null;
+            let onPlaying = null;
             const abortController = new AbortController();
             let playbackStarted = false;
 
@@ -3413,8 +3455,15 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null) {
                 if (onError) {
                     previewVideo.removeEventListener('error', onError);
                 }
+                if (onPlaying) {
+                    previewVideo.removeEventListener('playing', onPlaying);
+                }
                 if (!abortController.signal.aborted) {
                     abortController.abort();
+                }
+                if (typeof cancelActivePlaybackTimer === 'function') {
+                    cancelActivePlaybackTimer();
+                    cancelActivePlaybackTimer = null;
                 }
             };
 
@@ -3423,7 +3472,6 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null) {
                     return;
                 }
                 resolved = true;
-                window.clearTimeout(timeoutId);
                 cleanup();
                 previewVideo.pause();
                 previewVideo.loop = false;
@@ -3478,15 +3526,33 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null) {
                     return;
                 }
 
-                const { intrinsicDuration, targetDuration, effectiveDuration } = ensureVideoDuration();
+                const { intrinsicDuration, effectiveDuration } = ensureVideoDuration();
                 const shouldLoop = intrinsicDuration > 0
                     && effectiveDuration > intrinsicDuration + 50;
                 previewVideo.loop = shouldLoop;
-                window.clearTimeout(timeoutId);
                 if (effectiveDuration > 0) {
-                    timeoutId = window.setTimeout(() => {
-                        finalize();
-                    }, effectiveDuration);
+                    const startDurationTimer = () => {
+                        if (!isTimelinePlaying || resolved) {
+                            return;
+                        }
+                        if (typeof cancelActivePlaybackTimer === 'function') {
+                            cancelActivePlaybackTimer();
+                        }
+                        cancelActivePlaybackTimer = startSmoothPlaybackTimer(
+                            effectiveDuration,
+                            finalize,
+                        );
+                    };
+
+                    if (!previewVideo.paused && !previewVideo.ended) {
+                        startDurationTimer();
+                    } else {
+                        onPlaying = () => {
+                            onPlaying = null;
+                            startDurationTimer();
+                        };
+                        previewVideo.addEventListener('playing', onPlaying, { once: true });
+                    }
                 } else if (playbackWindow === 0) {
                     finalize();
                     return;
