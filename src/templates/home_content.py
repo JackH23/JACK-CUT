@@ -2828,12 +2828,17 @@ HOME_HTML = '''
                 const activeEntries = entries.filter(
                     (entry) => start >= entry.start && start < entry.end,
                 );
-                let activeEntry = null;
-                for (const entry of activeEntries) {
-                    if (!activeEntry || entry.laneIndex < activeEntry.laneIndex) {
-                        activeEntry = entry;
-                    }
-                }
+                
+                const orderedEntries = activeEntries
+                    .slice()
+                    .sort((a, b) => {
+                        const aIndex = Number.isFinite(a?.laneIndex) ? a.laneIndex : Number.POSITIVE_INFINITY;
+                        const bIndex = Number.isFinite(b?.laneIndex) ? b.laneIndex : Number.POSITIVE_INFINITY;
+                        return aIndex - bIndex;
+                    });
+
+                const activeEntry = orderedEntries[0] || null;
+
                 segments.push({
                     start,
                     end,
