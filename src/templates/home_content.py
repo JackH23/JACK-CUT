@@ -2851,6 +2851,29 @@ HOME_HTML = '''
             });
         }
 
+        function createTimelineLaneElement() {
+            const lane = document.createElement('div');
+            lane.className = 'timeline-lane';
+            return lane;
+        }
+
+        function insertTimelineLane(index = 0) {
+            if (!timelineLaneList) {
+                return null;
+            }
+
+            const lane = createTimelineLaneElement();
+            const lanes = getTimelineLanes();
+            const referenceLane = lanes[index] || null;
+            if (referenceLane) {
+                timelineLaneList.insertBefore(lane, referenceLane);
+            } else {
+                timelineLaneList.appendChild(lane);
+            }
+            refreshTimelineLaneIndices();
+            return lane;
+        }
+
         function ensureTimelineLane(index = 0) {
             if (!timelineLaneList) {
                 return null;
@@ -2858,9 +2881,7 @@ HOME_HTML = '''
 
             let lanes = getTimelineLanes();
             while (lanes.length <= index) {
-                const lane = document.createElement('div');
-                lane.className = 'timeline-lane';
-                timelineLaneList.appendChild(lane);
+                timelineLaneList.appendChild(createTimelineLaneElement());
                 lanes = getTimelineLanes();
             }
             refreshTimelineLaneIndices();
@@ -2915,37 +2936,26 @@ HOME_HTML = '''
             }
 
             const pointerY = event.clientY;
-            let closestLane = null;
-            let closestDistance = Number.POSITIVE_INFINITY;
+            const laneCreationThreshold = 24;
 
-            lanes.forEach((lane) => {
+            for (let index = 0; index < lanes.length; index += 1) {
+                const lane = lanes[index];
                 const rect = lane.getBoundingClientRect();
                 if (!rect) {
-                    return;
+                    continue; // eslint-disable-line no-continue
                 }
-                const { top, bottom, height } = rect;
-                const center = top + height / 2;
-                if (pointerY >= top && pointerY <= bottom) {
-                    closestLane = lane;
-                    closestDistance = 0;
-                } else {
-                    const distance = Math.abs(pointerY - center);
-                    if (distance < closestDistance) {
-                        closestLane = lane;
-                        closestDistance = distance;
-                    }
-                }
-            });
 
-            const lastLane = lanes[lanes.length - 1];
-            if (lastLane) {
-                const rect = lastLane.getBoundingClientRect();
-                if (rect && pointerY > rect.bottom + 32) {
-                    return ensureTimelineLane(lanes.length);
+                const { top, bottom } = rect;
+                if (pointerY < top - laneCreationThreshold) {
+                    return insertTimelineLane(index);
+                }
+
+                if (pointerY <= bottom + laneCreationThreshold) {
+                    return lane;
                 }
             }
 
-            return closestLane || ensureTimelineLane(0);
+            return ensureTimelineLane(lanes.length);
         }
 
         function getDragAfterElement(container, clientX) {
