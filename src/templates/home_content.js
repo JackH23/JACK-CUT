@@ -2,6 +2,8 @@ const uploadInput = document.getElementById('video-upload');
 const uploadButton = document.getElementById('upload-button');
 const uploadMetaStatus = document.querySelector('.upload-meta__status');
 const uploadMetaHint = document.querySelector('.upload-meta__hint');
+const uploadGallery = document.getElementById('upload-gallery');
+const uploadGalleryList = document.getElementById('upload-gallery-list');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
@@ -3524,7 +3526,20 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 }
 
-async function showPreview(file) {
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '0 B';
+    }
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const exponent = Math.min(
+        Math.floor(Math.log(bytes) / Math.log(1024)),
+        units.length - 1,
+    );
+    const size = bytes / (1024 ** exponent);
+    return `${size.toFixed(size >= 100 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+async function stageUpload(file) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
 
@@ -3534,7 +3549,85 @@ async function showPreview(file) {
     }
 
     const objectURL = URL.createObjectURL(file);
-    await addToTimeline(file, objectURL);
+    if (!uploadGalleryList) {
+        return;
+    }
+
+    const listItem = document.createElement('li');
+    listItem.className = 'upload-gallery__item';
+
+    const previewWrapper = document.createElement('div');
+    previewWrapper.className = 'upload-gallery__preview';
+
+    if (isImage) {
+        const img = document.createElement('img');
+        img.src = objectURL;
+        img.alt = file.name;
+        img.loading = 'lazy';
+        try {
+            img.decoding = 'async';
+        } catch (error) {
+            // Ignore if the browser does not support decoding hints.
+        }
+        previewWrapper.appendChild(img);
+    } else if (isVideo) {
+        const video = document.createElement('video');
+        video.src = objectURL;
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.autoplay = true;
+        previewWrapper.appendChild(video);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'upload-gallery__meta';
+
+    const name = document.createElement('span');
+    name.className = 'upload-gallery__name';
+    name.title = file.name;
+    name.textContent = file.name;
+
+    const size = document.createElement('span');
+    size.className = 'upload-gallery__size';
+    size.textContent = formatFileSize(file.size);
+
+    meta.append(name, size);
+
+    const actions = document.createElement('div');
+    actions.className = 'upload-gallery__actions';
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'upload-gallery__add';
+    addButton.setAttribute('aria-label', `Add ${file.name} to timeline`);
+    addButton.innerHTML = '<span aria-hidden="true">+</span>';
+
+    addButton.addEventListener('click', async () => {
+        if (addButton.disabled) {
+            return;
+        }
+
+        addButton.disabled = true;
+        try {
+            await addToTimeline(file, objectURL);
+            listItem.classList.add('is-added');
+            addButton.innerHTML = '<span aria-hidden="true">✓</span>';
+            addButton.setAttribute('aria-label', `${file.name} added to timeline`);
+        } catch (error) {
+            console.error('Failed to add upload to timeline.', error);
+            addButton.disabled = false;
+        }
+    });
+
+    actions.appendChild(addButton);
+
+    listItem.append(previewWrapper, meta, actions);
+    uploadGalleryList.appendChild(listItem);
+
+    if (uploadGallery) {
+        uploadGallery.hidden = false;
+    }
 }
 
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
@@ -3743,7 +3836,7 @@ uploadInput.addEventListener('change', async (event) => {
 
     if (uploadMetaStatus) {
         const clipLabel = files.length === 1 ? 'clip' : 'clips';
-        uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
+        uploadMetaStatus.textContent = `${files.length} ${clipLabel} staged`;
     }
 
     if (uploadMetaHint) {
@@ -3753,15 +3846,17 @@ uploadInput.addEventListener('change', async (event) => {
                 ? `${latestFile.name.slice(0, 39)}…`
                 : latestFile.name;
             uploadMetaHint.textContent = files.length === 1
-                ? `Ready: ${truncatedName}`
-                : `${truncatedName} and ${files.length - 1} more`;
+                ? `Tap + to add ${truncatedName} to the timeline.`
+                : `${truncatedName} and ${files.length - 1} more ready — use + to add.`;
         }
     }
 
     for (const file of files) {
         // eslint-disable-next-line no-await-in-loop
-        await showPreview(file);
+        await stageUpload(file);
     }
+
+    uploadInput.value = '';
 });
 
 uploadButton.addEventListener('click', () => uploadInput.click());
