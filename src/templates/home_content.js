@@ -2,6 +2,8 @@ const uploadInput = document.getElementById('video-upload');
 const uploadButton = document.getElementById('upload-button');
 const uploadMetaStatus = document.querySelector('.upload-meta__status');
 const uploadMetaHint = document.querySelector('.upload-meta__hint');
+const uploadLibrary = document.getElementById('upload-library');
+const uploadLibraryEmpty = document.getElementById('upload-library-empty');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
@@ -12,6 +14,10 @@ const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
 const timelineImagePreloadCache = new Map();
+const uploadLibraryItems = new Map();
+let uploadLibraryIdCounter = 0;
+let activeLibraryDragId = null;
+let pendingLibraryDropDetails = null;
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');
 const previewOverlayGroups = previewOverlayStack
@@ -1618,14 +1624,15 @@ function initializeTimelineItem(timelineItem) {
 if (timelineTrack) {
     timelineTrack.addEventListener('dragenter', (event) => {
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-        if (draggingItem) {
+        if (draggingItem || activeLibraryDragId) {
             event.preventDefault();
         }
     });
 
     timelineTrack.addEventListener('dragover', (event) => {
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-        if (!draggingItem) {
+        const isLibraryDrag = activeLibraryDragId !== null;
+        if (!draggingItem && !isLibraryDrag) {
             return;
         }
         event.preventDefault();
@@ -1634,22 +1641,66 @@ if (timelineTrack) {
             return;
         }
         setActiveDropLane(lane);
-        const afterElement = getDragAfterElement(lane, event.clientX);
-        if (!afterElement) {
-            lane.appendChild(draggingItem);
-        } else if (afterElement !== draggingItem) {
-            lane.insertBefore(draggingItem, afterElement);
+        if (draggingItem) {
+            const afterElement = getDragAfterElement(lane, event.clientX);
+            if (!afterElement) {
+                lane.appendChild(draggingItem);
+            } else if (afterElement !== draggingItem) {
+                lane.insertBefore(draggingItem, afterElement);
+            }
+            draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+        } else if (isLibraryDrag) {
+            const afterElement = getDragAfterElement(lane, event.clientX);
+            pendingLibraryDropDetails = { lane, afterElement };
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
+            }
         }
-        draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
     });
 
-    timelineTrack.addEventListener('drop', (event) => {
+    timelineTrack.addEventListener('drop', async (event) => {
         event.preventDefault();
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
         if (draggingItem) {
             draggingItem.classList.remove('dragging');
             draggingItem.draggable = true;
+            setActiveDropLane(null);
+            cleanupEmptyTimelineLanes();
+            updateTimelineEmptyState();
+            updateActiveTimelineIndicators();
+            return;
         }
+
+        if (activeLibraryDragId) {
+            const entry = getUploadLibraryEntry(activeLibraryDragId);
+            activeLibraryDragId = null;
+            let lane = pendingLibraryDropDetails?.lane || getTimelineLaneFromEvent(event);
+            if (!lane) {
+                lane = ensureTimelineLane(0);
+            }
+            const afterElement = pendingLibraryDropDetails?.afterElement
+                || (lane ? getDragAfterElement(lane, event.clientX) : null);
+            pendingLibraryDropDetails = null;
+            setActiveDropLane(null);
+
+            if (entry && lane) {
+                try {
+                    await addLibraryEntryToTimeline(entry, {
+                        lane,
+                        beforeItem: afterElement,
+                        focusTimelineItem: true,
+                    });
+                } catch (error) {
+                    console.warn('Unable to add library asset to timeline from drop.', error);
+                }
+            }
+
+            cleanupEmptyTimelineLanes();
+            updateTimelineEmptyState();
+            updateActiveTimelineIndicators();
+            return;
+        }
+
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
         updateTimelineEmptyState();
@@ -1659,6 +1710,7 @@ if (timelineTrack) {
 
 ensureTimelineLane(0);
 updateTimelineEmptyState();
+updateUploadLibraryEmptyState();
 
 if (window.ResizeObserver) {
     if (previewArea && !previewAreaResizeObserver) {
@@ -3533,8 +3585,160 @@ async function showPreview(file) {
         return;
     }
 
+    if (isImage) {
+        await registerImageInUploadLibrary(file);
+        return;
+    }
+
     const objectURL = URL.createObjectURL(file);
-    await addToTimeline(file, objectURL);
+    try {
+        await addToTimeline(file, objectURL);
+    } catch (error) {
+        URL.revokeObjectURL(objectURL);
+        throw error;
+    }
+}
+
+function updateUploadLibraryEmptyState() {
+    if (!uploadLibrary || !uploadLibraryEmpty) {
+        return;
+    }
+    const hasItems = Boolean(uploadLibrary.querySelector('.upload-library__item'));
+    uploadLibraryEmpty.hidden = hasItems;
+}
+
+function getUploadLibraryEntry(libraryId) {
+    if (!libraryId) {
+        return null;
+    }
+    return uploadLibraryItems.get(libraryId) || null;
+}
+
+async function addLibraryEntryToTimeline(entry, options = {}) {
+    if (!entry) {
+        return null;
+    }
+    const timelineObjectURL = URL.createObjectURL(entry.file);
+    try {
+        const timelineItem = await addToTimeline(entry.file, timelineObjectURL, options);
+        return timelineItem;
+    } catch (error) {
+        URL.revokeObjectURL(timelineObjectURL);
+        throw error;
+    }
+}
+
+function createUploadLibraryItemElement(entry) {
+    const item = document.createElement('div');
+    item.className = 'upload-library__item';
+    item.setAttribute('role', 'listitem');
+    item.tabIndex = 0;
+    item.draggable = true;
+    item.dataset.libraryId = entry.id;
+
+    if (entry.thumbnail) {
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'upload-library__thumb';
+        thumbnail.src = entry.thumbnail;
+        thumbnail.alt = entry.name || 'Uploaded clip';
+        item.appendChild(thumbnail);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'upload-library__meta';
+
+    const label = document.createElement('span');
+    label.className = 'upload-library__label';
+    label.textContent = entry.name || 'Untitled clip';
+    meta.appendChild(label);
+
+    const hint = document.createElement('span');
+    hint.className = 'upload-library__hint';
+    hint.textContent = 'Drag to timeline';
+    meta.appendChild(hint);
+
+    item.appendChild(meta);
+
+    item.addEventListener('dragstart', (event) => {
+        activeLibraryDragId = entry.id;
+        pendingLibraryDropDetails = null;
+        item.classList.add('is-dragging');
+        const transfer = event.dataTransfer;
+        if (transfer) {
+            transfer.effectAllowed = 'copy';
+            transfer.setData('text/x-upload-library', entry.id);
+            if (!transfer.getData('text/plain')) {
+                transfer.setData('text/plain', entry.name || entry.id);
+            }
+        }
+    });
+
+    item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+        activeLibraryDragId = null;
+        pendingLibraryDropDetails = null;
+        setActiveDropLane(null);
+    });
+
+    item.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') {
+            return;
+        }
+        event.preventDefault();
+        addLibraryEntryToTimeline(entry).catch((error) => {
+            console.warn('Unable to add library item to timeline from keyboard.', error);
+        });
+    });
+
+    item.addEventListener('dblclick', () => {
+        addLibraryEntryToTimeline(entry).catch((error) => {
+            console.warn('Unable to add library item to timeline from double click.', error);
+        });
+    });
+
+    return item;
+}
+
+async function registerImageInUploadLibrary(file) {
+    if (!uploadLibrary) {
+        return null;
+    }
+
+    uploadLibraryIdCounter += 1;
+    const entryId = `library-${Date.now()}-${uploadLibraryIdCounter}`;
+    let thumbnail = '';
+    let previewObjectURL = '';
+
+    try {
+        previewObjectURL = URL.createObjectURL(file);
+        thumbnail = await generateImageThumbnail(previewObjectURL, 120, 80);
+        URL.revokeObjectURL(previewObjectURL);
+        previewObjectURL = '';
+    } catch (error) {
+        console.warn('Unable to create image thumbnail for library item.', error);
+        if (previewObjectURL) {
+            thumbnail = previewObjectURL;
+            previewObjectURL = '';
+        }
+    }
+
+    if (!thumbnail) {
+        thumbnail = URL.createObjectURL(file);
+    }
+
+    const entry = {
+        id: entryId,
+        file,
+        type: file.type,
+        name: file.name,
+        thumbnail,
+    };
+    uploadLibraryItems.set(entryId, entry);
+
+    const element = createUploadLibraryItemElement(entry);
+    uploadLibrary.appendChild(element);
+    updateUploadLibraryEmptyState();
+    return entry;
 }
 
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
@@ -3561,8 +3765,9 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
     });
 }
 
-async function addToTimeline(file, objectURL) {
-    const defaultLane = ensureTimelineLane(0);
+async function addToTimeline(file, objectURL, options = {}) {
+    const { lane: explicitLane = null, beforeItem = null, focusTimelineItem = true } = options;
+    const targetLane = explicitLane || ensureTimelineLane(0);
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
     }
@@ -3640,16 +3845,20 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(label);
     timelineItem.appendChild(removeButton);
 
-    const targetLane = defaultLane || ensureTimelineLane(0);
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
-        targetLane.appendChild(timelineItem);
-    } else {
+        if (beforeItem && beforeItem.parentElement === targetLane) {
+            targetLane.insertBefore(timelineItem, beforeItem);
+        } else {
+            targetLane.appendChild(timelineItem);
+        }
+    } else if (timelineTrack) {
         timelineItem.dataset.laneIndex = '0';
         timelineTrack.appendChild(timelineItem);
     }
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
+    renderExportSummary(getTimelineItems(), null);
 
     timelineItem.addEventListener('click', () => {
         stopTimelinePlayback();
@@ -3725,8 +3934,12 @@ async function addToTimeline(file, objectURL) {
         renderExportSummary(getTimelineItems(), null);
     });
 
-    setActiveTimelineItem(timelineItem);
-    loadPreviewFromTimeline(timelineItem);
+    if (focusTimelineItem) {
+        setActiveTimelineItem(timelineItem);
+        loadPreviewFromTimeline(timelineItem);
+    }
+
+    return timelineItem;
 }
 
 uploadInput.addEventListener('change', async (event) => {
@@ -3736,32 +3949,51 @@ uploadInput.addEventListener('change', async (event) => {
             uploadMetaStatus.textContent = 'No clips added yet';
         }
         if (uploadMetaHint) {
-            uploadMetaHint.textContent = 'Tip: drop multiple files to keep your story flowing.';
+            uploadMetaHint.textContent = 'Tip: drag media into the timeline to start editing.';
         }
+        updateUploadLibraryEmptyState();
         return;
     }
 
-    if (uploadMetaStatus) {
-        const clipLabel = files.length === 1 ? 'clip' : 'clips';
-        uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
-    }
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    const videoFiles = files.filter((file) => file.type.startsWith('video/'));
+    const supportedFiles = [...imageFiles, ...videoFiles];
+    const supportedCount = imageFiles.length + videoFiles.length;
 
-    if (uploadMetaHint) {
-        const latestFile = files[files.length - 1];
-        if (latestFile?.name) {
-            const truncatedName = latestFile.name.length > 42
-                ? `${latestFile.name.slice(0, 39)}…`
-                : latestFile.name;
-            uploadMetaHint.textContent = files.length === 1
-                ? `Ready: ${truncatedName}`
-                : `${truncatedName} and ${files.length - 1} more`;
+    if (uploadMetaStatus) {
+        if (supportedCount === 0) {
+            uploadMetaStatus.textContent = 'No supported media detected';
+        } else {
+            const statusParts = [];
+            if (imageFiles.length > 0) {
+                statusParts.push(`${imageFiles.length} image${imageFiles.length === 1 ? '' : 's'} saved to library`);
+            }
+            if (videoFiles.length > 0) {
+                statusParts.push(`${videoFiles.length} video${videoFiles.length === 1 ? '' : 's'} added to timeline`);
+            }
+            uploadMetaStatus.textContent = statusParts.join(' · ');
         }
     }
 
-    for (const file of files) {
+    if (uploadMetaHint) {
+        const hintParts = [];
+        if (imageFiles.length > 0) {
+            hintParts.push('Drag images into the timeline to start editing');
+        }
+        if (videoFiles.length > 0) {
+            hintParts.push('Videos were added directly to the timeline');
+        }
+        uploadMetaHint.textContent = hintParts.length
+            ? `${hintParts.join(' · ')}.`
+            : 'Tip: drag media into the timeline to start editing.';
+    }
+
+    for (const file of supportedFiles) {
         // eslint-disable-next-line no-await-in-loop
         await showPreview(file);
     }
+
+    updateUploadLibraryEmptyState();
 });
 
 uploadButton.addEventListener('click', () => uploadInput.click());
