@@ -62,15 +62,6 @@ const previewRulerElements = previewGuidesLayer
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
 
-const SUPPORTED_BLEND_MODE_VALUES = new Set([
-    'normal',
-    'screen',
-    'overlay',
-    'multiply',
-    'lighten',
-    'darken',
-]);
-
 if (previewImage) {
     try {
         previewImage.decoding = 'async';
@@ -2996,11 +2987,6 @@ function setPreviewImageVisibility(isVisible) {
     }
 }
 
-function normalizeBlendMode(value) {
-    const normalized = String(value || '').toLowerCase();
-    return SUPPORTED_BLEND_MODE_VALUES.has(normalized) ? normalized : 'normal';
-}
-
 function clearPreviewOverlayLayers() {
     if (!previewOverlayStack) {
         return;
@@ -3051,26 +3037,10 @@ function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight) 
     return { left, top, width, height };
 }
 
-function applyPrimaryImageBlendMode(primaryTimelineItem) {
-    if (!previewImage) {
-        return;
-    }
-
-    const fileType = primaryTimelineItem?.dataset?.fileType || '';
-    if (fileType.startsWith('image/')) {
-        const blendMode = normalizeBlendMode(primaryTimelineItem?.dataset?.blendMode);
-        if (blendMode && blendMode !== 'normal') {
-            previewImage.style.mixBlendMode = blendMode;
-        } else {
-            previewImage.style.removeProperty('mix-blend-mode');
-        }
-    } else {
+function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
+    if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
-}
-
-function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
-    applyPrimaryImageBlendMode(primaryTimelineItem);
 
     if (!previewOverlayStack || !previewOverlayGroups) {
         return;
@@ -3163,11 +3133,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         }
         image.loading = 'lazy';
         image.draggable = false;
-        const blendMode = normalizeBlendMode(descriptor.item.dataset.blendMode);
-        if (blendMode && blendMode !== 'normal') {
-            image.style.mixBlendMode = blendMode;
-        }
-        layer.dataset.blendMode = blendMode || 'normal';
         layer.appendChild(image);
         layer.title = image.alt;
         overlayLayerToTimelineItem.set(layer, descriptor.item);
@@ -3228,7 +3193,9 @@ function onPreviewOverlayPointerDown(event) {
 
 function refreshActiveOverlayLayers() {
     if (!activeTimelineItem) {
-        applyPrimaryImageBlendMode(null);
+        if (previewImage) {
+            previewImage.style.removeProperty('mix-blend-mode');
+        }
         clearPreviewOverlayLayers();
         return;
     }
@@ -3668,7 +3635,6 @@ async function addToTimeline(file, objectURL) {
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
-        timelineItem.dataset.blendMode = 'normal';
     }
 
     timelineItem.appendChild(label);
