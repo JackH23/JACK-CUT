@@ -54,6 +54,14 @@
                     <li>Supports MP4, MOV, AVI, GIF and PNG formats.</li>
                     <li>For best results upload footage in 1080p or higher.</li>
                 </ul>
+                <div class="media-library" aria-live="polite">
+                    <div class="media-library__header">
+                        <h3>Media Library</h3>
+                        <span class="media-library__count" id="media-library-count">0 items</span>
+                    </div>
+                    <p class="media-library__empty" id="media-library-empty">Uploaded clips appear here. Drag them into the timeline when you're ready to edit.</p>
+                    <ul class="media-library__grid" id="media-library-list" role="list"></ul>
+                </div>
             </article>
 
             <article class="panel preview-card">
@@ -271,7 +279,7 @@
                 <div class="timeline-lane-list" id="timeline-lane-list" role="list">
                     <div class="timeline-lane" data-lane-index="0"></div>
                 </div>
-                <span id="timeline-empty-state">Upload media to build your timeline</span>
+                <span id="timeline-empty-state">Drag media from the library into the timeline to get started</span>
             </div>
             <div class="timeline-progress">
                 <label for="timeline-progress">Progress</label>

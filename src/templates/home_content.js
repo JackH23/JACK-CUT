@@ -2,6 +2,13 @@ const uploadInput = document.getElementById('video-upload');
 const uploadButton = document.getElementById('upload-button');
 const uploadMetaStatus = document.querySelector('.upload-meta__status');
 const uploadMetaHint = document.querySelector('.upload-meta__hint');
+const mediaLibraryList = document.getElementById('media-library-list');
+const mediaLibraryEmptyMessage = document.getElementById('media-library-empty');
+const mediaLibraryCountLabel = document.getElementById('media-library-count');
+const MEDIA_LIBRARY_DRAG_TYPE = 'application/x-media-library-item';
+const mediaLibraryItems = new Map();
+let mediaLibrarySequence = 0;
+const objectUrlUsage = new Map();
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
@@ -167,6 +174,202 @@ function releaseTimelineImage(objectURL) {
         return;
     }
     timelineImagePreloadCache.delete(objectURL);
+}
+
+function retainObjectUrl(objectURL) {
+    if (!objectURL) {
+        return;
+    }
+    const current = objectUrlUsage.get(objectURL) || 0;
+    objectUrlUsage.set(objectURL, current + 1);
+}
+
+function releaseObjectUrl(objectURL) {
+    if (!objectURL) {
+        return;
+    }
+    const current = objectUrlUsage.get(objectURL) || 0;
+    if (current <= 1) {
+        objectUrlUsage.delete(objectURL);
+        try {
+            URL.revokeObjectURL(objectURL);
+        } catch (error) {
+            console.warn('Failed to revoke object URL.', error);
+        }
+    } else {
+        objectUrlUsage.set(objectURL, current - 1);
+    }
+}
+
+function describeMediaKind(fileType) {
+    if (fileType.startsWith('video/')) {
+        return 'Video';
+    }
+    if (fileType.startsWith('image/')) {
+        return 'Image';
+    }
+    return 'Media';
+}
+
+function formatMediaLibraryCount(count) {
+    if (!Number.isFinite(count) || count <= 0) {
+        return '0 items';
+    }
+    return count === 1 ? '1 item' : `${count} items`;
+}
+
+function truncateFileName(name, limit = 42) {
+    if (typeof name !== 'string') {
+        return '';
+    }
+    if (name.length <= limit) {
+        return name;
+    }
+    return `${name.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+function updateMediaLibraryState() {
+    if (!mediaLibraryList) {
+        return;
+    }
+    const count = mediaLibraryList.children.length;
+    if (mediaLibraryCountLabel) {
+        mediaLibraryCountLabel.textContent = formatMediaLibraryCount(count);
+    }
+    if (mediaLibraryEmptyMessage) {
+        mediaLibraryEmptyMessage.hidden = count > 0;
+    }
+    mediaLibraryList.hidden = count === 0;
+}
+
+function isMediaLibraryDrag(event) {
+    const transfer = event?.dataTransfer;
+    if (!transfer) {
+        return false;
+    }
+    const types = Array.from(transfer.types || []);
+    return types.includes(MEDIA_LIBRARY_DRAG_TYPE);
+}
+
+function createMediaLibraryItemElement(entry) {
+    if (!entry || !mediaLibraryList) {
+        return null;
+    }
+
+    const item = document.createElement('li');
+    item.className = 'media-library-item';
+    item.dataset.mediaLibraryId = entry.id;
+    item.dataset.fileType = entry.type;
+    item.dataset.objectUrl = entry.objectURL;
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'media-library-item__thumb';
+    item.appendChild(thumb);
+
+    const badge = document.createElement('span');
+    badge.className = 'media-library-item__type';
+    badge.textContent = describeMediaKind(entry.type);
+    thumb.appendChild(badge);
+
+    if (entry.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = entry.objectURL;
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.autoplay = true;
+        video.preload = 'metadata';
+        thumb.appendChild(video);
+    } else {
+        const image = document.createElement('img');
+        image.src = entry.thumbnailUrl || entry.objectURL;
+        image.alt = entry.name;
+        thumb.appendChild(image);
+    }
+
+    const label = document.createElement('p');
+    label.className = 'media-library-item__label';
+    label.textContent = entry.name;
+    label.title = entry.name;
+    item.appendChild(label);
+
+    item.addEventListener('dragstart', (event) => {
+        item.classList.add('is-dragging');
+        const transfer = event.dataTransfer;
+        if (transfer) {
+            transfer.effectAllowed = 'copy';
+            transfer.setData(MEDIA_LIBRARY_DRAG_TYPE, entry.id);
+            transfer.setData('text/plain', entry.name);
+        }
+    });
+
+    item.addEventListener('dragend', () => {
+        item.classList.remove('is-dragging');
+    });
+
+    item.addEventListener('dblclick', () => {
+        addLibraryMediaToTimeline(entry.id).catch((error) => {
+            console.error('Failed to add media from library to timeline.', error);
+        });
+    });
+
+    item.addEventListener('keydown', (event) => {
+        if (event.defaultPrevented) {
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            addLibraryMediaToTimeline(entry.id).catch((error) => {
+                console.error('Failed to add media from library to timeline.', error);
+            });
+        }
+    });
+
+    return item;
+}
+
+async function addFileToMediaLibrary(file) {
+    if (!file || !mediaLibraryList) {
+        return null;
+    }
+
+    const fileType = file.type || '';
+    const isVideo = fileType.startsWith('video/');
+    const isImage = fileType.startsWith('image/');
+
+    if (!isVideo && !isImage) {
+        alert('Unsupported file type. Please upload an image or video file.');
+        return null;
+    }
+
+    const objectURL = URL.createObjectURL(file);
+    const entry = {
+        id: `media-${Date.now()}-${mediaLibrarySequence++}`,
+        name: file.name || `${describeMediaKind(fileType)} clip`,
+        type: fileType,
+        objectURL,
+        thumbnailUrl: null,
+    };
+
+    retainObjectUrl(objectURL);
+    mediaLibraryItems.set(entry.id, entry);
+
+    if (isImage) {
+        try {
+            entry.thumbnailUrl = await generateImageThumbnail(objectURL, 160, 110);
+        } catch (error) {
+            entry.thumbnailUrl = objectURL;
+        }
+    }
+
+    const element = createMediaLibraryItemElement(entry);
+    if (element) {
+        mediaLibraryList.appendChild(element);
+    }
+    updateMediaLibraryState();
+    return entry;
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -1618,14 +1821,15 @@ function initializeTimelineItem(timelineItem) {
 if (timelineTrack) {
     timelineTrack.addEventListener('dragenter', (event) => {
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-        if (draggingItem) {
+        if (draggingItem || isMediaLibraryDrag(event)) {
             event.preventDefault();
         }
     });
 
     timelineTrack.addEventListener('dragover', (event) => {
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-        if (!draggingItem) {
+        const libraryDrag = isMediaLibraryDrag(event);
+        if (!draggingItem && !libraryDrag) {
             return;
         }
         event.preventDefault();
@@ -1634,21 +1838,49 @@ if (timelineTrack) {
             return;
         }
         setActiveDropLane(lane);
-        const afterElement = getDragAfterElement(lane, event.clientX);
-        if (!afterElement) {
-            lane.appendChild(draggingItem);
-        } else if (afterElement !== draggingItem) {
-            lane.insertBefore(draggingItem, afterElement);
+        const transfer = event.dataTransfer;
+        if (transfer) {
+            transfer.dropEffect = draggingItem ? 'move' : 'copy';
         }
-        draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+        if (draggingItem) {
+            const afterElement = getDragAfterElement(lane, event.clientX);
+            if (!afterElement) {
+                lane.appendChild(draggingItem);
+            } else if (afterElement !== draggingItem) {
+                lane.insertBefore(draggingItem, afterElement);
+            }
+            draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+        }
     });
 
-    timelineTrack.addEventListener('drop', (event) => {
+    timelineTrack.addEventListener('drop', async (event) => {
         event.preventDefault();
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+        const libraryDrag = isMediaLibraryDrag(event);
+        const lane = getTimelineLaneFromEvent(event) || ensureTimelineLane(0);
+        const afterElement = lane ? getDragAfterElement(lane, event.clientX) : null;
         if (draggingItem) {
             draggingItem.classList.remove('dragging');
             draggingItem.draggable = true;
+            if (lane) {
+                draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+                if (afterElement && afterElement !== draggingItem && afterElement.parentElement === lane) {
+                    lane.insertBefore(draggingItem, afterElement);
+                }
+            }
+        } else if (libraryDrag) {
+            const transfer = event.dataTransfer;
+            const mediaId = transfer?.getData(MEDIA_LIBRARY_DRAG_TYPE) || '';
+            if (mediaId) {
+                try {
+                    await addLibraryMediaToTimeline(mediaId, {
+                        lane,
+                        beforeElement: afterElement,
+                    });
+                } catch (error) {
+                    console.error('Failed to add media from library to timeline.', error);
+                }
+            }
         }
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
@@ -1659,6 +1891,7 @@ if (timelineTrack) {
 
 ensureTimelineLane(0);
 updateTimelineEmptyState();
+updateMediaLibraryState();
 
 if (window.ResizeObserver) {
     if (previewArea && !previewAreaResizeObserver) {
@@ -3189,6 +3422,7 @@ function onPreviewOverlayPointerDown(event) {
     stopTimelinePlayback();
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+    renderExportSummary(getTimelineItems(), null);
 }
 
 function refreshActiveOverlayLayers() {
@@ -3524,17 +3758,11 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 }
 
-async function showPreview(file) {
-    const isVideo = file.type.startsWith('video/');
-    const isImage = file.type.startsWith('image/');
-
-    if (!isVideo && !isImage) {
-        alert('Unsupported file type. Please upload an image or video file.');
-        return;
+async function registerUploadedFile(file) {
+    if (!file) {
+        return null;
     }
-
-    const objectURL = URL.createObjectURL(file);
-    await addToTimeline(file, objectURL);
+    return addFileToMediaLibrary(file);
 }
 
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
@@ -3561,19 +3789,28 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
     });
 }
 
-async function addToTimeline(file, objectURL) {
-    const defaultLane = ensureTimelineLane(0);
+async function addToTimeline(file, objectURL, options = {}) {
+    const targetLane = options.lane || ensureTimelineLane(0);
+    const beforeElement = options.beforeElement instanceof HTMLElement
+        ? options.beforeElement
+        : null;
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
     }
+
+    retainObjectUrl(objectURL);
 
     const timelineItem = document.createElement('div');
     timelineItem.className = 'timeline-item';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
+    const mediaLibraryId = options.mediaLibraryId || file.mediaLibraryId;
     timelineItem.dataset.fileType = file.type;
     timelineItem.dataset.objectUrl = objectURL;
     timelineItem.dataset.displayName = file.name;
+    if (mediaLibraryId) {
+        timelineItem.dataset.mediaLibraryId = mediaLibraryId;
+    }
 
     const label = document.createElement('span');
     label.textContent = file.name;
@@ -3623,7 +3860,8 @@ async function addToTimeline(file, objectURL) {
     } else if (file.type.startsWith('image/')) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
-        imageThumb.src = await generateImageThumbnail(objectURL);
+        const providedThumbnail = options.thumbnailUrl || file.thumbnailUrl;
+        imageThumb.src = providedThumbnail || await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
         timelineItem.appendChild(imageThumb);
         setTimelineItemDuration(
@@ -3640,11 +3878,14 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(label);
     timelineItem.appendChild(removeButton);
 
-    const targetLane = defaultLane || ensureTimelineLane(0);
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
-        targetLane.appendChild(timelineItem);
-    } else {
+        if (beforeElement && beforeElement.parentElement === targetLane) {
+            targetLane.insertBefore(timelineItem, beforeElement);
+        } else {
+            targetLane.appendChild(timelineItem);
+        }
+    } else if (timelineTrack) {
         timelineItem.dataset.laneIndex = '0';
         timelineTrack.appendChild(timelineItem);
     }
@@ -3713,7 +3954,7 @@ async function addToTimeline(file, objectURL) {
             if (fileType.startsWith('image/')) {
                 releaseTimelineImage(url);
             }
-            URL.revokeObjectURL(url);
+            releaseObjectUrl(url);
         }
         if (wasActive) {
             setActiveTimelineItem(null);
@@ -3727,6 +3968,56 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+    renderExportSummary(getTimelineItems(), null);
+}
+
+async function addLibraryMediaToTimeline(mediaId, options = {}) {
+    if (!mediaId) {
+        return null;
+    }
+
+    const entry = mediaLibraryItems.get(mediaId);
+    if (!entry) {
+        return null;
+    }
+
+    const laneIndex = typeof options.laneIndex === 'number'
+        ? Number(options.laneIndex)
+        : null;
+    let lane = options.lane instanceof HTMLElement ? options.lane : null;
+    if (!lane && laneIndex !== null) {
+        lane = ensureTimelineLane(laneIndex);
+    }
+    if (!lane) {
+        lane = ensureTimelineLane(0);
+    }
+
+    if (!lane) {
+        return null;
+    }
+
+    const beforeElement = options.beforeElement instanceof HTMLElement
+        ? options.beforeElement
+        : null;
+
+    const descriptor = {
+        type: entry.type,
+        name: entry.name,
+        thumbnailUrl: entry.thumbnailUrl,
+        mediaLibraryId: entry.id,
+    };
+
+    try {
+        return await addToTimeline(descriptor, entry.objectURL, {
+            lane,
+            beforeElement,
+            mediaLibraryId: entry.id,
+            thumbnailUrl: entry.thumbnailUrl,
+        });
+    } catch (error) {
+        releaseObjectUrl(entry.objectURL);
+        throw error;
+    }
 }
 
 uploadInput.addEventListener('change', async (event) => {
@@ -3741,26 +4032,39 @@ uploadInput.addEventListener('change', async (event) => {
         return;
     }
 
+    const supportedFiles = files.filter((file) => {
+        const type = file?.type || '';
+        return type.startsWith('image/') || type.startsWith('video/');
+    });
+
     if (uploadMetaStatus) {
-        const clipLabel = files.length === 1 ? 'clip' : 'clips';
-        uploadMetaStatus.textContent = `${files.length} ${clipLabel} ready to preview`;
+        if (supportedFiles.length) {
+            const clipLabel = supportedFiles.length === 1 ? 'item' : 'items';
+            uploadMetaStatus.textContent = `${supportedFiles.length} ${clipLabel} added to your library`;
+        } else {
+            uploadMetaStatus.textContent = 'No compatible clips were added';
+        }
     }
 
     if (uploadMetaHint) {
-        const latestFile = files[files.length - 1];
+        const latestFile = supportedFiles[supportedFiles.length - 1];
         if (latestFile?.name) {
-            const truncatedName = latestFile.name.length > 42
-                ? `${latestFile.name.slice(0, 39)}…`
-                : latestFile.name;
-            uploadMetaHint.textContent = files.length === 1
-                ? `Ready: ${truncatedName}`
-                : `${truncatedName} and ${files.length - 1} more`;
+            const truncatedName = truncateFileName(latestFile.name, 48);
+            uploadMetaHint.textContent = supportedFiles.length === 1
+                ? `Drag ${truncatedName} into the timeline to begin editing.`
+                : `${truncatedName} and ${supportedFiles.length - 1} more ready in the library.`;
+        } else {
+            uploadMetaHint.textContent = 'Drag media from the library into the timeline to start editing.';
         }
     }
 
     for (const file of files) {
         // eslint-disable-next-line no-await-in-loop
-        await showPreview(file);
+        await registerUploadedFile(file);
+    }
+
+    if (event.target instanceof HTMLInputElement) {
+        event.target.value = '';
     }
 });
 
