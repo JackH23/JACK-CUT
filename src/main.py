@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 
 from flask import Flask, render_template_string, request, redirect, url_for, session
 from pymongo import MongoClient
+from pymongo.errors import ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError
 
 from templates import (
     HOME_TEMPLATE,
@@ -38,15 +39,21 @@ def get_users_collection():
     if use_in_memory:
         return InMemoryCollection()
 
-    mongo_url = os.getenv(
-        'MONGO_URL',
-        (
-            "mongodb+srv://sihalardjacky_db_user:TP7iCDWj3hhq4KBP@cluster0.rssobej.mongodb.net/"
-            "?retryWrites=true&w=majority&appName=Cluster0"
-        ),
-    )
-    mongo_client = MongoClient(mongo_url)
-    database_name = os.getenv('MONGO_DB_NAME', 'your_database_name')
+    mongo_url = os.getenv('MONGO_URL')
+    if not mongo_url:
+        raise RuntimeError(
+            'MONGO_URL environment variable is required when USE_IN_MEMORY_DB is not set.'
+        )
+
+    try:
+        mongo_client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
+    except (ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError) as exc:
+        raise RuntimeError(
+            'Failed to create MongoDB client. Check the MONGO_URL value or set '
+            'USE_IN_MEMORY_DB=1 for a local fallback.'
+        ) from exc
+
+    database_name = os.getenv('MONGO_DB_NAME', 'app')
     db = mongo_client[database_name]
     return db['users']
 
