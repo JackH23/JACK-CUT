@@ -14,6 +14,7 @@ const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
 const timelineImagePreloadCache = new Map();
+const stagedUploadsByObjectUrl = new Map();
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');
 const previewOverlayGroups = previewOverlayStack
@@ -3539,6 +3540,31 @@ function formatFileSize(bytes) {
     return `${size.toFixed(size >= 100 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
+function setStagedUploadAddedState(objectURL, isAdded) {
+    if (!objectURL || !stagedUploadsByObjectUrl.has(objectURL)) {
+        return;
+    }
+
+    const entry = stagedUploadsByObjectUrl.get(objectURL);
+    const { listItem, addButton, file } = entry;
+
+    if (!listItem || !addButton) {
+        return;
+    }
+
+    if (isAdded) {
+        listItem.classList.add('is-added');
+        addButton.disabled = true;
+        addButton.innerHTML = '<span aria-hidden="true">✓</span>';
+        addButton.setAttribute('aria-label', `${file.name} added to timeline`);
+    } else {
+        listItem.classList.remove('is-added');
+        addButton.disabled = false;
+        addButton.innerHTML = '<span aria-hidden="true">+</span>';
+        addButton.setAttribute('aria-label', `Add ${file.name} to timeline`);
+    }
+}
+
 async function stageUpload(file) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
@@ -3555,6 +3581,7 @@ async function stageUpload(file) {
 
     const listItem = document.createElement('li');
     listItem.className = 'upload-gallery__item';
+    listItem.dataset.objectUrl = objectURL;
 
     const previewWrapper = document.createElement('div');
     previewWrapper.className = 'upload-gallery__preview';
@@ -3611,9 +3638,7 @@ async function stageUpload(file) {
         addButton.disabled = true;
         try {
             await addToTimeline(file, objectURL);
-            listItem.classList.add('is-added');
-            addButton.innerHTML = '<span aria-hidden="true">✓</span>';
-            addButton.setAttribute('aria-label', `${file.name} added to timeline`);
+            setStagedUploadAddedState(objectURL, true);
         } catch (error) {
             console.error('Failed to add upload to timeline.', error);
             addButton.disabled = false;
@@ -3624,6 +3649,13 @@ async function stageUpload(file) {
 
     listItem.append(previewWrapper, meta, actions);
     uploadGalleryList.appendChild(listItem);
+
+    stagedUploadsByObjectUrl.set(objectURL, {
+        file,
+        listItem,
+        addButton,
+    });
+    setStagedUploadAddedState(objectURL, false);
 
     if (uploadGallery) {
         uploadGallery.hidden = false;
@@ -3803,10 +3835,13 @@ async function addToTimeline(file, objectURL) {
         const url = targetItem.dataset.objectUrl;
         targetItem.remove();
         if (url) {
+            setStagedUploadAddedState(url, false);
             if (fileType.startsWith('image/')) {
                 releaseTimelineImage(url);
             }
-            URL.revokeObjectURL(url);
+            if (!stagedUploadsByObjectUrl.has(url)) {
+                URL.revokeObjectURL(url);
+            }
         }
         if (wasActive) {
             setActiveTimelineItem(null);

@@ -378,6 +378,25 @@ body {
     padding: 0;
     display: grid;
     gap: 12px;
+    max-height: 312px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.upload-gallery__list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.upload-gallery__list::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 999px;
+}
+
+.upload-gallery__list::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .upload-gallery__item {
