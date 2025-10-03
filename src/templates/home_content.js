@@ -3654,10 +3654,23 @@ function createUploadLibraryItemElement(entry) {
 
     const hint = document.createElement('span');
     hint.className = 'upload-library__hint';
-    hint.textContent = 'Drag to timeline';
+    hint.textContent = 'Drag to timeline or click add';
     meta.appendChild(hint);
 
     item.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'upload-library__actions';
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'upload-library__add';
+    const displayName = entry.name ? `“${entry.name}”` : 'clip';
+    addButton.setAttribute('aria-label', `Add ${displayName} to timeline`);
+    addButton.textContent = '+';
+    actions.appendChild(addButton);
+
+    item.appendChild(actions);
 
     item.addEventListener('dragstart', (event) => {
         activeLibraryDragId = entry.id;
@@ -3680,7 +3693,18 @@ function createUploadLibraryItemElement(entry) {
         setActiveDropLane(null);
     });
 
+    addButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        addLibraryEntryToTimeline(entry).catch((error) => {
+            console.warn('Unable to add library item to timeline from button.', error);
+        });
+    });
+
     item.addEventListener('keydown', (event) => {
+        if (event.target !== item) {
+            return;
+        }
         if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') {
             return;
         }
@@ -3690,7 +3714,10 @@ function createUploadLibraryItemElement(entry) {
         });
     });
 
-    item.addEventListener('dblclick', () => {
+    item.addEventListener('dblclick', (event) => {
+        if (event.target instanceof HTMLElement && event.target.closest('.upload-library__add')) {
+            return;
+        }
         addLibraryEntryToTimeline(entry).catch((error) => {
             console.warn('Unable to add library item to timeline from double click.', error);
         });
@@ -3978,14 +4005,14 @@ uploadInput.addEventListener('change', async (event) => {
     if (uploadMetaHint) {
         const hintParts = [];
         if (imageFiles.length > 0) {
-            hintParts.push('Drag images into the timeline to start editing');
+            hintParts.push('Drag images into the timeline or use the add button to start editing');
         }
         if (videoFiles.length > 0) {
             hintParts.push('Videos were added directly to the timeline');
         }
         uploadMetaHint.textContent = hintParts.length
             ? `${hintParts.join(' · ')}.`
-            : 'Tip: drag media into the timeline to start editing.';
+            : 'Tip: drag media into the timeline or use the add button to start editing.';
     }
 
     for (const file of supportedFiles) {
