@@ -45,6 +45,18 @@ When you are ready to test against a real database, configure `MONGO_URL` (and o
 3. Install the project dependencies using `pip install -r requirements.txt`.
 4. Start the Flask application with `python src/main.py`.
 
+## Password storage and migration
+
+User passwords are now stored using Werkzeug's PBKDF2 hashing. Any new sign-ups automatically persist hashes instead of plain-text credentials. Operators upgrading an existing deployment **must** migrate existing users before enabling the new release; otherwise, users with legacy plain-text passwords will no longer be able to authenticate.
+
+To migrate existing credentials, set the same `MONGO_URL` (and optional `MONGO_DB_NAME`) environment variables used by the application and run:
+
+```
+python scripts/migrate_password_hashes.py
+```
+
+The script walks every user document, replacing any plain-text password with a secure hash. If you cannot run the migration, plan to reset affected user passwords manually so their next sign-in stores a hashed value.
+
 ## Contributing
 If you would like to contribute to this project, please fork the repository and submit a pull request.
 

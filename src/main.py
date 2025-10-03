@@ -4,6 +4,7 @@ import secrets
 from typing import Any, Dict, Optional
 
 from flask import Flask, render_template_string, request, redirect, url_for, session
+from werkzeug.security import check_password_hash, generate_password_hash
 from pymongo import MongoClient
 from pymongo.errors import ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError
 
@@ -115,10 +116,15 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form.get('password', '')
-        user = users_collection.find_one({'username': username, 'password': password})
+        user = users_collection.find_one({'username': username})
         if user:
-            session['username'] = username
-            return redirect(url_for('home'))
+            stored_password = user.get('password', '')
+            try:
+                if check_password_hash(stored_password, password):
+                    session['username'] = username
+                    return redirect(url_for('home'))
+            except ValueError:
+                logger.error('Stored password for user %s is not a valid hash.', username)
         error = "Invalid username or password. Please try again or sign up."
     return render_template_string(LOGIN_HTML, error=error)
 
@@ -133,10 +139,11 @@ def signup():
         if users_collection.find_one({'username': username}):
             error = "Username already exists. Please choose another."
         else:
+            password_hash = generate_password_hash(password)
             users_collection.insert_one({
                 'username': username,
                 'email': email,
-                'password': password,
+                'password': password_hash,
             })
             session['username'] = username
             return redirect(url_for('home'))
