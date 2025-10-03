@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 from typing import Any, Dict, Optional
 
 from flask import Flask, render_template_string, request, redirect, url_for, session
@@ -19,7 +20,34 @@ logger = logging.getLogger(__name__)
 
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Replace with a secure key in production
+
+
+def configure_secret_key(flask_app: Flask, *, allow_generated: bool = False) -> None:
+    """Configure the Flask secret key from the environment."""
+
+    secret_key = os.getenv('FLASK_SECRET_KEY')
+    if secret_key:
+        flask_app.config['SECRET_KEY'] = secret_key
+        logger.info('Loaded secret key from FLASK_SECRET_KEY environment variable.')
+        return
+
+    if allow_generated:
+        generated_key = secrets.token_urlsafe(32)
+        flask_app.config['SECRET_KEY'] = generated_key
+        logger.warning(
+            'Generated a temporary secret key because FLASK_SECRET_KEY is not set. '
+            'This key is intended for local development only.'
+        )
+        return
+
+    raise RuntimeError(
+        'FLASK_SECRET_KEY environment variable is required. Generate one with '
+        "python -c 'import secrets; print(secrets.token_urlsafe(32))' and set it in your environment."
+    )
+
+
+if __name__ != '__main__':
+    configure_secret_key(app)
 
 
 class InMemoryCollection:
@@ -122,4 +150,5 @@ def signout():
 
 
 if __name__ == '__main__':
+    configure_secret_key(app, allow_generated=True)
     app.run(debug=True)

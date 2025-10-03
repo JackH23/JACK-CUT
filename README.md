@@ -19,8 +19,9 @@ The application expects the following environment variables:
 | `MONGO_URL` | Yes (unless `USE_IN_MEMORY_DB=1`) | The MongoDB connection string for the deployment environment. |
 | `MONGO_DB_NAME` | No | The database name to use. Defaults to `app` when not provided. |
 | `USE_IN_MEMORY_DB` | No | Set to `1` to use the in-memory datastore for local development or previews. |
+| `FLASK_SECRET_KEY` | Yes (except in local debug) | Secret string used to sign session cookies. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 
-If you do not have access to a MongoDB instance locally, set `USE_IN_MEMORY_DB=1` to run without external services. When deploying, **do not** commit secrets; configure the environment variables in your hosting platform instead.
+If you do not have access to a MongoDB instance locally, set `USE_IN_MEMORY_DB=1` to run without external services. When deploying, **do not** commit secrets; configure the environment variables in your hosting platform instead. Always provide a strong value for `FLASK_SECRET_KEY` in production—see the configuration table for an example command.
 
 ## Running locally
 
@@ -34,6 +35,8 @@ USE_IN_MEMORY_DB=1 python src/main.py
 ```
 
 When you are ready to test against a real database, configure `MONGO_URL` (and optionally `MONGO_DB_NAME`) in your shell or a `.env` file and start the app without the `USE_IN_MEMORY_DB` flag.
+
+> **Note:** When running `python src/main.py`, the application generates a temporary random secret key if `FLASK_SECRET_KEY` is not set. This is convenient for local debugging only—always set an explicit, strong secret in any shared or production environment.
 
 ## Deployment
 
