@@ -62,16 +62,14 @@ const previewRulerElements = previewGuidesLayer
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
 
-const BLEND_MODE_OPTIONS = [
-    { value: 'normal', label: 'Normal' },
-    { value: 'screen', label: 'Screen' },
-    { value: 'overlay', label: 'Overlay' },
-    { value: 'multiply', label: 'Multiply' },
-    { value: 'lighten', label: 'Lighten' },
-    { value: 'darken', label: 'Darken' },
-];
-
-const SUPPORTED_BLEND_MODE_VALUES = new Set(BLEND_MODE_OPTIONS.map((option) => option.value));
+const SUPPORTED_BLEND_MODE_VALUES = new Set([
+    'normal',
+    'screen',
+    'overlay',
+    'multiply',
+    'lighten',
+    'darken',
+]);
 
 if (previewImage) {
     try {
@@ -3671,26 +3669,6 @@ async function addToTimeline(file, objectURL) {
             console.warn('Failed to warm timeline image for playback.', error);
         });
         timelineItem.dataset.blendMode = 'normal';
-        const blendSelect = document.createElement('select');
-        blendSelect.className = 'timeline-blend-mode';
-        blendSelect.setAttribute('aria-label', 'Blend mode');
-        blendSelect.title = 'Blend mode';
-        BLEND_MODE_OPTIONS.forEach((option) => {
-            const optionElement = document.createElement('option');
-            optionElement.value = option.value;
-            optionElement.textContent = option.label;
-            blendSelect.appendChild(optionElement);
-        });
-        blendSelect.value = 'normal';
-        blendSelect.addEventListener('change', () => {
-            const normalized = normalizeBlendMode(blendSelect.value);
-            timelineItem.dataset.blendMode = normalized;
-            if (blendSelect.value !== normalized) {
-                blendSelect.value = normalized;
-            }
-            refreshActiveOverlayLayers();
-        });
-        timelineItem.appendChild(blendSelect);
     }
 
     timelineItem.appendChild(label);
