@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Dict, Optional
 
@@ -12,6 +13,10 @@ from templates import (
     LOGIN_HTML,
     SIGNUP_HTML,
 )
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'  # Replace with a secure key in production
@@ -37,21 +42,25 @@ def get_users_collection():
     """Return a Mongo collection or an in-memory fallback."""
     use_in_memory = os.getenv('USE_IN_MEMORY_DB', '0') == '1'
     if use_in_memory:
+        logger.info('Using in-memory database because USE_IN_MEMORY_DB=1.')
         return InMemoryCollection()
 
     mongo_url = os.getenv('MONGO_URL')
     if not mongo_url:
-        raise RuntimeError(
-            'MONGO_URL environment variable is required when USE_IN_MEMORY_DB is not set.'
+        logger.warning(
+            'MONGO_URL environment variable is not set. Falling back to in-memory database.'
         )
+        return InMemoryCollection()
 
     try:
         mongo_client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
+        mongo_client.admin.command('ping')
     except (ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError) as exc:
-        raise RuntimeError(
-            'Failed to create MongoDB client. Check the MONGO_URL value or set '
-            'USE_IN_MEMORY_DB=1 for a local fallback.'
-        ) from exc
+        logger.error(
+            'Failed to create MongoDB client. Falling back to in-memory database. %s',
+            exc,
+        )
+        return InMemoryCollection()
 
     database_name = os.getenv('MONGO_DB_NAME', 'app')
     db = mongo_client[database_name]
