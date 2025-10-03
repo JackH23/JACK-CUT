@@ -22,6 +22,7 @@
 body {
     margin: 0;
     min-height: 100vh;
+    line-height: 1.55;
     background:
         radial-gradient(120% 100% at 10% 10%, rgba(124, 58, 237, 0.28), transparent 55%),
         radial-gradient(80% 100% at 90% 0%, rgba(56, 189, 248, 0.18), transparent 60%),
@@ -34,11 +35,34 @@ body {
     padding: clamp(16px, 3vh, 24px);
 }
 
+.skip-link {
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 20px;
+    border-radius: 999px;
+    background: rgba(8, 12, 24, 0.9);
+    color: var(--text-primary);
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    box-shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
+    transition: transform 0.2s ease;
+    z-index: 1000;
+}
+
+.skip-link:focus {
+    top: 16px;
+    transform: translate(-50%, 0);
+}
+
 .app-shell {
     width: min(1200px, 100%);
     display: grid;
     grid-template-columns: 1fr;
     gap: clamp(18px, 3vh, 24px);
+    padding-bottom: clamp(32px, 6vh, 60px);
 }
 
 .nav-bar {
@@ -48,9 +72,10 @@ body {
     padding: clamp(14px, 2.5vh, 18px) clamp(20px, 4vw, 28px);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-soft);
-    display: flex;
+    display: grid;
+    grid-template-columns: auto auto;
     align-items: center;
-    justify-content: space-between;
+    gap: 16px;
 }
 
 .nav-brand {
@@ -73,10 +98,93 @@ body {
     font-size: 26px;
 }
 
+.nav-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(15, 23, 42, 0.68);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.nav-toggle:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.65);
+    outline-offset: 3px;
+}
+
+.nav-toggle:hover {
+    border-color: rgba(148, 163, 184, 0.35);
+    transform: translateY(-1px);
+}
+
+.nav-toggle__icon {
+    position: relative;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 999px;
+}
+
+.nav-toggle__icon::before,
+.nav-toggle__icon::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 999px;
+    transition: transform 0.2s ease;
+}
+
+.nav-toggle__icon::before {
+    top: -6px;
+}
+
+.nav-toggle__icon::after {
+    top: 6px;
+}
+
+.nav-toggle[aria-expanded="true"] .nav-toggle__icon {
+    background: transparent;
+}
+
+.nav-toggle[aria-expanded="true"] .nav-toggle__icon::before {
+    transform: translateY(6px) rotate(45deg);
+}
+
+.nav-toggle[aria-expanded="true"] .nav-toggle__icon::after {
+    transform: translateY(-6px) rotate(-45deg);
+}
+
+.nav-toggle__label {
+    font-size: 0.95rem;
+}
+
 .nav-actions {
     display: flex;
     gap: 12px;
     align-items: center;
+    justify-self: end;
+}
+
+.nav-actions__group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.nav-actions__greeting {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
 }
 
 .nav-actions a,
@@ -109,6 +217,12 @@ body {
 .nav-actions button:hover {
     border-color: rgba(148, 163, 184, 0.32);
     transform: translateY(-1px);
+}
+
+.nav-actions a:focus-visible,
+.nav-actions button:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.65);
+    outline-offset: 3px;
 }
 
 .hero {
@@ -186,6 +300,7 @@ body {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
     grid-template-areas: "upload preview settings";
     align-items: stretch;
+    position: relative;
 }
 
 .editor-layout > .panel {
@@ -794,6 +909,10 @@ body {
 
 .nav-actions .export-button {
     margin: 0;
+}
+
+.nav-actions .export-button {
+    min-width: 0;
 }
 
 .export-dialog {
@@ -1711,23 +1830,142 @@ body {
     font-size: 0.9rem;
 }
 
-@media (max-width: 960px) {
+@media (min-width: 901px) {
+    .nav-actions {
+        display: flex !important;
+        padding: 0;
+        max-height: none;
+        opacity: 1;
+        pointer-events: auto;
+        width: auto;
+    }
+    .nav-actions__group {
+        width: auto;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 1200px) {
     .editor-layout {
-        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.4fr);
         grid-template-areas:
             "upload preview"
             "settings preview";
     }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 1024px) {
+    .editor-layout {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "preview"
+            "upload"
+            "settings";
+    }
+    .preview-card {
+        order: -1;
+    }
+    .timeline-card {
+        margin-top: 0;
+    }
+}
+
+@media (max-width: 900px) {
     body {
-        padding: 16px;
+        padding: clamp(12px, 3vh, 18px);
     }
     .nav-bar {
+        grid-template-columns: 1fr auto;
+        align-items: center;
+    }
+    .nav-toggle {
+        display: inline-flex;
+        justify-self: end;
+    }
+    .nav-actions {
+        position: relative;
+        width: 100%;
+        justify-self: stretch;
         flex-direction: column;
-        align-items: flex-start;
-        gap: 16px;
+        align-items: stretch;
+        gap: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(11, 18, 41, 0.92);
+        padding: 0;
+        max-height: 0;
+        opacity: 0;
+        pointer-events: none;
+        overflow: hidden;
+        transition: max-height 0.3s ease, opacity 0.2s ease;
+    }
+    .nav-actions[data-expanded="true"] {
+        padding: 12px 14px 16px;
+        max-height: 420px;
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .nav-actions__group {
+        flex-direction: column;
+        align-items: stretch;
+        opacity: 0;
+        transform: translateY(-6px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .nav-actions[data-expanded="true"] .nav-actions__group {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .nav-actions__greeting {
+        text-align: left;
+        font-size: 1rem;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        margin-bottom: 6px;
+    }
+    .nav-actions a,
+    .nav-actions button {
+        width: 100%;
+    }
+    .nav-actions button,
+    .nav-actions a {
+        padding: 12px 16px;
+    }
+}
+
+@media (max-width: 720px) {
+    .panel {
+        padding: clamp(16px, 4vw, 22px);
+    }
+    .upload-actions {
+        flex-direction: column;
+    }
+    .upload-actions button {
+        width: 100%;
+    }
+    .timeline-track {
+        padding-bottom: 16px;
+    }
+    .timeline-progress {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .timeline-progress input[type="range"],
+    .timeline-progress button {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    .nav-brand {
+        gap: 12px;
+        font-size: 18px;
+    }
+    .brand-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 24px;
     }
     .hero {
         padding: 28px;
@@ -1736,20 +1974,44 @@ body {
         flex-direction: column;
         align-items: stretch;
     }
-    .nav-actions {
-        width: 100%;
-        justify-content: flex-start;
+    .upload-dropzone {
+        padding: 24px 16px;
     }
-    .nav-actions a {
-        flex: 1;
-        text-align: center;
+    .preview-header {
+        flex-direction: column;
+        align-items: flex-start;
     }
-    .editor-layout {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-            "preview"
-            "upload"
-            "settings";
+    .preview-meta {
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .nav-bar,
+    .panel,
+    .export-dialog__panel {
+        border-radius: 18px;
+    }
+    .nav-actions__greeting {
+        font-size: 0.95rem;
+    }
+    .upload-dropzone {
+        border-radius: 16px;
+    }
+    .timeline-card {
+        padding: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
 
