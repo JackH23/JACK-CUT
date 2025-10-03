@@ -18,14 +18,15 @@ LOGIN_HTML = '''
                 #0f172a;
             font-family: 'Inter', 'Segoe UI', sans-serif;
             color: #f8fafc;
-            padding: 20px;
+            padding: clamp(16px, 4vw, 32px);
+            line-height: 1.55;
         }
 
         .card {
             width: min(420px, 100%);
             background: rgba(15, 23, 42, 0.85);
             border-radius: 24px;
-            padding: 40px 36px 32px 36px;
+            padding: clamp(28px, 6vw, 40px) clamp(24px, 6vw, 36px) clamp(24px, 6vw, 32px);
             box-shadow: 0 30px 80px rgba(2, 6, 23, 0.55);
             border: 1px solid rgba(148, 163, 184, 0.16);
             backdrop-filter: blur(12px);
@@ -126,6 +127,22 @@ LOGIN_HTML = '''
 
         .links a:hover {
             text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            .card {
+                border-radius: 20px;
+                padding: 28px 22px 24px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
         }
     </style>
 </head>

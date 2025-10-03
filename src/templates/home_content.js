@@ -1,3 +1,5 @@
+const navToggle = document.querySelector('.nav-toggle');
+const navActions = document.getElementById('primary-nav');
 const uploadInput = document.getElementById('video-upload');
 const uploadButton = document.getElementById('upload-button');
 const uploadMetaStatus = document.querySelector('.upload-meta__status');
@@ -119,6 +121,57 @@ let pendingPreviewImageTransform = null;
 let lastPreviewViewportSize = null;
 let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
+
+if (navToggle && navActions) {
+    const mobileNavQuery = window.matchMedia('(max-width: 900px)');
+
+    const setNavExpanded = (expanded) => {
+        const expandedValue = expanded ? 'true' : 'false';
+        navToggle.setAttribute('aria-expanded', expandedValue);
+        navActions.dataset.expanded = expandedValue;
+    };
+
+    const handleBreakpointChange = (event) => {
+        if (!event.matches) {
+            setNavExpanded(false);
+        }
+    };
+
+    const subscribeToBreakpoint = (query, handler) => {
+        if (typeof query.addEventListener === 'function') {
+            query.addEventListener('change', handler);
+        } else if (typeof query.addListener === 'function') {
+            query.addListener(handler);
+        }
+    };
+
+    navToggle.addEventListener('click', () => {
+        const isExpanded = navToggle.getAttribute('aria-expanded') === 'true';
+        setNavExpanded(!isExpanded);
+    });
+
+    const navInteractiveElements = navActions.querySelectorAll('a, button');
+    navInteractiveElements.forEach((element) => {
+        element.addEventListener('click', () => {
+            if (mobileNavQuery.matches) {
+                setNavExpanded(false);
+            }
+        });
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (
+            event.key === 'Escape'
+            && navToggle.getAttribute('aria-expanded') === 'true'
+            && mobileNavQuery.matches
+        ) {
+            setNavExpanded(false);
+            navToggle.focus();
+        }
+    });
+
+    subscribeToBreakpoint(mobileNavQuery, handleBreakpointChange);
+}
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
