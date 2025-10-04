@@ -2181,19 +2181,62 @@ function drawPreviewImageToExportCanvas() {
 
     const drawWidth = naturalWidth * scale;
     const drawHeight = naturalHeight * scale;
-    const rotation = clampRotation(transform.rotation);
-    const centerX = transform.left + (transform.width / 2);
-    const centerY = transform.top + (transform.height / 2);
+
+    let cssMatrix = null;
+    let computedOpacity = 1;
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const computedStyle = window.getComputedStyle(previewImage);
+        const transformString = computedStyle?.transform || 'none';
+        const opacityValue = Number.parseFloat(computedStyle?.opacity || '1');
+        if (Number.isFinite(opacityValue)) {
+            computedOpacity = Math.max(0, Math.min(1, opacityValue));
+        }
+
+        if (transformString && transformString !== 'none') {
+            const DOMMatrixConstructor = window.DOMMatrixReadOnly || window.DOMMatrix;
+            if (typeof DOMMatrixConstructor === 'function') {
+                try {
+                    cssMatrix = new DOMMatrixConstructor(transformString);
+                } catch (error) {
+                    cssMatrix = null;
+                }
+            }
+        }
+    }
 
     exportMirrorContext.save();
-    exportMirrorContext.translate(centerX, centerY);
-    if (rotation !== 0) {
-        exportMirrorContext.rotate((rotation * Math.PI) / 180);
+    if (computedOpacity < 1) {
+        exportMirrorContext.globalAlpha *= computedOpacity;
     }
+
+    exportMirrorContext.translate(transform.left, transform.top);
+    if (cssMatrix) {
+        exportMirrorContext.transform(
+            cssMatrix.a,
+            cssMatrix.b,
+            cssMatrix.c,
+            cssMatrix.d,
+            cssMatrix.e,
+            cssMatrix.f,
+        );
+    } else {
+        const rotation = clampRotation(transform.rotation);
+        if (rotation !== 0) {
+            const radians = (rotation * Math.PI) / 180;
+            exportMirrorContext.translate(transform.width / 2, transform.height / 2);
+            exportMirrorContext.rotate(radians);
+            exportMirrorContext.translate(-transform.width / 2, -transform.height / 2);
+        }
+    }
+
     exportMirrorContext.drawImage(
         previewImage,
-        -drawWidth / 2,
-        -drawHeight / 2,
+        0,
+        0,
+        naturalWidth,
+        naturalHeight,
+        (transform.width - drawWidth) / 2,
+        (transform.height - drawHeight) / 2,
         drawWidth,
         drawHeight,
     );
