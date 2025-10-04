@@ -348,10 +348,13 @@ function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clip
             return;
         }
 
+        const resolvedExitConfig = exitConfig
+            || getPreviewImageExitConfig({ clipDurationMs: clipDurationOverride });
+
         const resolvedClipDuration = Number.isFinite(clipDurationOverride)
             ? clipDurationOverride
-            : Number.isFinite(exitConfig?.combo?.clipDuration)
-                ? exitConfig.combo.clipDuration
+            : Number.isFinite(resolvedExitConfig?.combo?.clipDuration)
+                ? resolvedExitConfig.combo.clipDuration
                 : null;
 
         const exitOptions = {
@@ -363,8 +366,8 @@ function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clip
 
         const executeExit = () => {
             let didAnimate = false;
-            if (exitConfig) {
-                didAnimate = runPreviewImageExitAnimation(exitOptions, exitConfig);
+            if (resolvedExitConfig) {
+                didAnimate = runPreviewImageExitAnimation(exitOptions, resolvedExitConfig);
             } else {
                 didAnimate = runPreviewImageExitAnimation(exitOptions);
             }
@@ -403,10 +406,16 @@ function previewComboAnimationCycle() {
     const comboMeta = entranceConfig.combo || {};
     const clipDurationOverride = Number.isFinite(comboMeta.clipDuration)
         ? comboMeta.clipDuration
-        : null;
+        : Number.isFinite(comboMeta.combinedDuration)
+            ? comboMeta.combinedDuration
+            : null;
 
-    const exitConfig = getPreviewImageExitConfig({ clipDurationMs: clipDurationOverride });
-    const triggerExitPreview = scheduleComboExitPreview(entranceConfig, exitConfig, clipDurationOverride);
+    const resolvedExitConfig = getPreviewImageExitConfig({ clipDurationMs: clipDurationOverride });
+    const triggerExitPreview = scheduleComboExitPreview(
+        entranceConfig,
+        resolvedExitConfig,
+        clipDurationOverride,
+    );
 
     const didAnimate = runPreviewImageEntranceAnimation({
         clipDurationMs: clipDurationOverride,
