@@ -104,11 +104,32 @@ const keyframeTrack = document.getElementById('keyframe-track');
 const keyframeStatus = document.getElementById('keyframe-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const animationDirectionSelect = document.getElementById('animation-direction');
+const enterAnimationStyleSelect = document.getElementById('enter-animation-style');
+const enterAnimationDurationInput = document.getElementById('enter-animation-duration');
+const enterAnimationDurationValue = document.getElementById('enter-animation-duration-value');
+const enterAnimationPanel = document.querySelector('[data-animation-panel="enter"]');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
+const prefersReducedMotionQuery = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+const ENTER_ANIMATION_DEFAULT_STYLE = 'fade';
+const ENTER_ANIMATION_DEFAULT_DURATION = 600;
+const ENTER_ANIMATION_MIN_DURATION = 150;
+const ENTER_ANIMATION_MAX_DURATION = 4000;
+const ENTER_ANIMATION_CONFIG = {
+    none: null,
+    fade: { name: 'preview-enter-fade', easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
+    'slide-up': { name: 'preview-enter-slide-up', easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    'slide-right': { name: 'preview-enter-slide-right', easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    zoom: { name: 'preview-enter-zoom', easing: 'cubic-bezier(0.18, 0.89, 0.32, 1.18)' },
+    focus: { name: 'preview-enter-focus', easing: 'cubic-bezier(0.3, 1, 0.6, 1)' },
+};
+const ENTER_ANIMATION_STYLES = Object.keys(ENTER_ANIMATION_CONFIG);
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
 let timelinePlaybackAbort = null;
@@ -197,6 +218,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    clearPreviewImageEnterAnimation();
     previewImage.classList.remove('is-visible');
 
     await new Promise((resolve) => {
@@ -402,6 +424,62 @@ settingsTabs.forEach((tab) => {
 });
 
 activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
+
+if (animationDirectionSelect) {
+    animationDirectionSelect.addEventListener('change', () => {
+        updateAnimationControlsState();
+        if (animationDirectionSelect.value === 'in') {
+            applyActiveImageEnterAnimation({ restart: true, reason: 'direction-change' });
+        } else {
+            clearPreviewImageEnterAnimation();
+        }
+    });
+}
+
+if (enterAnimationStyleSelect) {
+    enterAnimationStyleSelect.addEventListener('change', () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        const style = sanitizeEnterAnimationStyle(enterAnimationStyleSelect.value);
+        setTimelineItemEnterAnimation(activeTimelineItem, { style });
+        updateAnimationControlsState();
+        applyActiveImageEnterAnimation({ restart: true, reason: 'style-change' });
+    });
+}
+
+if (enterAnimationDurationInput) {
+    enterAnimationDurationInput.addEventListener('input', () => {
+        const duration = clampEnterAnimationDuration(enterAnimationDurationInput.value);
+        updateEnterAnimationDurationLabel(duration);
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        setTimelineItemEnterAnimation(activeTimelineItem, { duration });
+        applyActiveImageEnterAnimation({ restart: true, reason: 'duration-change' });
+    });
+}
+
+updateAnimationDirectionView(animationDirectionSelect?.value || 'in');
+updateEnterAnimationDurationLabel(ENTER_ANIMATION_DEFAULT_DURATION);
+
+if (prefersReducedMotionQuery) {
+    const handleMotionPreferenceChange = () => {
+        if (prefersReducedMotionQuery.matches) {
+            clearPreviewImageEnterAnimation();
+        } else if ((animationDirectionSelect?.value || 'in') === 'in') {
+            applyActiveImageEnterAnimation({ restart: true, reason: 'motion-preference-change' });
+        }
+    };
+
+    if (typeof prefersReducedMotionQuery.addEventListener === 'function') {
+        prefersReducedMotionQuery.addEventListener('change', handleMotionPreferenceChange);
+    } else if (typeof prefersReducedMotionQuery.addListener === 'function') {
+        prefersReducedMotionQuery.addListener(handleMotionPreferenceChange);
+    }
+}
+
+updateAnimationControlsState();
 
 function formatTime(milliseconds) {
     const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
@@ -2440,7 +2518,7 @@ function applyPreviewImageTransform(alignmentOverride) {
     const rotation = clampRotation(previewImageTransform.rotation);
     previewImageTransform.rotation = rotation;
     if (previewImage) {
-        previewImage.style.transform = `rotate(${rotation}deg)`;
+        previewImage.style.setProperty('--preview-image-rotation', `${rotation}deg`);
     }
 
     const alignment = alignmentOverride
@@ -2460,7 +2538,7 @@ function clearPreviewImageTransform() {
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
     }
     if (previewImage) {
-        previewImage.style.removeProperty('transform');
+        previewImage.style.removeProperty('--preview-image-rotation');
     }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
@@ -2993,6 +3071,7 @@ function setPreviewImageVisibility(isVisible) {
         }
     } else {
         previewImage.classList.remove('is-visible');
+        clearPreviewImageEnterAnimation();
         previewImage.hidden = true;
         hidePreviewImageLayer();
     }
@@ -4107,6 +4186,184 @@ function getKeyframeTrackProgressFromClientX(clientX) {
     return clampProgress(progress);
 }
 
+function sanitizeEnterAnimationStyle(value) {
+    const style = String(value || '').toLowerCase();
+    if (ENTER_ANIMATION_STYLES.includes(style)) {
+        return style;
+    }
+    return ENTER_ANIMATION_DEFAULT_STYLE;
+}
+
+function clampEnterAnimationDuration(value) {
+    const numeric = Math.round(Number(value) || 0);
+    if (!Number.isFinite(numeric)) {
+        return ENTER_ANIMATION_DEFAULT_DURATION;
+    }
+    return Math.min(
+        ENTER_ANIMATION_MAX_DURATION,
+        Math.max(ENTER_ANIMATION_MIN_DURATION, numeric),
+    );
+}
+
+function formatEnterAnimationDuration(duration) {
+    const clamped = clampEnterAnimationDuration(duration);
+    const seconds = clamped / 1000;
+    if (clamped >= 1000) {
+        const decimals = clamped % 1000 === 0 ? 0 : 1;
+        return `${seconds.toFixed(decimals)}s`;
+    }
+    return `${seconds.toFixed(1)}s`;
+}
+
+function updateEnterAnimationDurationLabel(duration) {
+    if (!enterAnimationDurationValue) {
+        return;
+    }
+    enterAnimationDurationValue.textContent = formatEnterAnimationDuration(duration);
+}
+
+function updateAnimationDirectionView(direction) {
+    if (!enterAnimationPanel) {
+        return;
+    }
+    const shouldShow = direction === 'in' && isImageTimelineItem(activeTimelineItem);
+    if (shouldShow) {
+        enterAnimationPanel.removeAttribute('hidden');
+    } else {
+        enterAnimationPanel.setAttribute('hidden', '');
+    }
+}
+
+function isReducedMotionPreferred() {
+    return Boolean(prefersReducedMotionQuery && prefersReducedMotionQuery.matches);
+}
+
+function clearPreviewImageEnterAnimation() {
+    if (!previewImage) {
+        return;
+    }
+    previewImage.classList.remove('has-enter-animation');
+    previewImage.style.animation = 'none';
+    previewImage.removeAttribute('data-enter-animation');
+    previewImage.style.removeProperty('filter');
+}
+
+function applyPreviewImageEnterAnimation(settings) {
+    if (!previewImage || previewImage.hidden) {
+        return;
+    }
+
+    const { style, duration } = settings || {};
+    const resolvedStyle = sanitizeEnterAnimationStyle(style);
+    const config = ENTER_ANIMATION_CONFIG[resolvedStyle];
+
+    clearPreviewImageEnterAnimation();
+
+    if (!config || isReducedMotionPreferred()) {
+        return;
+    }
+
+    const safeDuration = clampEnterAnimationDuration(duration);
+    const timing = config.easing || 'ease-out';
+
+    previewImage.dataset.enterAnimation = resolvedStyle;
+    previewImage.classList.add('has-enter-animation');
+    previewImage.style.animation = 'none';
+    void previewImage.offsetWidth;
+    previewImage.style.animation = `${config.name} ${safeDuration}ms ${timing} both`;
+}
+
+function getTimelineItemEnterAnimationSettings(timelineItem) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return {
+            style: ENTER_ANIMATION_DEFAULT_STYLE,
+            duration: ENTER_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const sanitizedStyle = sanitizeEnterAnimationStyle(timelineItem.dataset.enterAnimationStyle);
+    const sanitizedDuration = clampEnterAnimationDuration(timelineItem.dataset.enterAnimationDuration);
+
+    timelineItem.dataset.enterAnimationStyle = sanitizedStyle;
+    timelineItem.dataset.enterAnimationDuration = String(sanitizedDuration);
+
+    return { style: sanitizedStyle, duration: sanitizedDuration };
+}
+
+function setTimelineItemEnterAnimation(timelineItem, settings = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        return {
+            style: ENTER_ANIMATION_DEFAULT_STYLE,
+            duration: ENTER_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const current = getTimelineItemEnterAnimationSettings(timelineItem);
+    const resolvedStyle = Object.prototype.hasOwnProperty.call(settings, 'style')
+        ? sanitizeEnterAnimationStyle(settings.style)
+        : current.style;
+    const resolvedDuration = Object.prototype.hasOwnProperty.call(settings, 'duration')
+        ? clampEnterAnimationDuration(settings.duration)
+        : current.duration;
+
+    timelineItem.dataset.enterAnimationStyle = resolvedStyle;
+    timelineItem.dataset.enterAnimationDuration = String(resolvedDuration);
+
+    return { style: resolvedStyle, duration: resolvedDuration };
+}
+
+function applyActiveImageEnterAnimation(options = {}) {
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+        if (options.clear !== false) {
+            clearPreviewImageEnterAnimation();
+        }
+        return;
+    }
+
+    const direction = animationDirectionSelect?.value || 'in';
+    updateAnimationDirectionView(direction);
+
+    if (direction !== 'in') {
+        clearPreviewImageEnterAnimation();
+        return;
+    }
+
+    const settings = getTimelineItemEnterAnimationSettings(activeTimelineItem);
+    applyPreviewImageEnterAnimation(settings);
+}
+
+function updateAnimationControlsState() {
+    const direction = animationDirectionSelect?.value || 'in';
+    const isImage = isImageTimelineItem(activeTimelineItem);
+    const settings = isImage
+        ? getTimelineItemEnterAnimationSettings(activeTimelineItem)
+        : { style: ENTER_ANIMATION_DEFAULT_STYLE, duration: ENTER_ANIMATION_DEFAULT_DURATION };
+
+    if (animationDirectionSelect) {
+        animationDirectionSelect.disabled = !isImage;
+    }
+
+    updateAnimationDirectionView(direction);
+
+    const shouldEnableEnterControls = isImage && direction === 'in';
+
+    if (enterAnimationStyleSelect) {
+        enterAnimationStyleSelect.disabled = !shouldEnableEnterControls;
+        enterAnimationStyleSelect.value = settings.style;
+    }
+
+    if (enterAnimationDurationInput) {
+        enterAnimationDurationInput.disabled = !shouldEnableEnterControls;
+        enterAnimationDurationInput.value = String(settings.duration);
+    }
+
+    if (enterAnimationDurationValue) {
+        enterAnimationDurationValue.textContent = shouldEnableEnterControls
+            ? formatEnterAnimationDuration(settings.duration)
+            : '—';
+    }
+}
+
 function renderKeyframeTrack(timelineItem) {
     if (!keyframeTrack) {
         return;
@@ -4183,6 +4440,8 @@ function updateImageRotationControlState() {
     imageRotationInput.disabled = !isImageTimelineItem(activeTimelineItem);
     imageRotationInput.value = String(Math.round(rotation));
     imageRotationValue.textContent = `${Math.round(rotation)}°`;
+
+    updateAnimationControlsState();
 }
 
 function setTimelineProgressForActiveClip(progress) {
@@ -4252,6 +4511,12 @@ function setActiveClipProgress(progress, options = {}) {
 
     if (options.syncTimeline) {
         setTimelineProgressForActiveClip(clamped);
+    }
+
+    if (options.updatePreview !== false
+        && options.source === 'image-playback'
+        && clamped === 0) {
+        applyActiveImageEnterAnimation({ restart: true });
     }
 
     if (options.updatePreview !== false && !previewImagePointerState.pointerId) {
@@ -4477,6 +4742,7 @@ function clearPreview() {
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
+    clearPreviewImageEnterAnimation();
     previewPlaceholder.hidden = false;
     playVideoButton.textContent = 'Play Back';
     setPreviewMode(null);
@@ -4561,7 +4827,10 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         previewVideo.hidden = true;
         previewVideo.removeAttribute('src');
         setPreviewImageVisibility(true);
-        void revealPreviewImageSource(objectURL, { immediate: true });
+        const revealPromise = revealPreviewImageSource(objectURL, { immediate: true });
+        void Promise.resolve(revealPromise).then(() => {
+            applyActiveImageEnterAnimation({ restart: true });
+        });
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
@@ -4798,6 +5067,8 @@ async function addToTimeline(file, objectURL) {
             IMAGE_FRAME_DURATION,
             { markCustom: false },
         );
+        timelineItem.dataset.enterAnimationStyle = ENTER_ANIMATION_DEFAULT_STYLE;
+        timelineItem.dataset.enterAnimationDuration = String(ENTER_ANIMATION_DEFAULT_DURATION);
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
