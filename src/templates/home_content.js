@@ -797,6 +797,82 @@ function setTimelineItemAnimationDataset(timelineItem, key, value, defaultValue)
     timelineItem.dataset[key] = normalizedValue;
 }
 
+function synchronizeImageAnimationDurations(timelineItem, context = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        return;
+    }
+
+    const { durationKey = null } = context;
+    if (durationKey && durationKey !== 'imageDuration') {
+        return;
+    }
+
+    const direction = sanitizeAnimationDirection(timelineItem.dataset.animationDirection);
+    if (direction !== 'combo') {
+        return;
+    }
+
+    const source = context.source || 'clip';
+    const appliedDuration = Number.isFinite(context.appliedDuration)
+        ? Math.max(0, Math.round(context.appliedDuration))
+        : null;
+
+    const rawClipDuration = appliedDuration !== null
+        ? appliedDuration
+        : Math.max(0, Math.round(Number(timelineItem.dataset.imageDuration) || 0));
+    const hasClipDuration = rawClipDuration > 0;
+
+    const animationWindowInput = context.animationWindowMs ?? timelineItem.dataset.animationComboWindowMs;
+    const hasStoredWindow = !(animationWindowInput === undefined || animationWindowInput === null || animationWindowInput === '');
+
+    let targetWindow = sanitizeComboWindowMs(
+        hasStoredWindow
+            ? animationWindowInput
+            : hasClipDuration
+                ? rawClipDuration
+                : DEFAULT_COMBO_SPEED_MS,
+    );
+
+    if (source === 'clip' && hasClipDuration) {
+        targetWindow = sanitizeComboWindowMs(rawClipDuration);
+    } else if (source === 'animation' && Number.isFinite(context.animationWindowMs)) {
+        targetWindow = sanitizeComboWindowMs(context.animationWindowMs);
+    } else if (source === 'direction' && !hasStoredWindow) {
+        targetWindow = sanitizeComboWindowMs(
+            hasClipDuration ? rawClipDuration : DEFAULT_COMBO_SPEED_MS,
+        );
+    }
+
+    const nextClipDuration = Math.max(MIN_IMAGE_DURATION, targetWindow);
+    const clipChanged = !hasClipDuration || rawClipDuration !== nextClipDuration;
+
+    if (clipChanged) {
+        setTimelineItemDuration(
+            timelineItem,
+            'imageDuration',
+            nextClipDuration,
+            { markCustom: true, skipAnimationSync: true },
+        );
+    }
+
+    setTimelineItemAnimationDataset(
+        timelineItem,
+        'animationComboWindowMs',
+        String(targetWindow),
+        String(DEFAULT_COMBO_SPEED_MS),
+    );
+
+    if (clipChanged) {
+        updateActiveTimelineIndicators();
+    }
+
+    if (timelineItem === activeTimelineItem && animationComboSpeedInput) {
+        animationComboSpeedInput.dataset.windowMs = String(targetWindow);
+        animationComboSpeedInput.value = String(Math.round(targetWindow / 1000));
+        updateComboSpeedSliderDisplay({ triggerPreview: false });
+    }
+}
+
 function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
     const clipDurationOverride = Number.isFinite(options.clipDurationMs)
         ? Math.max(0, Math.round(options.clipDurationMs))
@@ -1842,6 +1918,13 @@ function persistActiveTimelineAnimationDirection(direction) {
         sanitized,
         DEFAULT_ANIMATION_DIRECTION,
     );
+
+    if (sanitized === 'combo') {
+        synchronizeImageAnimationDurations(activeTimelineItem, {
+            source: 'direction',
+            durationKey: 'imageDuration',
+        });
+    }
 }
 
 function persistActiveTimelineComboEntrancePreset(presetKey) {
@@ -1888,6 +1971,12 @@ function persistActiveTimelineComboSpeed() {
         String(sanitized),
         String(DEFAULT_COMBO_SPEED_MS),
     );
+
+    synchronizeImageAnimationDurations(activeTimelineItem, {
+        source: 'animation',
+        durationKey: 'imageDuration',
+        animationWindowMs: sanitized,
+    });
 }
 
 if (animationDirectionSelect && animationModeContainers.length) {
@@ -2748,6 +2837,7 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
         return 0;
     }
 
+    const { skipAnimationSync = false } = options;
     const minimum = getTimelineItemMinimumDuration(timelineItem);
     const desired = Math.round(Number(durationMs) || 0);
     const applied = Math.max(minimum, desired);
@@ -2764,6 +2854,15 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
 
     applyTimelineItemDurationStyles(timelineItem, applied);
     updateTimelineItemDurationBadge(timelineItem, applied);
+
+    if (!skipAnimationSync) {
+        synchronizeImageAnimationDurations(timelineItem, {
+            source: 'clip',
+            durationKey,
+            appliedDuration: applied,
+        });
+    }
+
     return applied;
 }
 
