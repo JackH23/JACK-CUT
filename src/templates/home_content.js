@@ -6864,6 +6864,9 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
             let exitAnimationTimeoutId = 0;
             let exitAnimationStarted = false;
+            let exitAnimationCompleted = false;
+            let finalizeAfterExit = false;
+            let timeoutId = 0;
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -6876,11 +6879,66 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
             };
 
-            const startExitAnimation = () => {
-                if (exitAnimationStarted || !exitConfig) {
+            const finalizePlayback = () => {
+                if (resolved) {
                     return;
                 }
-                exitAnimationStarted = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+                resolved = true;
+                if (timeoutId) {
+                    window.clearTimeout(timeoutId);
+                    timeoutId = 0;
+                }
+                stopAnimation();
+                const finalProgress = clipDuration > 0
+                    ? clampProgress(safeEffectiveDuration / clipDuration)
+                    : 1;
+                setActiveClipProgress(finalProgress, {
+                    source: 'image-playback-end',
+                    updatePreview: false,
+                });
+                if (timelinePlaybackAbort === abortPlayback) {
+                    timelinePlaybackAbort = null;
+                }
+                resolve();
+            };
+
+            const startExitAnimation = ({ finalizeOnComplete = false } = {}) => {
+                if (!exitConfig) {
+                    if (finalizeOnComplete) {
+                        finalizePlayback();
+                    }
+                    return;
+                }
+
+                if (finalizeOnComplete) {
+                    finalizeAfterExit = true;
+                    if (exitAnimationCompleted && !exitAnimationStarted) {
+                        finalizePlayback();
+                        return;
+                    }
+                }
+
+                if (exitAnimationStarted) {
+                    return;
+                }
+
+                exitAnimationCompleted = false;
+                const didAnimate = runPreviewImageExitAnimation({
+                    restoreOnComplete: false,
+                    onComplete: () => {
+                        exitAnimationStarted = false;
+                        exitAnimationCompleted = true;
+                        if (finalizeAfterExit) {
+                            finalizePlayback();
+                        }
+                    },
+                }, exitConfig);
+
+                exitAnimationStarted = didAnimate;
+
+                if (!didAnimate && finalizeOnComplete) {
+                    finalizePlayback();
+                }
             };
 
             const step = () => {
@@ -6935,29 +6993,15 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
             }
 
-            const timeoutId = window.setTimeout(() => {
-                if (resolved) {
-                    return;
-                }
-                resolved = true;
-                startExitAnimation();
-                stopAnimation();
-                const finalProgress = clipDuration > 0
-                    ? clampProgress(safeEffectiveDuration / clipDuration)
-                    : 1;
-                setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
-                if (timelinePlaybackAbort === abortPlayback) {
-                    timelinePlaybackAbort = null;
-                }
-                resolve();
-            }, Math.max(0, Math.round(safeEffectiveDuration)));
-
             const abortPlayback = () => {
                 if (resolved) {
                     return;
                 }
                 resolved = true;
-                window.clearTimeout(timeoutId);
+                if (timeoutId) {
+                    window.clearTimeout(timeoutId);
+                    timeoutId = 0;
+                }
                 stopAnimation();
                 cancelPreviewExitAnimation({ forceRestore: true });
                 timelinePlaybackAbort = null;
@@ -6965,6 +7009,13 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             };
 
             timelinePlaybackAbort = abortPlayback;
+
+            timeoutId = window.setTimeout(() => {
+                if (resolved) {
+                    return;
+                }
+                startExitAnimation({ finalizeOnComplete: true });
+            }, Math.max(0, Math.round(safeEffectiveDuration)));
         });
     }
 }
