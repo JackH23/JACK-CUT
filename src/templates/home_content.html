@@ -164,6 +164,30 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="info-item animation-settings" data-animation-panel="enter">
+                                <div class="info-icon">✨</div>
+                                <div class="animation-parameter-grid">
+                                    <div class="animation-parameter">
+                                        <label for="enter-animation-style">Enter effect</label>
+                                        <select id="enter-animation-style">
+                                            <option value="none">None</option>
+                                            <option value="fade" selected>Fade in</option>
+                                            <option value="slide-up">Slide up</option>
+                                            <option value="slide-right">Slide from left</option>
+                                            <option value="zoom">Zoom in</option>
+                                            <option value="focus">Focus</option>
+                                        </select>
+                                    </div>
+                                    <div class="animation-parameter">
+                                        <label for="enter-animation-duration">Duration</label>
+                                        <input type="range" id="enter-animation-duration" min="150" max="4000" step="50" value="600">
+                                        <div class="slider-readout" id="enter-animation-duration-value">0.6s</div>
+                                    </div>
+                                    <p class="info-item__description animation-description">
+                                        Choose how image overlays appear at the start of a clip. Animations preview instantly in the canvas.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-speed" data-section="speed" role="tabpanel" aria-labelledby="settings-tab-speed" hidden>
