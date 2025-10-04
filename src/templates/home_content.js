@@ -106,6 +106,10 @@ const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const animationDirectionSelect = document.getElementById('animation-direction');
+const animationDirectionPanels = animationDirectionSelect
+    ? Array.from(document.querySelectorAll('[data-animation-direction-panel]'))
+    : [];
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -132,6 +136,38 @@ const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
         ? HTMLMediaElement.HAVE_ENOUGH_DATA
         : 4;
 const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
+
+function updateAnimationDirectionPanel(nextDirection) {
+    if (!animationDirectionPanels.length) {
+        return;
+    }
+
+    const normalizedDirection = animationDirectionPanels.some(
+        (panel) => panel.dataset.animationDirectionPanel === nextDirection,
+    )
+        ? nextDirection
+        : animationDirectionPanels[0].dataset.animationDirectionPanel;
+
+    animationDirectionPanels.forEach((panel) => {
+        const isActive = panel.dataset.animationDirectionPanel === normalizedDirection;
+        panel.hidden = !isActive;
+        panel.classList.toggle('is-active', isActive);
+        panel.setAttribute('aria-hidden', String(!isActive));
+    });
+}
+
+if (animationDirectionSelect && animationDirectionPanels.length) {
+    animationDirectionSelect.addEventListener('change', (event) => {
+        const target = event.target;
+        if (typeof HTMLSelectElement !== 'undefined' && !(target instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        updateAnimationDirectionPanel(target.value);
+    });
+
+    updateAnimationDirectionPanel(animationDirectionSelect.value);
+}
 
 function preloadTimelineImage(objectURL) {
     if (!objectURL) {
