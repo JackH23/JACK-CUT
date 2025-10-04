@@ -235,26 +235,33 @@ const COMBO_ENTRANCE_PRESETS = {
         minDuration: 180,
         easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
     },
+    'slide-up': {
+        key: 'slide-up',
+        className: 'preview-image--combo-enter-slide-up',
+        baseDuration: 620,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
+    },
+    zoom: {
+        key: 'zoom',
+        className: 'preview-image--combo-enter-zoom',
+        baseDuration: 600,
+        minDuration: 180,
+        easing: 'cubic-bezier(0.26, 0.52, 0.34, 1)',
+    },
+    bounce: {
+        key: 'bounce',
+        className: 'preview-image--combo-enter-bounce',
+        baseDuration: 680,
+        minDuration: 220,
+        easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+    },
     'slide-left': {
         key: 'slide-left',
         className: 'preview-image--combo-enter-slide-left',
         baseDuration: 620,
         minDuration: 200,
         easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
-    },
-    'slide-right': {
-        key: 'slide-right',
-        className: 'preview-image--combo-enter-slide-right',
-        baseDuration: 620,
-        minDuration: 200,
-        easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
-    },
-    pop: {
-        key: 'pop',
-        className: 'preview-image--combo-enter-pop',
-        baseDuration: 580,
-        minDuration: 180,
-        easing: 'cubic-bezier(0.18, 0.89, 0.32, 1.28)',
     },
 };
 
@@ -266,12 +273,26 @@ const COMBO_EXIT_PRESETS = {
         minDuration: 160,
         easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
     },
-    'slide-left': {
-        key: 'slide-left',
-        className: 'preview-image--combo-exit-slide-left',
+    'slide-down': {
+        key: 'slide-down',
+        className: 'preview-image--combo-exit-slide-down',
         baseDuration: 640,
         minDuration: 200,
         easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+    },
+    'zoom-out': {
+        key: 'zoom-out',
+        className: 'preview-image--combo-exit-zoom-out',
+        baseDuration: 600,
+        minDuration: 180,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    spin: {
+        key: 'spin',
+        className: 'preview-image--combo-exit-spin',
+        baseDuration: 720,
+        minDuration: 220,
+        easing: 'cubic-bezier(0.32, 0.12, 0.13, 0.94)',
     },
     'slide-right': {
         key: 'slide-right',
@@ -279,13 +300,6 @@ const COMBO_EXIT_PRESETS = {
         baseDuration: 640,
         minDuration: 200,
         easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
-    },
-    drop: {
-        key: 'drop',
-        className: 'preview-image--combo-exit-drop',
-        baseDuration: 680,
-        minDuration: 200,
-        easing: 'cubic-bezier(0.3, 0.3, 0.2, 1)',
     },
 };
 

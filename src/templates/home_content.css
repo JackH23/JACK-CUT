@@ -1483,16 +1483,20 @@ body {
     animation-name: previewImageEnterFade;
 }
 
+.preview-image-layer img.preview-image--combo-enter-slide-up.is-entering {
+    animation-name: previewImageEnterSlideUp;
+}
+
+.preview-image-layer img.preview-image--combo-enter-zoom.is-entering {
+    animation-name: previewImageEnterZoom;
+}
+
+.preview-image-layer img.preview-image--combo-enter-bounce.is-entering {
+    animation-name: previewImageEnterBounce;
+}
+
 .preview-image-layer img.preview-image--combo-enter-slide-left.is-entering {
     animation-name: previewImageComboEnterSlideLeft;
-}
-
-.preview-image-layer img.preview-image--combo-enter-slide-right.is-entering {
-    animation-name: previewImageComboEnterSlideRight;
-}
-
-.preview-image-layer img.preview-image--combo-enter-pop.is-entering {
-    animation-name: previewImageComboEnterPop;
 }
 
 .preview-image-layer img.preview-image--exit-fade.is-exiting {
@@ -1515,16 +1519,20 @@ body {
     animation-name: previewImageExitFade;
 }
 
-.preview-image-layer img.preview-image--combo-exit-slide-left.is-exiting {
-    animation-name: previewImageComboExitSlideLeft;
+.preview-image-layer img.preview-image--combo-exit-slide-down.is-exiting {
+    animation-name: previewImageExitSlideDown;
+}
+
+.preview-image-layer img.preview-image--combo-exit-zoom-out.is-exiting {
+    animation-name: previewImageExitZoomOut;
+}
+
+.preview-image-layer img.preview-image--combo-exit-spin.is-exiting {
+    animation-name: previewImageExitSpin;
 }
 
 .preview-image-layer img.preview-image--combo-exit-slide-right.is-exiting {
     animation-name: previewImageComboExitSlideRight;
-}
-
-.preview-image-layer img.preview-image--combo-exit-drop.is-exiting {
-    animation-name: previewImageComboExitDrop;
 }
 
 @keyframes previewImageEnterFade {
@@ -1652,51 +1660,6 @@ body {
     }
 }
 
-@keyframes previewImageComboEnterSlideRight {
-    0% {
-        opacity: 0;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(28%, 0, 0) scale(0.94);
-    }
-    55% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(-5%, 0, 0) scale(1.02);
-    }
-    100% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
-    }
-}
-
-@keyframes previewImageComboEnterPop {
-    0% {
-        opacity: 0;
-        transform: rotate(var(--preview-image-rotation, 0deg)) scale(0.72);
-    }
-    55% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1.08);
-    }
-    100% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
-    }
-}
-
-@keyframes previewImageComboExitSlideLeft {
-    0% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
-    }
-    35% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(-6%, 0, 0) scale(0.98);
-    }
-    100% {
-        opacity: 0;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(-28%, 0, 0) scale(0.9);
-    }
-}
-
 @keyframes previewImageComboExitSlideRight {
     0% {
         opacity: 1;
@@ -1709,21 +1672,6 @@ body {
     100% {
         opacity: 0;
         transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(28%, 0, 0) scale(0.9);
-    }
-}
-
-@keyframes previewImageComboExitDrop {
-    0% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
-    }
-    30% {
-        opacity: 1;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 8%, 0) scale(0.97);
-    }
-    100% {
-        opacity: 0;
-        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 28%, 0) scale(0.88);
     }
 }
 
