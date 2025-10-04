@@ -797,6 +797,94 @@ body {
     line-height: 1.5;
 }
 
+.animation-mode-item {
+    display: none;
+    flex-direction: row;
+    background: rgba(17, 24, 39, 0.82);
+    border: 1px solid rgba(124, 58, 237, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.08);
+}
+
+.animation-mode-item.is-active {
+    display: flex;
+}
+
+.animation-mode-item .info-item__body {
+    gap: 8px;
+}
+
+.animation-mode-item__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.animation-mode-item__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+}
+
+.animation-mode-item__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(124, 58, 237, 0.18);
+    color: rgba(124, 58, 237, 0.9);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.animation-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.animation-preset {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.animation-preset:hover,
+.animation-preset:focus {
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.animation-preset__title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.animation-preset__meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.01em;
+}
+
 .keyframe-actions {
     display: flex;
     align-items: center;

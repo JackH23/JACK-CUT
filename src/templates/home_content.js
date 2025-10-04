@@ -106,6 +106,8 @@ const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const animationDirectionSelect = document.getElementById('animation-direction');
+const animationModeItems = Array.from(document.querySelectorAll('.animation-mode-item'));
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -395,6 +397,32 @@ function activateSettingsSection(sectionName) {
     }
 }
 
+function updateAnimationModeDetails(mode = animationDirectionSelect?.value) {
+    if (!animationModeItems.length) {
+        return;
+    }
+
+    const fallbackMode = animationModeItems[0]?.dataset.animationMode || '';
+    const hasRequestedMode = mode
+        ? animationModeItems.some((item) => item.dataset.animationMode === mode)
+        : false;
+    const targetMode = hasRequestedMode ? mode : fallbackMode;
+
+    animationModeItems.forEach((item) => {
+        const isActive = item.dataset.animationMode === targetMode;
+        item.classList.toggle('is-active', isActive);
+        if (isActive) {
+            item.removeAttribute('hidden');
+        } else {
+            item.setAttribute('hidden', '');
+        }
+    });
+
+    if (animationDirectionSelect && targetMode && animationDirectionSelect.value !== targetMode) {
+        animationDirectionSelect.value = targetMode;
+    }
+}
+
 settingsTabs.forEach((tab) => {
     tab.addEventListener('click', () => {
         activateSettingsSection(tab.dataset.section);
@@ -402,6 +430,14 @@ settingsTabs.forEach((tab) => {
 });
 
 activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
+
+if (animationDirectionSelect) {
+    animationDirectionSelect.addEventListener('change', (event) => {
+        updateAnimationModeDetails(event.target.value);
+    });
+}
+
+updateAnimationModeDetails();
 
 function formatTime(milliseconds) {
     const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
