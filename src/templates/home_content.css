@@ -299,9 +299,7 @@ body {
     column-gap: clamp(16px, 3vw, 24px);
     row-gap: clamp(12px, 2.5vw, 18px);
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
-    grid-template-areas:
-        "upload preview settings"
-        ". timeline timeline";
+    grid-template-areas: "upload preview settings";
     align-items: stretch;
     position: relative;
 }
@@ -318,9 +316,23 @@ body {
     grid-area: preview;
 }
 
+.timeline-overview {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2.5vh, 18px);
+}
+
 .timeline-card {
-    grid-area: timeline;
-    margin-top: 0;
+    position: relative;
+    overflow: hidden;
+    padding: clamp(16px, 3vh, 24px);
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: rgba(17, 24, 39, 0.82);
+    box-shadow: var(--shadow-soft);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(16px, 3vh, 20px);
     min-width: 0;
 }
 
@@ -335,8 +347,17 @@ body {
     }
 }
 
-.timeline-footer {
-    margin-top: 0;
+.timeline-overview__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.timeline-overview__header h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .panel {
@@ -1504,11 +1525,6 @@ body {
     gap: 4px;
 }
 
-.timeline-card {
-    position: relative;
-    overflow: hidden;
-}
-
 .timeline-track {
     position: relative;
     display: flex;
@@ -1859,8 +1875,7 @@ body {
         grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.4fr);
         grid-template-areas:
             "upload preview"
-            "timeline timeline"
-            "settings settings";
+            "settings preview";
     }
 }
 
@@ -1869,7 +1884,6 @@ body {
         grid-template-columns: 1fr;
         grid-template-areas:
             "preview"
-            "timeline"
             "upload"
             "settings";
     }
