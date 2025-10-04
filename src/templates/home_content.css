@@ -260,16 +260,16 @@ body {
 
 .upload-card {
     position: relative;
-    gap: 24px;
+    gap: 18px;
 }
 
 .upload-dropzone {
     position: relative;
     display: grid;
-    gap: 14px;
+    gap: 10px;
     justify-items: center;
-    padding: 28px 20px;
-    border-radius: 18px;
+    padding: 20px 16px;
+    border-radius: 16px;
     border: 1.5px dashed rgba(148, 163, 184, 0.32);
     background: linear-gradient(140deg, rgba(124, 58, 237, 0.08), rgba(56, 189, 248, 0.05));
     cursor: pointer;
@@ -284,35 +284,35 @@ body {
 }
 
 .upload-dropzone__icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 18px;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
     display: grid;
     place-items: center;
     background: linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(56, 189, 248, 0.2));
     color: rgba(244, 114, 182, 0.9);
-    font-size: 28px;
+    font-size: 24px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .upload-dropzone__text strong {
     display: block;
-    font-size: 1.05rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: var(--text-primary);
 }
 
 .upload-dropzone__text span {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }
 
 .upload-meta {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }
 
 .upload-meta__status {
@@ -322,20 +322,21 @@ body {
 }
 
 .upload-meta__hint {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .upload-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px;
 }
 
 .upload-actions button {
     flex: 1;
-    min-width: 140px;
-    padding: 12px 18px;
-    border-radius: 12px;
+    min-width: 120px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 600;
     font-family: inherit;
     border: none;
@@ -359,14 +360,14 @@ body {
 }
 
 .upload-gallery {
-    margin-top: 12px;
+    margin-top: 8px;
     display: grid;
-    gap: 12px;
+    gap: 10px;
 }
 
 .upload-gallery__title {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-secondary);
     letter-spacing: 0.01em;
@@ -377,8 +378,8 @@ body {
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 12px;
-    max-height: 312px;
+    gap: 10px;
+    max-height: 260px;
     overflow-y: auto;
     padding-right: 4px;
     scrollbar-gutter: stable;
@@ -401,11 +402,11 @@ body {
 
 .upload-gallery__item {
     display: grid;
-    grid-template-columns: 72px 1fr auto;
+    grid-template-columns: 60px 1fr auto;
     align-items: center;
-    gap: 16px;
-    padding: 10px 14px;
-    border-radius: 14px;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 12px;
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(148, 163, 184, 0.18);
     box-shadow: var(--shadow-inner);
@@ -418,9 +419,9 @@ body {
 
 .upload-gallery__preview {
     position: relative;
-    width: 72px;
-    height: 72px;
-    border-radius: 12px;
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
     overflow: hidden;
     background: rgba(15, 23, 42, 0.6);
     display: grid;
@@ -436,19 +437,19 @@ body {
 
 .upload-gallery__meta {
     display: grid;
-    gap: 4px;
+    gap: 2px;
 }
 
 .upload-gallery__name {
     font-weight: 500;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .upload-gallery__size {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
 }
 
@@ -461,13 +462,13 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: none;
     background: linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(124, 58, 237, 0.85));
     color: #081229;
-    font-size: 1.3rem;
+    font-size: 1.15rem;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
