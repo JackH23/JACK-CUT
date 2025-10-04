@@ -188,6 +188,53 @@
                                     </p>
                                 </div>
                             </div>
+                            <div class="info-item animation-settings" data-animation-panel="exit" hidden>
+                                <div class="info-icon">🚪</div>
+                                <div class="animation-parameter-grid">
+                                    <div class="animation-parameter">
+                                        <label for="exit-animation-style">Exit effect</label>
+                                        <select id="exit-animation-style">
+                                            <option value="none">None</option>
+                                            <option value="fade" selected>Fade out</option>
+                                            <option value="slide-down">Slide down</option>
+                                            <option value="slide-right">Slide to right</option>
+                                            <option value="zoom">Zoom out</option>
+                                            <option value="defocus">Defocus</option>
+                                        </select>
+                                    </div>
+                                    <div class="animation-parameter">
+                                        <label for="exit-animation-duration">Duration</label>
+                                        <input type="range" id="exit-animation-duration" min="150" max="4000" step="50" value="600">
+                                        <div class="slider-readout" id="exit-animation-duration-value">0.6s</div>
+                                    </div>
+                                    <p class="info-item__description animation-description">
+                                        Control how images leave the frame at the end of a clip.
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="info-item animation-settings" data-animation-panel="combo" hidden>
+                                <div class="info-icon">🔁</div>
+                                <div class="animation-parameter-grid">
+                                    <div class="animation-parameter">
+                                        <label for="combo-animation-style">Combo effect</label>
+                                        <select id="combo-animation-style">
+                                            <option value="none">None</option>
+                                            <option value="fade" selected>Fade in &amp; out</option>
+                                            <option value="sweep">Sweep through</option>
+                                            <option value="zoom">Zoom blend</option>
+                                            <option value="pulse">Pulse highlight</option>
+                                        </select>
+                                    </div>
+                                    <div class="animation-parameter">
+                                        <label for="combo-animation-duration">Duration</label>
+                                        <input type="range" id="combo-animation-duration" min="400" max="5000" step="50" value="1400">
+                                        <div class="slider-readout" id="combo-animation-duration-value">1.4s</div>
+                                    </div>
+                                    <p class="info-item__description animation-description">
+                                        Play a single effect that animates both the entrance and exit of the overlay.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-speed" data-section="speed" role="tabpanel" aria-labelledby="settings-tab-speed" hidden>

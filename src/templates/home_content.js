@@ -109,6 +109,14 @@ const enterAnimationStyleSelect = document.getElementById('enter-animation-style
 const enterAnimationDurationInput = document.getElementById('enter-animation-duration');
 const enterAnimationDurationValue = document.getElementById('enter-animation-duration-value');
 const enterAnimationPanel = document.querySelector('[data-animation-panel="enter"]');
+const exitAnimationStyleSelect = document.getElementById('exit-animation-style');
+const exitAnimationDurationInput = document.getElementById('exit-animation-duration');
+const exitAnimationDurationValue = document.getElementById('exit-animation-duration-value');
+const exitAnimationPanel = document.querySelector('[data-animation-panel="exit"]');
+const comboAnimationStyleSelect = document.getElementById('combo-animation-style');
+const comboAnimationDurationInput = document.getElementById('combo-animation-duration');
+const comboAnimationDurationValue = document.getElementById('combo-animation-duration-value');
+const comboAnimationPanel = document.querySelector('[data-animation-panel="combo"]');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
@@ -130,6 +138,29 @@ const ENTER_ANIMATION_CONFIG = {
     focus: { name: 'preview-enter-focus', easing: 'cubic-bezier(0.3, 1, 0.6, 1)' },
 };
 const ENTER_ANIMATION_STYLES = Object.keys(ENTER_ANIMATION_CONFIG);
+const EXIT_ANIMATION_DEFAULT_STYLE = 'fade';
+const EXIT_ANIMATION_DEFAULT_DURATION = ENTER_ANIMATION_DEFAULT_DURATION;
+const EXIT_ANIMATION_CONFIG = {
+    none: null,
+    fade: { name: 'preview-exit-fade', easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
+    'slide-down': { name: 'preview-exit-slide-down', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+    'slide-right': { name: 'preview-exit-slide-right', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+    zoom: { name: 'preview-exit-zoom', easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    defocus: { name: 'preview-exit-defocus', easing: 'cubic-bezier(0.3, 1, 0.6, 1)' },
+};
+const EXIT_ANIMATION_STYLES = Object.keys(EXIT_ANIMATION_CONFIG);
+const COMBO_ANIMATION_DEFAULT_STYLE = 'fade';
+const COMBO_ANIMATION_DEFAULT_DURATION = 1400;
+const COMBO_ANIMATION_MIN_DURATION = 400;
+const COMBO_ANIMATION_MAX_DURATION = 5000;
+const COMBO_ANIMATION_CONFIG = {
+    none: null,
+    fade: { name: 'preview-combo-fade', easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    sweep: { name: 'preview-combo-sweep', easing: 'cubic-bezier(0.3, 1, 0.6, 1)' },
+    zoom: { name: 'preview-combo-zoom', easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    pulse: { name: 'preview-combo-pulse', easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+};
+const COMBO_ANIMATION_STYLES = Object.keys(COMBO_ANIMATION_CONFIG);
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
 let timelinePlaybackAbort = null;
@@ -218,7 +249,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    clearPreviewImageEnterAnimation();
+    clearAllPreviewImageAnimations();
     previewImage.classList.remove('is-visible');
 
     await new Promise((resolve) => {
@@ -428,11 +459,7 @@ activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-ac
 if (animationDirectionSelect) {
     animationDirectionSelect.addEventListener('change', () => {
         updateAnimationControlsState();
-        if (animationDirectionSelect.value === 'in') {
-            applyActiveImageEnterAnimation({ restart: true, reason: 'direction-change' });
-        } else {
-            clearPreviewImageEnterAnimation();
-        }
+        applyActiveImageAnimation({ restart: true, reason: 'direction-change' });
     });
 }
 
@@ -444,31 +471,98 @@ if (enterAnimationStyleSelect) {
         const style = sanitizeEnterAnimationStyle(enterAnimationStyleSelect.value);
         setTimelineItemEnterAnimation(activeTimelineItem, { style });
         updateAnimationControlsState();
-        applyActiveImageEnterAnimation({ restart: true, reason: 'style-change' });
+        if ((animationDirectionSelect?.value || 'in') === 'in') {
+            applyActiveImageEnterAnimation({ restart: true, reason: 'style-change' });
+        }
     });
 }
 
 if (enterAnimationDurationInput) {
     enterAnimationDurationInput.addEventListener('input', () => {
-        const duration = clampEnterAnimationDuration(enterAnimationDurationInput.value);
+        const duration = clampAnimationDuration(enterAnimationDurationInput.value);
         updateEnterAnimationDurationLabel(duration);
         if (!isImageTimelineItem(activeTimelineItem)) {
             return;
         }
         setTimelineItemEnterAnimation(activeTimelineItem, { duration });
-        applyActiveImageEnterAnimation({ restart: true, reason: 'duration-change' });
+        if ((animationDirectionSelect?.value || 'in') === 'in') {
+            applyActiveImageEnterAnimation({ restart: true, reason: 'duration-change' });
+        }
+    });
+}
+
+if (exitAnimationStyleSelect) {
+    exitAnimationStyleSelect.addEventListener('change', () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        const style = sanitizeExitAnimationStyle(exitAnimationStyleSelect.value);
+        setTimelineItemExitAnimation(activeTimelineItem, { style });
+        updateAnimationControlsState();
+        if ((animationDirectionSelect?.value || 'in') === 'out') {
+            applyActiveImageExitAnimation({ restart: true, reason: 'style-change' });
+        }
+    });
+}
+
+if (exitAnimationDurationInput) {
+    exitAnimationDurationInput.addEventListener('input', () => {
+        const duration = clampAnimationDuration(exitAnimationDurationInput.value);
+        updateExitAnimationDurationLabel(duration);
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        setTimelineItemExitAnimation(activeTimelineItem, { duration });
+        if ((animationDirectionSelect?.value || 'in') === 'out') {
+            applyActiveImageExitAnimation({ restart: true, reason: 'duration-change' });
+        }
+    });
+}
+
+if (comboAnimationStyleSelect) {
+    comboAnimationStyleSelect.addEventListener('change', () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        const style = sanitizeComboAnimationStyle(comboAnimationStyleSelect.value);
+        setTimelineItemComboAnimation(activeTimelineItem, { style });
+        updateAnimationControlsState();
+        if ((animationDirectionSelect?.value || 'in') === 'combo') {
+            applyActiveImageComboAnimation({ restart: true, reason: 'style-change' });
+        }
+    });
+}
+
+if (comboAnimationDurationInput) {
+    comboAnimationDurationInput.addEventListener('input', () => {
+        const duration = clampAnimationDuration(
+            comboAnimationDurationInput.value,
+            COMBO_ANIMATION_MIN_DURATION,
+            COMBO_ANIMATION_MAX_DURATION,
+            COMBO_ANIMATION_DEFAULT_DURATION,
+        );
+        updateComboAnimationDurationLabel(duration);
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        setTimelineItemComboAnimation(activeTimelineItem, { duration });
+        if ((animationDirectionSelect?.value || 'in') === 'combo') {
+            applyActiveImageComboAnimation({ restart: true, reason: 'duration-change' });
+        }
     });
 }
 
 updateAnimationDirectionView(animationDirectionSelect?.value || 'in');
 updateEnterAnimationDurationLabel(ENTER_ANIMATION_DEFAULT_DURATION);
+updateExitAnimationDurationLabel(EXIT_ANIMATION_DEFAULT_DURATION);
+updateComboAnimationDurationLabel(COMBO_ANIMATION_DEFAULT_DURATION);
 
 if (prefersReducedMotionQuery) {
     const handleMotionPreferenceChange = () => {
         if (prefersReducedMotionQuery.matches) {
-            clearPreviewImageEnterAnimation();
-        } else if ((animationDirectionSelect?.value || 'in') === 'in') {
-            applyActiveImageEnterAnimation({ restart: true, reason: 'motion-preference-change' });
+            clearAllPreviewImageAnimations();
+        } else {
+            applyActiveImageAnimation({ restart: true, reason: 'motion-preference-change' });
         }
     };
 
@@ -3071,7 +3165,7 @@ function setPreviewImageVisibility(isVisible) {
         }
     } else {
         previewImage.classList.remove('is-visible');
-        clearPreviewImageEnterAnimation();
+        clearAllPreviewImageAnimations();
         previewImage.hidden = true;
         hidePreviewImageLayer();
     }
@@ -4194,19 +4288,35 @@ function sanitizeEnterAnimationStyle(value) {
     return ENTER_ANIMATION_DEFAULT_STYLE;
 }
 
-function clampEnterAnimationDuration(value) {
+function sanitizeExitAnimationStyle(value) {
+    const style = String(value || '').toLowerCase();
+    if (EXIT_ANIMATION_STYLES.includes(style)) {
+        return style;
+    }
+    return EXIT_ANIMATION_DEFAULT_STYLE;
+}
+
+function sanitizeComboAnimationStyle(value) {
+    const style = String(value || '').toLowerCase();
+    if (COMBO_ANIMATION_STYLES.includes(style)) {
+        return style;
+    }
+    return COMBO_ANIMATION_DEFAULT_STYLE;
+}
+
+function clampAnimationDuration(value, minDuration = ENTER_ANIMATION_MIN_DURATION, maxDuration = ENTER_ANIMATION_MAX_DURATION, defaultDuration = ENTER_ANIMATION_DEFAULT_DURATION) {
     const numeric = Math.round(Number(value) || 0);
     if (!Number.isFinite(numeric)) {
-        return ENTER_ANIMATION_DEFAULT_DURATION;
+        return defaultDuration;
     }
     return Math.min(
-        ENTER_ANIMATION_MAX_DURATION,
-        Math.max(ENTER_ANIMATION_MIN_DURATION, numeric),
+        maxDuration,
+        Math.max(minDuration, numeric),
     );
 }
 
-function formatEnterAnimationDuration(duration) {
-    const clamped = clampEnterAnimationDuration(duration);
+function formatAnimationDuration(duration, minDuration, maxDuration, defaultDuration) {
+    const clamped = clampAnimationDuration(duration, minDuration, maxDuration, defaultDuration);
     const seconds = clamped / 1000;
     if (clamped >= 1000) {
         const decimals = clamped % 1000 === 0 ? 0 : 1;
@@ -4216,21 +4326,46 @@ function formatEnterAnimationDuration(duration) {
 }
 
 function updateEnterAnimationDurationLabel(duration) {
-    if (!enterAnimationDurationValue) {
+    updateAnimationDurationLabel(enterAnimationDurationValue, duration);
+}
+
+function updateExitAnimationDurationLabel(duration) {
+    updateAnimationDurationLabel(exitAnimationDurationValue, duration, EXIT_ANIMATION_DEFAULT_DURATION);
+}
+
+function updateComboAnimationDurationLabel(duration) {
+    updateAnimationDurationLabel(
+        comboAnimationDurationValue,
+        duration,
+        COMBO_ANIMATION_DEFAULT_DURATION,
+        COMBO_ANIMATION_MIN_DURATION,
+        COMBO_ANIMATION_MAX_DURATION,
+    );
+}
+
+function updateAnimationDurationLabel(target, duration, defaultDuration = ENTER_ANIMATION_DEFAULT_DURATION, minDuration = ENTER_ANIMATION_MIN_DURATION, maxDuration = ENTER_ANIMATION_MAX_DURATION) {
+    if (!target) {
         return;
     }
-    enterAnimationDurationValue.textContent = formatEnterAnimationDuration(duration);
+    target.textContent = formatAnimationDuration(duration, minDuration, maxDuration, defaultDuration);
 }
 
 function updateAnimationDirectionView(direction) {
-    if (!enterAnimationPanel) {
+    const isImage = isImageTimelineItem(activeTimelineItem);
+    toggleAnimationPanelVisibility(enterAnimationPanel, isImage && direction === 'in');
+    toggleAnimationPanelVisibility(exitAnimationPanel, isImage && direction === 'out');
+    toggleAnimationPanelVisibility(comboAnimationPanel, isImage && direction === 'combo');
+}
+
+function toggleAnimationPanelVisibility(panel, shouldShow) {
+    if (!panel) {
         return;
     }
-    const shouldShow = direction === 'in' && isImageTimelineItem(activeTimelineItem);
+    panel.setAttribute('aria-hidden', String(!shouldShow));
     if (shouldShow) {
-        enterAnimationPanel.removeAttribute('hidden');
+        panel.removeAttribute('hidden');
     } else {
-        enterAnimationPanel.setAttribute('hidden', '');
+        panel.setAttribute('hidden', '');
     }
 }
 
@@ -4248,6 +4383,34 @@ function clearPreviewImageEnterAnimation() {
     previewImage.style.removeProperty('filter');
 }
 
+function clearPreviewImageExitAnimation() {
+    if (!previewImage) {
+        return;
+    }
+    previewImage.classList.remove('has-exit-animation');
+    previewImage.style.animation = 'none';
+    previewImage.removeAttribute('data-exit-animation');
+    previewImage.style.opacity = '';
+    previewImage.style.removeProperty('filter');
+}
+
+function clearPreviewImageComboAnimation() {
+    if (!previewImage) {
+        return;
+    }
+    previewImage.classList.remove('has-combo-animation');
+    previewImage.style.animation = 'none';
+    previewImage.removeAttribute('data-combo-animation');
+    previewImage.style.opacity = '';
+    previewImage.style.removeProperty('filter');
+}
+
+function clearAllPreviewImageAnimations() {
+    clearPreviewImageEnterAnimation();
+    clearPreviewImageExitAnimation();
+    clearPreviewImageComboAnimation();
+}
+
 function applyPreviewImageEnterAnimation(settings) {
     if (!previewImage || previewImage.hidden) {
         return;
@@ -4263,7 +4426,7 @@ function applyPreviewImageEnterAnimation(settings) {
         return;
     }
 
-    const safeDuration = clampEnterAnimationDuration(duration);
+    const safeDuration = clampAnimationDuration(duration);
     const timing = config.easing || 'ease-out';
 
     previewImage.dataset.enterAnimation = resolvedStyle;
@@ -4271,6 +4434,89 @@ function applyPreviewImageEnterAnimation(settings) {
     previewImage.style.animation = 'none';
     void previewImage.offsetWidth;
     previewImage.style.animation = `${config.name} ${safeDuration}ms ${timing} both`;
+}
+
+function applyPreviewImageExitAnimation(settings) {
+    if (!previewImage || previewImage.hidden) {
+        return;
+    }
+
+    const { style, duration } = settings || {};
+    const resolvedStyle = sanitizeExitAnimationStyle(style);
+    const config = EXIT_ANIMATION_CONFIG[resolvedStyle];
+
+    clearPreviewImageExitAnimation();
+
+    if (!config || isReducedMotionPreferred()) {
+        return;
+    }
+
+    const safeDuration = clampAnimationDuration(duration);
+    const timing = config.easing || 'ease-in-out';
+
+    previewImage.dataset.exitAnimation = resolvedStyle;
+    previewImage.classList.add('has-exit-animation');
+    previewImage.style.animation = 'none';
+    previewImage.style.opacity = '';
+    previewImage.style.removeProperty('filter');
+    void previewImage.offsetWidth;
+
+    const animationDeclaration = `${config.name} ${safeDuration}ms ${timing} both`;
+    const handleAnimationEnd = () => {
+        previewImage.removeEventListener('animationend', handleAnimationEnd);
+        previewImage.classList.remove('has-exit-animation');
+        previewImage.style.animation = 'none';
+        previewImage.removeAttribute('data-exit-animation');
+        previewImage.style.opacity = '1';
+        previewImage.style.removeProperty('filter');
+    };
+
+    previewImage.addEventListener('animationend', handleAnimationEnd, { once: true });
+    previewImage.style.animation = animationDeclaration;
+}
+
+function applyPreviewImageComboAnimation(settings) {
+    if (!previewImage || previewImage.hidden) {
+        return;
+    }
+
+    const { style, duration } = settings || {};
+    const resolvedStyle = sanitizeComboAnimationStyle(style);
+    const config = COMBO_ANIMATION_CONFIG[resolvedStyle];
+
+    clearPreviewImageComboAnimation();
+
+    if (!config || isReducedMotionPreferred()) {
+        return;
+    }
+
+    const safeDuration = clampAnimationDuration(
+        duration,
+        COMBO_ANIMATION_MIN_DURATION,
+        COMBO_ANIMATION_MAX_DURATION,
+        COMBO_ANIMATION_DEFAULT_DURATION,
+    );
+    const timing = config.easing || 'ease-in-out';
+
+    previewImage.dataset.comboAnimation = resolvedStyle;
+    previewImage.classList.add('has-combo-animation');
+    previewImage.style.animation = 'none';
+    previewImage.style.opacity = '';
+    previewImage.style.removeProperty('filter');
+    void previewImage.offsetWidth;
+
+    const animationDeclaration = `${config.name} ${safeDuration}ms ${timing} forwards`;
+    const handleAnimationEnd = () => {
+        previewImage.removeEventListener('animationend', handleAnimationEnd);
+        previewImage.classList.remove('has-combo-animation');
+        previewImage.style.animation = 'none';
+        previewImage.removeAttribute('data-combo-animation');
+        previewImage.style.opacity = '1';
+        previewImage.style.removeProperty('filter');
+    };
+
+    previewImage.addEventListener('animationend', handleAnimationEnd, { once: true });
+    previewImage.style.animation = animationDeclaration;
 }
 
 function getTimelineItemEnterAnimationSettings(timelineItem) {
@@ -4282,7 +4528,7 @@ function getTimelineItemEnterAnimationSettings(timelineItem) {
     }
 
     const sanitizedStyle = sanitizeEnterAnimationStyle(timelineItem.dataset.enterAnimationStyle);
-    const sanitizedDuration = clampEnterAnimationDuration(timelineItem.dataset.enterAnimationDuration);
+    const sanitizedDuration = clampAnimationDuration(timelineItem.dataset.enterAnimationDuration);
 
     timelineItem.dataset.enterAnimationStyle = sanitizedStyle;
     timelineItem.dataset.enterAnimationDuration = String(sanitizedDuration);
@@ -4303,7 +4549,7 @@ function setTimelineItemEnterAnimation(timelineItem, settings = {}) {
         ? sanitizeEnterAnimationStyle(settings.style)
         : current.style;
     const resolvedDuration = Object.prototype.hasOwnProperty.call(settings, 'duration')
-        ? clampEnterAnimationDuration(settings.duration)
+        ? clampAnimationDuration(settings.duration)
         : current.duration;
 
     timelineItem.dataset.enterAnimationStyle = resolvedStyle;
@@ -4312,32 +4558,180 @@ function setTimelineItemEnterAnimation(timelineItem, settings = {}) {
     return { style: resolvedStyle, duration: resolvedDuration };
 }
 
+function getTimelineItemExitAnimationSettings(timelineItem) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return {
+            style: EXIT_ANIMATION_DEFAULT_STYLE,
+            duration: EXIT_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const sanitizedStyle = sanitizeExitAnimationStyle(timelineItem.dataset.exitAnimationStyle);
+    const sanitizedDuration = clampAnimationDuration(
+        timelineItem.dataset.exitAnimationDuration,
+        ENTER_ANIMATION_MIN_DURATION,
+        ENTER_ANIMATION_MAX_DURATION,
+        EXIT_ANIMATION_DEFAULT_DURATION,
+    );
+
+    timelineItem.dataset.exitAnimationStyle = sanitizedStyle;
+    timelineItem.dataset.exitAnimationDuration = String(sanitizedDuration);
+
+    return { style: sanitizedStyle, duration: sanitizedDuration };
+}
+
+function setTimelineItemExitAnimation(timelineItem, settings = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        return {
+            style: EXIT_ANIMATION_DEFAULT_STYLE,
+            duration: EXIT_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const current = getTimelineItemExitAnimationSettings(timelineItem);
+    const resolvedStyle = Object.prototype.hasOwnProperty.call(settings, 'style')
+        ? sanitizeExitAnimationStyle(settings.style)
+        : current.style;
+    const resolvedDuration = Object.prototype.hasOwnProperty.call(settings, 'duration')
+        ? clampAnimationDuration(
+            settings.duration,
+            ENTER_ANIMATION_MIN_DURATION,
+            ENTER_ANIMATION_MAX_DURATION,
+            EXIT_ANIMATION_DEFAULT_DURATION,
+        )
+        : current.duration;
+
+    timelineItem.dataset.exitAnimationStyle = resolvedStyle;
+    timelineItem.dataset.exitAnimationDuration = String(resolvedDuration);
+
+    return { style: resolvedStyle, duration: resolvedDuration };
+}
+
+function getTimelineItemComboAnimationSettings(timelineItem) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return {
+            style: COMBO_ANIMATION_DEFAULT_STYLE,
+            duration: COMBO_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const sanitizedStyle = sanitizeComboAnimationStyle(timelineItem.dataset.comboAnimationStyle);
+    const sanitizedDuration = clampAnimationDuration(
+        timelineItem.dataset.comboAnimationDuration,
+        COMBO_ANIMATION_MIN_DURATION,
+        COMBO_ANIMATION_MAX_DURATION,
+        COMBO_ANIMATION_DEFAULT_DURATION,
+    );
+
+    timelineItem.dataset.comboAnimationStyle = sanitizedStyle;
+    timelineItem.dataset.comboAnimationDuration = String(sanitizedDuration);
+
+    return { style: sanitizedStyle, duration: sanitizedDuration };
+}
+
+function setTimelineItemComboAnimation(timelineItem, settings = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        return {
+            style: COMBO_ANIMATION_DEFAULT_STYLE,
+            duration: COMBO_ANIMATION_DEFAULT_DURATION,
+        };
+    }
+
+    const current = getTimelineItemComboAnimationSettings(timelineItem);
+    const resolvedStyle = Object.prototype.hasOwnProperty.call(settings, 'style')
+        ? sanitizeComboAnimationStyle(settings.style)
+        : current.style;
+    const resolvedDuration = Object.prototype.hasOwnProperty.call(settings, 'duration')
+        ? clampAnimationDuration(
+            settings.duration,
+            COMBO_ANIMATION_MIN_DURATION,
+            COMBO_ANIMATION_MAX_DURATION,
+            COMBO_ANIMATION_DEFAULT_DURATION,
+        )
+        : current.duration;
+
+    timelineItem.dataset.comboAnimationStyle = resolvedStyle;
+    timelineItem.dataset.comboAnimationDuration = String(resolvedDuration);
+
+    return { style: resolvedStyle, duration: resolvedDuration };
+}
+
 function applyActiveImageEnterAnimation(options = {}) {
     if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
         if (options.clear !== false) {
             clearPreviewImageEnterAnimation();
+            clearPreviewImageExitAnimation();
+            clearPreviewImageComboAnimation();
         }
         return;
     }
 
-    const direction = animationDirectionSelect?.value || 'in';
-    updateAnimationDirectionView(direction);
-
-    if (direction !== 'in') {
-        clearPreviewImageEnterAnimation();
-        return;
-    }
+    clearPreviewImageExitAnimation();
+    clearPreviewImageComboAnimation();
 
     const settings = getTimelineItemEnterAnimationSettings(activeTimelineItem);
     applyPreviewImageEnterAnimation(settings);
 }
 
+function applyActiveImageExitAnimation(options = {}) {
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+        if (options.clear !== false) {
+            clearAllPreviewImageAnimations();
+        }
+        return;
+    }
+
+    clearPreviewImageEnterAnimation();
+    clearPreviewImageComboAnimation();
+
+    const settings = getTimelineItemExitAnimationSettings(activeTimelineItem);
+    applyPreviewImageExitAnimation(settings);
+}
+
+function applyActiveImageComboAnimation(options = {}) {
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+        if (options.clear !== false) {
+            clearAllPreviewImageAnimations();
+        }
+        return;
+    }
+
+    clearPreviewImageEnterAnimation();
+    clearPreviewImageExitAnimation();
+
+    const settings = getTimelineItemComboAnimationSettings(activeTimelineItem);
+    applyPreviewImageComboAnimation(settings);
+}
+
+function applyActiveImageAnimation(options = {}) {
+    const direction = animationDirectionSelect?.value || 'in';
+    updateAnimationDirectionView(direction);
+
+    if (direction === 'out') {
+        applyActiveImageExitAnimation(options);
+        return;
+    }
+
+    if (direction === 'combo') {
+        applyActiveImageComboAnimation(options);
+        return;
+    }
+
+    applyActiveImageEnterAnimation(options);
+}
+
 function updateAnimationControlsState() {
     const direction = animationDirectionSelect?.value || 'in';
     const isImage = isImageTimelineItem(activeTimelineItem);
-    const settings = isImage
+    const enterSettings = isImage
         ? getTimelineItemEnterAnimationSettings(activeTimelineItem)
         : { style: ENTER_ANIMATION_DEFAULT_STYLE, duration: ENTER_ANIMATION_DEFAULT_DURATION };
+    const exitSettings = isImage
+        ? getTimelineItemExitAnimationSettings(activeTimelineItem)
+        : { style: EXIT_ANIMATION_DEFAULT_STYLE, duration: EXIT_ANIMATION_DEFAULT_DURATION };
+    const comboSettings = isImage
+        ? getTimelineItemComboAnimationSettings(activeTimelineItem)
+        : { style: COMBO_ANIMATION_DEFAULT_STYLE, duration: COMBO_ANIMATION_DEFAULT_DURATION };
 
     if (animationDirectionSelect) {
         animationDirectionSelect.disabled = !isImage;
@@ -4346,20 +4740,59 @@ function updateAnimationControlsState() {
     updateAnimationDirectionView(direction);
 
     const shouldEnableEnterControls = isImage && direction === 'in';
+    const shouldEnableExitControls = isImage && direction === 'out';
+    const shouldEnableComboControls = isImage && direction === 'combo';
 
     if (enterAnimationStyleSelect) {
         enterAnimationStyleSelect.disabled = !shouldEnableEnterControls;
-        enterAnimationStyleSelect.value = settings.style;
+        enterAnimationStyleSelect.value = enterSettings.style;
     }
 
     if (enterAnimationDurationInput) {
         enterAnimationDurationInput.disabled = !shouldEnableEnterControls;
-        enterAnimationDurationInput.value = String(settings.duration);
+        enterAnimationDurationInput.value = String(enterSettings.duration);
     }
 
     if (enterAnimationDurationValue) {
         enterAnimationDurationValue.textContent = shouldEnableEnterControls
-            ? formatEnterAnimationDuration(settings.duration)
+            ? formatAnimationDuration(enterSettings.duration)
+            : '—';
+    }
+
+    if (exitAnimationStyleSelect) {
+        exitAnimationStyleSelect.disabled = !shouldEnableExitControls;
+        exitAnimationStyleSelect.value = exitSettings.style;
+    }
+
+    if (exitAnimationDurationInput) {
+        exitAnimationDurationInput.disabled = !shouldEnableExitControls;
+        exitAnimationDurationInput.value = String(exitSettings.duration);
+    }
+
+    if (exitAnimationDurationValue) {
+        exitAnimationDurationValue.textContent = shouldEnableExitControls
+            ? formatAnimationDuration(exitSettings.duration)
+            : '—';
+    }
+
+    if (comboAnimationStyleSelect) {
+        comboAnimationStyleSelect.disabled = !shouldEnableComboControls;
+        comboAnimationStyleSelect.value = comboSettings.style;
+    }
+
+    if (comboAnimationDurationInput) {
+        comboAnimationDurationInput.disabled = !shouldEnableComboControls;
+        comboAnimationDurationInput.value = String(comboSettings.duration);
+    }
+
+    if (comboAnimationDurationValue) {
+        comboAnimationDurationValue.textContent = shouldEnableComboControls
+            ? formatAnimationDuration(
+                comboSettings.duration,
+                COMBO_ANIMATION_MIN_DURATION,
+                COMBO_ANIMATION_MAX_DURATION,
+                COMBO_ANIMATION_DEFAULT_DURATION,
+            )
             : '—';
     }
 }
@@ -4516,7 +4949,7 @@ function setActiveClipProgress(progress, options = {}) {
     if (options.updatePreview !== false
         && options.source === 'image-playback'
         && clamped === 0) {
-        applyActiveImageEnterAnimation({ restart: true });
+        applyActiveImageAnimation({ restart: true });
     }
 
     if (options.updatePreview !== false && !previewImagePointerState.pointerId) {
@@ -4742,7 +5175,7 @@ function clearPreview() {
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
-    clearPreviewImageEnterAnimation();
+    clearAllPreviewImageAnimations();
     previewPlaceholder.hidden = false;
     playVideoButton.textContent = 'Play Back';
     setPreviewMode(null);
@@ -4829,7 +5262,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         setPreviewImageVisibility(true);
         const revealPromise = revealPreviewImageSource(objectURL, { immediate: true });
         void Promise.resolve(revealPromise).then(() => {
-            applyActiveImageEnterAnimation({ restart: true });
+            applyActiveImageAnimation({ restart: true });
         });
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
@@ -5069,6 +5502,10 @@ async function addToTimeline(file, objectURL) {
         );
         timelineItem.dataset.enterAnimationStyle = ENTER_ANIMATION_DEFAULT_STYLE;
         timelineItem.dataset.enterAnimationDuration = String(ENTER_ANIMATION_DEFAULT_DURATION);
+        timelineItem.dataset.exitAnimationStyle = EXIT_ANIMATION_DEFAULT_STYLE;
+        timelineItem.dataset.exitAnimationDuration = String(EXIT_ANIMATION_DEFAULT_DURATION);
+        timelineItem.dataset.comboAnimationStyle = COMBO_ANIMATION_DEFAULT_STYLE;
+        timelineItem.dataset.comboAnimationDuration = String(COMBO_ANIMATION_DEFAULT_DURATION);
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });

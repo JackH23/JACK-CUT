@@ -1369,6 +1369,12 @@ body {
     transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
 }
 
+.preview-image-frame img.has-enter-animation,
+.preview-image-frame img.has-exit-animation,
+.preview-image-frame img.has-combo-animation {
+    will-change: opacity, transform, filter;
+}
+
 @keyframes preview-enter-fade {
     0% {
         opacity: 0;
@@ -1437,6 +1443,139 @@ body {
         opacity: 1;
         filter: blur(0);
         transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-exit-fade {
+    0% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-exit-slide-down {
+    0% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, 38px, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-exit-slide-right {
+    0% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(40px, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-exit-zoom {
+    0% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(0.82) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-exit-defocus {
+    0% {
+        opacity: 1;
+        filter: blur(0);
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        filter: blur(18px);
+        transform: translate3d(0, 0, 0) scale(1.08) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-combo-fade {
+    0% {
+        opacity: 0;
+    }
+    15% {
+        opacity: 1;
+    }
+    80% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+@keyframes preview-combo-sweep {
+    0% {
+        opacity: 0;
+        transform: translate3d(-28px, 24px, 0) scale(0.92) rotate(var(--preview-image-rotation));
+    }
+    18% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1.02) rotate(var(--preview-image-rotation));
+    }
+    78% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(26px, -22px, 0) scale(0.88) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-combo-zoom {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(0.84) rotate(var(--preview-image-rotation));
+    }
+    12% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1.04) rotate(var(--preview-image-rotation));
+    }
+    82% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(0.98) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(1.12) rotate(var(--preview-image-rotation));
+    }
+}
+
+@keyframes preview-combo-pulse {
+    0% {
+        opacity: 0;
+        filter: saturate(160%) blur(6px);
+        transform: translate3d(0, 0, 0) scale(0.9) rotate(var(--preview-image-rotation));
+    }
+    20% {
+        opacity: 1;
+        filter: saturate(130%) blur(0);
+        transform: translate3d(0, 0, 0) scale(1.02) rotate(var(--preview-image-rotation));
+    }
+    72% {
+        opacity: 1;
+        filter: saturate(110%) blur(0);
+        transform: translate3d(0, 0, 0) scale(0.98) rotate(var(--preview-image-rotation));
+    }
+    100% {
+        opacity: 0;
+        filter: saturate(160%) blur(12px);
+        transform: translate3d(0, 0, 0) scale(1.12) rotate(var(--preview-image-rotation));
     }
 }
 
