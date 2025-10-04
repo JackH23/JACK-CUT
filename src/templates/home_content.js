@@ -142,6 +142,8 @@ const optionSliderConfigs = [
     },
 ];
 
+const IMAGE_FRAME_DURATION = 1000;
+
 const ENTRANCE_ANIMATION_PRESETS = {
     fade: {
         key: 'fade',
@@ -447,8 +449,14 @@ function getPreviewImageEntranceConfig(options = {}) {
         ? clipDurationOverride
         : getActiveImageClipDurationMs();
 
+    const clipDurationScale = activeClipDuration && activeClipDuration > 0
+        ? activeClipDuration / IMAGE_FRAME_DURATION
+        : 1;
+    const scaledMinimumDuration = Math.max(0, Math.round(120 * clipDurationScale));
+    const scaledRawDuration = Math.max(0, Math.round(rawDuration * clipDurationScale));
+    const desiredDuration = Math.max(scaledMinimumDuration, scaledRawDuration);
     const duration = activeClipDuration && activeClipDuration > 0
-        ? Math.min(rawDuration, activeClipDuration)
+        ? Math.min(desiredDuration, activeClipDuration)
         : rawDuration;
 
     return {
@@ -682,10 +690,21 @@ function getPreviewImageExitConfig(options = {}) {
         ? clipDurationOverride
         : getActiveImageClipDurationMs();
 
-    let delay = rawDelay;
-    let duration = rawDuration;
+    const clipDurationScale = activeClipDuration && activeClipDuration > 0
+        ? activeClipDuration / IMAGE_FRAME_DURATION
+        : 1;
+
+    const scaledDelay = Math.max(0, Math.round(rawDelay * clipDurationScale));
+    const scaledDuration = Math.max(0, Math.round(rawDuration * clipDurationScale));
+
+    let delay = clipDurationScale !== 1 ? scaledDelay : rawDelay;
+    let duration = clipDurationScale !== 1 ? scaledDuration : rawDuration;
 
     if (activeClipDuration && activeClipDuration > 0) {
+        if (clipDurationScale === 1) {
+            delay = rawDelay;
+            duration = rawDuration;
+        }
         if (delay >= activeClipDuration) {
             delay = activeClipDuration;
             duration = 0;
@@ -1090,7 +1109,6 @@ let previewViewportAlignmentState = {
     bottom: false,
 };
 
-const IMAGE_FRAME_DURATION = 1000;
 const KEYFRAME_PROGRESS_TOLERANCE = 0.002;
 const KEYFRAME_DRAG_EPSILON = 0.0001;
 const KEYFRAME_DRAG_UPDATE_EPSILON = 0.00001;
