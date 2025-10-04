@@ -113,6 +113,85 @@ const settingsSections = Array.from(document.querySelectorAll('.settings-section
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
+
+const optionSliderConfigs = [
+    {
+        inputId: 'animation-in-timing',
+        readoutId: 'animation-in-timing-value',
+        labelsId: 'animation-in-timing-labels',
+        options: [
+            { value: 'short', display: '0.3s — Quick' },
+            { value: 'medium', display: '0.6s — Smooth' },
+            { value: 'long', display: '1s — Dramatic' },
+        ],
+    },
+    {
+        inputId: 'animation-out-delay',
+        readoutId: 'animation-out-delay-value',
+        labelsId: 'animation-out-delay-labels',
+        options: [
+            { value: 'none', display: 'No delay' },
+            { value: 'short', display: '0.2s delay' },
+            { value: 'medium', display: '0.5s delay' },
+            { value: 'long', display: '1s delay' },
+        ],
+    },
+];
+
+optionSliderConfigs.forEach((config) => {
+    const slider = document.getElementById(config.inputId);
+    const readout = document.getElementById(config.readoutId);
+    const labelsContainer = config.labelsId
+        ? document.getElementById(config.labelsId)
+        : null;
+
+    if (!slider || !readout) {
+        return;
+    }
+
+    const labels = labelsContainer
+        ? Array.from(labelsContainer.querySelectorAll('.line-slider__label'))
+        : [];
+
+    const totalStops = Math.max(config.options.length - 1, 1);
+
+    labels.forEach((labelElement, labelIndex) => {
+        const position = totalStops === 0 ? 0 : (labelIndex / totalStops) * 100;
+        labelElement.style.setProperty('--slider-label-position', `${position}%`);
+        if (labelIndex === 0) {
+            labelElement.dataset.position = 'start';
+        } else if (labelIndex === config.options.length - 1) {
+            labelElement.dataset.position = 'end';
+        } else {
+            labelElement.dataset.position = 'middle';
+        }
+    });
+
+    const applySliderValue = (rawIndex) => {
+        const index = Number.isFinite(rawIndex) ? rawIndex : 0;
+        const clampedIndex = Math.min(Math.max(index, 0), config.options.length - 1);
+        const option = config.options[clampedIndex];
+        readout.textContent = option.display;
+        slider.dataset.optionValue = option.value;
+        slider.setAttribute('aria-valuenow', String(clampedIndex));
+        slider.setAttribute('aria-valuetext', option.display);
+        slider.style.setProperty('--line-slider-progress', `${(clampedIndex / totalStops) * 100}%`);
+        slider.value = String(clampedIndex);
+
+        labels.forEach((labelElement, labelIndex) => {
+            labelElement.classList.toggle('is-active', labelIndex === clampedIndex);
+        });
+    };
+
+    slider.addEventListener('input', () => {
+        const nextIndex = Number.parseInt(slider.value, 10);
+        applySliderValue(Number.isNaN(nextIndex) ? 0 : nextIndex);
+    });
+
+    const initialIndex = Number.parseInt(slider.value, 10);
+    applySliderValue(Number.isNaN(initialIndex) ? 0 : initialIndex);
+});
+
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
 let timelinePlaybackAbort = null;

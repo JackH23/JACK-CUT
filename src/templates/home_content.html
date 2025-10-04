@@ -183,11 +183,24 @@
                                         <div class="info-icon">🕒</div>
                                         <div class="info-item__body">
                                             <label for="animation-in-timing">Timing profile</label>
-                                            <select id="animation-in-timing">
-                                                <option value="short">0.3s — Quick</option>
-                                                <option value="medium" selected>0.6s — Smooth</option>
-                                                <option value="long">1s — Dramatic</option>
-                                            </select>
+                                            <div class="line-slider-group" data-slider="animation-in-timing">
+                                                <input
+                                                    type="range"
+                                                    class="line-slider"
+                                                    id="animation-in-timing"
+                                                    min="0"
+                                                    max="2"
+                                                    step="1"
+                                                    value="1"
+                                                    aria-describedby="animation-in-timing-value"
+                                                >
+                                                <div class="line-slider__labels" id="animation-in-timing-labels" aria-hidden="true">
+                                                    <span class="line-slider__label" data-index="0">Quick</span>
+                                                    <span class="line-slider__label" data-index="1">Smooth</span>
+                                                    <span class="line-slider__label" data-index="2">Dramatic</span>
+                                                </div>
+                                                <div class="line-slider__value" id="animation-in-timing-value">0.6s — Smooth</div>
+                                            </div>
                                             <p class="info-item__description">Set the pace for the entrance animation.</p>
                                         </div>
                                     </div>
@@ -212,12 +225,25 @@
                                         <div class="info-icon">⏳</div>
                                         <div class="info-item__body">
                                             <label for="animation-out-delay">Delay before exit</label>
-                                            <select id="animation-out-delay">
-                                                <option value="none" selected>No delay</option>
-                                                <option value="short">0.2s delay</option>
-                                                <option value="medium">0.5s delay</option>
-                                                <option value="long">1s delay</option>
-                                            </select>
+                                            <div class="line-slider-group" data-slider="animation-out-delay">
+                                                <input
+                                                    type="range"
+                                                    class="line-slider"
+                                                    id="animation-out-delay"
+                                                    min="0"
+                                                    max="3"
+                                                    step="1"
+                                                    value="0"
+                                                    aria-describedby="animation-out-delay-value"
+                                                >
+                                                <div class="line-slider__labels" id="animation-out-delay-labels" aria-hidden="true">
+                                                    <span class="line-slider__label" data-index="0">None</span>
+                                                    <span class="line-slider__label" data-index="1">0.2s</span>
+                                                    <span class="line-slider__label" data-index="2">0.5s</span>
+                                                    <span class="line-slider__label" data-index="3">1s</span>
+                                                </div>
+                                                <div class="line-slider__value" id="animation-out-delay-value">No delay</div>
+                                            </div>
                                             <p class="info-item__description">Add breathing room before the exit animation begins.</p>
                                         </div>
                                     </div>
