@@ -3377,6 +3377,18 @@ if (keyframeTrack) {
             return;
         }
 
+        if ((event.key === 'Delete' || event.key === 'Backspace')
+            && !event.altKey
+            && !event.metaKey
+            && !event.ctrlKey
+        ) {
+            const didDelete = deleteActiveTimelineKeyframe();
+            if (didDelete) {
+                event.preventDefault();
+            }
+            return;
+        }
+
         const { key } = event;
         let handled = false;
         let nextProgress = getActiveClipProgress();
@@ -4236,6 +4248,42 @@ function createActiveTimelineKeyframe(progressOverride = null) {
     showKeyframeStatus(hasExisting
         ? `Keyframe updated at ${percent}%`
         : `Keyframe added at ${percent}%`);
+}
+
+function deleteActiveTimelineKeyframe(progressOverride = null) {
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+        return false;
+    }
+
+    const keyframes = getTimelineItemImageKeyframes(activeTimelineItem);
+    if (!keyframes.length) {
+        showKeyframeStatus('No keyframes to delete.');
+        return false;
+    }
+
+    const targetProgress = Number.isFinite(progressOverride)
+        ? clampProgress(progressOverride)
+        : getActiveClipProgress();
+
+    const targetIndex = keyframes.findIndex((entry) => Math.abs(entry.progress - targetProgress)
+        <= KEYFRAME_PROGRESS_TOLERANCE * 2);
+
+    if (targetIndex === -1) {
+        showKeyframeStatus('No keyframe at the current position to delete.');
+        return false;
+    }
+
+    const removedEntry = keyframes[targetIndex];
+    const remainingKeyframes = keyframes.filter((_, index) => index !== targetIndex);
+
+    storeTimelineImageKeyframes(activeTimelineItem, remainingKeyframes);
+    renderKeyframeTrack(activeTimelineItem);
+    applyActiveImageKeyframe({ reason: 'keyframe-delete' });
+
+    const percent = Math.round(((removedEntry && removedEntry.progress) || targetProgress) * 100);
+    showKeyframeStatus(`Keyframe removed at ${percent}%`);
+
+    return true;
 }
 
 function updateTimelineProgressInput(fraction) {
