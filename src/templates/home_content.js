@@ -114,6 +114,26 @@ const animationDirectionGroups = animationDirectionSelect
 const animationPresetButtons = animationDirectionSelect
     ? Array.from(document.querySelectorAll('[data-animation-preset]'))
     : [];
+const previewAnimationPresets = {
+    'fade-in': { className: 'preview-animation--fade-in', direction: 'in' },
+    'slide-up': { className: 'preview-animation--slide-up', direction: 'in' },
+    'slide-left': { className: 'preview-animation--slide-left', direction: 'in' },
+    'zoom-in': { className: 'preview-animation--zoom-in', direction: 'in' },
+    'sparkle-pop': { className: 'preview-animation--sparkle-pop', direction: 'in' },
+    'fade-out': { className: 'preview-animation--fade-out', direction: 'out' },
+    'slide-down': { className: 'preview-animation--slide-down', direction: 'out' },
+    'slide-right': { className: 'preview-animation--slide-right', direction: 'out' },
+    'zoom-out': { className: 'preview-animation--zoom-out', direction: 'out' },
+    'drift-away': { className: 'preview-animation--drift-away', direction: 'out' },
+    'fade-through': { className: 'preview-animation--fade-through', direction: 'combo' },
+    'zoom-fade': { className: 'preview-animation--zoom-fade', direction: 'combo' },
+    'bounce-swap': { className: 'preview-animation--bounce-swap', direction: 'combo' },
+    'panorama': { className: 'preview-animation--panorama', direction: 'combo' },
+    'pulse-loop': { className: 'preview-animation--pulse-loop', direction: 'combo' },
+};
+let activeAnimationPresetKey = null;
+let activePreviewAnimationClass = null;
+let animationEndCleanupScheduled = false;
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -204,12 +224,109 @@ function updateAnimationPresetStatusText(button) {
         : `${titleText} selected`;
 }
 
+function clearPreviewAnimation() {
+    if (!previewImageFrame) {
+        return;
+    }
+    animationEndCleanupScheduled = false;
+    previewImageFrame.classList.remove('preview-animation-active');
+    if (activePreviewAnimationClass) {
+        previewImageFrame.classList.remove(activePreviewAnimationClass);
+    }
+    delete previewImageFrame.dataset.previewAnimationDirection;
+    activePreviewAnimationClass = null;
+    activeAnimationPresetKey = null;
+}
+
+function triggerPreviewAnimation(presetKey, options = {}) {
+    const { replay = false } = options;
+    if (!previewImageFrame || !previewImage || previewImage.hidden) {
+        clearPreviewAnimation();
+        return;
+    }
+
+    if (!presetKey) {
+        clearPreviewAnimation();
+        return;
+    }
+
+    const preset = previewAnimationPresets[presetKey];
+    if (!preset) {
+        clearPreviewAnimation();
+        return;
+    }
+
+    const prefersReducedMotion = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+        clearPreviewAnimation();
+        activeAnimationPresetKey = presetKey;
+        return;
+    }
+
+    if (!replay && activeAnimationPresetKey === presetKey && previewImageFrame.classList.contains('preview-animation-active')) {
+        return;
+    }
+
+    if (activePreviewAnimationClass) {
+        previewImageFrame.classList.remove(activePreviewAnimationClass);
+    }
+
+    previewImageFrame.classList.remove('preview-animation-active');
+
+    // Force reflow to restart CSS animations even if the same preset is selected.
+    void previewImageFrame.offsetWidth;
+
+    previewImageFrame.dataset.previewAnimationDirection = preset.direction || '';
+    previewImageFrame.classList.add('preview-animation-active', preset.className);
+    activePreviewAnimationClass = preset.className;
+    activeAnimationPresetKey = presetKey;
+    animationEndCleanupScheduled = false;
+}
+
+function replayActivePreviewAnimation() {
+    if (!activeAnimationPresetButton) {
+        return;
+    }
+    const presetKey = activeAnimationPresetButton.dataset?.animationPreset || null;
+    if (!presetKey) {
+        return;
+    }
+    triggerPreviewAnimation(presetKey, { replay: true });
+}
+
+function handlePreviewAnimationEnd(event) {
+    if (!previewImageFrame || !previewImageFrame.classList.contains('preview-animation-active')) {
+        return;
+    }
+    if (typeof event?.animationName !== 'string' || !event.animationName.startsWith('previewAnimation')) {
+        return;
+    }
+    if (event.target !== previewImage && event.target !== previewImageFrame) {
+        return;
+    }
+    if (animationEndCleanupScheduled) {
+        return;
+    }
+    animationEndCleanupScheduled = true;
+    window.requestAnimationFrame(() => {
+        clearPreviewAnimation();
+    });
+}
+
+const previewAnimationElements = [previewImageFrame, previewImage].filter(Boolean);
+previewAnimationElements.forEach((element) => {
+    element.addEventListener('animationend', handlePreviewAnimationEnd, true);
+});
+
 function setActiveAnimationPreset(button, options = {}) {
     const { force = false } = options;
     if (!animationPresetButtons.includes(button) && button !== null) {
         return;
     }
     if (!force && button === activeAnimationPresetButton) {
+        triggerPreviewAnimation(button?.dataset?.animationPreset || null, { replay: true });
         return;
     }
 
@@ -226,6 +343,7 @@ function setActiveAnimationPreset(button, options = {}) {
     }
 
     updateAnimationPresetStatusText(button);
+    triggerPreviewAnimation(button?.dataset?.animationPreset || null);
 }
 
 function getAnimationGroupForButton(button) {
@@ -291,9 +409,11 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             previewImage.removeEventListener('error', finish);
             if (immediate) {
                 previewImage.classList.add('is-visible');
+                replayActivePreviewAnimation();
             } else {
                 requestAnimationFrame(() => {
                     previewImage.classList.add('is-visible');
+                    replayActivePreviewAnimation();
                 });
             }
             resolve();
