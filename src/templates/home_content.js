@@ -842,12 +842,18 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
     const combinedBase = Math.max(baseEntrance + baseExit, minimumEntrance + minimumExit, 240);
 
     let targetWindow = Math.round(combinedBase);
-    if (Number.isFinite(speedWindowMs) && speedWindowMs > 0) {
-        targetWindow = Math.round(speedWindowMs);
+    const speedWindow = Number.isFinite(speedWindowMs) && speedWindowMs > 0
+        ? Math.max(0, Math.round(speedWindowMs))
+        : null;
+    if (speedWindow !== null) {
+        targetWindow = speedWindow;
     }
 
     if (clipDuration && clipDuration > 0) {
-        targetWindow = Math.max(0, Math.round(clipDuration));
+        const clipWindow = Math.max(0, Math.round(clipDuration));
+        targetWindow = speedWindow !== null
+            ? Math.min(targetWindow, clipWindow)
+            : clipWindow;
     } else {
         const minimumWindow = Math.max(
             minimumEntrance + minimumExit,
@@ -880,26 +886,18 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
             total = entranceDuration + exitDuration;
         }
 
-        if (total < clipDuration) {
-            const remainder = clipDuration - total;
-            if (exitDuration >= entranceDuration) {
-                exitDuration += remainder;
-            } else {
-                entranceDuration += remainder;
-            }
-            total = entranceDuration + exitDuration;
-        }
-
-        clipDuration = total;
+        clipDuration = Math.min(Math.round(clipDuration), total);
+    } else {
+        clipDuration = entranceDuration + exitDuration;
     }
+
+    const combinedDuration = Math.max(0, entranceDuration + exitDuration);
 
     return {
         entranceDuration,
         exitDuration,
         clipDuration,
-        combinedDuration: clipDuration && clipDuration > 0
-            ? clipDuration
-            : entranceDuration + exitDuration,
+        combinedDuration,
     };
 }
 
@@ -6786,7 +6784,29 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 if (safeEffectiveDuration === 0) {
                     startExitAnimation();
                 } else {
-                    const exitStartOffset = Math.max(0, safeEffectiveDuration - exitWindow);
+                    let exitStartOffset = Math.max(0, safeEffectiveDuration - exitWindow);
+
+                    if (exitConfig.combo) {
+                        const comboMeta = exitConfig.combo;
+                        const rawCombined = Number.isFinite(comboMeta.combinedDuration)
+                            ? Math.max(0, Math.round(comboMeta.combinedDuration))
+                            : null;
+                        const rawEntrance = Number.isFinite(comboMeta.entranceDuration)
+                            ? Math.max(0, Math.round(comboMeta.entranceDuration))
+                            : 0;
+                        const targetWindow = rawCombined !== null
+                            ? Math.min(safeEffectiveDuration, rawCombined)
+                            : safeEffectiveDuration;
+                        const desiredStart = Math.max(
+                            rawEntrance,
+                            targetWindow - exitWindow,
+                        );
+                        exitStartOffset = Math.max(
+                            0,
+                            Math.min(desiredStart, safeEffectiveDuration),
+                        );
+                    }
+
                     exitAnimationTimeoutId = window.setTimeout(() => {
                         if (!resolved && isTimelinePlaying) {
                             startExitAnimation();
