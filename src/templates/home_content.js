@@ -324,20 +324,45 @@ function cancelComboPreviewCycle() {
     comboPreviewExitTimeoutId = 0;
 }
 
-function scheduleComboExitPreview(entranceConfig = null) {
+function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clipDurationOverride = null) {
     cancelComboPreviewCycle();
-    if (!isComboModeActive()) {
-        return;
-    }
+
+    const triggerExitPreview = () => {
+        cancelComboPreviewCycle();
+        if (!isComboModeActive()) {
+            return;
+        }
+
+        const resolvedClipDuration = Number.isFinite(clipDurationOverride)
+            ? clipDurationOverride
+            : Number.isFinite(exitConfig?.combo?.clipDuration)
+                ? exitConfig.combo.clipDuration
+                : null;
+
+        const executeExit = () => {
+            if (exitConfig) {
+                runPreviewImageExitAnimation(
+                    { restoreOnComplete: true, restoreDelayMs: 90, clipDurationMs: resolvedClipDuration },
+                    exitConfig,
+                );
+            } else {
+                previewExitAnimationDemo();
+            }
+        };
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(executeExit);
+        });
+    };
 
     const estimatedDuration = Math.max(0, Number(entranceConfig?.totalDuration) || 0);
-    const delay = Math.max(240, estimatedDuration + 160);
+    const delay = Math.max(240, estimatedDuration + 120);
 
     comboPreviewExitTimeoutId = window.setTimeout(() => {
-        if (isComboModeActive()) {
-            previewExitAnimationDemo();
-        }
+        triggerExitPreview();
     }, delay);
+
+    return triggerExitPreview;
 }
 
 function previewComboAnimationCycle() {
@@ -346,8 +371,34 @@ function previewComboAnimationCycle() {
     }
 
     const entranceConfig = getPreviewImageEntranceConfig();
-    previewEntranceAnimationDemo();
-    scheduleComboExitPreview(entranceConfig);
+    if (!entranceConfig) {
+        previewEntranceAnimationDemo();
+        return;
+    }
+
+    const comboMeta = entranceConfig.combo || {};
+    const clipDurationOverride = Number.isFinite(comboMeta.clipDuration)
+        ? comboMeta.clipDuration
+        : null;
+
+    const exitConfig = getPreviewImageExitConfig({ clipDurationMs: clipDurationOverride });
+    const triggerExitPreview = scheduleComboExitPreview(entranceConfig, exitConfig, clipDurationOverride);
+
+    const didAnimate = runPreviewImageEntranceAnimation({
+        clipDurationMs: clipDurationOverride,
+        configOverride: entranceConfig,
+        onComplete: () => {
+            window.clearTimeout(comboPreviewExitTimeoutId);
+            comboPreviewExitTimeoutId = window.setTimeout(() => {
+                triggerExitPreview();
+            }, 32);
+        },
+    });
+
+    if (!didAnimate) {
+        window.clearTimeout(comboPreviewExitTimeoutId);
+        triggerExitPreview();
+    }
 }
 
 class OptionSliderController {
@@ -776,6 +827,7 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         entranceDuration,
         exitDuration,
         clipDuration,
+        combinedDuration: entranceDuration + exitDuration,
     };
 }
 
@@ -789,9 +841,11 @@ function getPreviewImageEntranceConfig(options = {}) {
         const exitPresetKey = animationComboOutPresetSelect?.value || 'fade';
         const preset = COMBO_ENTRANCE_PRESETS[presetKey] || COMBO_ENTRANCE_PRESETS.fade;
         const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
-        const { entranceDuration } = computeComboAnimationDurations(preset, exitPreset, {
+        const durations = computeComboAnimationDurations(preset, exitPreset, {
             clipDurationMs: options.clipDurationMs,
         });
+
+        const { entranceDuration, exitDuration, clipDuration, combinedDuration } = durations;
 
         return {
             key: `combo-${preset.key}`,
@@ -800,6 +854,11 @@ function getPreviewImageEntranceConfig(options = {}) {
             easing: preset.easing || 'cubic-bezier(0.4, 0, 0.2, 1)',
             delay: 0,
             totalDuration: entranceDuration,
+            combo: {
+                exitDuration,
+                clipDuration,
+                combinedDuration,
+            },
         };
     }
 
@@ -849,7 +908,7 @@ function cancelPreviewEntranceAnimation() {
     previewEntranceAnimationFallbackTimer = 0;
 
     if (previewEntranceAnimationState.cleanup) {
-        previewEntranceAnimationState.cleanup();
+        previewEntranceAnimationState.cleanup(true);
     }
 
     previewEntranceAnimationState = {
@@ -878,6 +937,12 @@ function runPreviewImageEntranceAnimation(options = {}) {
         return false;
     }
 
+    const {
+        clipDurationMs = null,
+        configOverride = null,
+        onComplete = null,
+    } = options;
+
     cancelPreviewEntranceAnimation();
 
     previewImage.classList.add('is-visible');
@@ -886,7 +951,7 @@ function runPreviewImageEntranceAnimation(options = {}) {
         return false;
     }
 
-    const config = getPreviewImageEntranceConfig(options);
+    const config = configOverride || getPreviewImageEntranceConfig({ clipDurationMs });
     if (!config) {
         return false;
     }
@@ -913,7 +978,7 @@ function runPreviewImageEntranceAnimation(options = {}) {
 
     let completed = false;
 
-    const finalize = () => {
+    const finalize = (didCancel = false) => {
         if (completed) {
             return;
         }
@@ -929,13 +994,21 @@ function runPreviewImageEntranceAnimation(options = {}) {
         previewImage.style.removeProperty('--enter-animation-duration');
         previewImage.style.removeProperty('--enter-animation-easing');
 
+        if (!didCancel && typeof onComplete === 'function') {
+            try {
+                onComplete(config);
+            } catch (error) {
+                console.error('Error executing entrance animation completion callback.', error);
+            }
+        }
+
         previewEntranceAnimationState = {
             cleanup: null,
         };
     };
 
     const handleAnimationComplete = () => {
-        finalize();
+        finalize(false);
     };
 
     previewEntranceAnimationState = {
@@ -946,7 +1019,7 @@ function runPreviewImageEntranceAnimation(options = {}) {
     previewImage.addEventListener('animationcancel', handleAnimationComplete, { once: true });
 
     previewEntranceAnimationFallbackTimer = window.setTimeout(() => {
-        finalize();
+        finalize(false);
     }, Math.max(0, safeDelay + safeDuration + 120));
 
     previewImage.classList.add('is-entering', className);
@@ -1063,9 +1136,10 @@ function getPreviewImageExitConfig(options = {}) {
         const entrancePresetKey = animationComboInPresetSelect?.value || 'fade';
         const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
         const entrancePreset = COMBO_ENTRANCE_PRESETS[entrancePresetKey] || COMBO_ENTRANCE_PRESETS.fade;
-        const { exitDuration } = computeComboAnimationDurations(entrancePreset, exitPreset, {
+        const durations = computeComboAnimationDurations(entrancePreset, exitPreset, {
             clipDurationMs: options.clipDurationMs,
         });
+        const { entranceDuration, exitDuration, clipDuration, combinedDuration } = durations;
 
         return {
             key: `combo-${exitPreset.key}`,
@@ -1074,6 +1148,11 @@ function getPreviewImageExitConfig(options = {}) {
             delay: 0,
             easing: exitPreset.easing || 'cubic-bezier(0.4, 0, 0.2, 1)',
             totalDuration: exitDuration,
+            combo: {
+                entranceDuration,
+                clipDuration,
+                combinedDuration,
+            },
         };
     }
 
