@@ -3894,7 +3894,9 @@ uploadInput.addEventListener('change', async (event) => {
     uploadInput.value = '';
 });
 
-uploadButton.addEventListener('click', () => uploadInput.click());
+if (uploadButton) {
+    uploadButton.addEventListener('click', () => uploadInput.click());
+}
 
 async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
     const fileType = timelineItem.dataset.fileType || '';
