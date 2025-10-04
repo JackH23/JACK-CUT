@@ -397,7 +397,7 @@ function getEntranceTimingKey() {
     const fallbackIndex = Number.parseInt(animationInTimingInput.value, 10);
     const fallbackKey = Number.isFinite(fallbackIndex)
         ? ENTRANCE_ANIMATION_TIMING_KEYS[
-            Math.max(0, Math.min(ENTRANCE_ANIMATION_TIMING_KEYS.length - 1, fallbackIndex)),
+            Math.max(0, Math.min(ENTRANCE_ANIMATION_TIMING_KEYS.length - 1, fallbackIndex))
         ]
         : 'medium';
     return fallbackKey || 'medium';
