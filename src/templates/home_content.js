@@ -102,6 +102,10 @@ const cancelExportButton = document.getElementById('cancel-export-button');
 const addKeyframeButton = document.getElementById('add-keyframe-button');
 const keyframeTrack = document.getElementById('keyframe-track');
 const keyframeStatus = document.getElementById('keyframe-status');
+const animationDirectionSelect = document.getElementById('animation-direction');
+const animationModeContainers = animationDirectionSelect
+    ? Array.from(document.querySelectorAll('[data-animation-mode]'))
+    : [];
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -402,6 +406,36 @@ settingsTabs.forEach((tab) => {
 });
 
 activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
+
+function updateAnimationModeContent(selectedMode) {
+    if (!animationModeContainers.length) {
+        return;
+    }
+
+    const validModes = new Set(animationModeContainers.map((container) => container.dataset.animationMode));
+    const fallbackMode = animationModeContainers[0]?.dataset.animationMode;
+    const mode = validModes.has(selectedMode) ? selectedMode : fallbackMode;
+
+    animationModeContainers.forEach((container) => {
+        const isActive = container.dataset.animationMode === mode;
+        container.classList.toggle('is-active', isActive);
+        if (isActive) {
+            container.removeAttribute('hidden');
+            container.setAttribute('aria-hidden', 'false');
+        } else {
+            container.setAttribute('hidden', '');
+            container.setAttribute('aria-hidden', 'true');
+        }
+    });
+}
+
+if (animationDirectionSelect && animationModeContainers.length) {
+    updateAnimationModeContent(animationDirectionSelect.value);
+
+    animationDirectionSelect.addEventListener('change', (event) => {
+        updateAnimationModeContent(event.target.value);
+    });
+}
 
 function formatTime(milliseconds) {
     const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));

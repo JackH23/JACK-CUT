@@ -164,6 +164,105 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="animation-mode is-active" data-animation-mode="in" role="group" aria-label="Entrance animation settings">
+                                <div class="info-list">
+                                    <div class="info-item">
+                                        <div class="info-icon">✨</div>
+                                        <div class="info-item__body">
+                                            <label for="animation-in-preset">Entrance preset</label>
+                                            <select id="animation-in-preset">
+                                                <option value="fade" selected>Fade in</option>
+                                                <option value="slide-up">Slide up</option>
+                                                <option value="zoom">Zoom</option>
+                                                <option value="bounce">Bounce</option>
+                                            </select>
+                                            <p class="info-item__description">Choose how your overlay enters the frame.</p>
+                                        </div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-icon">🕒</div>
+                                        <div class="info-item__body">
+                                            <label for="animation-in-timing">Timing profile</label>
+                                            <select id="animation-in-timing">
+                                                <option value="short">0.3s — Quick</option>
+                                                <option value="medium" selected>0.6s — Smooth</option>
+                                                <option value="long">1s — Dramatic</option>
+                                            </select>
+                                            <p class="info-item__description">Set the pace for the entrance animation.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="animation-mode" data-animation-mode="out" role="group" aria-label="Exit animation settings" hidden aria-hidden="true">
+                                <div class="info-list">
+                                    <div class="info-item">
+                                        <div class="info-icon">🎯</div>
+                                        <div class="info-item__body">
+                                            <label for="animation-out-preset">Exit preset</label>
+                                            <select id="animation-out-preset">
+                                                <option value="fade" selected>Fade out</option>
+                                                <option value="slide-down">Slide down</option>
+                                                <option value="zoom-out">Zoom out</option>
+                                                <option value="spin">Spin away</option>
+                                            </select>
+                                            <p class="info-item__description">Control how the overlay leaves the screen.</p>
+                                        </div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-icon">⏳</div>
+                                        <div class="info-item__body">
+                                            <label for="animation-out-delay">Delay before exit</label>
+                                            <select id="animation-out-delay">
+                                                <option value="none" selected>No delay</option>
+                                                <option value="short">0.2s delay</option>
+                                                <option value="medium">0.5s delay</option>
+                                                <option value="long">1s delay</option>
+                                            </select>
+                                            <p class="info-item__description">Add breathing room before the exit animation begins.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="animation-mode" data-animation-mode="combo" role="group" aria-label="Entrance and exit animation settings" hidden aria-hidden="true">
+                                <div class="animation-combo-grid">
+                                    <section class="animation-combo-section" aria-label="Combo entrance settings">
+                                        <h3 class="animation-mode__subtitle">Entrance</h3>
+                                        <div class="info-list">
+                                            <div class="info-item">
+                                                <div class="info-icon">🚀</div>
+                                                <div class="info-item__body">
+                                                    <label for="animation-combo-in-preset">Entrance preset</label>
+                                                    <select id="animation-combo-in-preset">
+                                                        <option value="fade" selected>Fade in</option>
+                                                        <option value="slide-left">Slide from left</option>
+                                                        <option value="slide-right">Slide from right</option>
+                                                        <option value="pop">Pop scale</option>
+                                                    </select>
+                                                    <p class="info-item__description">Pairable entrance effects built for combos.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="animation-combo-section" aria-label="Combo exit settings">
+                                        <h3 class="animation-mode__subtitle">Exit</h3>
+                                        <div class="info-list">
+                                            <div class="info-item">
+                                                <div class="info-icon">🎬</div>
+                                                <div class="info-item__body">
+                                                    <label for="animation-combo-out-preset">Exit preset</label>
+                                                    <select id="animation-combo-out-preset">
+                                                        <option value="fade" selected>Fade out</option>
+                                                        <option value="slide-left">Slide to left</option>
+                                                        <option value="slide-right">Slide to right</option>
+                                                        <option value="drop">Drop down</option>
+                                                    </select>
+                                                    <p class="info-item__description">Choose how the animation completes its motion.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-speed" data-section="speed" role="tabpanel" aria-labelledby="settings-tab-speed" hidden>

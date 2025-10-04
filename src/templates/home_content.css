@@ -729,7 +729,7 @@ body {
     gap: 14px;
 }
 
-.info-item {
+.info-item { 
     display: flex;
     gap: 12px;
     align-items: flex-start;
@@ -740,6 +740,38 @@ body {
     font-size: 0.9rem;
     color: var(--text-secondary);
     box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+.animation-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: fadeIn 0.18s ease;
+}
+
+.animation-mode[hidden] {
+    display: none !important;
+}
+
+.animation-mode__subtitle {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.animation-combo-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.animation-combo-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .info-item label {
