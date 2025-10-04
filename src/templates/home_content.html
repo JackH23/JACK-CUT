@@ -146,6 +146,31 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="info-item keyframe-info">
+                                <div class="info-icon">💠</div>
+                                <div class="info-item__body">
+                                    <div class="info-item__header">
+                                        <label id="keyframe-animation-label">Keyframe animation</label>
+                                        <div class="keyframe-actions">
+                                            <button type="button" class="keyframe-button" id="add-keyframe-button" aria-describedby="keyframe-status">
+                                                <span aria-hidden="true">◆</span>
+                                                Add keyframe
+                                            </button>
+                                            <span class="keyframe-status" id="keyframe-status" role="status" aria-live="polite"></span>
+                                        </div>
+                                    </div>
+                                    <p class="info-item__description">Animate image overlays by setting keyframes along the clip.</p>
+                                    <div class="keyframe-track" id="keyframe-track" role="list" aria-labelledby="keyframe-animation-label" data-disabled="true" aria-disabled="true" tabindex="-1"></div>
+                                </div>
+                            </div>
+                            <div class="info-item rotation-info">
+                                <div class="info-icon">🧭</div>
+                                <div class="rotation-controls">
+                                    <label for="image-rotation">Image rotation</label>
+                                    <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
+                                    <div class="slider-readout" id="image-rotation-value">0°</div>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
