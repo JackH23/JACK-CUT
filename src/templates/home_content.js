@@ -3429,6 +3429,40 @@ function clampRotation(value) {
     return Math.min(MAX_ROTATION_DEGREES, Math.max(MIN_ROTATION_DEGREES, numeric));
 }
 
+function normalizeRotationRange(value) {
+    let normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+        return 0;
+    }
+
+    while (normalized > MAX_ROTATION_DEGREES) {
+        normalized -= 360;
+    }
+
+    while (normalized < MIN_ROTATION_DEGREES) {
+        normalized += 360;
+    }
+
+    return clampRotation(normalized);
+}
+
+function interpolateRotationDegrees(start, end, ratio) {
+    const ratioValue = Number(ratio);
+    const t = Number.isFinite(ratioValue) ? clampProgress(ratioValue) : 0;
+    const startRotation = clampRotation(start);
+    const endRotation = clampRotation(end);
+
+    let delta = endRotation - startRotation;
+    if (delta > 180) {
+        delta -= 360;
+    } else if (delta < -180) {
+        delta += 360;
+    }
+
+    const value = startRotation + (delta * t);
+    return normalizeRotationRange(value);
+}
+
 function normalizePreviewImageTransform(transform, viewportSize) {
     if (!transform || !viewportSize) {
         return null;
@@ -3645,7 +3679,8 @@ function upsertTimelineImageKeyframe(keyframes, progress, normalizedTransform) {
 }
 
 function interpolateNormalizedTransforms(startTransform, endTransform, t) {
-    const ratio = clampProgress(Number(t));
+    const numericRatio = Number(t);
+    const ratio = Number.isFinite(numericRatio) ? clampProgress(numericRatio) : 0;
     const lerp = (start, end) => start + ((end - start) * ratio);
 
     const start = sanitizeNormalizedKeyframeTransform(startTransform);
@@ -3661,7 +3696,7 @@ function interpolateNormalizedTransforms(startTransform, endTransform, t) {
         width: lerp(start.width, end.width),
         height: lerp(start.height, end.height),
         aspectRatio: lerp(start.aspectRatio, end.aspectRatio),
-        rotation: lerp(start.rotation, end.rotation),
+        rotation: interpolateRotationDegrees(start.rotation, end.rotation, ratio),
     };
 }
 
