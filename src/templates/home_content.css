@@ -320,6 +320,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: clamp(14px, 2.5vh, 18px);
+    width: 100%;
 }
 
 .timeline-card {
@@ -334,6 +335,8 @@ body {
     flex-direction: column;
     gap: clamp(16px, 3vh, 20px);
     min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 @keyframes fadeIn {
@@ -656,6 +659,7 @@ body {
 .preview-card {
     position: relative;
     gap: 24px;
+    align-items: stretch;
 }
 
 .preview-header {
@@ -1539,14 +1543,17 @@ body {
     min-height: 180px;
     overflow: auto;
     scrollbar-width: thin;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .timeline-lane-list {
     position: relative;
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     gap: 12px;
-    min-width: 100%;
+    width: 100%;
+    align-items: stretch;
     z-index: 2;
 }
 
@@ -1562,8 +1569,8 @@ body {
     background: rgba(15, 23, 42, 0.6);
     border: 1px dashed rgba(148, 163, 184, 0.22);
     min-height: 110px;
-    min-width: 100%;
-    width: max-content;
+    width: 100%;
+    width: max(100%, max-content);
     transition: border-color 0.2s ease, background 0.2s ease;
 }
 
@@ -1778,6 +1785,8 @@ body {
     border-radius: 14px;
     background: rgba(8, 12, 24, 0.6);
     border: 1px solid rgba(148, 163, 184, 0.18);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .timeline-progress label {
