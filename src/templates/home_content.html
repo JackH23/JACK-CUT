@@ -71,6 +71,11 @@
                             <div class="preview-overlay-stack__group preview-overlay-stack__group--above" data-layer-group="above"></div>
                         </div>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
+                            <div class="preview-animation-indicator" id="preview-animation-indicator" hidden aria-live="polite">
+                                <span class="preview-animation-indicator__label" data-role="in"></span>
+                                <span class="preview-animation-indicator__separator" aria-hidden="true">→</span>
+                                <span class="preview-animation-indicator__label" data-role="out"></span>
+                            </div>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
                                 <img id="preview-image" alt="Preview" hidden>
                                 <button type="button" class="preview-resize-handle handle-nw" data-handle="nw" aria-label="Resize from top left"></button>

@@ -64,6 +64,13 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const previewAnimationIndicator = document.getElementById('preview-animation-indicator');
+const previewAnimationIndicatorLabels = previewAnimationIndicator
+    ? {
+        in: previewAnimationIndicator.querySelector('[data-role="in"]'),
+        out: previewAnimationIndicator.querySelector('[data-role="out"]'),
+    }
+    : null;
 
 if (previewImage) {
     try {
@@ -357,6 +364,12 @@ function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clip
                 ? resolvedExitConfig.combo.clipDuration
                 : null;
 
+        updateComboAnimationIndicator(
+            'out',
+            entranceConfig?.key,
+            resolvedExitConfig?.key || exitConfig?.key,
+        );
+
         const exitOptions = {
             restoreOnComplete: true,
             restoreDelayMs: 90,
@@ -421,6 +434,7 @@ function previewComboAnimationCycle() {
 
     const entranceConfig = getPreviewImageEntranceConfig();
     if (!entranceConfig) {
+        clearComboAnimationIndicator();
         previewEntranceAnimationDemo();
         return;
     }
@@ -433,6 +447,7 @@ function previewComboAnimationCycle() {
             : null;
 
     const resolvedExitConfig = getPreviewImageExitConfig({ clipDurationMs: clipDurationOverride });
+    updateComboAnimationIndicator('in', entranceConfig.key, resolvedExitConfig?.key);
     const triggerExitPreview = scheduleComboExitPreview(
         entranceConfig,
         resolvedExitConfig,
@@ -817,6 +832,98 @@ function setTimelineItemAnimationDataset(timelineItem, key, value, defaultValue)
     }
 
     timelineItem.dataset[key] = normalizedValue;
+}
+
+function normalizeComboPresetKey(rawKey, fallbackKey) {
+    if (typeof rawKey === 'string' && rawKey.length > 0) {
+        return rawKey.startsWith('combo-') ? rawKey.slice(6) : rawKey;
+    }
+    return typeof fallbackKey === 'string' && fallbackKey.length > 0 ? fallbackKey : '';
+}
+
+function getSelectOptionLabel(selectElement, value, fallbackLabel) {
+    if (!selectElement) {
+        return fallbackLabel;
+    }
+
+    const options = Array.from(selectElement.options || []);
+    const match = options.find((option) => option.value === value);
+
+    if (match && typeof match.textContent === 'string') {
+        return match.textContent.trim();
+    }
+
+    return fallbackLabel;
+}
+
+function updateComboAnimationIndicator(stage, entranceKey, exitKey) {
+    if (!previewAnimationIndicator || !previewAnimationIndicatorLabels) {
+        return;
+    }
+
+    if (!isComboModeActive()) {
+        clearComboAnimationIndicator();
+        return;
+    }
+
+    const activeEntranceKey = sanitizeComboEntrancePreset(
+        normalizeComboPresetKey(
+            entranceKey,
+            animationComboInPresetSelect?.value || DEFAULT_COMBO_ENTRANCE_PRESET,
+        ),
+    );
+    const activeExitKey = sanitizeComboExitPreset(
+        normalizeComboPresetKey(
+            exitKey,
+            animationComboOutPresetSelect?.value || DEFAULT_COMBO_EXIT_PRESET,
+        ),
+    );
+
+    const entranceLabel = getSelectOptionLabel(
+        animationComboInPresetSelect,
+        activeEntranceKey,
+        'Entrance',
+    );
+    const exitLabel = getSelectOptionLabel(
+        animationComboOutPresetSelect,
+        activeExitKey,
+        'Exit',
+    );
+
+    if (previewAnimationIndicatorLabels.in) {
+        previewAnimationIndicatorLabels.in.textContent = entranceLabel;
+    }
+    if (previewAnimationIndicatorLabels.out) {
+        previewAnimationIndicatorLabels.out.textContent = exitLabel;
+    }
+
+    previewAnimationIndicator.hidden = false;
+    previewAnimationIndicator.setAttribute('aria-hidden', 'false');
+    previewAnimationIndicator.dataset.stage = stage === 'out' ? 'out' : 'in';
+    previewAnimationIndicator.setAttribute(
+        'aria-label',
+        `Combo animation preview ${stage === 'out' ? 'exit' : 'entrance'} stage: ${entranceLabel} → ${exitLabel}`,
+    );
+}
+
+function clearComboAnimationIndicator() {
+    if (!previewAnimationIndicator) {
+        return;
+    }
+
+    previewAnimationIndicator.hidden = true;
+    previewAnimationIndicator.setAttribute('aria-hidden', 'true');
+    previewAnimationIndicator.removeAttribute('data-stage');
+    previewAnimationIndicator.removeAttribute('aria-label');
+
+    if (previewAnimationIndicatorLabels) {
+        if (previewAnimationIndicatorLabels.in) {
+            previewAnimationIndicatorLabels.in.textContent = '';
+        }
+        if (previewAnimationIndicatorLabels.out) {
+            previewAnimationIndicatorLabels.out.textContent = '';
+        }
+    }
 }
 
 function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
@@ -1825,6 +1932,10 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
         animationComboSpeedInput.value = String(clampedSeconds);
         updateComboSpeedSliderDisplay({ triggerPreview: false });
     }
+
+    if (!isImage || settings.direction !== 'combo') {
+        clearComboAnimationIndicator();
+    }
 }
 
 function persistActiveTimelineAnimationDirection(direction) {
@@ -1899,6 +2010,10 @@ if (animationDirectionSelect && animationModeContainers.length) {
         previewEntranceAnimationDemo();
     }
 
+    if (animationDirectionSelect.value !== 'combo') {
+        clearComboAnimationIndicator();
+    }
+
     animationDirectionSelect.addEventListener('change', (event) => {
         const nextValue = event.target.value;
         updateAnimationModeContent(nextValue);
@@ -1914,6 +2029,10 @@ if (animationDirectionSelect && animationModeContainers.length) {
                 cancelComboPreviewCycle();
                 previewEntranceAnimationDemo();
             }
+        }
+
+        if (nextValue !== 'combo') {
+            clearComboAnimationIndicator();
         }
     });
 }
@@ -4582,6 +4701,7 @@ function setPreviewImageVisibility(isVisible) {
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
+        clearComboAnimationIndicator();
     }
 }
 
