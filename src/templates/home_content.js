@@ -138,58 +138,178 @@ const optionSliderConfigs = [
     },
 ];
 
-optionSliderConfigs.forEach((config) => {
-    const slider = document.getElementById(config.inputId);
-    const readout = document.getElementById(config.readoutId);
-    const labelsContainer = config.labelsId
-        ? document.getElementById(config.labelsId)
-        : null;
+class OptionSliderController {
+    constructor(config) {
+        const slider = document.getElementById(config.inputId);
+        const readout = document.getElementById(config.readoutId);
+        const labelsContainer = config.labelsId
+            ? document.getElementById(config.labelsId)
+            : null;
 
-    if (!slider || !readout) {
-        return;
+        if (!slider || !readout) {
+            return;
+        }
+
+        this.slider = slider;
+        this.readout = readout;
+        this.options = Array.isArray(config.options) ? config.options.slice() : [];
+        this.labels = labelsContainer
+            ? Array.from(labelsContainer.querySelectorAll('.line-slider__label'))
+            : [];
+        this.totalStops = Math.max(this.options.length - 1, 1);
+        this.currentIndex = -1;
+        this.pendingIndex = null;
+        this.updateFrame = null;
+        this.activeLabel = null;
+
+        const maxIndex = Math.max(this.options.length - 1, 0);
+        this.slider.min = '0';
+        this.slider.max = String(maxIndex);
+        this.slider.step = '1';
+        this.slider.setAttribute('aria-valuemin', '0');
+        this.slider.setAttribute('aria-valuemax', String(maxIndex));
+        this.slider.dataset.optionCount = String(this.options.length);
+
+        if (!this.readout.hasAttribute('aria-live')) {
+            this.readout.setAttribute('aria-live', 'polite');
+        }
+
+        this.handleInput = this.handleInput.bind(this);
+
+        this.slider.addEventListener('input', this.handleInput);
+        this.slider.addEventListener('change', this.handleInput);
+
+        this.labels.forEach((labelElement, labelIndex) => {
+            const position = this.totalStops === 0 ? 0 : (labelIndex / this.totalStops) * 100;
+            labelElement.style.setProperty('--slider-label-position', `${position}%`);
+
+            if (labelIndex === 0) {
+                labelElement.dataset.position = 'start';
+            } else if (labelIndex === this.options.length - 1) {
+                labelElement.dataset.position = 'end';
+            } else {
+                labelElement.dataset.position = 'middle';
+            }
+
+            labelElement.dataset.sliderIndex = String(labelIndex);
+            labelElement.setAttribute('role', 'button');
+            labelElement.setAttribute('tabindex', '0');
+            labelElement.setAttribute('aria-controls', this.slider.id);
+
+            labelElement.addEventListener('click', (event) => {
+                event.preventDefault();
+                this.focusSlider();
+                this.setIndex(labelIndex);
+            });
+
+            labelElement.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+                    event.preventDefault();
+                    this.focusSlider();
+                    this.setIndex(labelIndex);
+                }
+            });
+        });
+
+        const initialIndex = this.parseIndex(this.slider.value);
+        this.setIndex(initialIndex, { force: true });
     }
 
-    const labels = labelsContainer
-        ? Array.from(labelsContainer.querySelectorAll('.line-slider__label'))
-        : [];
+    parseIndex(rawValue) {
+        const parsed = Number.parseInt(rawValue, 10);
+        return Number.isNaN(parsed) ? 0 : parsed;
+    }
 
-    const totalStops = Math.max(config.options.length - 1, 1);
-
-    labels.forEach((labelElement, labelIndex) => {
-        const position = totalStops === 0 ? 0 : (labelIndex / totalStops) * 100;
-        labelElement.style.setProperty('--slider-label-position', `${position}%`);
-        if (labelIndex === 0) {
-            labelElement.dataset.position = 'start';
-        } else if (labelIndex === config.options.length - 1) {
-            labelElement.dataset.position = 'end';
-        } else {
-            labelElement.dataset.position = 'middle';
+    clampIndex(index) {
+        if (this.options.length === 0) {
+            return 0;
         }
-    });
 
-    const applySliderValue = (rawIndex) => {
-        const index = Number.isFinite(rawIndex) ? rawIndex : 0;
-        const clampedIndex = Math.min(Math.max(index, 0), config.options.length - 1);
-        const option = config.options[clampedIndex];
-        readout.textContent = option.display;
-        slider.dataset.optionValue = option.value;
-        slider.setAttribute('aria-valuenow', String(clampedIndex));
-        slider.setAttribute('aria-valuetext', option.display);
-        slider.style.setProperty('--line-slider-progress', `${(clampedIndex / totalStops) * 100}%`);
-        slider.value = String(clampedIndex);
+        return Math.min(Math.max(index, 0), this.options.length - 1);
+    }
 
-        labels.forEach((labelElement, labelIndex) => {
-            labelElement.classList.toggle('is-active', labelIndex === clampedIndex);
+    handleInput() {
+        this.setIndex(this.parseIndex(this.slider.value));
+    }
+
+    focusSlider() {
+        if (typeof this.slider.focus === 'function') {
+            try {
+                this.slider.focus({ preventScroll: true });
+            } catch (error) {
+                this.slider.focus();
+            }
+        }
+    }
+
+    setIndex(nextIndex, { force = false } = {}) {
+        if (this.options.length === 0) {
+            return;
+        }
+
+        const clampedIndex = this.clampIndex(nextIndex);
+
+        if (!force && (clampedIndex === this.pendingIndex || clampedIndex === this.currentIndex)) {
+            return;
+        }
+
+        this.pendingIndex = clampedIndex;
+
+        if (force || typeof window.requestAnimationFrame !== 'function') {
+            this.applyIndex(this.pendingIndex);
+            this.pendingIndex = null;
+            return;
+        }
+
+        if (this.updateFrame !== null) {
+            return;
+        }
+
+        this.updateFrame = window.requestAnimationFrame(() => {
+            this.updateFrame = null;
+            if (this.pendingIndex !== null) {
+                this.applyIndex(this.pendingIndex);
+                this.pendingIndex = null;
+            }
         });
-    };
+    }
 
-    slider.addEventListener('input', () => {
-        const nextIndex = Number.parseInt(slider.value, 10);
-        applySliderValue(Number.isNaN(nextIndex) ? 0 : nextIndex);
-    });
+    applyIndex(index) {
+        if (index === this.currentIndex) {
+            return;
+        }
 
-    const initialIndex = Number.parseInt(slider.value, 10);
-    applySliderValue(Number.isNaN(initialIndex) ? 0 : initialIndex);
+        const option = this.options[index];
+        if (!option) {
+            return;
+        }
+
+        const totalStops = Math.max(this.options.length - 1, 1);
+        const progress = totalStops === 0 ? 0 : (index / totalStops) * 100;
+
+        this.slider.value = String(index);
+        this.slider.dataset.optionValue = option.value;
+        this.slider.setAttribute('aria-valuenow', String(index));
+        this.slider.setAttribute('aria-valuetext', option.display);
+        this.slider.style.setProperty('--line-slider-progress', `${progress}%`);
+        this.readout.textContent = option.display;
+
+        if (this.activeLabel) {
+            this.activeLabel.classList.remove('is-active');
+        }
+
+        const nextActiveLabel = this.labels[index] || null;
+        if (nextActiveLabel) {
+            nextActiveLabel.classList.add('is-active');
+        }
+        this.activeLabel = nextActiveLabel;
+
+        this.currentIndex = index;
+    }
+}
+
+optionSliderConfigs.forEach((config) => {
+    new OptionSliderController(config);
 });
 
 let activeTimelineItem = null;

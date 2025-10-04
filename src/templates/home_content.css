@@ -989,6 +989,7 @@ body {
     height: 22px;
     background: transparent;
     cursor: pointer;
+    touch-action: pan-y;
 }
 
 .line-slider:focus-visible {
@@ -1057,6 +1058,7 @@ body {
     color: var(--text-secondary);
     letter-spacing: 0.02em;
     padding-top: 6px;
+    user-select: none;
 }
 
 .line-slider__label {
@@ -1066,6 +1068,13 @@ body {
     transform: translateX(-50%);
     white-space: nowrap;
     text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.18s ease, background-color 0.18s ease;
 }
 
 .line-slider__label[data-position="start"] {
@@ -1081,7 +1090,7 @@ body {
 .line-slider__label::before {
     content: "";
     position: absolute;
-    top: -8px;
+    top: -6px;
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -1100,8 +1109,18 @@ body {
     transform: translateX(-100%);
 }
 
+.line-slider__label:hover {
+    color: var(--text-primary);
+}
+
+.line-slider__label:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.6);
+    outline-offset: 2px;
+}
+
 .line-slider__label.is-active {
     color: var(--accent-2);
+    background: rgba(56, 189, 248, 0.16);
 }
 
 .line-slider__label.is-active::before {
