@@ -112,7 +112,6 @@ const animationOutPresetSelect = document.getElementById('animation-out-preset')
 const animationOutDelayInput = document.getElementById('animation-out-delay');
 const animationComboInPresetSelect = document.getElementById('animation-combo-in-preset');
 const animationComboOutPresetSelect = document.getElementById('animation-combo-out-preset');
-const animationComboDurationInput = document.getElementById('animation-combo-duration');
 const animationComboSpeedInput = document.getElementById('animation-combo-speed');
 const animationComboSpeedValue = document.getElementById('animation-combo-speed-value');
 const imageRotationInput = document.getElementById('image-rotation');
@@ -143,16 +142,6 @@ const optionSliderConfigs = [
             { value: 'short', display: '0.2s delay' },
             { value: 'medium', display: '0.5s delay' },
             { value: 'long', display: '1s delay' },
-        ],
-    },
-    {
-        inputId: 'animation-combo-duration',
-        readoutId: 'animation-combo-duration-value',
-        labelsId: 'animation-combo-duration-labels',
-        options: [
-            { value: 'quick', display: '60% of combo cycle — Quick' },
-            { value: 'balanced', display: '80% of combo cycle — Balanced' },
-            { value: 'match', display: 'Full combo cycle duration' },
         ],
     },
 ];
@@ -221,13 +210,6 @@ const ENTRANCE_ANIMATION_TIMING_OPTIONS = {
 const ENTRANCE_ANIMATION_CLASS_NAMES = Object.values(ENTRANCE_ANIMATION_PRESETS).map(
     (preset) => preset.className,
 );
-
-const COMBO_ANIMATION_DURATION_KEYS = ['quick', 'balanced', 'match'];
-const COMBO_ANIMATION_DURATION_OPTIONS = {
-    quick: { ratio: 0.6 },
-    balanced: { ratio: 0.8 },
-    match: { ratio: 1 },
-};
 
 const COMBO_ENTRANCE_PRESETS = {
     fade: {
@@ -607,31 +589,6 @@ function isComboModeActive() {
     return animationDirectionSelect?.value === 'combo';
 }
 
-function getComboDurationKey() {
-    if (!animationComboDurationInput) {
-        return 'match';
-    }
-
-    const optionValue = animationComboDurationInput.dataset.optionValue;
-    if (optionValue && Object.prototype.hasOwnProperty.call(COMBO_ANIMATION_DURATION_OPTIONS, optionValue)) {
-        return optionValue;
-    }
-
-    const fallbackIndex = Number.parseInt(animationComboDurationInput.value, 10);
-    const fallbackKey = Number.isFinite(fallbackIndex)
-        ? COMBO_ANIMATION_DURATION_KEYS[
-            Math.max(0, Math.min(COMBO_ANIMATION_DURATION_KEYS.length - 1, fallbackIndex))
-        ]
-        : 'match';
-    return fallbackKey || 'match';
-}
-
-function getComboDurationRatio() {
-    const key = getComboDurationKey();
-    const option = COMBO_ANIMATION_DURATION_OPTIONS[key];
-    return option?.ratio ?? 1;
-}
-
 function getComboSpeedWindowMs() {
     if (!animationComboSpeedInput) {
         return null;
@@ -667,7 +624,6 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         ? clipDurationOverride
         : getActiveImageClipDurationMs();
 
-    const ratio = getComboDurationRatio();
     const speedWindowMs = getComboSpeedWindowMs();
 
     const rawEntranceBase = Number(entrancePreset?.baseDuration) || 560;
@@ -682,9 +638,9 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
     const minimumExit = Math.max(minimumSegmentDuration, Math.round(rawExitMinimum));
     const combinedBase = Math.max(baseEntrance + baseExit, minimumEntrance + minimumExit, 240);
 
-    let targetWindow = Math.round(combinedBase * ratio);
+    let targetWindow = Math.round(combinedBase);
     if (Number.isFinite(speedWindowMs) && speedWindowMs > 0) {
-        targetWindow = Math.round(speedWindowMs * ratio);
+        targetWindow = Math.round(speedWindowMs);
     }
 
     const minimumWindow = Math.max(minimumEntrance + minimumExit, COMBO_MIN_COMBINED_DURATION_MS);
@@ -1622,17 +1578,6 @@ if (animationComboOutPresetSelect) {
             previewComboAnimationCycle();
         }
     });
-}
-
-if (animationComboDurationInput) {
-    const handleComboDurationChange = () => {
-        if (isComboModeActive()) {
-            previewComboAnimationCycle();
-        }
-    };
-
-    animationComboDurationInput.addEventListener('change', handleComboDurationChange);
-    animationComboDurationInput.addEventListener('input', handleComboDurationChange);
 }
 
 if (animationComboSpeedInput) {
