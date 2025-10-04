@@ -99,7 +99,6 @@ const exportSummaryFormat = document.getElementById('export-summary-format');
 const exportDialogStatus = document.getElementById('export-dialog-status');
 const confirmExportButton = document.getElementById('confirm-export-button');
 const cancelExportButton = document.getElementById('cancel-export-button');
-const videoQualitySelect = document.getElementById('video-quality');
 const addKeyframeButton = document.getElementById('add-keyframe-button');
 const keyframeTrack = document.getElementById('keyframe-track');
 const keyframeStatus = document.getElementById('keyframe-status');
@@ -109,6 +108,7 @@ const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
+const DEFAULT_EXPORT_QUALITY = '720p';
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
 let timelinePlaybackAbort = null;
@@ -430,7 +430,7 @@ function getExportResolution(aspectValue, qualityValue) {
     const presetsForAspect = EXPORT_RESOLUTION_PRESETS[aspectKey] || {};
     const qualityKey = qualityValue && qualityValue in presetsForAspect
         ? qualityValue
-        : '720p';
+        : DEFAULT_EXPORT_QUALITY;
     return presetsForAspect[qualityKey];
 }
 
@@ -801,7 +801,7 @@ function renderExportSummary(timelineItems, playbackCompleted = null) {
         exportSummaryDuration.textContent = `${formattedDuration} (${formatSecondsLabel(totalDuration)})`;
     }
 
-    const selectedQuality = videoQualitySelect?.value || '720p';
+    const selectedQuality = DEFAULT_EXPORT_QUALITY;
     const selectedAspect = previewAspectSelect?.value || '16:9';
     const selectedAspectLabel = getSelectedAspectLabel();
     const exportFormat = getSupportedExportFormat();
@@ -3302,14 +3302,6 @@ if (previewAspectSelect) {
     updatePreviewAspectLabel();
 }
 
-if (videoQualitySelect) {
-    videoQualitySelect.addEventListener('change', () => {
-        if (isExportDialogOpen()) {
-            renderExportSummary(getTimelineItems(), null);
-        }
-    });
-}
-
 if (addKeyframeButton) {
     addKeyframeButton.addEventListener('click', () => {
         if (!isImageTimelineItem(activeTimelineItem)) {
@@ -5409,7 +5401,7 @@ async function handleConfirmExport() {
 
     const resolution = getExportResolution(
         previewAspectSelect?.value,
-        videoQualitySelect?.value,
+        DEFAULT_EXPORT_QUALITY,
     );
 
     if (!resolution) {
