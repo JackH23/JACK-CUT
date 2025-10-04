@@ -279,6 +279,31 @@
                                                     <p class="info-item__description">Sync the combined in/out animation window with the clip length.</p>
                                                 </div>
                                             </div>
+                                            <div class="info-item">
+                                                <div class="info-icon">⚡</div>
+                                                <div class="info-item__body">
+                                                    <label for="animation-combo-speed">Animation speed</label>
+                                                    <div class="line-slider-group" data-slider="animation-combo-speed">
+                                                        <input
+                                                            type="range"
+                                                            class="line-slider"
+                                                            id="animation-combo-speed"
+                                                            min="0"
+                                                            max="2"
+                                                            step="1"
+                                                            value="1"
+                                                            aria-describedby="animation-combo-speed-value"
+                                                        >
+                                                        <div class="line-slider__labels" id="animation-combo-speed-labels" aria-hidden="true">
+                                                            <span class="line-slider__label" data-index="0">Slower</span>
+                                                            <span class="line-slider__label" data-index="1">Standard</span>
+                                                            <span class="line-slider__label" data-index="2">Faster</span>
+                                                        </div>
+                                                        <div class="line-slider__value" id="animation-combo-speed-value">Standard speed — 1x</div>
+                                                    </div>
+                                                    <p class="info-item__description">Fine-tune how quickly the combo entrance and exit animate.</p>
+                                                </div>
+                                            </div>
                                         </div>
                                     </section>
                                     <section class="animation-combo-section" aria-label="Combo entrance settings">
