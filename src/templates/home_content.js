@@ -100,6 +100,11 @@ const exportDialogStatus = document.getElementById('export-dialog-status');
 const confirmExportButton = document.getElementById('confirm-export-button');
 const cancelExportButton = document.getElementById('cancel-export-button');
 const videoQualitySelect = document.getElementById('video-quality');
+const addKeyframeButton = document.getElementById('add-keyframe-button');
+const keyframeTrack = document.getElementById('keyframe-track');
+const keyframeStatus = document.getElementById('keyframe-status');
+const imageRotationInput = document.getElementById('image-rotation');
+const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
@@ -119,6 +124,8 @@ let pendingPreviewImageTransform = null;
 let lastPreviewViewportSize = null;
 let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
+let activeClipProgress = 0;
+let keyframeStatusTimeout = null;
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
@@ -311,6 +318,12 @@ let previewViewportAlignmentState = {
 };
 
 const IMAGE_FRAME_DURATION = 1000;
+const KEYFRAME_PROGRESS_TOLERANCE = 0.002;
+const KEYFRAME_STATUS_TIMEOUT_MS = 2600;
+const KEYFRAME_TRACK_KEY_STEP = 0.05;
+const KEYFRAME_TRACK_KEY_LARGE_STEP = 0.15;
+const MIN_ROTATION_DEGREES = -180;
+const MAX_ROTATION_DEGREES = 180;
 const DEFAULT_VIDEO_DURATION = 3000;
 const MIN_IMAGE_DURATION = 400;
 const TIMELINE_DURATION_PER_PIXEL = 12;
@@ -541,12 +554,10 @@ function getActivePreviewImageTransform(viewportWidth, viewportHeight) {
         return null;
     }
 
-    return {
-        left: storedTransform.left * viewportWidth,
-        top: storedTransform.top * viewportHeight,
-        width: storedTransform.width * viewportWidth,
-        height: storedTransform.height * viewportHeight,
-    };
+    return denormalizePreviewImageTransform(storedTransform, {
+        width: viewportWidth,
+        height: viewportHeight,
+    });
 }
 
 function drawPreviewImageToExportCanvas() {
@@ -609,16 +620,23 @@ function drawPreviewImageToExportCanvas() {
 
     const drawWidth = naturalWidth * scale;
     const drawHeight = naturalHeight * scale;
-    const drawX = transform.left + (transform.width - drawWidth) / 2;
-    const drawY = transform.top + (transform.height - drawHeight) / 2;
+    const rotation = clampRotation(transform.rotation);
+    const centerX = transform.left + (transform.width / 2);
+    const centerY = transform.top + (transform.height / 2);
 
+    exportMirrorContext.save();
+    exportMirrorContext.translate(centerX, centerY);
+    if (rotation !== 0) {
+        exportMirrorContext.rotate((rotation * Math.PI) / 180);
+    }
     exportMirrorContext.drawImage(
         previewImage,
-        drawX,
-        drawY,
+        -drawWidth / 2,
+        -drawHeight / 2,
         drawWidth,
         drawHeight,
     );
+    exportMirrorContext.restore();
 
     exportMirrorContext.restore();
     exportMirrorContext.restore();
@@ -1143,8 +1161,15 @@ function seekTimelineToFraction(fraction) {
     }
 
     const activeItem = activeSegment ? activeSegment.item : null;
-    setActiveTimelineItem(activeItem);
+    const clipStart = activeSegment ? activeSegment.start : 0;
+    const clipDuration = activeItem ? Math.max(0, getTimelineItemPlaybackDuration(activeItem)) : 0;
+    const clipProgress = clipDuration > 0
+        ? clampProgress((safeTarget - clipStart) / clipDuration)
+        : 0;
+
+    setActiveTimelineItem(activeItem, { clipProgress });
     loadPreviewFromTimeline(activeItem, activeSegment?.items || null);
+    setActiveClipProgress(clipProgress, { source: 'seek', updatePreview: false });
 
     const safeFraction = totalDuration > 0 ? safeTarget / totalDuration : 0;
     resetTimelineProgressLine(safeFraction);
@@ -1367,9 +1392,13 @@ function updateActiveTimelineIndicators() {
 
     if (activeTimelineItem) {
         const startTime = getTimelineItemStartTime(activeTimelineItem);
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
+        const clipProgress = getActiveClipProgress();
+        const currentTime = startTime + (clipDuration * clipProgress);
         const total = getTotalTimelineDuration();
-        resetTimelineProgressLine(getTimelineFractionForTime(startTime));
-        updatePlaybackTimeDisplay(startTime, total);
+        const fraction = total > 0 ? clampProgress(currentTime / total) : 0;
+        resetTimelineProgressLine(fraction);
+        updatePlaybackTimeDisplay(currentTime, total);
     } else {
         resetTimelineProgressLine();
         updatePlaybackTimeDisplay(0, getTotalTimelineDuration());
@@ -2312,24 +2341,7 @@ function getStoredPreviewImageTransform(timelineItem) {
 
     try {
         const parsed = JSON.parse(raw);
-        const keys = ['left', 'top', 'width', 'height'];
-        const hasAll = keys.every((key) => Number.isFinite(parsed[key]));
-
-        if (!hasAll) {
-            return null;
-        }
-
-        const aspectRatio = Number.isFinite(parsed.aspectRatio) && parsed.aspectRatio > 0
-            ? parsed.aspectRatio
-            : null;
-
-        return {
-            left: parsed.left,
-            top: parsed.top,
-            width: parsed.width,
-            height: parsed.height,
-            aspectRatio,
-        };
+        return sanitizeNormalizedKeyframeTransform(parsed);
     } catch (error) {
         console.warn('Unable to parse stored preview image transform.', error);
         return null;
@@ -2342,34 +2354,7 @@ function applyStoredPreviewImageTransform(storedTransform, viewportSizeOverride 
     }
 
     const viewportSize = viewportSizeOverride || getPreviewViewportSize();
-    const viewportWidth = Math.max(0, viewportSize.width || 0);
-    const viewportHeight = Math.max(0, viewportSize.height || 0);
-
-    if (viewportWidth <= 0 || viewportHeight <= 0) {
-        return false;
-    }
-
-    const nextWidth = storedTransform.width * viewportWidth;
-    const nextHeight = storedTransform.height * viewportHeight;
-    const nextAspectRatio = storedTransform.aspectRatio && storedTransform.aspectRatio > 0
-        ? storedTransform.aspectRatio
-        : ((nextWidth > 0 && nextHeight > 0) ? nextWidth / nextHeight : 1);
-
-    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
-        return false;
-    }
-
-    previewImageTransform = {
-        left: storedTransform.left * viewportWidth,
-        top: storedTransform.top * viewportHeight,
-        width: nextWidth,
-        height: nextHeight,
-        aspectRatio: nextAspectRatio > 0 ? nextAspectRatio : 1,
-    };
-
-    lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
-    applyPreviewImageTransform();
-    return true;
+    return applyNormalizedPreviewImageTransform(storedTransform, { viewportSize });
 }
 
 function tryRestorePreviewImageTransform(timelineItem) {
@@ -2390,44 +2375,42 @@ function tryRestorePreviewImageTransform(timelineItem) {
     return true;
 }
 
-function persistPreviewImageTransformForActiveTimelineItem() {
+function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     if (!activeTimelineItem || !previewImageTransform || !previewViewport) {
         return;
     }
 
-    const fileType = activeTimelineItem.dataset.fileType || '';
-
-    if (!fileType.startsWith('image/')) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
         return;
     }
 
     const viewportSize = getPreviewViewportSize();
-    const viewportWidth = Math.max(0, viewportSize.width || 0);
-    const viewportHeight = Math.max(0, viewportSize.height || 0);
+    const normalized = normalizePreviewImageTransform(previewImageTransform, viewportSize);
 
-    if (viewportWidth <= 0 || viewportHeight <= 0) {
-        return;
-    }
-
-    const normalized = {
-        left: previewImageTransform.left / viewportWidth,
-        top: previewImageTransform.top / viewportHeight,
-        width: previewImageTransform.width / viewportWidth,
-        height: previewImageTransform.height / viewportHeight,
-        aspectRatio: previewImageTransform.aspectRatio && previewImageTransform.aspectRatio > 0
-            ? previewImageTransform.aspectRatio
-            : ((previewImageTransform.width > 0 && previewImageTransform.height > 0)
-                ? previewImageTransform.width / previewImageTransform.height
-                : 1),
-    };
-
-    const values = [normalized.left, normalized.top, normalized.width, normalized.height, normalized.aspectRatio];
-
-    if (!values.every((value) => Number.isFinite(value))) {
+    if (!normalized) {
         return;
     }
 
     activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
+
+    const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
+    const shouldPersistKeyframe = Boolean(options.forceKeyframe) || existingKeyframes.length > 0;
+
+    if (!shouldPersistKeyframe) {
+        return;
+    }
+
+    const targetProgress = Object.prototype.hasOwnProperty.call(options, 'progressOverride')
+        ? clampProgress(options.progressOverride)
+        : getActiveClipProgress();
+
+    if (!Number.isFinite(targetProgress)) {
+        return;
+    }
+
+    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
+    storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
+    renderKeyframeTrack(activeTimelineItem);
 }
 
 function applyPreviewImageTransform(alignmentOverride) {
@@ -2441,11 +2424,18 @@ function applyPreviewImageTransform(alignmentOverride) {
     previewImageFrame.style.width = `${previewImageTransform.width}px`;
     previewImageFrame.style.height = `${previewImageTransform.height}px`;
 
+    const rotation = clampRotation(previewImageTransform.rotation);
+    previewImageTransform.rotation = rotation;
+    if (previewImage) {
+        previewImage.style.transform = `rotate(${rotation}deg)`;
+    }
+
     const alignment = alignmentOverride
         || evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize());
     updatePreviewViewportAlignmentState(alignment);
     updatePreviewOutsideOutline();
     updatePreviewGuides(previewImageTransform, alignment);
+    updateImageRotationControlState();
 }
 
 function clearPreviewImageTransform() {
@@ -2456,9 +2446,13 @@ function clearPreviewImageTransform() {
         previewImageFrame.style.removeProperty('height');
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
     }
+    if (previewImage) {
+        previewImage.style.removeProperty('transform');
+    }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
     setPreviewGuidesVisible(false);
+    updateImageRotationControlState();
 }
 
 function hidePreviewOutsideOutline() {
@@ -2628,6 +2622,7 @@ function resetPreviewImageFrameToFit() {
         width: targetWidth,
         height: targetHeight,
         aspectRatio: aspectRatio > 0 ? aspectRatio : 1,
+        rotation: 0,
     };
 
     lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
@@ -3303,8 +3298,693 @@ if (videoQualitySelect) {
     });
 }
 
+if (addKeyframeButton) {
+    addKeyframeButton.addEventListener('click', () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            showKeyframeStatus('Select an image clip to add keyframes.');
+            return;
+        }
+        if (!previewImageTransform) {
+            queuePreviewImageFrameReset();
+            return;
+        }
+        createActiveTimelineKeyframe();
+    });
+}
+
+if (imageRotationInput) {
+    imageRotationInput.addEventListener('input', (event) => {
+        if (!isImageTimelineItem(activeTimelineItem) || !previewImageTransform) {
+            updateImageRotationControlState();
+            return;
+        }
+        const nextRotation = clampRotation(event.target.value);
+        previewImageTransform.rotation = nextRotation;
+        applyPreviewImageTransform();
+        persistPreviewImageTransformForActiveTimelineItem();
+    });
+}
+
+if (keyframeTrack) {
+    keyframeTrack.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 && event.pointerType !== 'touch') {
+            return;
+        }
+        if (keyframeTrack.hasAttribute('data-disabled')
+            || !isImageTimelineItem(activeTimelineItem)
+            || isTimelinePlaying
+        ) {
+            return;
+        }
+        if (event.target && typeof event.target.closest === 'function') {
+            const marker = event.target.closest('.keyframe-marker');
+            if (marker) {
+                return;
+            }
+        }
+        const progress = getKeyframeTrackProgressFromClientX(event.clientX);
+        if (progress === null) {
+            return;
+        }
+        event.preventDefault();
+        setActiveClipProgress(progress, { source: 'keyframe-track', syncTimeline: true });
+        if (typeof keyframeTrack.focus === 'function') {
+            try {
+                keyframeTrack.focus({ preventScroll: true });
+            } catch (error) {
+                keyframeTrack.focus();
+            }
+        }
+    });
+
+    keyframeTrack.addEventListener('keydown', (event) => {
+        if (keyframeTrack.hasAttribute('data-disabled')
+            || !isImageTimelineItem(activeTimelineItem)
+            || isTimelinePlaying
+        ) {
+            return;
+        }
+
+        const { key } = event;
+        let handled = false;
+        let nextProgress = getActiveClipProgress();
+
+        if (key === 'ArrowLeft' || key === 'ArrowDown') {
+            const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
+            nextProgress = clampProgress(nextProgress - step);
+            handled = true;
+        } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+            const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
+            nextProgress = clampProgress(nextProgress + step);
+            handled = true;
+        } else if (key === 'Home') {
+            nextProgress = 0;
+            handled = true;
+        } else if (key === 'End') {
+            nextProgress = 1;
+            handled = true;
+        } else if (key === 'PageUp') {
+            nextProgress = clampProgress(nextProgress + KEYFRAME_TRACK_KEY_LARGE_STEP);
+            handled = true;
+        } else if (key === 'PageDown') {
+            nextProgress = clampProgress(nextProgress - KEYFRAME_TRACK_KEY_LARGE_STEP);
+            handled = true;
+        }
+
+        if (!handled) {
+            return;
+        }
+
+        event.preventDefault();
+        setActiveClipProgress(nextProgress, { source: 'keyframe-track-key', syncTimeline: true });
+    });
+}
+
 function clampProgress(value) {
     return Math.min(Math.max(value, 0), 1);
+}
+
+function clampRotation(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+    return Math.min(MAX_ROTATION_DEGREES, Math.max(MIN_ROTATION_DEGREES, numeric));
+}
+
+function normalizePreviewImageTransform(transform, viewportSize) {
+    if (!transform || !viewportSize) {
+        return null;
+    }
+
+    const viewportWidth = Math.max(0, Number(viewportSize.width) || 0);
+    const viewportHeight = Math.max(0, Number(viewportSize.height) || 0);
+
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        return null;
+    }
+
+    const normalized = {
+        left: transform.left / viewportWidth,
+        top: transform.top / viewportHeight,
+        width: transform.width / viewportWidth,
+        height: transform.height / viewportHeight,
+        aspectRatio: transform.aspectRatio && transform.aspectRatio > 0
+            ? transform.aspectRatio
+            : ((transform.width > 0 && transform.height > 0)
+                ? transform.width / transform.height
+                : 1),
+        rotation: clampRotation(transform.rotation),
+    };
+
+    const values = [
+        normalized.left,
+        normalized.top,
+        normalized.width,
+        normalized.height,
+        normalized.aspectRatio,
+        normalized.rotation,
+    ];
+
+    if (!values.every((value) => Number.isFinite(value))) {
+        return null;
+    }
+
+    return normalized;
+}
+
+function denormalizePreviewImageTransform(normalized, viewportSize) {
+    if (!normalized || !viewportSize) {
+        return null;
+    }
+
+    const viewportWidth = Math.max(0, Number(viewportSize.width) || 0);
+    const viewportHeight = Math.max(0, Number(viewportSize.height) || 0);
+
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        return null;
+    }
+
+    const width = normalized.width * viewportWidth;
+    const height = normalized.height * viewportHeight;
+    const left = normalized.left * viewportWidth;
+    const top = normalized.top * viewportHeight;
+    const aspectRatio = normalized.aspectRatio && normalized.aspectRatio > 0
+        ? normalized.aspectRatio
+        : ((width > 0 && height > 0) ? width / height : 1);
+    const rotation = clampRotation(normalized.rotation);
+
+    const values = [left, top, width, height, aspectRatio, rotation];
+    if (!values.every((value) => Number.isFinite(value))) {
+        return null;
+    }
+
+    return {
+        left,
+        top,
+        width,
+        height,
+        aspectRatio,
+        rotation,
+    };
+}
+
+function sanitizeNormalizedKeyframeTransform(transform) {
+    if (!transform) {
+        return null;
+    }
+
+    const width = Number(transform.width);
+    const height = Number(transform.height);
+
+    const normalized = {
+        left: Number(transform.left),
+        top: Number(transform.top),
+        width: Number.isFinite(width) ? width : 0,
+        height: Number.isFinite(height) ? height : 0,
+        aspectRatio: transform.aspectRatio && transform.aspectRatio > 0
+            ? Number(transform.aspectRatio)
+            : ((Number.isFinite(width) && Number.isFinite(height) && height !== 0)
+                ? width / height
+                : 1),
+        rotation: clampRotation(transform.rotation),
+    };
+
+    const values = [
+        normalized.left,
+        normalized.top,
+        normalized.width,
+        normalized.height,
+        normalized.aspectRatio,
+        normalized.rotation,
+    ];
+
+    if (!values.every((value) => Number.isFinite(value))) {
+        return null;
+    }
+
+    return normalized;
+}
+
+function sanitizeKeyframeEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+        return null;
+    }
+
+    const progress = clampProgress(Number(entry.progress));
+    if (!Number.isFinite(progress)) {
+        return null;
+    }
+
+    const transformSource = entry.transform && typeof entry.transform === 'object'
+        ? entry.transform
+        : entry;
+    const transform = sanitizeNormalizedKeyframeTransform(transformSource);
+
+    if (!transform) {
+        return null;
+    }
+
+    return {
+        progress,
+        transform,
+    };
+}
+
+function isImageTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('image/');
+}
+
+function getTimelineItemImageKeyframes(timelineItem) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return [];
+    }
+
+    const raw = timelineItem.dataset.imageKeyframes || '';
+    if (!raw) {
+        return [];
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+        const sanitized = parsed
+            .map(sanitizeKeyframeEntry)
+            .filter(Boolean)
+            .sort((a, b) => a.progress - b.progress);
+        return sanitized;
+    } catch (error) {
+        console.warn('Unable to parse stored image keyframes.', error);
+        return [];
+    }
+}
+
+function storeTimelineImageKeyframes(timelineItem, keyframes) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return;
+    }
+
+    const sanitized = (Array.isArray(keyframes) ? keyframes : [])
+        .map(sanitizeKeyframeEntry)
+        .filter(Boolean)
+        .sort((a, b) => a.progress - b.progress);
+
+    if (sanitized.length) {
+        timelineItem.dataset.imageKeyframes = JSON.stringify(sanitized);
+    } else {
+        delete timelineItem.dataset.imageKeyframes;
+    }
+}
+
+function upsertTimelineImageKeyframe(keyframes, progress, normalizedTransform) {
+    const safeProgress = clampProgress(Number(progress));
+    const transform = sanitizeNormalizedKeyframeTransform(normalizedTransform);
+
+    if (!transform) {
+        return Array.isArray(keyframes) ? [...keyframes] : [];
+    }
+
+    const next = Array.isArray(keyframes) ? [...keyframes] : [];
+    const existingIndex = next.findIndex((entry) => Math.abs(entry.progress - safeProgress) <= KEYFRAME_PROGRESS_TOLERANCE);
+    const entry = {
+        progress: safeProgress,
+        transform,
+    };
+
+    if (existingIndex >= 0) {
+        next[existingIndex] = entry;
+    } else {
+        next.push(entry);
+    }
+
+    next.sort((a, b) => a.progress - b.progress);
+    return next;
+}
+
+function interpolateNormalizedTransforms(startTransform, endTransform, t) {
+    const ratio = clampProgress(Number(t));
+    const lerp = (start, end) => start + ((end - start) * ratio);
+
+    const start = sanitizeNormalizedKeyframeTransform(startTransform);
+    const end = sanitizeNormalizedKeyframeTransform(endTransform);
+
+    if (!start || !end) {
+        return start || end || null;
+    }
+
+    return {
+        left: lerp(start.left, end.left),
+        top: lerp(start.top, end.top),
+        width: lerp(start.width, end.width),
+        height: lerp(start.height, end.height),
+        aspectRatio: lerp(start.aspectRatio, end.aspectRatio),
+        rotation: lerp(start.rotation, end.rotation),
+    };
+}
+
+function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
+    const keyframes = getTimelineItemImageKeyframes(timelineItem);
+    if (!keyframes.length) {
+        return null;
+    }
+
+    const safeProgress = clampProgress(progress);
+
+    if (keyframes.length === 1) {
+        return keyframes[0].transform;
+    }
+
+    for (let index = 0; index < keyframes.length; index += 1) {
+        const current = keyframes[index];
+        if (!current) {
+            continue;
+        }
+
+        if (safeProgress <= current.progress + KEYFRAME_PROGRESS_TOLERANCE) {
+            if (index === 0) {
+                return current.transform;
+            }
+
+            const previous = keyframes[index - 1];
+            if (!previous) {
+                return current.transform;
+            }
+
+            const span = current.progress - previous.progress;
+            if (Math.abs(span) <= KEYFRAME_PROGRESS_TOLERANCE) {
+                return current.transform;
+            }
+
+            const localT = (safeProgress - previous.progress) / span;
+            return interpolateNormalizedTransforms(previous.transform, current.transform, localT);
+        }
+    }
+
+    return keyframes[keyframes.length - 1].transform;
+}
+
+function applyNormalizedPreviewImageTransform(normalized, options = {}) {
+    if (!normalized) {
+        return false;
+    }
+
+    const viewportSize = options.viewportSize || getPreviewViewportSize();
+    const denormalized = denormalizePreviewImageTransform(normalized, viewportSize);
+
+    if (!denormalized) {
+        return false;
+    }
+
+    previewImageTransform = denormalized;
+    lastPreviewViewportSize = {
+        width: Math.max(0, Number(viewportSize.width) || 0),
+        height: Math.max(0, Number(viewportSize.height) || 0),
+    };
+    applyPreviewImageTransform();
+    return true;
+}
+
+function getActiveClipProgress() {
+    if (!Number.isFinite(activeClipProgress)) {
+        return 0;
+    }
+    return clampProgress(activeClipProgress);
+}
+
+function updateKeyframeTrackPlayhead(progress = activeClipProgress) {
+    if (!keyframeTrack) {
+        return;
+    }
+    const clamped = clampProgress(Number(progress) || 0);
+    keyframeTrack.style.setProperty('--keyframe-playhead', String(clamped));
+}
+
+function updateActiveKeyframeMarker(progress = activeClipProgress) {
+    if (!keyframeTrack) {
+        return;
+    }
+    const clamped = clampProgress(Number(progress) || 0);
+    const markers = Array.from(keyframeTrack.querySelectorAll('.keyframe-marker'));
+    markers.forEach((marker) => {
+        const markerProgress = Number(marker.dataset.progress);
+        const isActive = Number.isFinite(markerProgress)
+            && Math.abs(markerProgress - clamped) <= KEYFRAME_PROGRESS_TOLERANCE * 2;
+        marker.classList.toggle('is-active', isActive);
+    });
+}
+
+function showKeyframeStatus(message) {
+    if (!keyframeStatus) {
+        return;
+    }
+    if (keyframeStatusTimeout) {
+        window.clearTimeout(keyframeStatusTimeout);
+        keyframeStatusTimeout = null;
+    }
+    keyframeStatus.textContent = message || '';
+    if (message) {
+        keyframeStatusTimeout = window.setTimeout(() => {
+            keyframeStatus.textContent = '';
+            keyframeStatusTimeout = null;
+        }, KEYFRAME_STATUS_TIMEOUT_MS);
+    }
+}
+
+function updateKeyframeControlsState() {
+    if (addKeyframeButton) {
+        addKeyframeButton.disabled = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
+    }
+    if (!keyframeTrack) {
+        return;
+    }
+    const shouldDisableTrack = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
+    if (shouldDisableTrack) {
+        keyframeTrack.setAttribute('data-disabled', 'true');
+        keyframeTrack.setAttribute('aria-disabled', 'true');
+        keyframeTrack.tabIndex = -1;
+    } else {
+        keyframeTrack.removeAttribute('data-disabled');
+        keyframeTrack.removeAttribute('aria-disabled');
+        keyframeTrack.tabIndex = 0;
+    }
+}
+
+function getKeyframeTrackProgressFromClientX(clientX) {
+    if (!keyframeTrack) {
+        return null;
+    }
+
+    const rect = keyframeTrack.getBoundingClientRect();
+
+    if (!rect || rect.width <= 0) {
+        return null;
+    }
+
+    let paddingLeft = 0;
+    let paddingRight = 0;
+
+    if (window.getComputedStyle) {
+        const computed = window.getComputedStyle(keyframeTrack);
+        paddingLeft = Number.parseFloat(computed.paddingLeft) || 0;
+        paddingRight = Number.parseFloat(computed.paddingRight) || 0;
+    }
+
+    const effectiveWidth = rect.width - paddingLeft - paddingRight;
+
+    if (effectiveWidth <= 0) {
+        return null;
+    }
+
+    const rawOffset = clientX - rect.left - paddingLeft;
+    const clampedOffset = Math.min(Math.max(rawOffset, 0), effectiveWidth);
+    const progress = effectiveWidth > 0 ? clampedOffset / effectiveWidth : 0;
+    return clampProgress(progress);
+}
+
+function renderKeyframeTrack(timelineItem) {
+    if (!keyframeTrack) {
+        return;
+    }
+
+    keyframeTrack.innerHTML = '';
+    updateKeyframeTrackPlayhead();
+    updateKeyframeControlsState();
+
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        keyframeTrack.setAttribute('data-empty', 'true');
+        const message = document.createElement('span');
+        message.className = 'keyframe-track__empty';
+        message.textContent = 'Select an image clip to add keyframes.';
+        keyframeTrack.appendChild(message);
+        updateActiveKeyframeMarker(0);
+        return;
+    }
+
+    const keyframes = getTimelineItemImageKeyframes(timelineItem);
+    if (!keyframes.length) {
+        keyframeTrack.setAttribute('data-empty', 'true');
+        const message = document.createElement('span');
+        message.className = 'keyframe-track__empty';
+        message.textContent = 'No keyframes yet.';
+        keyframeTrack.appendChild(message);
+        updateActiveKeyframeMarker();
+        return;
+    }
+
+    keyframeTrack.removeAttribute('data-empty');
+
+    keyframes.forEach((keyframe) => {
+        if (!keyframe) {
+            return;
+        }
+        const marker = document.createElement('button');
+        marker.type = 'button';
+        marker.className = 'keyframe-marker';
+        marker.setAttribute('role', 'listitem');
+        marker.dataset.progress = String(keyframe.progress);
+        marker.style.setProperty('--keyframe-progress', String(keyframe.progress));
+        marker.setAttribute('aria-label', `Keyframe at ${Math.round(keyframe.progress * 100)}%`);
+        marker.addEventListener('click', () => {
+            if (isTimelinePlaying) {
+                return;
+            }
+            setActiveClipProgress(keyframe.progress, {
+                source: 'keyframe-marker',
+                syncTimeline: true,
+            });
+        });
+        keyframeTrack.appendChild(marker);
+    });
+
+    updateActiveKeyframeMarker();
+}
+
+function updateImageRotationControlState() {
+    if (!imageRotationInput || !imageRotationValue) {
+        return;
+    }
+
+    const isActiveImage = isImageTimelineItem(activeTimelineItem) && previewImageTransform;
+    const rotation = isActiveImage ? clampRotation(previewImageTransform.rotation) : 0;
+
+    imageRotationInput.disabled = !isImageTimelineItem(activeTimelineItem);
+    imageRotationInput.value = String(Math.round(rotation));
+    imageRotationValue.textContent = `${Math.round(rotation)}°`;
+}
+
+function setTimelineProgressForActiveClip(progress) {
+    if (!activeTimelineItem) {
+        return;
+    }
+
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
+    const startTime = getTimelineItemStartTime(activeTimelineItem);
+    const totalDuration = getTotalTimelineDuration();
+    const targetTime = startTime + (clipDuration * clampProgress(progress));
+    const fraction = totalDuration > 0 ? clampProgress(targetTime / totalDuration) : 0;
+
+    resetTimelineProgressLine(fraction);
+    updatePlaybackTimeDisplay(targetTime, totalDuration);
+    renderExportSummary(getTimelineItems(), null);
+}
+
+function applyActiveImageKeyframe(options = {}) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        updateImageRotationControlState();
+        return;
+    }
+
+    const progress = getActiveClipProgress();
+    const keyframeTransform = getTimelineItemKeyframeTransformAtProgress(activeTimelineItem, progress);
+
+    if (keyframeTransform) {
+        const applied = applyNormalizedPreviewImageTransform(keyframeTransform);
+        if (!applied) {
+            pendingPreviewImageTransform = keyframeTransform;
+            schedulePreviewViewportSizeUpdate();
+        } else {
+            pendingPreviewImageTransform = null;
+        }
+    } else {
+        const stored = getStoredPreviewImageTransform(activeTimelineItem);
+        if (stored) {
+            if (!applyStoredPreviewImageTransform(stored)) {
+                pendingPreviewImageTransform = stored;
+                schedulePreviewViewportSizeUpdate();
+            } else {
+                pendingPreviewImageTransform = null;
+            }
+        } else if (!options.deferReset) {
+            queuePreviewImageFrameReset();
+        }
+    }
+
+    updateActiveKeyframeMarker(progress);
+}
+
+function setActiveClipProgress(progress, options = {}) {
+    updateKeyframeControlsState();
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        activeClipProgress = 0;
+        updateKeyframeTrackPlayhead(0);
+        updateActiveKeyframeMarker(0);
+        updateImageRotationControlState();
+        return;
+    }
+
+    const clamped = clampProgress(Number.isFinite(progress) ? progress : 0);
+    activeClipProgress = clamped;
+    updateKeyframeTrackPlayhead(clamped);
+    updateActiveKeyframeMarker(clamped);
+
+    if (options.syncTimeline) {
+        setTimelineProgressForActiveClip(clamped);
+    }
+
+    if (options.updatePreview !== false && !previewImagePointerState.pointerId) {
+        applyActiveImageKeyframe({ reason: options.source || null });
+    } else {
+        updateImageRotationControlState();
+    }
+}
+
+function createActiveTimelineKeyframe(progressOverride = null) {
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem) || !previewImageTransform) {
+        return;
+    }
+
+    const viewportSize = getPreviewViewportSize();
+    const normalized = normalizePreviewImageTransform(previewImageTransform, viewportSize);
+
+    if (!normalized) {
+        return;
+    }
+
+    const existing = getTimelineItemImageKeyframes(activeTimelineItem);
+    const targetProgress = Number.isFinite(progressOverride)
+        ? clampProgress(progressOverride)
+        : getActiveClipProgress();
+
+    const hasExisting = existing.some((entry) => Math.abs(entry.progress - targetProgress) <= KEYFRAME_PROGRESS_TOLERANCE);
+
+    persistPreviewImageTransformForActiveTimelineItem({
+        forceKeyframe: true,
+        progressOverride: targetProgress,
+    });
+
+    setActiveClipProgress(targetProgress, { source: 'keyframe-create', syncTimeline: false, updatePreview: false });
+    updateActiveKeyframeMarker(targetProgress);
+
+    const percent = Math.round(targetProgress * 100);
+    showKeyframeStatus(hasExisting
+        ? `Keyframe updated at ${percent}%`
+        : `Keyframe added at ${percent}%`);
 }
 
 function updateTimelineProgressInput(fraction) {
@@ -3411,6 +4091,8 @@ function getTimelineItemPlaybackDuration(timelineItem) {
 
 resetTimelineProgressLine();
 updateActiveTimelineIndicators();
+renderKeyframeTrack(activeTimelineItem);
+updateImageRotationControlState();
 
 function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     const abort = timelinePlaybackAbort;
@@ -3424,6 +4106,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     isTimelinePlaying = false;
 
     stopPlaybackClock(resetProgress);
+    updateKeyframeControlsState();
 
     if (resetProgress) {
         resetTimelineProgressLine();
@@ -3464,7 +4147,12 @@ function clearPreview() {
 
 function setActiveTimelineItem(item, options = {}) {
     const shouldFocus = Boolean(options.focus);
-    if (item !== activeTimelineItem) {
+    const clipProgressOverride = Number.isFinite(options.clipProgress)
+        ? clampProgress(options.clipProgress)
+        : null;
+    const isSameItem = item === activeTimelineItem;
+
+    if (!isSameItem) {
         persistPreviewImageTransformForActiveTimelineItem();
     }
     if (activeTimelineItem) {
@@ -3478,6 +4166,15 @@ function setActiveTimelineItem(item, options = {}) {
             activeTimelineItem.focus();
         }
     }
+    const nextProgress = clipProgressOverride !== null
+        ? clipProgressOverride
+        : (isSameItem ? getActiveClipProgress() : 0);
+    renderKeyframeTrack(activeTimelineItem);
+    setActiveClipProgress(nextProgress, {
+        source: 'set-active',
+        updatePreview: (clipProgressOverride !== null) || !isSameItem,
+    });
+    updateImageRotationControlState();
     updateActiveTimelineIndicators();
 }
 
@@ -3524,6 +4221,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         void revealPreviewImageSource(objectURL, { immediate: true });
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
+        applyActiveImageKeyframe({ deferReset: true });
     }
 }
 
@@ -4090,6 +4788,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         previewPlaceholder.hidden = true;
         await revealPreviewImageSource(objectURL);
         resetPreviewScroll();
+        setActiveClipProgress(0, { source: 'image-playback' });
 
         await new Promise((resolve) => {
             let resolved = false;
@@ -4098,11 +4797,42 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             const effectiveDuration = playbackWindow === null
                 ? clipDuration
                 : Math.min(clipDuration, playbackWindow);
+            const startTimestamp = performance.now();
+            let animationFrameId = 0;
+
+            const stopAnimation = () => {
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                    animationFrameId = 0;
+                }
+            };
+
+            const step = () => {
+                if (resolved || !isTimelinePlaying) {
+                    return;
+                }
+                const now = performance.now();
+                const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
+                const playbackProgress = clipDuration > 0
+                    ? clampProgress(elapsed / clipDuration)
+                    : 0;
+                setActiveClipProgress(playbackProgress, { source: 'image-playback' });
+                if (elapsed < effectiveDuration && isTimelinePlaying) {
+                    animationFrameId = window.requestAnimationFrame(step);
+                }
+            };
+
+            animationFrameId = window.requestAnimationFrame(step);
             const timeoutId = window.setTimeout(() => {
                 if (resolved) {
                     return;
                 }
                 resolved = true;
+                stopAnimation();
+                const finalProgress = clipDuration > 0
+                    ? clampProgress(effectiveDuration / clipDuration)
+                    : 1;
+                setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
                 }
@@ -4115,6 +4845,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
                 resolved = true;
                 window.clearTimeout(timeoutId);
+                stopAnimation();
                 timelinePlaybackAbort = null;
                 resolve();
             };
@@ -4190,6 +4921,7 @@ async function playTimelineSequence(startIndex = 0) {
 
     isTimelinePlaying = true;
     playVideoButton.textContent = 'Pause playback';
+    updateKeyframeControlsState();
     resetTimelineProgressLine(getTimelineFractionForTime(startElapsed));
     updatePlaybackTimeDisplay(startElapsed, totalDuration);
     startPlaybackClock(startElapsed, totalDuration);
