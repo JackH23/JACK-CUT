@@ -6707,6 +6707,37 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
             let exitAnimationTimeoutId = 0;
             let exitAnimationStarted = false;
+            let resolveExitAnimation = null;
+            let exitAnimationAwaitable = exitConfig ? null : Promise.resolve();
+
+            const ensureExitAnimationAwaitable = () => {
+                if (!exitConfig) {
+                    exitAnimationAwaitable = Promise.resolve();
+                    resolveExitAnimation = null;
+                    return exitAnimationAwaitable;
+                }
+                if (exitAnimationAwaitable) {
+                    return exitAnimationAwaitable;
+                }
+                exitAnimationAwaitable = new Promise((exitResolve) => {
+                    resolveExitAnimation = exitResolve;
+                });
+                return exitAnimationAwaitable;
+            };
+
+            const settleExitAnimation = () => {
+                if (!exitAnimationAwaitable) {
+                    exitAnimationAwaitable = Promise.resolve();
+                }
+                if (resolveExitAnimation) {
+                    try {
+                        resolveExitAnimation();
+                    } catch (error) {
+                        console.error('Error settling exit animation promise.', error);
+                    }
+                    resolveExitAnimation = null;
+                }
+            };
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -6720,10 +6751,25 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             };
 
             const startExitAnimation = () => {
-                if (exitAnimationStarted || !exitConfig) {
-                    return;
+                if (!exitConfig) {
+                    settleExitAnimation();
+                    return Promise.resolve();
                 }
-                exitAnimationStarted = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+
+                const awaitable = ensureExitAnimationAwaitable();
+                if (exitAnimationStarted) {
+                    return awaitable;
+                }
+                exitAnimationStarted = runPreviewImageExitAnimation({
+                    restoreOnComplete: false,
+                    onComplete: () => {
+                        settleExitAnimation();
+                    },
+                }, exitConfig);
+                if (!exitAnimationStarted) {
+                    settleExitAnimation();
+                }
+                return awaitable;
             };
 
             const step = () => {
@@ -6761,16 +6807,25 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     return;
                 }
                 resolved = true;
-                startExitAnimation();
                 stopAnimation();
-                const finalProgress = clipDuration > 0
-                    ? clampProgress(safeEffectiveDuration / clipDuration)
-                    : 1;
-                setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
-                if (timelinePlaybackAbort === abortPlayback) {
-                    timelinePlaybackAbort = null;
-                }
-                resolve();
+                const finalizePlayback = () => {
+                    const finalProgress = clipDuration > 0
+                        ? clampProgress(safeEffectiveDuration / clipDuration)
+                        : 1;
+                    setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
+                    if (timelinePlaybackAbort === abortPlayback) {
+                        timelinePlaybackAbort = null;
+                    }
+                    resolve();
+                };
+
+                Promise.resolve(startExitAnimation()).then(() => {
+                    settleExitAnimation();
+                    finalizePlayback();
+                }).catch((error) => {
+                    console.error('Error waiting for exit animation to complete.', error);
+                    finalizePlayback();
+                });
             }, Math.max(0, Math.round(safeEffectiveDuration)));
 
             const abortPlayback = () => {
@@ -6781,6 +6836,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 window.clearTimeout(timeoutId);
                 stopAnimation();
                 cancelPreviewExitAnimation({ forceRestore: true });
+                settleExitAnimation();
                 timelinePlaybackAbort = null;
                 resolve();
             };
