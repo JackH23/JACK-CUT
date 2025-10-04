@@ -805,7 +805,12 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         ? clipDurationOverride
         : getActiveImageClipDurationMs();
 
-    const speedWindowMs = getComboSpeedWindowMs();
+    const speedWindowOverride = Number.isFinite(options.speedWindowMs)
+        ? Math.max(0, Math.round(options.speedWindowMs))
+        : null;
+    const speedWindowMs = speedWindowOverride !== null
+        ? speedWindowOverride
+        : getComboSpeedWindowMs();
 
     const rawEntranceBase = Number(entrancePreset?.baseDuration) || 560;
     const rawExitBase = Number(exitPreset?.baseDuration) || 520;
@@ -869,13 +874,27 @@ function getPreviewImageEntranceConfig(options = {}) {
         return null;
     }
 
-    if (isComboModeActive()) {
-        const presetKey = animationComboInPresetSelect?.value || 'fade';
-        const exitPresetKey = animationComboOutPresetSelect?.value || 'fade';
+    const { settingsOverride = null } = options;
+    const overrideDirection = settingsOverride
+        ? sanitizeAnimationDirection(settingsOverride.direction)
+        : null;
+    const fallbackDirection = animationDirectionSelect?.value || DEFAULT_ANIMATION_DIRECTION;
+    const direction = sanitizeAnimationDirection(overrideDirection || fallbackDirection);
+
+    if (direction === 'combo') {
+        const presetKey = sanitizeComboEntrancePreset(
+            settingsOverride?.comboInPreset || animationComboInPresetSelect?.value,
+        );
+        const exitPresetKey = sanitizeComboExitPreset(
+            settingsOverride?.comboOutPreset || animationComboOutPresetSelect?.value,
+        );
         const preset = COMBO_ENTRANCE_PRESETS[presetKey] || COMBO_ENTRANCE_PRESETS.fade;
         const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
         const durations = computeComboAnimationDurations(preset, exitPreset, {
             clipDurationMs: options.clipDurationMs,
+            speedWindowMs: Number.isFinite(settingsOverride?.comboWindowMs)
+                ? settingsOverride.comboWindowMs
+                : null,
         });
 
         const { entranceDuration, exitDuration, clipDuration, combinedDuration } = durations;
@@ -1164,13 +1183,27 @@ function getPreviewImageExitConfig(options = {}) {
         return null;
     }
 
-    if (isComboModeActive()) {
-        const exitPresetKey = animationComboOutPresetSelect?.value || 'fade';
-        const entrancePresetKey = animationComboInPresetSelect?.value || 'fade';
+    const { settingsOverride = null } = options;
+    const overrideDirection = settingsOverride
+        ? sanitizeAnimationDirection(settingsOverride.direction)
+        : null;
+    const fallbackDirection = animationDirectionSelect?.value || DEFAULT_ANIMATION_DIRECTION;
+    const direction = sanitizeAnimationDirection(overrideDirection || fallbackDirection);
+
+    if (direction === 'combo') {
+        const exitPresetKey = sanitizeComboExitPreset(
+            settingsOverride?.comboOutPreset || animationComboOutPresetSelect?.value,
+        );
+        const entrancePresetKey = sanitizeComboEntrancePreset(
+            settingsOverride?.comboInPreset || animationComboInPresetSelect?.value,
+        );
         const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
         const entrancePreset = COMBO_ENTRANCE_PRESETS[entrancePresetKey] || COMBO_ENTRANCE_PRESETS.fade;
         const durations = computeComboAnimationDurations(entrancePreset, exitPreset, {
             clipDurationMs: options.clipDurationMs,
+            speedWindowMs: Number.isFinite(settingsOverride?.comboWindowMs)
+                ? settingsOverride.comboWindowMs
+                : null,
         });
         const { entranceDuration, exitDuration, clipDuration, combinedDuration } = durations;
 
@@ -1492,6 +1525,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
     const clipDurationMs = Number.isFinite(options.clipDurationMs)
         ? Math.max(0, Number(options.clipDurationMs))
         : null;
+    const entranceConfigOverride = options.entranceConfigOverride || null;
 
     if (!previewImage || !objectURL) {
         return;
@@ -1502,7 +1536,10 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             cancelPreviewEntranceAnimation();
             previewImage.classList.add('is-visible');
         } else {
-            const didAnimate = runPreviewImageEntranceAnimation({ clipDurationMs });
+            const didAnimate = runPreviewImageEntranceAnimation({
+                clipDurationMs,
+                configOverride: entranceConfigOverride,
+            });
             if (!didAnimate) {
                 previewImage.classList.add('is-visible');
             }
@@ -1533,7 +1570,10 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                 previewImage.classList.add('is-visible');
             } else {
                 requestAnimationFrame(() => {
-                    const didAnimate = runPreviewImageEntranceAnimation({ clipDurationMs });
+                    const didAnimate = runPreviewImageEntranceAnimation({
+                        clipDurationMs,
+                        configOverride: entranceConfigOverride,
+                    });
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
@@ -6842,6 +6882,22 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             ? clipDuration
             : Math.min(clipDuration, playbackWindowMs);
         const safeEffectiveDuration = Math.max(0, effectiveDuration);
+        const animationSettings = getTimelineItemAnimationSettings(timelineItem);
+        const entranceConfigOverride = getPreviewImageEntranceConfig({
+            clipDurationMs: safeEffectiveDuration,
+            settingsOverride: animationSettings,
+        });
+        const exitConfig = getPreviewImageExitConfig({
+            clipDurationMs: safeEffectiveDuration,
+            settingsOverride: animationSettings,
+        });
+        const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
+        const comboCycleDuration = Number.isFinite(exitConfig?.combo?.combinedDuration)
+            ? exitConfig.combo.combinedDuration
+            : null;
+        const exitPlaybackWindow = comboCycleDuration && comboCycleDuration > 0
+            ? Math.min(safeEffectiveDuration, Math.max(comboCycleDuration, exitWindow))
+            : safeEffectiveDuration;
 
         setPreviewMode('has-image');
         previewVideo.pause();
@@ -6849,7 +6905,10 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         previewVideo.removeAttribute('src');
         setPreviewImageVisibility(true);
         previewPlaceholder.hidden = true;
-        await revealPreviewImageSource(objectURL, { clipDurationMs: safeEffectiveDuration });
+        await revealPreviewImageSource(objectURL, {
+            clipDurationMs: safeEffectiveDuration,
+            entranceConfigOverride,
+        });
         resetPreviewScroll();
         setActiveClipProgress(0, { source: 'image-playback' });
 
@@ -6857,8 +6916,6 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             let resolved = false;
             const startTimestamp = performance.now();
             let animationFrameId = 0;
-            const exitConfig = getPreviewImageExitConfig({ clipDurationMs: safeEffectiveDuration });
-            const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
             let exitAnimationTimeoutId = 0;
             let exitAnimationStarted = false;
 
@@ -6901,7 +6958,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 if (safeEffectiveDuration === 0) {
                     startExitAnimation();
                 } else {
-                    const exitStartOffset = Math.max(0, safeEffectiveDuration - exitWindow);
+                    const exitStartOffset = Math.max(0, exitPlaybackWindow - exitWindow);
                     exitAnimationTimeoutId = window.setTimeout(() => {
                         if (!resolved && isTimelinePlaying) {
                             startExitAnimation();
