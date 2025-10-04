@@ -110,6 +110,9 @@ const animationInPresetSelect = document.getElementById('animation-in-preset');
 const animationInTimingInput = document.getElementById('animation-in-timing');
 const animationOutPresetSelect = document.getElementById('animation-out-preset');
 const animationOutDelayInput = document.getElementById('animation-out-delay');
+const animationComboInPresetSelect = document.getElementById('animation-combo-in-preset');
+const animationComboOutPresetSelect = document.getElementById('animation-combo-out-preset');
+const animationComboDurationInput = document.getElementById('animation-combo-duration');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -138,6 +141,16 @@ const optionSliderConfigs = [
             { value: 'short', display: '0.2s delay' },
             { value: 'medium', display: '0.5s delay' },
             { value: 'long', display: '1s delay' },
+        ],
+    },
+    {
+        inputId: 'animation-combo-duration',
+        readoutId: 'animation-combo-duration-value',
+        labelsId: 'animation-combo-duration-labels',
+        options: [
+            { value: 'quick', display: '60% of clip — Quick' },
+            { value: 'balanced', display: '80% of clip — Balanced' },
+            { value: 'match', display: 'Match clip duration' },
         ],
     },
 ];
@@ -207,6 +220,83 @@ const ENTRANCE_ANIMATION_CLASS_NAMES = Object.values(ENTRANCE_ANIMATION_PRESETS)
     (preset) => preset.className,
 );
 
+const COMBO_ANIMATION_DURATION_KEYS = ['quick', 'balanced', 'match'];
+const COMBO_ANIMATION_DURATION_OPTIONS = {
+    quick: { ratio: 0.6 },
+    balanced: { ratio: 0.8 },
+    match: { ratio: 1 },
+};
+
+const COMBO_ENTRANCE_PRESETS = {
+    fade: {
+        key: 'fade',
+        className: 'preview-image--combo-enter-fade',
+        baseDuration: 560,
+        minDuration: 180,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    'slide-left': {
+        key: 'slide-left',
+        className: 'preview-image--combo-enter-slide-left',
+        baseDuration: 620,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
+    },
+    'slide-right': {
+        key: 'slide-right',
+        className: 'preview-image--combo-enter-slide-right',
+        baseDuration: 620,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
+    },
+    pop: {
+        key: 'pop',
+        className: 'preview-image--combo-enter-pop',
+        baseDuration: 580,
+        minDuration: 180,
+        easing: 'cubic-bezier(0.18, 0.89, 0.32, 1.28)',
+    },
+};
+
+const COMBO_EXIT_PRESETS = {
+    fade: {
+        key: 'fade',
+        className: 'preview-image--combo-exit-fade',
+        baseDuration: 520,
+        minDuration: 160,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    'slide-left': {
+        key: 'slide-left',
+        className: 'preview-image--combo-exit-slide-left',
+        baseDuration: 640,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+    },
+    'slide-right': {
+        key: 'slide-right',
+        className: 'preview-image--combo-exit-slide-right',
+        baseDuration: 640,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+    },
+    drop: {
+        key: 'drop',
+        className: 'preview-image--combo-exit-drop',
+        baseDuration: 680,
+        minDuration: 200,
+        easing: 'cubic-bezier(0.3, 0.3, 0.2, 1)',
+    },
+};
+
+const COMBO_ENTRANCE_CLASS_NAMES = Object.values(COMBO_ENTRANCE_PRESETS).map(
+    (preset) => preset.className,
+);
+
+const COMBO_EXIT_CLASS_NAMES = Object.values(COMBO_EXIT_PRESETS).map(
+    (preset) => preset.className,
+);
+
 function getActiveImageClipDurationMs() {
     if (!activeTimelineItem) {
         return null;
@@ -229,6 +319,38 @@ let previewEntranceAnimationFallbackTimer = 0;
 let previewEntranceAnimationState = {
     cleanup: null,
 };
+let comboPreviewExitTimeoutId = 0;
+
+function cancelComboPreviewCycle() {
+    window.clearTimeout(comboPreviewExitTimeoutId);
+    comboPreviewExitTimeoutId = 0;
+}
+
+function scheduleComboExitPreview(entranceConfig = null) {
+    cancelComboPreviewCycle();
+    if (!isComboModeActive()) {
+        return;
+    }
+
+    const estimatedDuration = Math.max(0, Number(entranceConfig?.totalDuration) || 0);
+    const delay = Math.max(240, estimatedDuration + 160);
+
+    comboPreviewExitTimeoutId = window.setTimeout(() => {
+        if (isComboModeActive()) {
+            previewExitAnimationDemo();
+        }
+    }, delay);
+}
+
+function previewComboAnimationCycle() {
+    if (!isComboModeActive()) {
+        return;
+    }
+
+    const entranceConfig = getPreviewImageEntranceConfig();
+    previewEntranceAnimationDemo();
+    scheduleComboExitPreview(entranceConfig);
+}
 
 class OptionSliderController {
     constructor(config) {
@@ -423,9 +545,111 @@ function getEntranceTimingKey() {
     return fallbackKey || 'medium';
 }
 
+function isComboModeActive() {
+    return animationDirectionSelect?.value === 'combo';
+}
+
+function getComboDurationKey() {
+    if (!animationComboDurationInput) {
+        return 'match';
+    }
+
+    const optionValue = animationComboDurationInput.dataset.optionValue;
+    if (optionValue && Object.prototype.hasOwnProperty.call(COMBO_ANIMATION_DURATION_OPTIONS, optionValue)) {
+        return optionValue;
+    }
+
+    const fallbackIndex = Number.parseInt(animationComboDurationInput.value, 10);
+    const fallbackKey = Number.isFinite(fallbackIndex)
+        ? COMBO_ANIMATION_DURATION_KEYS[
+            Math.max(0, Math.min(COMBO_ANIMATION_DURATION_KEYS.length - 1, fallbackIndex))
+        ]
+        : 'match';
+    return fallbackKey || 'match';
+}
+
+function getComboDurationRatio() {
+    const key = getComboDurationKey();
+    const option = COMBO_ANIMATION_DURATION_OPTIONS[key];
+    return option?.ratio ?? 1;
+}
+
+function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
+    const clipDurationOverride = Number.isFinite(options.clipDurationMs)
+        ? Math.max(0, Math.round(options.clipDurationMs))
+        : null;
+    const clipDuration = clipDurationOverride !== null
+        ? clipDurationOverride
+        : getActiveImageClipDurationMs();
+
+    const ratio = getComboDurationRatio();
+
+    const baseEntrance = Math.max(120, Number(entrancePreset?.baseDuration) || 560);
+    const baseExit = Math.max(120, Number(exitPreset?.baseDuration) || 520);
+    const minimumEntrance = Math.max(120, Number(entrancePreset?.minDuration) || 160);
+    const minimumExit = Math.max(120, Number(exitPreset?.minDuration) || 160);
+    const combinedBase = Math.max(baseEntrance + baseExit, 240);
+
+    let targetWindow = Math.round(combinedBase * ratio);
+    if (clipDuration && clipDuration > 0) {
+        targetWindow = Math.min(Math.max(targetWindow, minimumEntrance + minimumExit), clipDuration);
+    } else {
+        targetWindow = Math.max(targetWindow, minimumEntrance + minimumExit);
+    }
+
+    const scale = combinedBase > 0 ? targetWindow / combinedBase : 1;
+
+    let entranceDuration = Math.max(minimumEntrance, Math.round(baseEntrance * scale));
+    let exitDuration = Math.max(minimumExit, Math.round(baseExit * scale));
+
+    if (clipDuration && clipDuration > 0) {
+        let total = entranceDuration + exitDuration;
+        if (total > clipDuration) {
+            const adjust = clipDuration / total;
+            entranceDuration = Math.max(60, Math.round(entranceDuration * adjust));
+            exitDuration = Math.max(60, Math.round(exitDuration * adjust));
+            total = entranceDuration + exitDuration;
+        }
+
+        if (total > clipDuration) {
+            const overflow = total - clipDuration;
+            if (exitDuration >= entranceDuration) {
+                exitDuration = Math.max(60, exitDuration - overflow);
+            } else {
+                entranceDuration = Math.max(60, entranceDuration - overflow);
+            }
+        }
+    }
+
+    return {
+        entranceDuration,
+        exitDuration,
+        clipDuration,
+    };
+}
+
 function getPreviewImageEntranceConfig(options = {}) {
     if (!previewImage) {
         return null;
+    }
+
+    if (isComboModeActive()) {
+        const presetKey = animationComboInPresetSelect?.value || 'fade';
+        const exitPresetKey = animationComboOutPresetSelect?.value || 'fade';
+        const preset = COMBO_ENTRANCE_PRESETS[presetKey] || COMBO_ENTRANCE_PRESETS.fade;
+        const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
+        const { entranceDuration } = computeComboAnimationDurations(preset, exitPreset, {
+            clipDurationMs: options.clipDurationMs,
+        });
+
+        return {
+            key: `combo-${preset.key}`,
+            className: preset.className,
+            duration: entranceDuration,
+            easing: preset.easing || 'cubic-bezier(0.4, 0, 0.2, 1)',
+            delay: 0,
+            totalDuration: entranceDuration,
+        };
     }
 
     const presetKey = animationInPresetSelect?.value || 'fade';
@@ -489,6 +713,9 @@ function cancelPreviewEntranceAnimation() {
     ENTRANCE_ANIMATION_CLASS_NAMES.forEach((className) => {
         previewImage.classList.remove(className);
     });
+    COMBO_ENTRANCE_CLASS_NAMES.forEach((className) => {
+        previewImage.classList.remove(className);
+    });
     previewImage.removeAttribute('data-enter-animation');
     previewImage.style.removeProperty('--enter-animation-delay');
     previewImage.style.removeProperty('--enter-animation-duration');
@@ -517,6 +744,9 @@ function runPreviewImageEntranceAnimation(options = {}) {
 
     previewImage.dataset.enterAnimation = key;
     ENTRANCE_ANIMATION_CLASS_NAMES.forEach((enterClass) => {
+        previewImage.classList.remove(enterClass);
+    });
+    COMBO_ENTRANCE_CLASS_NAMES.forEach((enterClass) => {
         previewImage.classList.remove(enterClass);
     });
     previewImage.classList.remove('is-entering');
@@ -677,6 +907,25 @@ function getPreviewImageExitConfig(options = {}) {
         return null;
     }
 
+    if (isComboModeActive()) {
+        const exitPresetKey = animationComboOutPresetSelect?.value || 'fade';
+        const entrancePresetKey = animationComboInPresetSelect?.value || 'fade';
+        const exitPreset = COMBO_EXIT_PRESETS[exitPresetKey] || COMBO_EXIT_PRESETS.fade;
+        const entrancePreset = COMBO_ENTRANCE_PRESETS[entrancePresetKey] || COMBO_ENTRANCE_PRESETS.fade;
+        const { exitDuration } = computeComboAnimationDurations(entrancePreset, exitPreset, {
+            clipDurationMs: options.clipDurationMs,
+        });
+
+        return {
+            key: `combo-${exitPreset.key}`,
+            className: exitPreset.className,
+            duration: exitDuration,
+            delay: 0,
+            easing: exitPreset.easing || 'cubic-bezier(0.4, 0, 0.2, 1)',
+            totalDuration: exitDuration,
+        };
+    }
+
     const presetKey = animationOutPresetSelect?.value || 'fade';
     const preset = EXIT_ANIMATION_PRESETS[presetKey] || EXIT_ANIMATION_PRESETS.fade;
     const delayKey = getExitAnimationDelayKey();
@@ -727,6 +976,7 @@ function cancelPreviewExitAnimation(options = {}) {
     const { forceRestore = false } = options;
 
     window.clearTimeout(previewExitAnimationFallbackTimer);
+    cancelComboPreviewCycle();
 
     cancelPreviewEntranceAnimation();
 
@@ -743,6 +993,9 @@ function cancelPreviewExitAnimation(options = {}) {
     if (previewImage) {
         previewImage.classList.remove('is-exiting');
         EXIT_ANIMATION_CLASS_NAMES.forEach((className) => {
+            previewImage.classList.remove(className);
+        });
+        COMBO_EXIT_CLASS_NAMES.forEach((className) => {
             previewImage.classList.remove(className);
         });
         previewImage.removeAttribute('data-exit-animation');
@@ -773,6 +1026,9 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
     previewImage.dataset.exitAnimation = config.key;
 
     EXIT_ANIMATION_CLASS_NAMES.forEach((exitClass) => {
+        previewImage.classList.remove(exitClass);
+    });
+    COMBO_EXIT_CLASS_NAMES.forEach((exitClass) => {
         previewImage.classList.remove(exitClass);
     });
     previewImage.classList.remove('is-exiting');
@@ -1208,8 +1464,12 @@ function updateAnimationModeContent(selectedMode) {
 if (animationDirectionSelect && animationModeContainers.length) {
     updateAnimationModeContent(animationDirectionSelect.value);
     if (animationDirectionSelect.value === 'out') {
+        cancelComboPreviewCycle();
         previewExitAnimationDemo();
+    } else if (animationDirectionSelect.value === 'combo') {
+        previewComboAnimationCycle();
     } else if (animationDirectionSelect.value === 'in') {
+        cancelComboPreviewCycle();
         previewEntranceAnimationDemo();
     }
 
@@ -1217,10 +1477,14 @@ if (animationDirectionSelect && animationModeContainers.length) {
         const nextValue = event.target.value;
         updateAnimationModeContent(nextValue);
         if (nextValue === 'out') {
+            cancelComboPreviewCycle();
             previewExitAnimationDemo();
         } else {
             cancelPreviewExitAnimation({ forceRestore: true });
-            if (nextValue === 'in' || nextValue === 'combo') {
+            if (nextValue === 'combo') {
+                previewComboAnimationCycle();
+            } else if (nextValue === 'in') {
+                cancelComboPreviewCycle();
                 previewEntranceAnimationDemo();
             }
         }
@@ -1244,6 +1508,33 @@ if (animationInTimingInput) {
 
     animationInTimingInput.addEventListener('change', handleEntranceTimingChange);
     animationInTimingInput.addEventListener('input', handleEntranceTimingChange);
+}
+
+if (animationComboInPresetSelect) {
+    animationComboInPresetSelect.addEventListener('change', () => {
+        if (isComboModeActive()) {
+            previewComboAnimationCycle();
+        }
+    });
+}
+
+if (animationComboOutPresetSelect) {
+    animationComboOutPresetSelect.addEventListener('change', () => {
+        if (isComboModeActive()) {
+            previewComboAnimationCycle();
+        }
+    });
+}
+
+if (animationComboDurationInput) {
+    const handleComboDurationChange = () => {
+        if (isComboModeActive()) {
+            previewComboAnimationCycle();
+        }
+    };
+
+    animationComboDurationInput.addEventListener('change', handleComboDurationChange);
+    animationComboDurationInput.addEventListener('input', handleComboDurationChange);
 }
 
 if (animationOutPresetSelect) {
