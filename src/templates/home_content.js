@@ -106,6 +106,8 @@ const animationDirectionSelect = document.getElementById('animation-direction');
 const animationModeContainers = animationDirectionSelect
     ? Array.from(document.querySelectorAll('[data-animation-mode]'))
     : [];
+const animationOutPresetSelect = document.getElementById('animation-out-preset');
+const animationOutDelayInput = document.getElementById('animation-out-delay');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -311,6 +313,250 @@ class OptionSliderController {
 optionSliderConfigs.forEach((config) => {
     new OptionSliderController(config);
 });
+
+const EXIT_ANIMATION_PRESETS = {
+    fade: {
+        key: 'fade',
+        className: 'preview-image--exit-fade',
+        duration: 520,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    'slide-down': {
+        key: 'slide-down',
+        className: 'preview-image--exit-slide-down',
+        duration: 640,
+        easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+    },
+    'zoom-out': {
+        key: 'zoom-out',
+        className: 'preview-image--exit-zoom-out',
+        duration: 600,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    spin: {
+        key: 'spin',
+        className: 'preview-image--exit-spin',
+        duration: 720,
+        easing: 'cubic-bezier(0.32, 0.12, 0.13, 0.94)',
+    },
+};
+
+const EXIT_ANIMATION_DELAY_KEYS = ['none', 'short', 'medium', 'long'];
+const EXIT_ANIMATION_DELAY_OPTIONS = {
+    none: 0,
+    short: 200,
+    medium: 500,
+    long: 1000,
+};
+
+const EXIT_ANIMATION_CLASS_NAMES = Object.values(EXIT_ANIMATION_PRESETS).map(
+    (preset) => preset.className,
+);
+
+let prefersReducedMotionQuery = null;
+let previewExitAnimationFallbackTimer = 0;
+let previewExitAnimationState = {
+    cleanup: null,
+    restoreOnComplete: false,
+};
+
+function prefersReducedMotion() {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return false;
+    }
+
+    if (!prefersReducedMotionQuery) {
+        prefersReducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    }
+
+    return Boolean(prefersReducedMotionQuery.matches);
+}
+
+function getExitAnimationDelayKey() {
+    if (!animationOutDelayInput) {
+        return 'none';
+    }
+
+    const optionValue = animationOutDelayInput.dataset.optionValue;
+    if (optionValue && Object.prototype.hasOwnProperty.call(EXIT_ANIMATION_DELAY_OPTIONS, optionValue)) {
+        return optionValue;
+    }
+
+    const fallbackIndex = Number.parseInt(animationOutDelayInput.value, 10);
+    const fallbackKey = Number.isFinite(fallbackIndex)
+        ? EXIT_ANIMATION_DELAY_KEYS[Math.max(0, Math.min(EXIT_ANIMATION_DELAY_KEYS.length - 1, fallbackIndex))]
+        : 'none';
+    return fallbackKey || 'none';
+}
+
+function getPreviewImageExitConfig() {
+    if (!previewImage) {
+        return null;
+    }
+
+    const presetKey = animationOutPresetSelect?.value || 'fade';
+    const preset = EXIT_ANIMATION_PRESETS[presetKey] || EXIT_ANIMATION_PRESETS.fade;
+    const delayKey = getExitAnimationDelayKey();
+    const delay = EXIT_ANIMATION_DELAY_OPTIONS[delayKey] ?? 0;
+    const duration = Math.max(0, Number(preset.duration) || 0);
+
+    return {
+        key: preset.key,
+        className: preset.className,
+        duration,
+        delay,
+        easing: preset.easing || 'cubic-bezier(0.4, 0, 0.2, 1)',
+        totalDuration: Math.max(0, duration + delay),
+    };
+}
+
+function cancelPreviewExitAnimation(options = {}) {
+    const { forceRestore = false } = options;
+
+    window.clearTimeout(previewExitAnimationFallbackTimer);
+
+    if (previewExitAnimationState.cleanup) {
+        previewExitAnimationState.cleanup(forceRestore ? true : null);
+        previewExitAnimationState = {
+            cleanup: null,
+            restoreOnComplete: false,
+        };
+    } else if (forceRestore && previewImage && !previewImage.hidden) {
+        previewImage.classList.add('is-visible');
+    }
+
+    if (previewImage) {
+        previewImage.classList.remove('is-exiting');
+        EXIT_ANIMATION_CLASS_NAMES.forEach((className) => {
+            previewImage.classList.remove(className);
+        });
+        previewImage.removeAttribute('data-exit-animation');
+        previewImage.style.removeProperty('--exit-animation-delay');
+        previewImage.style.removeProperty('--exit-animation-duration');
+        previewImage.style.removeProperty('--exit-animation-easing');
+    }
+}
+
+function runPreviewImageExitAnimation(options = {}, configOverride = null) {
+    if (!previewImage || previewImage.hidden) {
+        return false;
+    }
+
+    const config = configOverride || getPreviewImageExitConfig();
+    if (!config) {
+        return false;
+    }
+
+    cancelPreviewExitAnimation({ forceRestore: false });
+
+    const restoreOnComplete = options.restoreOnComplete === true;
+    const restoreDelay = Math.max(0, Number(options.restoreDelayMs) || 0);
+    const { className, delay, duration, easing } = config;
+
+    previewImage.classList.add('is-visible');
+    previewImage.dataset.exitAnimation = config.key;
+
+    EXIT_ANIMATION_CLASS_NAMES.forEach((exitClass) => {
+        previewImage.classList.remove(exitClass);
+    });
+    previewImage.classList.remove('is-exiting');
+
+    let completed = false;
+
+    const applyRestore = () => {
+        if (!previewImage || previewImage.hidden) {
+            return;
+        }
+        previewImage.classList.remove('is-visible');
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (previewImage && !previewImage.hidden) {
+                    previewImage.classList.add('is-visible');
+                }
+            });
+        });
+    };
+
+    const finalize = (forceRestore = null) => {
+        if (completed) {
+            return;
+        }
+        completed = true;
+
+        window.clearTimeout(previewExitAnimationFallbackTimer);
+
+        previewImage.classList.remove('is-exiting');
+        previewImage.classList.remove(className);
+        previewImage.removeAttribute('data-exit-animation');
+        previewImage.style.removeProperty('--exit-animation-delay');
+        previewImage.style.removeProperty('--exit-animation-duration');
+        previewImage.style.removeProperty('--exit-animation-easing');
+
+        const shouldRestore = forceRestore === null ? restoreOnComplete : forceRestore;
+        if (shouldRestore && previewImage && !previewImage.hidden) {
+            if (restoreDelay > 0) {
+                window.setTimeout(applyRestore, restoreDelay);
+            } else {
+                applyRestore();
+            }
+        }
+    };
+
+    previewExitAnimationState = {
+        cleanup: finalize,
+        restoreOnComplete,
+    };
+
+    if (prefersReducedMotion()) {
+        previewImage.classList.remove('is-visible');
+        previewExitAnimationFallbackTimer = window.setTimeout(() => {
+            finalize();
+        }, Math.max(restoreDelay, 16));
+        return true;
+    }
+
+    previewImage.style.setProperty('--exit-animation-delay', `${Math.max(0, delay)}ms`);
+    previewImage.style.setProperty('--exit-animation-duration', `${Math.max(0, duration)}ms`);
+    previewImage.style.setProperty('--exit-animation-easing', easing);
+
+    void previewImage.offsetWidth;
+
+    const handleAnimationComplete = () => {
+        finalize();
+    };
+
+    previewImage.addEventListener('animationend', handleAnimationComplete, { once: true });
+    previewImage.addEventListener('animationcancel', handleAnimationComplete, { once: true });
+
+    previewExitAnimationFallbackTimer = window.setTimeout(() => {
+        finalize();
+    }, Math.max(0, delay + duration + restoreDelay + 120));
+
+    previewImage.classList.add('is-exiting', className);
+
+    return true;
+}
+
+function shouldPreviewExitAnimation() {
+    if (!previewImage || previewImage.hidden) {
+        return false;
+    }
+    if (isTimelinePlaying) {
+        return false;
+    }
+    if (!animationDirectionSelect) {
+        return true;
+    }
+    return animationDirectionSelect.value === 'out';
+}
+
+function previewExitAnimationDemo() {
+    if (!shouldPreviewExitAnimation()) {
+        return;
+    }
+
+    runPreviewImageExitAnimation({ restoreOnComplete: true, restoreDelayMs: 90 });
+}
 
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
@@ -630,10 +876,38 @@ function updateAnimationModeContent(selectedMode) {
 
 if (animationDirectionSelect && animationModeContainers.length) {
     updateAnimationModeContent(animationDirectionSelect.value);
+    if (animationDirectionSelect.value === 'out') {
+        previewExitAnimationDemo();
+    }
 
     animationDirectionSelect.addEventListener('change', (event) => {
-        updateAnimationModeContent(event.target.value);
+        const nextValue = event.target.value;
+        updateAnimationModeContent(nextValue);
+        if (nextValue === 'out') {
+            previewExitAnimationDemo();
+        } else {
+            cancelPreviewExitAnimation({ forceRestore: true });
+        }
     });
+}
+
+if (animationOutPresetSelect) {
+    animationOutPresetSelect.addEventListener('change', () => {
+        if (!animationDirectionSelect || animationDirectionSelect.value === 'out') {
+            previewExitAnimationDemo();
+        }
+    });
+}
+
+if (animationOutDelayInput) {
+    const handleExitDelayChange = () => {
+        if (!animationDirectionSelect || animationDirectionSelect.value === 'out') {
+            previewExitAnimationDemo();
+        }
+    };
+
+    animationOutDelayInput.addEventListener('change', handleExitDelayChange);
+    animationOutDelayInput.addEventListener('input', handleExitDelayChange);
 }
 
 function formatTime(milliseconds) {
@@ -2673,7 +2947,7 @@ function applyPreviewImageTransform(alignmentOverride) {
     const rotation = clampRotation(previewImageTransform.rotation);
     previewImageTransform.rotation = rotation;
     if (previewImage) {
-        previewImage.style.transform = `rotate(${rotation}deg)`;
+        previewImage.style.setProperty('--preview-image-rotation', `${rotation}deg`);
     }
 
     const alignment = alignmentOverride
@@ -2693,7 +2967,7 @@ function clearPreviewImageTransform() {
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
     }
     if (previewImage) {
-        previewImage.style.removeProperty('transform');
+        previewImage.style.removeProperty('--preview-image-rotation');
     }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
@@ -3214,6 +3488,8 @@ function setPreviewImageVisibility(isVisible) {
     if (!previewImage) {
         return;
     }
+
+    cancelPreviewExitAnimation({ forceRestore: Boolean(isVisible) });
 
     if (isVisible) {
         previewImage.hidden = false;
@@ -4681,6 +4957,8 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     const wasPlaying = isTimelinePlaying;
     isTimelinePlaying = false;
 
+    cancelPreviewExitAnimation({ forceRestore: true });
+
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
 
@@ -4789,6 +5067,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         }
         playVideoButton.textContent = 'Play Back';
     } else if (fileType.startsWith('image/')) {
+        cancelPreviewExitAnimation({ forceRestore: true });
         setPreviewMode('has-image');
         previewVideo.pause();
         previewVideo.hidden = true;
@@ -5375,12 +5654,27 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 : Math.min(clipDuration, playbackWindow);
             const startTimestamp = performance.now();
             let animationFrameId = 0;
+            const exitConfig = getPreviewImageExitConfig();
+            const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
+            let exitAnimationTimeoutId = 0;
+            let exitAnimationStarted = false;
 
             const stopAnimation = () => {
                 if (animationFrameId) {
                     window.cancelAnimationFrame(animationFrameId);
                     animationFrameId = 0;
                 }
+                if (exitAnimationTimeoutId) {
+                    window.clearTimeout(exitAnimationTimeoutId);
+                    exitAnimationTimeoutId = 0;
+                }
+            };
+
+            const startExitAnimation = () => {
+                if (exitAnimationStarted || !exitConfig) {
+                    return;
+                }
+                exitAnimationStarted = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
             };
 
             const step = () => {
@@ -5399,11 +5693,26 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             };
 
             animationFrameId = window.requestAnimationFrame(step);
+
+            if (exitConfig) {
+                if (effectiveDuration === 0) {
+                    startExitAnimation();
+                } else {
+                    const exitStartOffset = Math.max(0, effectiveDuration - exitWindow);
+                    exitAnimationTimeoutId = window.setTimeout(() => {
+                        if (!resolved && isTimelinePlaying) {
+                            startExitAnimation();
+                        }
+                    }, Math.max(0, Math.round(exitStartOffset)));
+                }
+            }
+
             const timeoutId = window.setTimeout(() => {
                 if (resolved) {
                     return;
                 }
                 resolved = true;
+                startExitAnimation();
                 stopAnimation();
                 const finalProgress = clipDuration > 0
                     ? clampProgress(effectiveDuration / clipDuration)
@@ -5422,6 +5731,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 resolved = true;
                 window.clearTimeout(timeoutId);
                 stopAnimation();
+                cancelPreviewExitAnimation({ forceRestore: true });
                 timelinePlaybackAbort = null;
                 resolve();
             };
