@@ -113,6 +113,7 @@ const animationOutDelayInput = document.getElementById('animation-out-delay');
 const animationComboInPresetSelect = document.getElementById('animation-combo-in-preset');
 const animationComboOutPresetSelect = document.getElementById('animation-combo-out-preset');
 const animationComboDurationInput = document.getElementById('animation-combo-duration');
+const animationComboSpeedInput = document.getElementById('animation-combo-speed');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -151,6 +152,16 @@ const optionSliderConfigs = [
             { value: 'quick', display: '60% of clip — Quick' },
             { value: 'balanced', display: '80% of clip — Balanced' },
             { value: 'match', display: 'Match clip duration' },
+        ],
+    },
+    {
+        inputId: 'animation-combo-speed',
+        readoutId: 'animation-combo-speed-value',
+        labelsId: 'animation-combo-speed-labels',
+        options: [
+            { value: 'slow', display: 'Slower — 1.4x duration' },
+            { value: 'normal', display: 'Standard speed — 1x' },
+            { value: 'fast', display: 'Faster — 0.7x duration' },
         ],
     },
 ];
@@ -225,6 +236,13 @@ const COMBO_ANIMATION_DURATION_OPTIONS = {
     quick: { ratio: 0.6 },
     balanced: { ratio: 0.8 },
     match: { ratio: 1 },
+};
+
+const COMBO_ANIMATION_SPEED_KEYS = ['slow', 'normal', 'fast'];
+const COMBO_ANIMATION_SPEED_OPTIONS = {
+    slow: { multiplier: 1.4 },
+    normal: { multiplier: 1 },
+    fast: { multiplier: 0.7 },
 };
 
 const COMBO_ENTRANCE_PRESETS = {
@@ -588,6 +606,31 @@ function getComboDurationRatio() {
     return option?.ratio ?? 1;
 }
 
+function getComboSpeedKey() {
+    if (!animationComboSpeedInput) {
+        return 'normal';
+    }
+
+    const optionValue = animationComboSpeedInput.dataset.optionValue;
+    if (optionValue && Object.prototype.hasOwnProperty.call(COMBO_ANIMATION_SPEED_OPTIONS, optionValue)) {
+        return optionValue;
+    }
+
+    const fallbackIndex = Number.parseInt(animationComboSpeedInput.value, 10);
+    const fallbackKey = Number.isFinite(fallbackIndex)
+        ? COMBO_ANIMATION_SPEED_KEYS[
+            Math.max(0, Math.min(COMBO_ANIMATION_SPEED_KEYS.length - 1, fallbackIndex))
+        ]
+        : 'normal';
+    return fallbackKey || 'normal';
+}
+
+function getComboSpeedMultiplier() {
+    const key = getComboSpeedKey();
+    const option = COMBO_ANIMATION_SPEED_OPTIONS[key];
+    return option?.multiplier ?? 1;
+}
+
 function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
     const clipDurationOverride = Number.isFinite(options.clipDurationMs)
         ? Math.max(0, Math.round(options.clipDurationMs))
@@ -597,12 +640,19 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         : getActiveImageClipDurationMs();
 
     const ratio = getComboDurationRatio();
+    const speedMultiplier = getComboSpeedMultiplier();
 
-    const baseEntrance = Math.max(120, Number(entrancePreset?.baseDuration) || 560);
-    const baseExit = Math.max(120, Number(exitPreset?.baseDuration) || 520);
-    const minimumEntrance = Math.max(120, Number(entrancePreset?.minDuration) || 160);
-    const minimumExit = Math.max(120, Number(exitPreset?.minDuration) || 160);
-    const combinedBase = Math.max(baseEntrance + baseExit, 240);
+    const rawEntranceBase = Number(entrancePreset?.baseDuration) || 560;
+    const rawExitBase = Number(exitPreset?.baseDuration) || 520;
+    const rawEntranceMinimum = Number(entrancePreset?.minDuration) || 160;
+    const rawExitMinimum = Number(exitPreset?.minDuration) || 160;
+
+    const minimumSegmentDuration = 80;
+    const baseEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceBase * speedMultiplier));
+    const baseExit = Math.max(minimumSegmentDuration, Math.round(rawExitBase * speedMultiplier));
+    const minimumEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceMinimum * speedMultiplier));
+    const minimumExit = Math.max(minimumSegmentDuration, Math.round(rawExitMinimum * speedMultiplier));
+    const combinedBase = Math.max(baseEntrance + baseExit, minimumEntrance + minimumExit, 240);
 
     let targetWindow = Math.round(combinedBase * ratio);
     if (clipDuration && clipDuration > 0) {
