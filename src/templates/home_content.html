@@ -32,7 +32,6 @@
             <article class="panel upload-card">
                 <div class="panel-header">
                     <h2>Upload footage</h2>
-                    <p class="panel-subtitle">Bring in your raw clips with a guided dropzone that supports bulk uploads.</p>
                 </div>
                 <label class="upload-dropzone" for="video-upload">
                     <div class="upload-dropzone__icon" aria-hidden="true">⬆️</div>
@@ -43,8 +42,6 @@
                     <input type="file" id="video-upload" name="video-upload" accept="video/*,image/*" multiple class="visually-hidden">
                 </label>
                 <div class="upload-meta" aria-live="polite">
-                    <span class="upload-meta__status">No clips added yet</span>
-                    <span class="upload-meta__hint">Tip: drop multiple files to keep your story flowing.</span>
                 </div>
                 <div class="upload-actions">
                     <button type="button" id="upload-button" class="upload-primary">Choose files</button>
@@ -54,10 +51,6 @@
                     <h3 class="upload-gallery__title">Staged uploads</h3>
                     <ul class="upload-gallery__list" id="upload-gallery-list" aria-live="polite"></ul>
                 </div>
-                <ul class="upload-guidelines">
-                    <li>Supports MP4, MOV, AVI, GIF and PNG formats.</li>
-                    <li>For best results upload footage in 1080p or higher.</li>
-                </ul>
             </article>
 
             <article class="panel preview-card">
