@@ -114,6 +114,7 @@ const animationComboInPresetSelect = document.getElementById('animation-combo-in
 const animationComboOutPresetSelect = document.getElementById('animation-combo-out-preset');
 const animationComboDurationInput = document.getElementById('animation-combo-duration');
 const animationComboSpeedInput = document.getElementById('animation-combo-speed');
+const animationComboSpeedValue = document.getElementById('animation-combo-speed-value');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -149,19 +150,9 @@ const optionSliderConfigs = [
         readoutId: 'animation-combo-duration-value',
         labelsId: 'animation-combo-duration-labels',
         options: [
-            { value: 'quick', display: '60% of clip — Quick' },
-            { value: 'balanced', display: '80% of clip — Balanced' },
-            { value: 'match', display: 'Match clip duration' },
-        ],
-    },
-    {
-        inputId: 'animation-combo-speed',
-        readoutId: 'animation-combo-speed-value',
-        labelsId: 'animation-combo-speed-labels',
-        options: [
-            { value: 'slow', display: 'Slower — 1.4x duration' },
-            { value: 'normal', display: 'Standard speed — 1x' },
-            { value: 'fast', display: 'Faster — 0.7x duration' },
+            { value: 'quick', display: '60% of combo cycle — Quick' },
+            { value: 'balanced', display: '80% of combo cycle — Balanced' },
+            { value: 'match', display: 'Full combo cycle duration' },
         ],
     },
 ];
@@ -236,13 +227,6 @@ const COMBO_ANIMATION_DURATION_OPTIONS = {
     quick: { ratio: 0.6 },
     balanced: { ratio: 0.8 },
     match: { ratio: 1 },
-};
-
-const COMBO_ANIMATION_SPEED_KEYS = ['slow', 'normal', 'fast'];
-const COMBO_ANIMATION_SPEED_OPTIONS = {
-    slow: { multiplier: 1.4 },
-    normal: { multiplier: 1 },
-    fast: { multiplier: 0.7 },
 };
 
 const COMBO_ENTRANCE_PRESETS = {
@@ -558,6 +542,48 @@ optionSliderConfigs.forEach((config) => {
     new OptionSliderController(config);
 });
 
+function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
+    if (!animationComboSpeedInput) {
+        return;
+    }
+
+    const parsedMin = Number.parseFloat(animationComboSpeedInput.min);
+    const parsedMax = Number.parseFloat(animationComboSpeedInput.max);
+    const sliderMin = Number.isFinite(parsedMin) ? parsedMin : COMBO_SPEED_MIN_SECONDS;
+    const sliderMax = Number.isFinite(parsedMax) ? parsedMax : COMBO_SPEED_MAX_SECONDS;
+
+    let rawValue = Number.parseFloat(animationComboSpeedInput.value);
+    if (!Number.isFinite(rawValue)) {
+        rawValue = sliderMin;
+    }
+
+    const clampedSeconds = Math.min(Math.max(rawValue, sliderMin), sliderMax);
+    animationComboSpeedInput.value = String(clampedSeconds);
+    animationComboSpeedInput.dataset.windowMs = String(Math.round(clampedSeconds * 1000));
+
+    animationComboSpeedInput.setAttribute('aria-valuemin', sliderMin.toString());
+    animationComboSpeedInput.setAttribute('aria-valuemax', sliderMax.toString());
+
+    const displaySeconds = Number.isInteger(clampedSeconds)
+        ? clampedSeconds.toFixed(0)
+        : clampedSeconds.toFixed(1);
+    animationComboSpeedInput.setAttribute('aria-valuenow', displaySeconds);
+    animationComboSpeedInput.setAttribute('aria-valuetext', `${displaySeconds} seconds`);
+
+    const progress = sliderMax > sliderMin
+        ? ((clampedSeconds - sliderMin) / (sliderMax - sliderMin)) * 100
+        : 0;
+    animationComboSpeedInput.style.setProperty('--line-slider-progress', `${progress}%`);
+
+    if (animationComboSpeedValue) {
+        animationComboSpeedValue.textContent = `${displaySeconds}s combo cycle ceiling`;
+    }
+
+    if (triggerPreview && isComboModeActive()) {
+        previewComboAnimationCycle();
+    }
+}
+
 function getEntranceTimingKey() {
     if (!animationInTimingInput) {
         return 'medium';
@@ -606,30 +632,32 @@ function getComboDurationRatio() {
     return option?.ratio ?? 1;
 }
 
-function getComboSpeedKey() {
+function getComboSpeedWindowMs() {
     if (!animationComboSpeedInput) {
-        return 'normal';
+        return null;
     }
 
-    const optionValue = animationComboSpeedInput.dataset.optionValue;
-    if (optionValue && Object.prototype.hasOwnProperty.call(COMBO_ANIMATION_SPEED_OPTIONS, optionValue)) {
-        return optionValue;
+    const datasetWindowMs = Number.parseInt(animationComboSpeedInput.dataset.windowMs, 10);
+    if (Number.isFinite(datasetWindowMs) && datasetWindowMs > 0) {
+        const minMs = COMBO_SPEED_MIN_SECONDS * 1000;
+        const maxMs = COMBO_SPEED_MAX_SECONDS * 1000;
+        return Math.min(Math.max(datasetWindowMs, minMs), maxMs);
     }
 
-    const fallbackIndex = Number.parseInt(animationComboSpeedInput.value, 10);
-    const fallbackKey = Number.isFinite(fallbackIndex)
-        ? COMBO_ANIMATION_SPEED_KEYS[
-            Math.max(0, Math.min(COMBO_ANIMATION_SPEED_KEYS.length - 1, fallbackIndex))
-        ]
-        : 'normal';
-    return fallbackKey || 'normal';
+    const rawSeconds = Number.parseFloat(animationComboSpeedInput.value);
+    if (!Number.isFinite(rawSeconds)) {
+        return null;
+    }
+
+    const minMs = COMBO_SPEED_MIN_SECONDS * 1000;
+    const maxMs = COMBO_SPEED_MAX_SECONDS * 1000;
+    const milliseconds = Math.round(rawSeconds * 1000);
+    return Math.min(Math.max(milliseconds, minMs), maxMs);
 }
 
-function getComboSpeedMultiplier() {
-    const key = getComboSpeedKey();
-    const option = COMBO_ANIMATION_SPEED_OPTIONS[key];
-    return option?.multiplier ?? 1;
-}
+const COMBO_SPEED_MIN_SECONDS = 5;
+const COMBO_SPEED_MAX_SECONDS = 20;
+const COMBO_MIN_COMBINED_DURATION_MS = COMBO_SPEED_MIN_SECONDS * 1000;
 
 function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
     const clipDurationOverride = Number.isFinite(options.clipDurationMs)
@@ -640,7 +668,7 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         : getActiveImageClipDurationMs();
 
     const ratio = getComboDurationRatio();
-    const speedMultiplier = getComboSpeedMultiplier();
+    const speedWindowMs = getComboSpeedWindowMs();
 
     const rawEntranceBase = Number(entrancePreset?.baseDuration) || 560;
     const rawExitBase = Number(exitPreset?.baseDuration) || 520;
@@ -648,17 +676,23 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
     const rawExitMinimum = Number(exitPreset?.minDuration) || 160;
 
     const minimumSegmentDuration = 80;
-    const baseEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceBase * speedMultiplier));
-    const baseExit = Math.max(minimumSegmentDuration, Math.round(rawExitBase * speedMultiplier));
-    const minimumEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceMinimum * speedMultiplier));
-    const minimumExit = Math.max(minimumSegmentDuration, Math.round(rawExitMinimum * speedMultiplier));
+    const baseEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceBase));
+    const baseExit = Math.max(minimumSegmentDuration, Math.round(rawExitBase));
+    const minimumEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceMinimum));
+    const minimumExit = Math.max(minimumSegmentDuration, Math.round(rawExitMinimum));
     const combinedBase = Math.max(baseEntrance + baseExit, minimumEntrance + minimumExit, 240);
 
     let targetWindow = Math.round(combinedBase * ratio);
+    if (Number.isFinite(speedWindowMs) && speedWindowMs > 0) {
+        targetWindow = Math.round(speedWindowMs * ratio);
+    }
+
+    const minimumWindow = Math.max(minimumEntrance + minimumExit, COMBO_MIN_COMBINED_DURATION_MS);
     if (clipDuration && clipDuration > 0) {
-        targetWindow = Math.min(Math.max(targetWindow, minimumEntrance + minimumExit), clipDuration);
+        const minimumWithClip = Math.min(minimumWindow, clipDuration);
+        targetWindow = Math.min(Math.max(targetWindow, minimumWithClip), clipDuration);
     } else {
-        targetWindow = Math.max(targetWindow, minimumEntrance + minimumExit);
+        targetWindow = Math.max(targetWindow, minimumWindow);
     }
 
     const scale = combinedBase > 0 ? targetWindow / combinedBase : 1;
@@ -1599,6 +1633,17 @@ if (animationComboDurationInput) {
 
     animationComboDurationInput.addEventListener('change', handleComboDurationChange);
     animationComboDurationInput.addEventListener('input', handleComboDurationChange);
+}
+
+if (animationComboSpeedInput) {
+    const handleComboSpeedChange = () => {
+        updateComboSpeedSliderDisplay({ triggerPreview: true });
+    };
+
+    animationComboSpeedInput.addEventListener('change', handleComboSpeedChange);
+    animationComboSpeedInput.addEventListener('input', handleComboSpeedChange);
+
+    updateComboSpeedSliderDisplay();
 }
 
 if (animationOutPresetSelect) {
