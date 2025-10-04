@@ -2056,6 +2056,125 @@ function computeContainDimensions(sourceWidth, sourceHeight, targetWidth, target
 
 let previewImageFrameBorderRadius = null;
 
+const MATRIX_IDENTITY_EPSILON = 0.00001;
+
+function isMatrixApproximatelyIdentity(a, b, c, d, e, f) {
+    return (
+        Math.abs((Number.isFinite(a) ? a : 1) - 1) <= MATRIX_IDENTITY_EPSILON
+        && Math.abs(Number.isFinite(b) ? b : 0) <= MATRIX_IDENTITY_EPSILON
+        && Math.abs(Number.isFinite(c) ? c : 0) <= MATRIX_IDENTITY_EPSILON
+        && Math.abs((Number.isFinite(d) ? d : 1) - 1) <= MATRIX_IDENTITY_EPSILON
+        && Math.abs(Number.isFinite(e) ? e : 0) <= MATRIX_IDENTITY_EPSILON
+        && Math.abs(Number.isFinite(f) ? f : 0) <= MATRIX_IDENTITY_EPSILON
+    );
+}
+
+function parseCssTransformMatrix(transformValue) {
+    if (!transformValue || typeof transformValue !== 'string') {
+        return null;
+    }
+
+    const normalized = transformValue.trim();
+    if (!normalized || normalized === 'none') {
+        return null;
+    }
+
+    if (typeof DOMMatrix === 'function') {
+        try {
+            const domMatrix = new DOMMatrix(normalized);
+            if (
+                Number.isFinite(domMatrix.a)
+                && Number.isFinite(domMatrix.b)
+                && Number.isFinite(domMatrix.c)
+                && Number.isFinite(domMatrix.d)
+                && Number.isFinite(domMatrix.e)
+                && Number.isFinite(domMatrix.f)
+            ) {
+                const isIdentity = typeof domMatrix.isIdentity === 'boolean'
+                    ? domMatrix.isIdentity
+                    : isMatrixApproximatelyIdentity(
+                        domMatrix.a,
+                        domMatrix.b,
+                        domMatrix.c,
+                        domMatrix.d,
+                        domMatrix.e,
+                        domMatrix.f,
+                    );
+                return {
+                    a: domMatrix.a,
+                    b: domMatrix.b,
+                    c: domMatrix.c,
+                    d: domMatrix.d,
+                    e: domMatrix.e,
+                    f: domMatrix.f,
+                    isIdentity: Boolean(isIdentity)
+                        || isMatrixApproximatelyIdentity(
+                            domMatrix.a,
+                            domMatrix.b,
+                            domMatrix.c,
+                            domMatrix.d,
+                            domMatrix.e,
+                            domMatrix.f,
+                        ),
+                };
+            }
+        } catch (error) {
+            // Fallback to manual parsing below if DOMMatrix construction fails.
+        }
+    }
+
+    const matrixMatch = normalized.match(/^matrix\(([^)]+)\)$/i);
+    if (matrixMatch) {
+        const parts = matrixMatch[1]
+            .split(',')
+            .map((value) => Number.parseFloat(value.trim()));
+        if (parts.length === 6 && parts.every((part) => Number.isFinite(part))) {
+            const [a, b, c, d, e, f] = parts;
+            return {
+                a,
+                b,
+                c,
+                d,
+                e,
+                f,
+                isIdentity: isMatrixApproximatelyIdentity(a, b, c, d, e, f),
+            };
+        }
+    }
+
+    const matrix3dMatch = normalized.match(/^matrix3d\(([^)]+)\)$/i);
+    if (matrix3dMatch) {
+        const parts = matrix3dMatch[1]
+            .split(',')
+            .map((value) => Number.parseFloat(value.trim()));
+        if (parts.length === 16 && parts.every((part) => Number.isFinite(part))) {
+            const [
+                m11, m12, , ,
+                m21, m22, , ,
+                , , , ,
+                m41, m42, , ,
+            ] = parts;
+            const a = m11;
+            const b = m12;
+            const c = m21;
+            const d = m22;
+            const e = m41;
+            const f = m42;
+            return {
+                a,
+                b,
+                c,
+                d,
+                e,
+                f,
+                isIdentity: isMatrixApproximatelyIdentity(a, b, c, d, e, f),
+            };
+        }
+    }
+
+    return null;
+}
+
 function getPreviewImageFrameBorderRadius() {
     if (previewImageFrameBorderRadius !== null) {
         return previewImageFrameBorderRadius;
@@ -2182,18 +2301,53 @@ function drawPreviewImageToExportCanvas() {
     const drawWidth = naturalWidth * scale;
     const drawHeight = naturalHeight * scale;
     const rotation = clampRotation(transform.rotation);
-    const centerX = transform.left + (transform.width / 2);
-    const centerY = transform.top + (transform.height / 2);
+    const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
+    const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
+
+    let computedOpacity = 1;
+    let cssMatrix = null;
+
+    if (window.getComputedStyle) {
+        const computedStyle = window.getComputedStyle(previewImage);
+        if (computedStyle) {
+            const opacityValue = Number.parseFloat(computedStyle.opacity);
+            if (Number.isFinite(opacityValue)) {
+                computedOpacity = clamp(opacityValue, 0, 1);
+            }
+            cssMatrix = parseCssTransformMatrix(
+                computedStyle.transform || computedStyle.webkitTransform || '',
+            );
+        }
+    }
 
     exportMirrorContext.save();
-    exportMirrorContext.translate(centerX, centerY);
-    if (rotation !== 0) {
+    exportMirrorContext.translate(imageOffsetX, imageOffsetY);
+
+    if (cssMatrix && !cssMatrix.isIdentity) {
+        exportMirrorContext.transform(
+            cssMatrix.a,
+            cssMatrix.b,
+            cssMatrix.c,
+            cssMatrix.d,
+            cssMatrix.e,
+            cssMatrix.f,
+        );
+    } else if (rotation !== 0) {
+        const originX = drawWidth / 2;
+        const originY = drawHeight / 2;
+        exportMirrorContext.translate(originX, originY);
         exportMirrorContext.rotate((rotation * Math.PI) / 180);
+        exportMirrorContext.translate(-originX, -originY);
     }
+
+    if (computedOpacity < 1) {
+        exportMirrorContext.globalAlpha *= computedOpacity;
+    }
+
     exportMirrorContext.drawImage(
         previewImage,
-        -drawWidth / 2,
-        -drawHeight / 2,
+        0,
+        0,
         drawWidth,
         drawHeight,
     );
