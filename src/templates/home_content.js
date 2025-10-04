@@ -106,6 +106,14 @@ const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const animationDirectionSelect = document.getElementById('animation-direction');
+const animationPresetStatus = document.getElementById('animation-preset-status');
+const animationDirectionGroups = animationDirectionSelect
+    ? Array.from(document.querySelectorAll('[data-animation-direction-group]'))
+    : [];
+const animationPresetButtons = animationDirectionSelect
+    ? Array.from(document.querySelectorAll('[data-animation-preset]'))
+    : [];
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -126,6 +134,7 @@ let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
 let activeClipProgress = 0;
 let keyframeStatusTimeout = null;
+let activeAnimationPresetButton = null;
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
@@ -177,6 +186,77 @@ function releaseTimelineImage(objectURL) {
         return;
     }
     timelineImagePreloadCache.delete(objectURL);
+}
+
+function updateAnimationPresetStatusText(button) {
+    if (!animationPresetStatus) {
+        return;
+    }
+    if (!button) {
+        animationPresetStatus.textContent = 'No animation selected';
+        return;
+    }
+    const titleElement = button.querySelector('.animation-option__title');
+    const titleText = titleElement?.textContent?.trim() || 'Animation preset';
+    const descriptionText = button.dataset?.animationDescription?.trim() || '';
+    animationPresetStatus.textContent = descriptionText
+        ? `${titleText} • ${descriptionText}`
+        : `${titleText} selected`;
+}
+
+function setActiveAnimationPreset(button, options = {}) {
+    const { force = false } = options;
+    if (!animationPresetButtons.includes(button) && button !== null) {
+        return;
+    }
+    if (!force && button === activeAnimationPresetButton) {
+        return;
+    }
+
+    if (activeAnimationPresetButton) {
+        activeAnimationPresetButton.classList.remove('is-active');
+        activeAnimationPresetButton.setAttribute('aria-pressed', 'false');
+    }
+
+    activeAnimationPresetButton = button;
+
+    if (button) {
+        button.classList.add('is-active');
+        button.setAttribute('aria-pressed', 'true');
+    }
+
+    updateAnimationPresetStatusText(button);
+}
+
+function getAnimationGroupForButton(button) {
+    if (!button) {
+        return null;
+    }
+    return button.closest('[data-animation-direction-group]');
+}
+
+function updateAnimationDirectionGroups(selectedDirection) {
+    if (!animationDirectionSelect) {
+        return;
+    }
+
+    const nextDirection = selectedDirection || animationDirectionSelect.value;
+    animationDirectionGroups.forEach((group) => {
+        const groupDirection = group?.dataset?.animationDirectionGroup;
+        const isActive = groupDirection === nextDirection;
+        group.hidden = !isActive;
+        group.setAttribute('aria-hidden', String(!isActive));
+    });
+
+    if (activeAnimationPresetButton) {
+        const activeGroup = getAnimationGroupForButton(activeAnimationPresetButton);
+        const activeGroupDirection = activeGroup?.dataset?.animationDirectionGroup;
+        if (activeGroupDirection !== nextDirection) {
+            setActiveAnimationPreset(null, { force: true });
+        }
+    }
+
+    updateAnimationPresetStatusText(activeAnimationPresetButton);
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -402,6 +482,30 @@ settingsTabs.forEach((tab) => {
 });
 
 activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
+
+if (animationPresetButtons.length) {
+    animationPresetButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            setActiveAnimationPreset(button);
+        });
+    });
+}
+
+if (animationDirectionSelect) {
+    animationDirectionSelect.addEventListener('change', (event) => {
+        updateAnimationDirectionGroups(event.target.value);
+    });
+    updateAnimationDirectionGroups(animationDirectionSelect.value);
+} else if (animationDirectionGroups.length) {
+    animationDirectionGroups.forEach((group) => {
+        group.hidden = false;
+        group.setAttribute('aria-hidden', 'false');
+    });
+}
+
+if (!activeAnimationPresetButton) {
+    updateAnimationPresetStatusText(null);
+}
 
 function formatTime(milliseconds) {
     const safeMs = Math.max(0, Math.floor(Number(milliseconds) || 0));
