@@ -164,6 +164,82 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="info-item animation-presets">
+                                <div class="info-icon">✨</div>
+                                <div class="info-item__body">
+                                    <div class="info-item__header">
+                                        <span class="animation-presets__title" id="animation-presets-title">Image animation presets</span>
+                                        <span class="animation-presets__status" id="animation-preset-status">No animation selected</span>
+                                    </div>
+                                    <p class="info-item__description">Choose how your overlay image animates when it appears, disappears, or does both within a single effect.</p>
+                                    <div class="animation-option-grid" data-animation-direction-group="in" role="list" aria-labelledby="animation-presets-title">
+                                        <button type="button" class="animation-option" data-animation-preset="fade-in" data-animation-description="Gently fades your image into view with soft opacity ramps." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Fade In</span>
+                                            <span class="animation-option__subtitle">Soft opacity ramp ideal for subtle entrances.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="slide-up" data-animation-description="Slides the image upward while easing out for a polished entrance." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Slide Up</span>
+                                            <span class="animation-option__subtitle">Lift images from the bottom with gentle easing.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="slide-left" data-animation-description="Moves the image from the left with a slight overshoot for energy." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Slide From Left</span>
+                                            <span class="animation-option__subtitle">Bring overlays in from off-canvas with momentum.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="zoom-in" data-animation-description="Scales the image from 75% to 100% with a soft focus pop." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Zoom In</span>
+                                            <span class="animation-option__subtitle">Add emphasis with a quick scale-up.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="sparkle-pop" data-animation-description="Combines a small scale bounce with a brightness flash to grab attention." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Sparkle Pop</span>
+                                            <span class="animation-option__subtitle">Playful bounce and glow for highlight moments.</span>
+                                        </button>
+                                    </div>
+                                    <div class="animation-option-grid" data-animation-direction-group="out" role="list" aria-labelledby="animation-presets-title" hidden>
+                                        <button type="button" class="animation-option" data-animation-preset="fade-out" data-animation-description="Gradually fades the image until it is fully transparent." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Fade Out</span>
+                                            <span class="animation-option__subtitle">Classic dissolve for clean exits.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="slide-down" data-animation-description="Glides the image downward as it leaves frame." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Slide Down</span>
+                                            <span class="animation-option__subtitle">Lower overlays off-canvas with ease.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="slide-right" data-animation-description="Pushes the image out to the right while easing in for a natural exit." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Slide To Right</span>
+                                            <span class="animation-option__subtitle">Sweep elements away with confident motion.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="zoom-out" data-animation-description="Shrinks the image while fading it to mimic a quick pull away." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Zoom Out</span>
+                                            <span class="animation-option__subtitle">Scale down and fade for cinematic endings.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="drift-away" data-animation-description="Adds a light upward drift with blur to suggest a gentle disappear." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Drift Away</span>
+                                            <span class="animation-option__subtitle">Let images float off with softness.</span>
+                                        </button>
+                                    </div>
+                                    <div class="animation-option-grid" data-animation-direction-group="combo" role="list" aria-labelledby="animation-presets-title" hidden>
+                                        <button type="button" class="animation-option" data-animation-preset="fade-through" data-animation-description="Fades in, holds briefly, then fades out for seamless storytelling." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Fade Through</span>
+                                            <span class="animation-option__subtitle">Balanced dissolve in and out within one effect.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="zoom-fade" data-animation-description="Combines a zoom-in entrance with a graceful fade-out exit." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Zoom &amp; Fade</span>
+                                            <span class="animation-option__subtitle">Scale up on entry, ease out with opacity.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="bounce-swap" data-animation-description="Bounces into place and springs out, perfect for playful graphics." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Bounce Swap</span>
+                                            <span class="animation-option__subtitle">Energetic pop-in with a spring exit.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="panorama" data-animation-description="Slides in from one side and exits through the opposite for dynamic movement." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Panorama Sweep</span>
+                                            <span class="animation-option__subtitle">Glide across frame before leaving smoothly.</span>
+                                        </button>
+                                        <button type="button" class="animation-option" data-animation-preset="pulse-loop" data-animation-description="Pulses in with scale and brightness, then fades out softly." aria-pressed="false" role="listitem">
+                                            <span class="animation-option__title">Pulse Loop</span>
+                                            <span class="animation-option__subtitle">Attention-grabbing pulse with calm exit.</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-speed" data-section="speed" role="tabpanel" aria-labelledby="settings-tab-speed" hidden>
