@@ -327,6 +327,21 @@ function cancelComboPreviewCycle() {
 function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clipDurationOverride = null) {
     cancelComboPreviewCycle();
 
+    const handleCycleComplete = () => {
+        if (!isComboModeActive() || !previewImage || previewImage.hidden) {
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (!isComboModeActive() || !previewImage || previewImage.hidden) {
+                    return;
+                }
+                previewComboAnimationCycle();
+            });
+        });
+    };
+
     const triggerExitPreview = () => {
         cancelComboPreviewCycle();
         if (!isComboModeActive()) {
@@ -339,14 +354,23 @@ function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clip
                 ? exitConfig.combo.clipDuration
                 : null;
 
+        const exitOptions = {
+            restoreOnComplete: true,
+            restoreDelayMs: 90,
+            clipDurationMs: resolvedClipDuration,
+            onComplete: handleCycleComplete,
+        };
+
         const executeExit = () => {
+            let didAnimate = false;
             if (exitConfig) {
-                runPreviewImageExitAnimation(
-                    { restoreOnComplete: true, restoreDelayMs: 90, clipDurationMs: resolvedClipDuration },
-                    exitConfig,
-                );
+                didAnimate = runPreviewImageExitAnimation(exitOptions, exitConfig);
             } else {
-                previewExitAnimationDemo();
+                didAnimate = runPreviewImageExitAnimation(exitOptions);
+            }
+
+            if (!didAnimate) {
+                handleCycleComplete();
             }
         };
 
@@ -1211,7 +1235,7 @@ function cancelPreviewExitAnimation(options = {}) {
     cancelPreviewEntranceAnimation();
 
     if (previewExitAnimationState.cleanup) {
-        previewExitAnimationState.cleanup(forceRestore ? true : null);
+        previewExitAnimationState.cleanup(forceRestore ? true : null, true);
         previewExitAnimationState = {
             cleanup: null,
             restoreOnComplete: false,
@@ -1240,7 +1264,11 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         return false;
     }
 
-    const { clipDurationMs = null, restoreOnComplete: restoreOverride } = options;
+    const {
+        clipDurationMs = null,
+        restoreOnComplete: restoreOverride,
+        onComplete = null,
+    } = options;
     const config = configOverride || getPreviewImageExitConfig({ clipDurationMs });
     if (!config) {
         return false;
@@ -1264,6 +1292,7 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
     previewImage.classList.remove('is-exiting');
 
     let completed = false;
+    let wasCancelled = false;
 
     const applyRestore = () => {
         if (!previewImage || previewImage.hidden) {
@@ -1302,10 +1331,23 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
                 applyRestore();
             }
         }
+
+        if (!wasCancelled && typeof onComplete === 'function') {
+            try {
+                onComplete(config);
+            } catch (error) {
+                console.error('Error executing exit animation completion callback.', error);
+            }
+        }
     };
 
     previewExitAnimationState = {
-        cleanup: finalize,
+        cleanup: (forceRestoreParam = null, didCancel = false) => {
+            if (didCancel) {
+                wasCancelled = true;
+            }
+            finalize(forceRestoreParam);
+        },
         restoreOnComplete,
     };
 
@@ -1327,8 +1369,13 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         finalize();
     };
 
+    const handleAnimationCancel = () => {
+        wasCancelled = true;
+        finalize();
+    };
+
     previewImage.addEventListener('animationend', handleAnimationComplete, { once: true });
-    previewImage.addEventListener('animationcancel', handleAnimationComplete, { once: true });
+    previewImage.addEventListener('animationcancel', handleAnimationCancel, { once: true });
 
     previewExitAnimationFallbackTimer = window.setTimeout(() => {
         finalize();
