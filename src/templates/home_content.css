@@ -1426,6 +1426,9 @@ body {
 
 .preview-image-layer img {
     --preview-image-rotation: 0deg;
+    --enter-animation-duration: 560ms;
+    --enter-animation-delay: 0ms;
+    --enter-animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
     --exit-animation-duration: 520ms;
     --exit-animation-delay: 0ms;
     --exit-animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
@@ -1439,12 +1442,37 @@ body {
     opacity: 1;
 }
 
+.preview-image-layer img.is-entering {
+    pointer-events: none;
+    transition: none;
+    animation-fill-mode: both;
+    animation-duration: var(--enter-animation-duration, 560ms);
+    animation-delay: var(--enter-animation-delay, 0ms);
+    animation-timing-function: var(--enter-animation-easing, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
 .preview-image-layer img.is-exiting {
     pointer-events: none;
     animation-fill-mode: forwards;
     animation-duration: var(--exit-animation-duration, 520ms);
     animation-delay: var(--exit-animation-delay, 0ms);
     animation-timing-function: var(--exit-animation-easing, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.preview-image-layer img.preview-image--enter-fade.is-entering {
+    animation-name: previewImageEnterFade;
+}
+
+.preview-image-layer img.preview-image--enter-slide-up.is-entering {
+    animation-name: previewImageEnterSlideUp;
+}
+
+.preview-image-layer img.preview-image--enter-zoom.is-entering {
+    animation-name: previewImageEnterZoom;
+}
+
+.preview-image-layer img.preview-image--enter-bounce.is-entering {
+    animation-name: previewImageEnterBounce;
 }
 
 .preview-image-layer img.preview-image--exit-fade.is-exiting {
@@ -1461,6 +1489,69 @@ body {
 
 .preview-image-layer img.preview-image--exit-spin.is-exiting {
     animation-name: previewImageExitSpin;
+}
+
+@keyframes previewImageEnterFade {
+    0% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(0.96);
+    }
+    45% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1.01);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+}
+
+@keyframes previewImageEnterSlideUp {
+    0% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 26%, 0) scale(0.94);
+    }
+    60% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, -6%, 0) scale(1.02);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes previewImageEnterZoom {
+    0% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(0.82);
+    }
+    70% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1.05);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+}
+
+@keyframes previewImageEnterBounce {
+    0% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 28%, 0) scale(0.88);
+    }
+    55% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, -14%, 0) scale(1.08);
+    }
+    75% {
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 8%, 0) scale(0.96);
+    }
+    100% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
+    }
 }
 
 @keyframes previewImageExitFade {

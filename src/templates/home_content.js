@@ -106,6 +106,8 @@ const animationDirectionSelect = document.getElementById('animation-direction');
 const animationModeContainers = animationDirectionSelect
     ? Array.from(document.querySelectorAll('[data-animation-mode]'))
     : [];
+const animationInPresetSelect = document.getElementById('animation-in-preset');
+const animationInTimingInput = document.getElementById('animation-in-timing');
 const animationOutPresetSelect = document.getElementById('animation-out-preset');
 const animationOutDelayInput = document.getElementById('animation-out-delay');
 const imageRotationInput = document.getElementById('image-rotation');
@@ -139,6 +141,74 @@ const optionSliderConfigs = [
         ],
     },
 ];
+
+const ENTRANCE_ANIMATION_PRESETS = {
+    fade: {
+        key: 'fade',
+        className: 'preview-image--enter-fade',
+        baseDuration: 560,
+        durationScale: 1,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    'slide-up': {
+        key: 'slide-up',
+        className: 'preview-image--enter-slide-up',
+        baseDuration: 620,
+        durationScale: 1,
+        easing: 'cubic-bezier(0.22, 0.68, 0.25, 1)',
+        easingOverrides: {
+            short: 'cubic-bezier(0.32, 0.72, 0.45, 1)',
+            long: 'cubic-bezier(0.18, 1, 0.3, 1)',
+        },
+    },
+    zoom: {
+        key: 'zoom',
+        className: 'preview-image--enter-zoom',
+        baseDuration: 600,
+        durationScale: 0.95,
+        easing: 'cubic-bezier(0.26, 0.52, 0.34, 1)',
+        easingOverrides: {
+            short: 'cubic-bezier(0.34, 0.64, 0.4, 1)',
+            long: 'cubic-bezier(0.2, 0.8, 0.26, 1)',
+        },
+    },
+    bounce: {
+        key: 'bounce',
+        className: 'preview-image--enter-bounce',
+        baseDuration: 680,
+        durationScale: 1.2,
+        easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        easingOverrides: {
+            short: 'cubic-bezier(0.36, 1.36, 0.62, 1)',
+            long: 'cubic-bezier(0.28, 1.7, 0.48, 1)',
+        },
+    },
+};
+
+const ENTRANCE_ANIMATION_TIMING_KEYS = ['short', 'medium', 'long'];
+const ENTRANCE_ANIMATION_TIMING_OPTIONS = {
+    short: {
+        duration: 300,
+        easing: 'cubic-bezier(0.32, 0, 0.67, 1)',
+    },
+    medium: {
+        duration: 600,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    },
+    long: {
+        duration: 1000,
+        easing: 'cubic-bezier(0.18, 0.89, 0.32, 1.28)',
+    },
+};
+
+const ENTRANCE_ANIMATION_CLASS_NAMES = Object.values(ENTRANCE_ANIMATION_PRESETS).map(
+    (preset) => preset.className,
+);
+
+let previewEntranceAnimationFallbackTimer = 0;
+let previewEntranceAnimationState = {
+    cleanup: null,
+};
 
 class OptionSliderController {
     constructor(config) {
@@ -314,6 +384,181 @@ optionSliderConfigs.forEach((config) => {
     new OptionSliderController(config);
 });
 
+function getEntranceTimingKey() {
+    if (!animationInTimingInput) {
+        return 'medium';
+    }
+
+    const optionValue = animationInTimingInput.dataset.optionValue;
+    if (optionValue && Object.prototype.hasOwnProperty.call(ENTRANCE_ANIMATION_TIMING_OPTIONS, optionValue)) {
+        return optionValue;
+    }
+
+    const fallbackIndex = Number.parseInt(animationInTimingInput.value, 10);
+    const fallbackKey = Number.isFinite(fallbackIndex)
+        ? ENTRANCE_ANIMATION_TIMING_KEYS[
+            Math.max(0, Math.min(ENTRANCE_ANIMATION_TIMING_KEYS.length - 1, fallbackIndex)),
+        ]
+        : 'medium';
+    return fallbackKey || 'medium';
+}
+
+function getPreviewImageEntranceConfig() {
+    if (!previewImage) {
+        return null;
+    }
+
+    const presetKey = animationInPresetSelect?.value || 'fade';
+    const preset = ENTRANCE_ANIMATION_PRESETS[presetKey] || ENTRANCE_ANIMATION_PRESETS.fade;
+    const timingKey = getEntranceTimingKey();
+    const timing = ENTRANCE_ANIMATION_TIMING_OPTIONS[timingKey] || ENTRANCE_ANIMATION_TIMING_OPTIONS.medium;
+
+    const baseDuration = Math.max(0, Number(preset.baseDuration) || 600);
+    const timingDuration = Math.max(0, Number(timing.duration) || baseDuration);
+    const durationScale = Number.isFinite(preset.durationScale) ? preset.durationScale : 1;
+    const duration = Math.max(120, Math.round(timingDuration * durationScale));
+    const easing = (preset.easingOverrides && preset.easingOverrides[timingKey])
+        || preset.easing
+        || timing.easing
+        || 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+    return {
+        key: `${preset.key}-${timingKey}`,
+        className: preset.className,
+        duration,
+        easing,
+        delay: 0,
+    };
+}
+
+function cancelPreviewEntranceAnimation() {
+    window.clearTimeout(previewEntranceAnimationFallbackTimer);
+    previewEntranceAnimationFallbackTimer = 0;
+
+    if (previewEntranceAnimationState.cleanup) {
+        previewEntranceAnimationState.cleanup();
+    }
+
+    previewEntranceAnimationState = {
+        cleanup: null,
+    };
+
+    if (!previewImage) {
+        return;
+    }
+
+    previewImage.classList.remove('is-entering');
+    ENTRANCE_ANIMATION_CLASS_NAMES.forEach((className) => {
+        previewImage.classList.remove(className);
+    });
+    previewImage.removeAttribute('data-enter-animation');
+    previewImage.style.removeProperty('--enter-animation-delay');
+    previewImage.style.removeProperty('--enter-animation-duration');
+    previewImage.style.removeProperty('--enter-animation-easing');
+}
+
+function runPreviewImageEntranceAnimation() {
+    if (!previewImage || previewImage.hidden) {
+        return false;
+    }
+
+    cancelPreviewEntranceAnimation();
+
+    previewImage.classList.add('is-visible');
+
+    if (!shouldPreviewEntranceAnimation() || prefersReducedMotion()) {
+        return false;
+    }
+
+    const config = getPreviewImageEntranceConfig();
+    if (!config) {
+        return false;
+    }
+
+    const { className, duration, easing, delay, key } = config;
+
+    previewImage.dataset.enterAnimation = key;
+    ENTRANCE_ANIMATION_CLASS_NAMES.forEach((enterClass) => {
+        previewImage.classList.remove(enterClass);
+    });
+    previewImage.classList.remove('is-entering');
+
+    const safeDuration = Math.max(0, Number(duration) || 0);
+    const safeDelay = Math.max(0, Number(delay) || 0);
+
+    previewImage.style.setProperty('--enter-animation-duration', `${safeDuration}ms`);
+    previewImage.style.setProperty('--enter-animation-delay', `${safeDelay}ms`);
+    previewImage.style.setProperty('--enter-animation-easing', easing);
+
+    void previewImage.offsetWidth;
+
+    let completed = false;
+
+    const finalize = () => {
+        if (completed) {
+            return;
+        }
+        completed = true;
+
+        window.clearTimeout(previewEntranceAnimationFallbackTimer);
+        previewEntranceAnimationFallbackTimer = 0;
+
+        previewImage.classList.remove('is-entering');
+        previewImage.classList.remove(className);
+        previewImage.removeAttribute('data-enter-animation');
+        previewImage.style.removeProperty('--enter-animation-delay');
+        previewImage.style.removeProperty('--enter-animation-duration');
+        previewImage.style.removeProperty('--enter-animation-easing');
+
+        previewEntranceAnimationState = {
+            cleanup: null,
+        };
+    };
+
+    const handleAnimationComplete = () => {
+        finalize();
+    };
+
+    previewEntranceAnimationState = {
+        cleanup: finalize,
+    };
+
+    previewImage.addEventListener('animationend', handleAnimationComplete, { once: true });
+    previewImage.addEventListener('animationcancel', handleAnimationComplete, { once: true });
+
+    previewEntranceAnimationFallbackTimer = window.setTimeout(() => {
+        finalize();
+    }, Math.max(0, safeDelay + safeDuration + 120));
+
+    previewImage.classList.add('is-entering', className);
+
+    return true;
+}
+
+function shouldPreviewEntranceAnimation() {
+    if (!previewImage || previewImage.hidden) {
+        return false;
+    }
+
+    if (!animationDirectionSelect) {
+        return true;
+    }
+
+    const value = animationDirectionSelect.value;
+    return value === 'in' || value === 'combo';
+}
+
+function previewEntranceAnimationDemo() {
+    if (!previewImage || previewImage.hidden) {
+        return;
+    }
+
+    const didAnimate = runPreviewImageEntranceAnimation();
+    if (!didAnimate) {
+        previewImage.classList.add('is-visible');
+    }
+}
+
 const EXIT_ANIMATION_PRESETS = {
     fade: {
         key: 'fade',
@@ -414,6 +659,8 @@ function cancelPreviewExitAnimation(options = {}) {
     const { forceRestore = false } = options;
 
     window.clearTimeout(previewExitAnimationFallbackTimer);
+
+    cancelPreviewEntranceAnimation();
 
     if (previewExitAnimationState.cleanup) {
         previewExitAnimationState.cleanup(forceRestore ? true : null);
@@ -636,7 +883,15 @@ async function revealPreviewImageSource(objectURL, options = {}) {
     }
 
     if (!previewImage.hidden && previewImage.src === objectURL) {
-        previewImage.classList.add('is-visible');
+        if (immediate) {
+            cancelPreviewEntranceAnimation();
+            previewImage.classList.add('is-visible');
+        } else {
+            const didAnimate = runPreviewImageEntranceAnimation();
+            if (!didAnimate) {
+                previewImage.classList.add('is-visible');
+            }
+        }
         return;
     }
 
@@ -646,6 +901,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
     await new Promise((resolve) => {
@@ -662,7 +918,10 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                 previewImage.classList.add('is-visible');
             } else {
                 requestAnimationFrame(() => {
-                    previewImage.classList.add('is-visible');
+                    const didAnimate = runPreviewImageEntranceAnimation();
+                    if (!didAnimate) {
+                        previewImage.classList.add('is-visible');
+                    }
                 });
             }
             resolve();
@@ -878,6 +1137,8 @@ if (animationDirectionSelect && animationModeContainers.length) {
     updateAnimationModeContent(animationDirectionSelect.value);
     if (animationDirectionSelect.value === 'out') {
         previewExitAnimationDemo();
+    } else if (animationDirectionSelect.value === 'in') {
+        previewEntranceAnimationDemo();
     }
 
     animationDirectionSelect.addEventListener('change', (event) => {
@@ -887,8 +1148,30 @@ if (animationDirectionSelect && animationModeContainers.length) {
             previewExitAnimationDemo();
         } else {
             cancelPreviewExitAnimation({ forceRestore: true });
+            if (nextValue === 'in' || nextValue === 'combo') {
+                previewEntranceAnimationDemo();
+            }
         }
     });
+}
+
+if (animationInPresetSelect) {
+    animationInPresetSelect.addEventListener('change', () => {
+        if (!animationDirectionSelect || animationDirectionSelect.value === 'in') {
+            previewEntranceAnimationDemo();
+        }
+    });
+}
+
+if (animationInTimingInput) {
+    const handleEntranceTimingChange = () => {
+        if (!animationDirectionSelect || animationDirectionSelect.value === 'in') {
+            previewEntranceAnimationDemo();
+        }
+    };
+
+    animationInTimingInput.addEventListener('change', handleEntranceTimingChange);
+    animationInTimingInput.addEventListener('input', handleEntranceTimingChange);
 }
 
 if (animationOutPresetSelect) {
