@@ -1425,12 +1425,89 @@ body {
 }
 
 .preview-image-layer img {
+    --preview-image-rotation: 0deg;
+    --exit-animation-duration: 520ms;
+    --exit-animation-delay: 0ms;
+    --exit-animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 0;
+    transform: rotate(var(--preview-image-rotation, 0deg));
     transition: opacity 180ms ease;
+    will-change: transform, opacity;
 }
 
 .preview-image-layer img.is-visible {
     opacity: 1;
+}
+
+.preview-image-layer img.is-exiting {
+    pointer-events: none;
+    animation-fill-mode: forwards;
+    animation-duration: var(--exit-animation-duration, 520ms);
+    animation-delay: var(--exit-animation-delay, 0ms);
+    animation-timing-function: var(--exit-animation-easing, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.preview-image-layer img.preview-image--exit-fade.is-exiting {
+    animation-name: previewImageExitFade;
+}
+
+.preview-image-layer img.preview-image--exit-slide-down.is-exiting {
+    animation-name: previewImageExitSlideDown;
+}
+
+.preview-image-layer img.preview-image--exit-zoom-out.is-exiting {
+    animation-name: previewImageExitZoomOut;
+}
+
+.preview-image-layer img.preview-image--exit-spin.is-exiting {
+    animation-name: previewImageExitSpin;
+}
+
+@keyframes previewImageExitFade {
+    0% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+}
+
+@keyframes previewImageExitSlideDown {
+    0% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) translate3d(0, 28%, 0) scale(0.92);
+    }
+}
+
+@keyframes previewImageExitZoomOut {
+    0% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(0.78);
+    }
+}
+
+@keyframes previewImageExitSpin {
+    0% {
+        opacity: 1;
+        transform: rotate(var(--preview-image-rotation, 0deg)) scale(1);
+    }
+    60% {
+        opacity: 0.35;
+    }
+    100% {
+        opacity: 0;
+        transform: rotate(var(--preview-image-rotation, 0deg)) rotate(540deg) scale(0.6);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1439,6 +1516,10 @@ body {
     }
     .preview-image-frame img {
         transition-duration: 0ms;
+    }
+    .preview-image-layer img.is-exiting {
+        animation-duration: 0ms !important;
+        animation-delay: 0ms !important;
     }
 }
 
