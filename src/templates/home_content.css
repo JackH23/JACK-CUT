@@ -1737,6 +1737,60 @@ body {
     display: none;
 }
 
+.preview-animation-indicator {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(12px);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.45);
+    pointer-events: none;
+    z-index: 60;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.18s ease, transform 0.24s ease;
+}
+
+.preview-animation-indicator[hidden] {
+    display: none;
+}
+
+.preview-animation-indicator[data-stage] {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.preview-animation-indicator__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.preview-animation-indicator__separator {
+    opacity: 0.55;
+}
+
+.preview-animation-indicator[data-stage="in"] [data-role="in"],
+.preview-animation-indicator[data-stage="out"] [data-role="out"] {
+    color: var(--accent-2);
+    font-weight: 600;
+}
+
+.preview-animation-indicator[data-stage="out"] [data-role="in"],
+.preview-animation-indicator[data-stage="in"] [data-role="out"] {
+    opacity: 0.7;
+}
+
 .preview-image-frame {
     position: absolute;
     top: 0;
