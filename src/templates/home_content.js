@@ -306,6 +306,7 @@ const keyframeMarkerPointerState = {
     keyframes: null,
     entry: null,
     startProgress: 0,
+    pointerOffsetProgress: 0,
     didMove: false,
 };
 
@@ -3798,6 +3799,7 @@ function resetKeyframeMarkerPointerState() {
     keyframeMarkerPointerState.keyframes = null;
     keyframeMarkerPointerState.entry = null;
     keyframeMarkerPointerState.startProgress = 0;
+    keyframeMarkerPointerState.pointerOffsetProgress = 0;
     keyframeMarkerPointerState.didMove = false;
 }
 
@@ -3872,6 +3874,13 @@ function handleKeyframeMarkerPointerDown(event, keyframeEntry) {
     keyframeMarkerPointerState.keyframes = clonedKeyframes;
     keyframeMarkerPointerState.entry = entry;
     keyframeMarkerPointerState.startProgress = entry.progress;
+    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX);
+    const pointerOffsetProgress = Number.isFinite(pointerProgress)
+        ? clampProgress(pointerProgress) - entry.progress
+        : 0;
+    keyframeMarkerPointerState.pointerOffsetProgress = Number.isFinite(pointerOffsetProgress)
+        ? pointerOffsetProgress
+        : 0;
     keyframeMarkerPointerState.didMove = false;
 
     if (typeof marker.setPointerCapture === 'function') {
@@ -3904,15 +3913,23 @@ function handleKeyframeMarkerPointerMove(event) {
         keyframes,
         entry,
         startProgress,
+        pointerOffsetProgress,
     } = keyframeMarkerPointerState;
 
     if (!marker || !timelineItem || !keyframes || !entry) {
         return;
     }
 
-    const nextProgress = getKeyframeTrackProgressFromClientX(event.clientX);
+    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX);
 
-    if (nextProgress === null) {
+    if (pointerProgress === null) {
+        return;
+    }
+
+    const offset = Number.isFinite(pointerOffsetProgress) ? pointerOffsetProgress : 0;
+    const nextProgress = pointerProgress - offset;
+
+    if (!Number.isFinite(nextProgress)) {
         return;
     }
 
