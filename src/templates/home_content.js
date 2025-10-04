@@ -382,12 +382,34 @@ function scheduleComboExitPreview(entranceConfig = null, exitConfig = null, clip
         });
     };
 
-    const estimatedDuration = Math.max(0, Number(entranceConfig?.totalDuration) || 0);
-    const delay = Math.max(240, estimatedDuration + 120);
+    const entranceDuration = Math.max(0, Number(entranceConfig?.totalDuration) || 0);
+    const exitDelay = Math.max(0, Number(exitConfig?.delay) || 0);
+    const exitDuration = Math.max(0, Number(exitConfig?.duration) || 0);
+
+    const comboMeta = entranceConfig?.combo || {};
+    const clipDuration = Number.isFinite(clipDurationOverride)
+        ? clipDurationOverride
+        : Number.isFinite(comboMeta.clipDuration)
+            ? comboMeta.clipDuration
+            : null;
+    const combinedDuration = Number.isFinite(comboMeta.combinedDuration)
+        ? comboMeta.combinedDuration
+        : clipDuration && clipDuration > 0
+            ? clipDuration
+            : entranceDuration + exitDelay + exitDuration;
+
+    const expectedExitStart = Math.max(
+        entranceDuration,
+        combinedDuration - Math.max(exitDuration + exitDelay, 0),
+    );
+    const safeExitStart = Number.isFinite(expectedExitStart)
+        ? expectedExitStart
+        : entranceDuration;
+    const fallbackDelay = Math.max(32, Math.round(safeExitStart));
 
     comboPreviewExitTimeoutId = window.setTimeout(() => {
         triggerExitPreview();
-    }, delay);
+    }, fallbackDelay);
 
     return triggerExitPreview;
 }
@@ -801,7 +823,7 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
     const clipDurationOverride = Number.isFinite(options.clipDurationMs)
         ? Math.max(0, Math.round(options.clipDurationMs))
         : null;
-    const clipDuration = clipDurationOverride !== null
+    let clipDuration = clipDurationOverride !== null
         ? clipDurationOverride
         : getActiveImageClipDurationMs();
 
@@ -824,11 +846,13 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         targetWindow = Math.round(speedWindowMs);
     }
 
-    const minimumWindow = Math.max(minimumEntrance + minimumExit, COMBO_MIN_COMBINED_DURATION_MS);
     if (clipDuration && clipDuration > 0) {
-        const minimumWithClip = Math.min(minimumWindow, clipDuration);
-        targetWindow = Math.min(Math.max(targetWindow, minimumWithClip), clipDuration);
+        targetWindow = Math.max(0, Math.round(clipDuration));
     } else {
+        const minimumWindow = Math.max(
+            minimumEntrance + minimumExit,
+            COMBO_MIN_COMBINED_DURATION_MS,
+        );
         targetWindow = Math.max(targetWindow, minimumWindow);
     }
 
@@ -853,14 +877,29 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
             } else {
                 entranceDuration = Math.max(60, entranceDuration - overflow);
             }
+            total = entranceDuration + exitDuration;
         }
+
+        if (total < clipDuration) {
+            const remainder = clipDuration - total;
+            if (exitDuration >= entranceDuration) {
+                exitDuration += remainder;
+            } else {
+                entranceDuration += remainder;
+            }
+            total = entranceDuration + exitDuration;
+        }
+
+        clipDuration = total;
     }
 
     return {
         entranceDuration,
         exitDuration,
         clipDuration,
-        combinedDuration: entranceDuration + exitDuration,
+        combinedDuration: clipDuration && clipDuration > 0
+            ? clipDuration
+            : entranceDuration + exitDuration,
     };
 }
 
