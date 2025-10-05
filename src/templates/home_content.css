@@ -729,7 +729,7 @@ body {
     gap: 14px;
 }
 
-.info-item { 
+.info-item {
     display: flex;
     gap: 12px;
     align-items: flex-start;
@@ -740,6 +740,40 @@ body {
     font-size: 0.9rem;
     color: var(--text-secondary);
     box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+.audio-fade-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.audio-fade-controls__header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.audio-fade-controls__title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.audio-fade-controls__description {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.audio-fade-controls__row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.audio-fade-controls__row input[type="range"] {
+    accent-color: rgba(124, 58, 237, 0.85);
 }
 
 .animation-mode {

@@ -120,6 +120,10 @@ const imageDurationApplyAllButton = document.getElementById('image-duration-appl
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const audioFadeInInput = document.getElementById('audio-fade-in');
+const audioFadeInValue = document.getElementById('audio-fade-in-value');
+const audioFadeOutInput = document.getElementById('audio-fade-out');
+const audioFadeOutValue = document.getElementById('audio-fade-out-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
@@ -612,6 +616,68 @@ class OptionSliderController {
 
 optionSliderConfigs.forEach((config) => {
     new OptionSliderController(config);
+});
+
+const audioFadeControls = [
+    { input: audioFadeInInput, readout: audioFadeInValue },
+    { input: audioFadeOutInput, readout: audioFadeOutValue },
+];
+
+function formatAudioFadeDisplay(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return 'Off';
+    }
+
+    const rounded = Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1);
+    return `${rounded.replace(/\.0$/, '')}s`;
+}
+
+function syncAudioFadeControl(control) {
+    const { input, readout } = control;
+    if (!input || !readout) {
+        return;
+    }
+
+    const parsedMin = Number.parseFloat(input.min);
+    const parsedMax = Number.parseFloat(input.max);
+    const sliderMin = Number.isFinite(parsedMin) ? parsedMin : 0;
+    const sliderMax = Number.isFinite(parsedMax) ? parsedMax : 5;
+
+    let rawValue = Number.parseFloat(input.value);
+    if (!Number.isFinite(rawValue)) {
+        rawValue = sliderMin;
+    }
+
+    const clamped = Math.min(Math.max(rawValue, sliderMin), sliderMax);
+    const display = formatAudioFadeDisplay(clamped);
+
+    input.value = Number.isInteger(clamped) ? clamped.toString() : clamped.toFixed(1);
+    input.dataset.fadeSeconds = clamped.toString();
+    input.setAttribute('aria-valuemin', sliderMin.toString());
+    input.setAttribute('aria-valuemax', sliderMax.toString());
+    input.setAttribute('aria-valuenow', clamped.toString());
+    input.setAttribute('aria-valuetext', display);
+
+    if (!readout.hasAttribute('aria-live')) {
+        readout.setAttribute('aria-live', 'polite');
+    }
+
+    readout.textContent = display;
+}
+
+audioFadeControls.forEach((control) => {
+    const { input, readout } = control;
+    if (!input || !readout) {
+        return;
+    }
+
+    const handleUpdate = () => {
+        syncAudioFadeControl(control);
+    };
+
+    handleUpdate();
+    input.addEventListener('input', handleUpdate);
+    input.addEventListener('change', handleUpdate);
 });
 
 function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
