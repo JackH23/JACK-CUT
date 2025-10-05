@@ -86,6 +86,14 @@ if (timelineProgressInput) {
         seekTimelineToFraction(fraction);
     });
 }
+const timelineZoomInput = document.getElementById('timeline-zoom');
+const timelineZoomValue = document.getElementById('timeline-zoom-value');
+const timelineZoomButtons = timelineZoomInput
+    ? Array.from(
+        (timelineZoomInput.closest('.timeline-controls')
+            || document).querySelectorAll('[data-timeline-zoom]'),
+    )
+    : [];
 const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
@@ -131,6 +139,7 @@ const settingsSections = Array.from(document.querySelectorAll('.settings-section
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
+const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
 
 const optionSliderConfigs = [
     {
@@ -2182,7 +2191,10 @@ const MIN_IMAGE_DURATION = 400;
 const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
 const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
 const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';
-const TIMELINE_DURATION_PER_PIXEL = 12;
+const TIMELINE_DURATION_PER_PIXEL_DEFAULT = 12;
+const TIMELINE_DURATION_PER_PIXEL_MIN = 2;
+const TIMELINE_DURATION_PER_PIXEL_MAX = 60;
+const TIMELINE_ZOOM_BUTTON_STEP = 1;
 const MIN_TIMELINE_ITEM_WIDTH = 96;
 const MIN_IMAGE_FRAME_SIZE = 96;
 const MAX_TIMELINE_STACK_LANES = 4;
@@ -2195,6 +2207,8 @@ let playbackClockBaseElapsed = 0;
 let playbackClockTotalDuration = 0;
 let playbackDisplayCurrentMs = 0;
 let playbackDisplayTotalMs = 0;
+let timelineDurationPerPixel = TIMELINE_DURATION_PER_PIXEL_DEFAULT;
+let isPreviewFullscreen = false;
 
 function activateSettingsSection(sectionName) {
     if (!settingsTabs.length || !settingsSections.length) {
@@ -3455,18 +3469,148 @@ function stopPlaybackClock(resetDisplay = true) {
     }
 }
 
+function clampTimelineDurationPerPixel(value) {
+    if (!Number.isFinite(value)) {
+        return TIMELINE_DURATION_PER_PIXEL_DEFAULT;
+    }
+    return Math.min(
+        TIMELINE_DURATION_PER_PIXEL_MAX,
+        Math.max(TIMELINE_DURATION_PER_PIXEL_MIN, Math.round(value)),
+    );
+}
+
+function getTimelineDurationPerPixel() {
+    return timelineDurationPerPixel;
+}
+
+function formatTimelineZoomLabel(factor) {
+    if (!Number.isFinite(factor) || factor <= 0) {
+        return '1.0×';
+    }
+    if (factor >= 10) {
+        return `${Math.round(factor)}×`;
+    }
+    if (factor >= 1) {
+        return `${factor.toFixed(1).replace(/\.0$/, '')}×`;
+    }
+    return `${factor.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`;
+}
+
+function updateTimelineZoomDisplay() {
+    const perPixel = getTimelineDurationPerPixel();
+    const zoomFactor = TIMELINE_DURATION_PER_PIXEL_DEFAULT / perPixel;
+    const formattedLabel = formatTimelineZoomLabel(zoomFactor);
+
+    if (timelineZoomInput) {
+        timelineZoomInput.value = String(perPixel);
+        timelineZoomInput.setAttribute('aria-valuenow', String(perPixel));
+        timelineZoomInput.setAttribute('aria-valuetext', `${formattedLabel.replace('×', '')} zoom`);
+        timelineZoomInput.setAttribute('title', `${perPixel} ms per pixel`);
+    }
+
+    if (timelineZoomValue) {
+        timelineZoomValue.textContent = formattedLabel;
+    }
+
+    if (timelineTrack) {
+        timelineTrack.dataset.zoomFactor = zoomFactor.toFixed(2);
+    }
+}
+
+function applyTimelineZoom(options = {}) {
+    if (!timelineTrack) {
+        updateTimelineZoomDisplay();
+        return;
+    }
+
+    const { preserveScroll = true } = options;
+    const previousScroll = preserveScroll ? timelineTrack.scrollLeft : 0;
+    const items = getTimelineItems();
+
+    items.forEach((item) => {
+        const duration = getTimelineItemPlaybackDuration(item);
+        applyTimelineItemDurationStyles(item, duration);
+    });
+
+    if (preserveScroll) {
+        timelineTrack.scrollLeft = previousScroll;
+    }
+
+    updateTimelineZoomDisplay();
+    updateActiveTimelineIndicators();
+}
+
+function setTimelineDurationPerPixel(value, options = {}) {
+    const clamped = clampTimelineDurationPerPixel(value);
+    if (clamped === timelineDurationPerPixel) {
+        updateTimelineZoomDisplay();
+        return timelineDurationPerPixel;
+    }
+
+    timelineDurationPerPixel = clamped;
+    applyTimelineZoom({ preserveScroll: options.preserveScroll !== false });
+    return timelineDurationPerPixel;
+}
+
+function setPreviewFullscreenState(enable, options = {}) {
+    if (!previewCard) {
+        return false;
+    }
+
+    const target = Boolean(enable);
+    if (target === isPreviewFullscreen) {
+        return isPreviewFullscreen;
+    }
+
+    isPreviewFullscreen = target;
+    previewCard.classList.toggle('preview-card--fullscreen', target);
+    if (document.body) {
+        document.body.classList.toggle('preview-fullscreen-active', target);
+    }
+
+    if (previewFullscreenToggle) {
+        previewFullscreenToggle.setAttribute('aria-pressed', String(target));
+        previewFullscreenToggle.setAttribute(
+            'aria-label',
+            target ? 'Exit fullscreen preview' : 'Enter fullscreen preview',
+        );
+    }
+
+    if (target && options.scrollIntoView !== false) {
+        previewCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    if (!target && previewCard && options.restoreFocus) {
+        const focusTarget = options.restoreFocus === true
+            ? previewFullscreenToggle || previewCard
+            : options.restoreFocus;
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+            focusTarget.focus({ preventScroll: true });
+        }
+    }
+
+    updateActiveTimelineIndicators();
+    return isPreviewFullscreen;
+}
+
+function togglePreviewFullscreen() {
+    return setPreviewFullscreenState(!isPreviewFullscreen);
+}
+
 function durationToWidth(durationMs) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
         return MIN_TIMELINE_ITEM_WIDTH;
     }
-    return Math.max(MIN_TIMELINE_ITEM_WIDTH, Math.round(durationMs / TIMELINE_DURATION_PER_PIXEL));
+    const perPixel = getTimelineDurationPerPixel();
+    return Math.max(MIN_TIMELINE_ITEM_WIDTH, Math.round(durationMs / perPixel));
 }
 
 function widthToDuration(widthPx) {
     if (!Number.isFinite(widthPx) || widthPx <= 0) {
         return MIN_IMAGE_DURATION;
     }
-    return Math.max(MIN_IMAGE_DURATION, Math.round(widthPx * TIMELINE_DURATION_PER_PIXEL));
+    const perPixel = getTimelineDurationPerPixel();
+    return Math.max(MIN_IMAGE_DURATION, Math.round(widthPx * perPixel));
 }
 
 function applyTimelineItemDurationStyles(timelineItem, durationMs) {
@@ -5849,6 +5993,47 @@ if (window && typeof window.addEventListener === 'function') {
     window.addEventListener('pointercancel', onPreviewImagePointerCancel, { passive: true });
 }
 
+if (timelineZoomInput) {
+    timelineZoomInput.min = String(TIMELINE_DURATION_PER_PIXEL_MIN);
+    timelineZoomInput.max = String(TIMELINE_DURATION_PER_PIXEL_MAX);
+    timelineZoomInput.step = String(TIMELINE_ZOOM_BUTTON_STEP);
+    timelineZoomInput.addEventListener('input', () => {
+        const rawValue = Number(timelineZoomInput.value);
+        setTimelineDurationPerPixel(rawValue);
+    });
+}
+
+if (timelineZoomButtons.length) {
+    timelineZoomButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            const direction = button.dataset.timelineZoom;
+            if (!direction) {
+                return;
+            }
+            const multiplier = event.shiftKey ? 4 : 1;
+            const delta = direction === 'in'
+                ? -TIMELINE_ZOOM_BUTTON_STEP * multiplier
+                : TIMELINE_ZOOM_BUTTON_STEP * multiplier;
+            setTimelineDurationPerPixel(getTimelineDurationPerPixel() + delta);
+        });
+    });
+}
+
+if (previewFullscreenToggle) {
+    previewFullscreenToggle.addEventListener('click', () => {
+        togglePreviewFullscreen();
+    });
+}
+
+if (previewArea) {
+    previewArea.addEventListener('dblclick', (event) => {
+        if (event.defaultPrevented) {
+            return;
+        }
+        togglePreviewFullscreen();
+    });
+}
+
 function setPreviewAspect(aspectValue) {
     if (!previewArea) {
         return;
@@ -5878,6 +6063,8 @@ if (previewAspectSelect) {
     setPreviewAspect('16:9');
     updatePreviewAspectLabel();
 }
+
+updateTimelineZoomDisplay();
 
 if (addKeyframeButton) {
     addKeyframeButton.addEventListener('click', () => {
@@ -8297,7 +8484,17 @@ if (exportDialog) {
 }
 
 document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && isExportDialogOpen()) {
+    if (event.key !== 'Escape') {
+        return;
+    }
+
+    if (isPreviewFullscreen) {
+        event.preventDefault();
+        setPreviewFullscreenState(false, { restoreFocus: previewFullscreenToggle || true });
+        return;
+    }
+
+    if (isExportDialogOpen()) {
         event.preventDefault();
         closeExportDialog();
     }
