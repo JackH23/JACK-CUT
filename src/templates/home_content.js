@@ -116,6 +116,8 @@ const animationComboSpeedInput = document.getElementById('animation-combo-speed'
 const animationComboSpeedValue = document.getElementById('animation-combo-speed-value');
 const animationComboApplyAllButton = document.getElementById('animation-combo-apply-all');
 const animationComboApplyStatus = document.getElementById('animation-combo-apply-status');
+const imageDurationApplyAllButton = document.getElementById('image-duration-apply-all');
+const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -321,6 +323,7 @@ let previewEntranceAnimationState = {
 };
 let comboPreviewExitTimeoutId = 0;
 let animationComboApplyStatusTimer = 0;
+let imageDurationApplyStatusTimer = 0;
 
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);
@@ -1781,6 +1784,9 @@ const MIN_ROTATION_DEGREES = -180;
 const MAX_ROTATION_DEGREES = 180;
 const DEFAULT_VIDEO_DURATION = 3000;
 const MIN_IMAGE_DURATION = 400;
+const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
+const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
+const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';
 const TIMELINE_DURATION_PER_PIXEL = 12;
 const MIN_TIMELINE_ITEM_WIDTH = 96;
 const MIN_IMAGE_FRAME_SIZE = 96;
@@ -1910,6 +1916,126 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
     }
 
     refreshComboApplyAllAvailability();
+}
+
+function setImageDurationApplyStatus(message, options = {}) {
+    if (!imageDurationApplyStatus) {
+        return;
+    }
+
+    window.clearTimeout(imageDurationApplyStatusTimer);
+    imageDurationApplyStatusTimer = 0;
+
+    const nextMessage = message || '';
+    imageDurationApplyStatus.textContent = nextMessage;
+
+    if (!nextMessage) {
+        return;
+    }
+
+    if (options.persist) {
+        return;
+    }
+
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 4000;
+    imageDurationApplyStatusTimer = window.setTimeout(() => {
+        if (imageDurationApplyStatus) {
+            imageDurationApplyStatus.textContent = '';
+        }
+        imageDurationApplyStatusTimer = 0;
+    }, Math.max(0, timeoutMs));
+}
+
+function refreshImageDurationApplyAllAvailability() {
+    if (!imageDurationApplyAllButton) {
+        return;
+    }
+
+    const timelineItems = timelineTrack ? getTimelineItems() : [];
+    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+    const hasImages = imageItems.length > 0;
+    const activeIsImage = isImageTimelineItem(activeTimelineItem);
+    const hasTargets = imageItems.length > 1;
+
+    imageDurationApplyAllButton.disabled = !(activeIsImage && hasTargets);
+
+    if (!hasImages) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (!activeIsImage) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (!hasTargets) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (imageDurationApplyStatus
+        && (
+            imageDurationApplyStatus.textContent === IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE
+            || imageDurationApplyStatus.textContent === IMAGE_DURATION_APPLY_SELECT_MESSAGE
+            || imageDurationApplyStatus.textContent === IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE
+        )
+    ) {
+        setImageDurationApplyStatus('');
+    }
+}
+
+function handleImageDurationApplyAllClick() {
+    if (!imageDurationApplyAllButton || imageDurationApplyAllButton.disabled) {
+        return;
+    }
+
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        refreshImageDurationApplyAllAvailability();
+        return;
+    }
+
+    const rawDatasetDuration = Math.round(Number(activeTimelineItem.dataset.imageDuration) || 0);
+    const fallbackDuration = Math.round(getTimelineItemPlaybackDuration(activeTimelineItem));
+    const targetDuration = Math.max(
+        MIN_IMAGE_DURATION,
+        rawDatasetDuration > 0 ? rawDatasetDuration : fallbackDuration,
+    );
+
+    if (!(targetDuration > 0)) {
+        setImageDurationApplyStatus('The selected image has no duration to copy.', { timeoutMs: 3200 });
+        refreshImageDurationApplyAllAvailability();
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    let appliedCount = 0;
+
+    timelineItems.forEach((timelineItem) => {
+        if (!isImageTimelineItem(timelineItem) || timelineItem === activeTimelineItem) {
+            return;
+        }
+
+        const currentDuration = Math.max(0, Math.round(Number(timelineItem.dataset.imageDuration) || 0));
+        if (currentDuration === targetDuration) {
+            return;
+        }
+
+        setTimelineItemDuration(timelineItem, 'imageDuration', targetDuration, { markCustom: true });
+        appliedCount += 1;
+    });
+
+    if (appliedCount === 0) {
+        setImageDurationApplyStatus('All images already use this duration.', { timeoutMs: 3200 });
+    } else {
+        const pluralSuffix = appliedCount === 1 ? '' : 's';
+        setImageDurationApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+        updateActiveTimelineIndicators();
+        renderExportSummary(getTimelineItems(), null);
+    }
+
+    refreshImageDurationApplyAllAvailability();
 }
 
 function persistActiveTimelineAnimationDirection(direction) {
@@ -2226,6 +2352,10 @@ if (animationComboSpeedInput) {
 
 if (animationComboApplyAllButton) {
     animationComboApplyAllButton.addEventListener('click', handleComboApplyAllClick);
+}
+
+if (imageDurationApplyAllButton) {
+    imageDurationApplyAllButton.addEventListener('click', handleImageDurationApplyAllClick);
 }
 
 syncAnimationControlsToTimelineItem(activeTimelineItem);
@@ -6448,6 +6578,7 @@ resetTimelineProgressLine();
 updateActiveTimelineIndicators();
 renderKeyframeTrack(activeTimelineItem);
 updateImageRotationControlState();
+refreshImageDurationApplyAllAvailability();
 
 function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     const abort = timelinePlaybackAbort;
@@ -6524,6 +6655,7 @@ function setActiveTimelineItem(item, options = {}) {
         }
     }
     syncAnimationControlsToTimelineItem(activeTimelineItem);
+    refreshImageDurationApplyAllAvailability();
     const nextProgress = clipProgressOverride !== null
         ? clipProgressOverride
         : (isSameItem ? getActiveClipProgress() : 0);
@@ -6908,6 +7040,7 @@ async function addToTimeline(file, objectURL) {
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
         renderExportSummary(getTimelineItems(), null);
+        refreshImageDurationApplyAllAvailability();
     });
 
     setActiveTimelineItem(timelineItem);
