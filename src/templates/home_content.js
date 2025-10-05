@@ -6262,10 +6262,26 @@ function upsertTimelineImageKeyframe(keyframes, progress, normalizedTransform) {
     return next;
 }
 
+function easeKeyframeProgress(value) {
+    const clamped = clampProgress(Number(value) || 0);
+
+    if (clamped <= 0 || clamped >= 1) {
+        return clamped;
+    }
+
+    if (clamped < 0.5) {
+        return 4 * clamped * clamped * clamped;
+    }
+
+    const inverted = (-2 * clamped) + 2;
+    return 1 - ((inverted * inverted * inverted) / 2);
+}
+
 function interpolateNormalizedTransforms(startTransform, endTransform, t) {
     const numericRatio = Number(t);
     const ratio = Number.isFinite(numericRatio) ? clampProgress(numericRatio) : 0;
-    const lerp = (start, end) => start + ((end - start) * ratio);
+    const easedRatio = easeKeyframeProgress(ratio);
+    const lerp = (start, end) => start + ((end - start) * easedRatio);
 
     const start = sanitizeNormalizedKeyframeTransform(startTransform);
     const end = sanitizeNormalizedKeyframeTransform(endTransform);
@@ -6280,7 +6296,7 @@ function interpolateNormalizedTransforms(startTransform, endTransform, t) {
         width: lerp(start.width, end.width),
         height: lerp(start.height, end.height),
         aspectRatio: lerp(start.aspectRatio, end.aspectRatio),
-        rotation: interpolateRotationDegrees(start.rotation, end.rotation, ratio),
+        rotation: interpolateRotationDegrees(start.rotation, end.rotation, easedRatio),
     };
 }
 
@@ -7779,7 +7795,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             let resolved = false;
             const startTimestamp = performance.now();
             let animationFrameId = 0;
-            let exitAnimationTimeoutId = 0;
+            let exitAnimationRequested = false;
             let exitAnimationStarted = false;
 
             const stopAnimation = () => {
@@ -7787,29 +7803,55 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     window.cancelAnimationFrame(animationFrameId);
                     animationFrameId = 0;
                 }
-                if (exitAnimationTimeoutId) {
-                    window.clearTimeout(exitAnimationTimeoutId);
-                    exitAnimationTimeoutId = 0;
-                }
             };
 
-            const startExitAnimation = () => {
-                if (exitAnimationStarted || !exitConfig) {
-                    return;
+            const startExitAnimation = (options = {}) => {
+                if (!exitConfig) {
+                    return false;
                 }
-                exitAnimationStarted = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+
+                const force = options.force === true;
+                if (!force && exitAnimationRequested) {
+                    return exitAnimationStarted;
+                }
+
+                exitAnimationRequested = true;
+                const didAnimate = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+
+                if (!didAnimate && !force) {
+                    exitAnimationRequested = false;
+                }
+
+                exitAnimationStarted = exitAnimationStarted || didAnimate;
+                return didAnimate;
             };
+
+            const exitStartOffset = exitConfig ? Math.max(0, exitPlaybackWindow - exitWindow) : 0;
+            const exitStartSlack = exitConfig
+                ? Math.min(120, Math.round(Math.max(exitWindow, safeEffectiveDuration) * 0.1))
+                : 0;
 
             const step = () => {
                 if (resolved || !isTimelinePlaying) {
                     return;
                 }
+
                 const now = performance.now();
                 const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
                 const playbackProgress = clipDuration > 0
                     ? clampProgress(elapsed / clipDuration)
                     : 0;
+
                 setActiveClipProgress(playbackProgress, { source: 'image-playback' });
+
+                if (exitConfig && !exitAnimationRequested) {
+                    const shouldStartExit = safeEffectiveDuration === 0
+                        || (elapsed + exitStartSlack) >= exitStartOffset;
+                    if (shouldStartExit) {
+                        startExitAnimation();
+                    }
+                }
+
                 if (elapsed < safeEffectiveDuration && isTimelinePlaying) {
                     animationFrameId = window.requestAnimationFrame(step);
                 }
@@ -7817,17 +7859,8 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
 
             animationFrameId = window.requestAnimationFrame(step);
 
-            if (exitConfig) {
-                if (safeEffectiveDuration === 0) {
-                    startExitAnimation();
-                } else {
-                    const exitStartOffset = Math.max(0, exitPlaybackWindow - exitWindow);
-                    exitAnimationTimeoutId = window.setTimeout(() => {
-                        if (!resolved && isTimelinePlaying) {
-                            startExitAnimation();
-                        }
-                    }, Math.max(0, Math.round(exitStartOffset)));
-                }
+            if (exitConfig && safeEffectiveDuration === 0) {
+                startExitAnimation({ force: true });
             }
 
             const timeoutId = window.setTimeout(() => {
@@ -7835,7 +7868,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     return;
                 }
                 resolved = true;
-                startExitAnimation();
+                startExitAnimation({ force: true });
                 stopAnimation();
                 const finalProgress = clipDuration > 0
                     ? clampProgress(safeEffectiveDuration / clipDuration)
