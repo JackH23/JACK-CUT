@@ -120,6 +120,8 @@ const imageDurationApplyAllButton = document.getElementById('image-duration-appl
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const masterVolumeInput = document.getElementById('video-volume');
+const masterVolumeValue = document.getElementById('video-volume-value');
 const audioFadeInInput = document.getElementById('audio-fade-in');
 const audioFadeInValue = document.getElementById('audio-fade-in-value');
 const audioFadeOutInput = document.getElementById('audio-fade-out');
@@ -632,7 +634,7 @@ function formatAudioFadeDisplay(seconds) {
     return `${rounded.replace(/\.0$/, '')}s`;
 }
 
-function syncAudioFadeControl(control) {
+function syncAudioFadeControl(control, overrideSeconds = null) {
     const { input, readout } = control;
     if (!input || !readout) {
         return;
@@ -641,9 +643,14 @@ function syncAudioFadeControl(control) {
     const parsedMin = Number.parseFloat(input.min);
     const parsedMax = Number.parseFloat(input.max);
     const sliderMin = Number.isFinite(parsedMin) ? parsedMin : 0;
-    const sliderMax = Number.isFinite(parsedMax) ? parsedMax : 5;
+    const sliderMax = Number.isFinite(parsedMax) ? parsedMax : AUDIO_FADE_MAX_SECONDS;
 
-    let rawValue = Number.parseFloat(input.value);
+    let rawValue;
+    if (overrideSeconds !== null && overrideSeconds !== undefined) {
+        rawValue = Number(overrideSeconds);
+    } else {
+        rawValue = Number.parseFloat(input.value);
+    }
     if (!Number.isFinite(rawValue)) {
         rawValue = sliderMin;
     }
@@ -665,20 +672,342 @@ function syncAudioFadeControl(control) {
     readout.textContent = display;
 }
 
+const DEFAULT_AUDIO_VOLUME_PERCENT = 80;
+const AUDIO_VOLUME_MIN_PERCENT = 0;
+const AUDIO_VOLUME_MAX_PERCENT = 100;
+const AUDIO_FADE_MAX_SECONDS = 5;
+
+function clampVolume(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+    return Math.min(Math.max(numeric, 0), 1);
+}
+
+const previewAudioEnvelopeState = {
+    fadeInFrameId: 0,
+    fadeOutFrameId: 0,
+    fadeOutTimeoutId: 0,
+    baseVolume: clampVolume(DEFAULT_AUDIO_VOLUME_PERCENT / 100),
+};
+
+function clampVolumePercent(value) {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) {
+        return DEFAULT_AUDIO_VOLUME_PERCENT;
+    }
+    if (numeric < AUDIO_VOLUME_MIN_PERCENT) {
+        return AUDIO_VOLUME_MIN_PERCENT;
+    }
+    if (numeric > AUDIO_VOLUME_MAX_PERCENT) {
+        return AUDIO_VOLUME_MAX_PERCENT;
+    }
+    return Math.round(numeric);
+}
+
+function sanitizeFadeMilliseconds(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+    }
+    const clamped = Math.min(
+        Math.max(numeric, 0),
+        AUDIO_FADE_MAX_SECONDS * 1000,
+    );
+    return Math.round(clamped / 500) * 500;
+}
+
+function getDefaultAudioSettings() {
+    return {
+        volumePercent: DEFAULT_AUDIO_VOLUME_PERCENT,
+        fadeInMs: 0,
+        fadeOutMs: 0,
+    };
+}
+
+function getTimelineItemAudioSettings(timelineItem) {
+    if (!isVideoTimelineItem(timelineItem)) {
+        return getDefaultAudioSettings();
+    }
+
+    const dataset = timelineItem.dataset || {};
+    const volumePercent = clampVolumePercent(
+        dataset.audioVolumePercent ?? DEFAULT_AUDIO_VOLUME_PERCENT,
+    );
+    const fadeInMs = sanitizeFadeMilliseconds(dataset.audioFadeInMs);
+    const fadeOutMs = sanitizeFadeMilliseconds(dataset.audioFadeOutMs);
+
+    return {
+        volumePercent,
+        fadeInMs,
+        fadeOutMs,
+    };
+}
+
+function persistTimelineItemAudioSettings(timelineItem, settings) {
+    if (!isVideoTimelineItem(timelineItem) || !timelineItem.dataset || !settings) {
+        return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'volumePercent')) {
+        const percent = clampVolumePercent(settings.volumePercent);
+        if (percent === DEFAULT_AUDIO_VOLUME_PERCENT) {
+            delete timelineItem.dataset.audioVolumePercent;
+        } else {
+            timelineItem.dataset.audioVolumePercent = String(percent);
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'fadeInMs')) {
+        const milliseconds = sanitizeFadeMilliseconds(settings.fadeInMs);
+        if (milliseconds > 0) {
+            timelineItem.dataset.audioFadeInMs = String(milliseconds);
+        } else {
+            delete timelineItem.dataset.audioFadeInMs;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'fadeOutMs')) {
+        const milliseconds = sanitizeFadeMilliseconds(settings.fadeOutMs);
+        if (milliseconds > 0) {
+            timelineItem.dataset.audioFadeOutMs = String(milliseconds);
+        } else {
+            delete timelineItem.dataset.audioFadeOutMs;
+        }
+    }
+}
+
+function persistActiveTimelineAudioSettings(partialSettings) {
+    if (!activeTimelineItem) {
+        return;
+    }
+    persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
+}
+
+function formatMasterVolumeDisplay(percent) {
+    if (percent <= AUDIO_VOLUME_MIN_PERCENT) {
+        return 'Muted';
+    }
+    if (percent >= AUDIO_VOLUME_MAX_PERCENT) {
+        return `${AUDIO_VOLUME_MAX_PERCENT}%`;
+    }
+    return `${percent}%`;
+}
+
+function updateMasterVolumeReadout(percent, options = {}) {
+    const { disabled = false } = options;
+    if (masterVolumeValue) {
+        masterVolumeValue.textContent = disabled
+            ? 'Video only'
+            : formatMasterVolumeDisplay(percent);
+    }
+    if (masterVolumeInput) {
+        masterVolumeInput.setAttribute('aria-valuemin', String(AUDIO_VOLUME_MIN_PERCENT));
+        masterVolumeInput.setAttribute('aria-valuemax', String(AUDIO_VOLUME_MAX_PERCENT));
+        if (disabled) {
+            masterVolumeInput.setAttribute('aria-valuenow', '0');
+            masterVolumeInput.setAttribute(
+                'aria-valuetext',
+                'Audio controls available for video clips',
+            );
+        } else {
+            masterVolumeInput.setAttribute('aria-valuenow', String(percent));
+            masterVolumeInput.setAttribute(
+                'aria-valuetext',
+                formatMasterVolumeDisplay(percent),
+            );
+        }
+    }
+}
+
+function applyMasterVolumeToPreview(volumePercent) {
+    if (!previewVideo) {
+        return;
+    }
+    const percent = clampVolumePercent(volumePercent);
+    const normalized = clampVolume(percent / 100);
+    previewVideo.muted = false;
+    previewVideo.volume = normalized;
+    previewAudioEnvelopeState.baseVolume = normalized;
+}
+
+function cancelPreviewAudioEnvelope(options = {}) {
+    const { restoreVolume = false } = options;
+    if (previewAudioEnvelopeState.fadeInFrameId) {
+        window.cancelAnimationFrame(previewAudioEnvelopeState.fadeInFrameId);
+        previewAudioEnvelopeState.fadeInFrameId = 0;
+    }
+    if (previewAudioEnvelopeState.fadeOutFrameId) {
+        window.cancelAnimationFrame(previewAudioEnvelopeState.fadeOutFrameId);
+        previewAudioEnvelopeState.fadeOutFrameId = 0;
+    }
+    if (previewAudioEnvelopeState.fadeOutTimeoutId) {
+        window.clearTimeout(previewAudioEnvelopeState.fadeOutTimeoutId);
+        previewAudioEnvelopeState.fadeOutTimeoutId = 0;
+    }
+    if (restoreVolume && previewVideo) {
+        previewVideo.volume = clampVolume(previewAudioEnvelopeState.baseVolume);
+    }
+}
+
+function applyPreviewAudioEnvelope(settings, clipDurationMs) {
+    if (!previewVideo) {
+        return;
+    }
+
+    cancelPreviewAudioEnvelope();
+
+    const normalizedSettings = settings || getDefaultAudioSettings();
+    const volumePercent = clampVolumePercent(normalizedSettings.volumePercent);
+    const baseVolume = clampVolume(volumePercent / 100);
+    const fadeInMs = sanitizeFadeMilliseconds(normalizedSettings.fadeInMs);
+    const fadeOutMs = sanitizeFadeMilliseconds(normalizedSettings.fadeOutMs);
+    const clipMs = Math.max(0, Math.round(Number(clipDurationMs) || 0));
+
+    previewAudioEnvelopeState.baseVolume = baseVolume;
+    previewVideo.muted = false;
+
+    if (baseVolume <= 0) {
+        previewVideo.volume = 0;
+    } else if (fadeInMs > 0) {
+        previewVideo.volume = 0;
+        const fadeInStart = performance.now();
+        const stepFadeIn = () => {
+            const elapsed = performance.now() - fadeInStart;
+            const progress = Math.min(Math.max(elapsed / fadeInMs, 0), 1);
+            previewVideo.volume = clampVolume(baseVolume * progress);
+            if (progress < 1) {
+                previewAudioEnvelopeState.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
+            }
+        };
+        previewAudioEnvelopeState.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
+    } else {
+        previewVideo.volume = baseVolume;
+    }
+
+    if (fadeOutMs > 0 && clipMs > 0 && baseVolume > 0) {
+        const startDelay = Math.max(0, clipMs - fadeOutMs);
+        previewAudioEnvelopeState.fadeOutTimeoutId = window.setTimeout(() => {
+            const fadeOutStart = performance.now();
+            const initialVolume = previewVideo.volume;
+            const stepFadeOut = () => {
+                const elapsed = performance.now() - fadeOutStart;
+                const progress = Math.min(Math.max(elapsed / fadeOutMs, 0), 1);
+                const nextVolume = clampVolume(initialVolume * (1 - progress));
+                previewVideo.volume = nextVolume;
+                if (progress < 1) {
+                    previewAudioEnvelopeState.fadeOutFrameId = window.requestAnimationFrame(stepFadeOut);
+                }
+            };
+            previewAudioEnvelopeState.fadeOutFrameId = window.requestAnimationFrame(stepFadeOut);
+        }, startDelay);
+    }
+}
+
+function ensureTimelineAudioDefaults(timelineItem) {
+    if (!isVideoTimelineItem(timelineItem) || !timelineItem?.dataset) {
+        return;
+    }
+    if (!timelineItem.dataset.audioVolumePercent) {
+        timelineItem.dataset.audioVolumePercent = String(DEFAULT_AUDIO_VOLUME_PERCENT);
+    }
+}
+
 audioFadeControls.forEach((control) => {
     const { input, readout } = control;
     if (!input || !readout) {
         return;
     }
 
+    syncAudioFadeControl(control);
+
     const handleUpdate = () => {
+        if (input.disabled) {
+            return;
+        }
         syncAudioFadeControl(control);
+        const seconds = Number.parseFloat(input.dataset.fadeSeconds || input.value || '0');
+        const milliseconds = Math.max(0, Math.round(seconds * 1000));
+        if (input === audioFadeInInput) {
+            persistActiveTimelineAudioSettings({ fadeInMs: milliseconds });
+        } else if (input === audioFadeOutInput) {
+            persistActiveTimelineAudioSettings({ fadeOutMs: milliseconds });
+        }
+        cancelPreviewAudioEnvelope({ restoreVolume: false });
     };
 
-    handleUpdate();
     input.addEventListener('input', handleUpdate);
     input.addEventListener('change', handleUpdate);
 });
+
+function syncAudioControlsToTimelineItem(timelineItem) {
+    const isVideo = isVideoTimelineItem(timelineItem);
+    const settings = isVideo
+        ? getTimelineItemAudioSettings(timelineItem)
+        : getDefaultAudioSettings();
+
+    if (masterVolumeInput) {
+        masterVolumeInput.disabled = !isVideo;
+        if (isVideo) {
+            masterVolumeInput.removeAttribute('aria-disabled');
+        } else {
+            masterVolumeInput.setAttribute('aria-disabled', 'true');
+        }
+        masterVolumeInput.value = String(settings.volumePercent);
+        updateMasterVolumeReadout(settings.volumePercent, { disabled: !isVideo });
+    }
+
+    audioFadeControls.forEach((control) => {
+        const { input, readout } = control;
+        if (!input || !readout) {
+            return;
+        }
+
+        if (!isVideo) {
+            input.disabled = true;
+            input.setAttribute('aria-disabled', 'true');
+            input.value = '0';
+            input.dataset.fadeSeconds = '0';
+            input.setAttribute('aria-valuenow', '0');
+            input.setAttribute('aria-valuetext', 'Audio fades available for video clips');
+            readout.textContent = 'Video only';
+            return;
+        }
+
+        input.disabled = false;
+        input.removeAttribute('aria-disabled');
+        const seconds = control.input === audioFadeInInput
+            ? settings.fadeInMs / 1000
+            : settings.fadeOutMs / 1000;
+        syncAudioFadeControl(control, seconds);
+    });
+
+    if (isVideo) {
+        applyMasterVolumeToPreview(settings.volumePercent);
+    } else if (previewVideo) {
+        cancelPreviewAudioEnvelope({ restoreVolume: false });
+    }
+}
+
+if (masterVolumeInput) {
+    const handleMasterVolumeUpdate = () => {
+        if (masterVolumeInput.disabled) {
+            return;
+        }
+        const percent = clampVolumePercent(masterVolumeInput.value);
+        masterVolumeInput.value = String(percent);
+        updateMasterVolumeReadout(percent);
+        persistActiveTimelineAudioSettings({ volumePercent: percent });
+        cancelPreviewAudioEnvelope({ restoreVolume: false });
+        applyMasterVolumeToPreview(percent);
+    };
+
+    masterVolumeInput.addEventListener('input', handleMasterVolumeUpdate);
+    masterVolumeInput.addEventListener('change', handleMasterVolumeUpdate);
+}
+
+syncAudioControlsToTimelineItem(null);
 
 function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
     if (!animationComboSpeedInput) {
@@ -3860,6 +4189,9 @@ function initializeTimelineItem(timelineItem) {
     }
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
+    if (fileType.startsWith('video/')) {
+        ensureTimelineAudioDefaults(timelineItem);
+    }
     if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
@@ -5846,6 +6178,14 @@ function sanitizeKeyframeEntry(entry) {
     };
 }
 
+function isVideoTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('video/');
+}
+
 function isImageTimelineItem(timelineItem) {
     if (!timelineItem || !timelineItem.dataset) {
         return false;
@@ -6694,6 +7034,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     isTimelinePlaying = false;
 
     cancelPreviewExitAnimation({ forceRestore: true });
+    cancelPreviewAudioEnvelope({ restoreVolume: true });
 
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
@@ -6721,6 +7062,7 @@ function clearPreview() {
     previewVideo.hidden = true;
     previewVideo.removeAttribute('src');
     previewVideo.load();
+    cancelPreviewAudioEnvelope({ restoreVolume: true });
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
@@ -6757,6 +7099,7 @@ function setActiveTimelineItem(item, options = {}) {
         }
     }
     syncAnimationControlsToTimelineItem(activeTimelineItem);
+    syncAudioControlsToTimelineItem(activeTimelineItem);
     refreshImageDurationApplyAllAvailability();
     const nextProgress = clipProgressOverride !== null
         ? clipProgressOverride
@@ -6793,16 +7136,19 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     if (fileType.startsWith('video/')) {
+        const audioSettings = getTimelineItemAudioSettings(timelineItem);
         setPreviewMode('has-video');
         resetPreviewScroll();
         setPreviewImageVisibility(false);
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
+        cancelPreviewAudioEnvelope({ restoreVolume: false });
         if (previewVideo.src !== objectURL) {
             previewVideo.pause();
             previewVideo.src = objectURL;
             previewVideo.load();
         }
+        applyMasterVolumeToPreview(audioSettings.volumePercent);
         playVideoButton.textContent = 'Play Back';
     } else if (fileType.startsWith('image/')) {
         cancelPreviewExitAnimation({ forceRestore: true });
@@ -7196,6 +7542,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
     const playbackWindow = Number.isFinite(segmentDurationMs)
         ? Math.max(0, Math.round(segmentDurationMs))
         : null;
+    const audioSettings = getTimelineItemAudioSettings(timelineItem);
 
     setActiveTimelineItem(timelineItem);
 
@@ -7206,6 +7553,8 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         return;
     }
 
+    cancelPreviewAudioEnvelope({ restoreVolume: false });
+
     if (fileType.startsWith('video/')) {
         setPreviewMode('has-video');
         resetPreviewScroll();
@@ -7213,6 +7562,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
         previewPlaceholder.hidden = true;
+        applyMasterVolumeToPreview(audioSettings.volumePercent);
 
         await new Promise((resolve) => {
             let resolved = false;
@@ -7232,6 +7582,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 if (!abortController.signal.aborted) {
                     abortController.abort();
                 }
+                cancelPreviewAudioEnvelope({ restoreVolume: true });
             };
 
             const finalize = () => {
@@ -7309,6 +7660,14 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
 
                 previewVideo.currentTime = 0;
+                previewVideo.muted = false;
+                const baseVolume = clampVolume(audioSettings.volumePercent / 100);
+                previewAudioEnvelopeState.baseVolume = baseVolume;
+                if (audioSettings.fadeInMs > 0 && baseVolume > 0) {
+                    previewVideo.volume = 0;
+                } else {
+                    previewVideo.volume = baseVolume;
+                }
 
                 try {
                     await waitForMediaReady(previewVideo, { signal: abortController.signal });
@@ -7326,6 +7685,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     if (playPromise && typeof playPromise.then === 'function') {
                         await playPromise;
                     }
+                    applyPreviewAudioEnvelope(audioSettings, effectiveDuration);
                 } catch (error) {
                     if (abortController.signal.aborted) {
                         return;

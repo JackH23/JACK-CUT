@@ -776,6 +776,34 @@ body {
     accent-color: rgba(124, 58, 237, 0.85);
 }
 
+.audio-master-control {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.audio-master-control__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.audio-master-control__row input[type="range"] {
+    flex: 1 1 auto;
+    accent-color: rgba(56, 189, 248, 0.85);
+}
+
+.audio-master-control__row .slider-readout {
+    min-width: 52px;
+    text-align: right;
+}
+
+.audio-master-control__description {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
 .animation-mode {
     display: flex;
     flex-direction: column;
