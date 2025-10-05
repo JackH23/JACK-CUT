@@ -594,7 +594,7 @@ body {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 6;
+    z-index: 50;
 }
 
 .preview-outside-indicator[hidden] {
@@ -607,7 +607,7 @@ body {
     box-sizing: border-box;
     border: 2px solid rgba(255, 255, 255, 0.9);
     border-radius: 0;
-    background: transparent;
+    background: rgba(8, 13, 28, 0.72);
     pointer-events: none;
 }
 
