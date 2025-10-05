@@ -1818,7 +1818,18 @@ body {
 }
 
 .preview-image-frame[data-outside-viewport="true"] {
-    visibility: hidden;
+    visibility: visible;
+}
+
+.preview-image-frame[data-outside-viewport="true"]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 0;
+    pointer-events: none;
+    z-index: 60;
+    box-shadow: 0 0 0 1px rgba(8, 13, 28, 0.65);
 }
 
 .preview-image-frame.is-dragging,

@@ -4838,15 +4838,15 @@ function updatePreviewImageFrameVisibility() {
     const frameRight = frameLeft + previewImageTransform.width;
     const frameBottom = frameTop + previewImageTransform.height;
 
-    const intersectsViewport = frameRight > 0
-        && frameBottom > 0
-        && frameLeft < viewportWidth
-        && frameTop < viewportHeight;
+    const extendsBeyondViewport = frameLeft < 0
+        || frameTop < 0
+        || frameRight > viewportWidth
+        || frameBottom > viewportHeight;
 
-    if (intersectsViewport) {
-        previewImageFrame.removeAttribute('data-outside-viewport');
-    } else {
+    if (extendsBeyondViewport) {
         previewImageFrame.setAttribute('data-outside-viewport', 'true');
+    } else {
+        previewImageFrame.removeAttribute('data-outside-viewport');
     }
 }
 
