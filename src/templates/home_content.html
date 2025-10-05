@@ -366,9 +366,22 @@
                         <div class="info-list">
                             <div class="info-item">
                                 <div class="info-icon">🔊</div>
-                                <div>
+                                <div class="audio-master-control">
                                     <label for="video-volume">Master volume</label>
-                                    <input type="range" id="video-volume" min="0" max="100" value="80">
+                                    <div class="audio-master-control__row">
+                                        <input
+                                            type="range"
+                                            id="video-volume"
+                                            min="0"
+                                            max="100"
+                                            value="80"
+                                            aria-describedby="video-volume-value video-volume-description"
+                                        >
+                                        <div class="slider-readout" id="video-volume-value">80%</div>
+                                    </div>
+                                    <p class="audio-master-control__description" id="video-volume-description">
+                                        Set how loud the selected clip plays during preview and export.
+                                    </p>
                                 </div>
                             </div>
                             <div class="info-item">
