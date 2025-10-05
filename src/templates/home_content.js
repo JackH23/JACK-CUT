@@ -141,6 +141,225 @@ const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
 const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
 
+const canvasPanel = document.getElementById('canvas-panel');
+if (canvasPanel && previewViewport) {
+    const DEFAULT_CANVAS_STATE = {
+        style: 'blur',
+        blur: 12,
+        solid: '#0f172a',
+        pattern: 'grid',
+        brand: 'aurora',
+    };
+
+    const canvasState = { ...DEFAULT_CANVAS_STATE };
+    const canvasStyleRadios = Array.from(canvasPanel.querySelectorAll('input[name="canvas-style"]'));
+    const canvasStylePanels = Array.from(canvasPanel.querySelectorAll('[data-canvas-style-panel]'));
+    const canvasBlurInput = canvasPanel.querySelector('#canvas-blur-amount');
+    const canvasBlurValue = canvasPanel.querySelector('#canvas-blur-value');
+    const canvasSolidSwatches = Array.from(canvasPanel.querySelectorAll('[data-canvas-solid]'));
+    const canvasSolidCustomInput = canvasPanel.querySelector('#canvas-solid-custom');
+    const canvasPatternSwatches = Array.from(canvasPanel.querySelectorAll('[data-canvas-pattern]'));
+    const canvasBrandSwatches = Array.from(canvasPanel.querySelectorAll('[data-canvas-brand]'));
+    const canvasResetButton = canvasPanel.querySelector('#canvas-reset-button');
+
+    function isCanvasStateDefault() {
+        return (
+            canvasState.style === DEFAULT_CANVAS_STATE.style
+            && canvasState.blur === DEFAULT_CANVAS_STATE.blur
+            && canvasState.pattern === DEFAULT_CANVAS_STATE.pattern
+            && canvasState.brand === DEFAULT_CANVAS_STATE.brand
+            && canvasState.solid.toLowerCase() === DEFAULT_CANVAS_STATE.solid.toLowerCase()
+        );
+    }
+
+    function updateCanvasPreview() {
+        if (!previewViewport) {
+            return;
+        }
+
+        previewViewport.dataset.canvasStyle = canvasState.style;
+
+        if (canvasState.style === 'pattern') {
+            previewViewport.dataset.canvasPattern = canvasState.pattern;
+        } else {
+            previewViewport.removeAttribute('data-canvas-pattern');
+        }
+
+        if (canvasState.style === 'brand') {
+            previewViewport.dataset.canvasBrand = canvasState.brand;
+        } else {
+            previewViewport.removeAttribute('data-canvas-brand');
+        }
+
+        previewViewport.style.setProperty('--canvas-solid-color', canvasState.solid);
+        previewViewport.style.setProperty('--canvas-blur-strength', `${canvasState.blur}px`);
+    }
+
+    function syncCanvasControls() {
+        const normalizedSolid = canvasState.solid.toLowerCase();
+
+        canvasStyleRadios.forEach((radio) => {
+            const isActive = radio.value === canvasState.style;
+            // eslint-disable-next-line no-param-reassign
+            radio.checked = isActive;
+            const option = radio.closest('.canvas-style-option');
+            if (option) {
+                option.classList.toggle('is-active', isActive);
+            }
+        });
+
+        canvasStylePanels.forEach((panel) => {
+            const isActive = panel.dataset.canvasStylePanel === canvasState.style;
+            panel.hidden = !isActive;
+            panel.setAttribute('aria-hidden', String(!isActive));
+        });
+
+        if (canvasBlurInput) {
+            canvasBlurInput.value = String(canvasState.blur);
+        }
+        if (canvasBlurValue) {
+            canvasBlurValue.textContent = canvasState.blur ? `${canvasState.blur}px blur` : 'Off';
+        }
+
+        canvasSolidSwatches.forEach((button) => {
+            const swatchColor = (button.dataset.canvasSolid || '').toLowerCase();
+            const isActive = swatchColor === normalizedSolid;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', String(isActive));
+        });
+
+        if (canvasSolidCustomInput) {
+            canvasSolidCustomInput.value = canvasState.solid;
+            const isCustomSelection = !canvasSolidSwatches.some(
+                (button) => (button.dataset.canvasSolid || '').toLowerCase() === normalizedSolid,
+            );
+            canvasSolidCustomInput.classList.toggle('is-active', isCustomSelection);
+        }
+
+        canvasPatternSwatches.forEach((button) => {
+            const isActive = button.dataset.canvasPattern === canvasState.pattern;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', String(isActive));
+        });
+
+        canvasBrandSwatches.forEach((button) => {
+            const isActive = button.dataset.canvasBrand === canvasState.brand;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', String(isActive));
+        });
+
+        if (canvasResetButton) {
+            const disabled = isCanvasStateDefault();
+            canvasResetButton.disabled = disabled;
+            canvasResetButton.setAttribute('aria-disabled', String(disabled));
+        }
+    }
+
+    function setCanvasStyle(style) {
+        if (!style || canvasState.style === style) {
+            return;
+        }
+        canvasState.style = style;
+        syncCanvasControls();
+        updateCanvasPreview();
+    }
+
+    canvasStyleRadios.forEach((radio) => {
+        radio.addEventListener('change', () => {
+            if (radio.checked) {
+                setCanvasStyle(radio.value);
+            }
+        });
+    });
+
+    if (canvasBlurInput) {
+        canvasBlurInput.addEventListener('input', () => {
+            const rawValue = Number(canvasBlurInput.value);
+            canvasState.blur = Number.isFinite(rawValue) ? rawValue : DEFAULT_CANVAS_STATE.blur;
+            if (canvasState.style !== 'blur') {
+                canvasState.style = 'blur';
+            }
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    }
+
+    canvasSolidSwatches.forEach((button) => {
+        button.addEventListener('click', () => {
+            const color = button.dataset.canvasSolid;
+            if (!color) {
+                return;
+            }
+            canvasState.solid = color;
+            if (canvasState.style !== 'solid') {
+                canvasState.style = 'solid';
+            }
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    });
+
+    if (canvasSolidCustomInput) {
+        canvasSolidCustomInput.addEventListener('input', () => {
+            const color = canvasSolidCustomInput.value;
+            if (!color) {
+                return;
+            }
+            canvasState.solid = color;
+            if (canvasState.style !== 'solid') {
+                canvasState.style = 'solid';
+            }
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    }
+
+    canvasPatternSwatches.forEach((button) => {
+        button.addEventListener('click', () => {
+            const pattern = button.dataset.canvasPattern;
+            if (!pattern) {
+                return;
+            }
+            canvasState.pattern = pattern;
+            if (canvasState.style !== 'pattern') {
+                canvasState.style = 'pattern';
+            }
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    });
+
+    canvasBrandSwatches.forEach((button) => {
+        button.addEventListener('click', () => {
+            const brand = button.dataset.canvasBrand;
+            if (!brand) {
+                return;
+            }
+            canvasState.brand = brand;
+            if (canvasState.style !== 'brand') {
+                canvasState.style = 'brand';
+            }
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    });
+
+    if (canvasResetButton) {
+        canvasResetButton.addEventListener('click', () => {
+            canvasState.style = DEFAULT_CANVAS_STATE.style;
+            canvasState.blur = DEFAULT_CANVAS_STATE.blur;
+            canvasState.solid = DEFAULT_CANVAS_STATE.solid;
+            canvasState.pattern = DEFAULT_CANVAS_STATE.pattern;
+            canvasState.brand = DEFAULT_CANVAS_STATE.brand;
+            syncCanvasControls();
+            updateCanvasPreview();
+        });
+    }
+
+    syncCanvasControls();
+    updateCanvasPreview();
+}
+
 const optionSliderConfigs = [
     {
         inputId: 'animation-in-timing',

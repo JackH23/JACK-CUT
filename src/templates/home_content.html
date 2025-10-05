@@ -173,6 +173,121 @@
                                     <div class="slider-readout" id="image-rotation-value">0°</div>
                                 </div>
                             </div>
+                            <div class="canvas-panel" id="canvas-panel" aria-labelledby="canvas-panel-title">
+                                <div class="canvas-panel__header">
+                                    <div>
+                                        <h3 class="canvas-panel__title" id="canvas-panel-title">Canvas</h3>
+                                        <p class="canvas-panel__subtitle">Control the background behind your video or image layers.</p>
+                                    </div>
+                                    <button type="button" class="canvas-reset-button" id="canvas-reset-button" disabled aria-disabled="true">Reset</button>
+                                </div>
+                                <fieldset class="canvas-style-options" aria-labelledby="canvas-style-options-title">
+                                    <legend class="canvas-style-options__legend" id="canvas-style-options-title">Background style</legend>
+                                    <div class="canvas-style-options__grid">
+                                        <label class="canvas-style-option is-active" for="canvas-style-blur">
+                                            <input type="radio" name="canvas-style" id="canvas-style-blur" value="blur" checked>
+                                            <span class="canvas-style-option__content">
+                                                <span class="canvas-style-option__icon" aria-hidden="true">🌫️</span>
+                                                <span class="canvas-style-option__text">
+                                                    <span class="canvas-style-option__title">Blur backdrop</span>
+                                                    <span class="canvas-style-option__description">Diffuse uploaded footage to keep the focus on your subject.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                        <label class="canvas-style-option" for="canvas-style-solid">
+                                            <input type="radio" name="canvas-style" id="canvas-style-solid" value="solid">
+                                            <span class="canvas-style-option__content">
+                                                <span class="canvas-style-option__icon" aria-hidden="true">🎨</span>
+                                                <span class="canvas-style-option__text">
+                                                    <span class="canvas-style-option__title">Solid color</span>
+                                                    <span class="canvas-style-option__description">Pick a brand color or on-brand neutral as the canvas.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                        <label class="canvas-style-option" for="canvas-style-pattern">
+                                            <input type="radio" name="canvas-style" id="canvas-style-pattern" value="pattern">
+                                            <span class="canvas-style-option__content">
+                                                <span class="canvas-style-option__icon" aria-hidden="true">🧩</span>
+                                                <span class="canvas-style-option__text">
+                                                    <span class="canvas-style-option__title">Pattern</span>
+                                                    <span class="canvas-style-option__description">Add subtle texture to give flat canvases more energy.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                        <label class="canvas-style-option" for="canvas-style-brand">
+                                            <input type="radio" name="canvas-style" id="canvas-style-brand" value="brand">
+                                            <span class="canvas-style-option__content">
+                                                <span class="canvas-style-option__icon" aria-hidden="true">🖼️</span>
+                                                <span class="canvas-style-option__text">
+                                                    <span class="canvas-style-option__title">Image / brand</span>
+                                                    <span class="canvas-style-option__description">Use branded gradients or imagery behind your story.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </fieldset>
+                                <div class="canvas-style-panels">
+                                    <div class="canvas-style-panel" data-canvas-style-panel="blur">
+                                        <div class="canvas-slider-row">
+                                            <label for="canvas-blur-amount">Blur strength</label>
+                                            <div class="canvas-slider">
+                                                <input type="range" id="canvas-blur-amount" min="0" max="30" step="1" value="12" aria-describedby="canvas-blur-value">
+                                                <span class="slider-readout" id="canvas-blur-value">12px blur</span>
+                                            </div>
+                                        </div>
+                                        <p class="canvas-style-panel__description">Great for quickly hiding a busy background while keeping talent sharp.</p>
+                                    </div>
+                                    <div class="canvas-style-panel" data-canvas-style-panel="solid" hidden aria-hidden="true">
+                                        <p class="canvas-style-panel__description">Select a color swatch or dial in a custom hexadecimal value.</p>
+                                        <div class="canvas-swatch-grid" role="list">
+                                            <button type="button" class="canvas-swatch canvas-swatch--color canvas-color-midnight is-active" data-canvas-solid="#0f172a" aria-pressed="true">
+                                                <span class="canvas-swatch__label">Midnight</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--color canvas-color-ocean" data-canvas-solid="#0b2942" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Ocean blue</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--color canvas-color-ember" data-canvas-solid="#331719" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Ember</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--color canvas-color-forest" data-canvas-solid="#0f3224" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Forest</span>
+                                            </button>
+                                        </div>
+                                        <div class="canvas-custom-color">
+                                            <label for="canvas-solid-custom">Custom color</label>
+                                            <input type="color" id="canvas-solid-custom" value="#0f172a" aria-label="Choose custom canvas color">
+                                        </div>
+                                    </div>
+                                    <div class="canvas-style-panel" data-canvas-style-panel="pattern" hidden aria-hidden="true">
+                                        <p class="canvas-style-panel__description">Use lightweight patterns to suggest depth without distraction.</p>
+                                        <div class="canvas-swatch-grid" role="list">
+                                            <button type="button" class="canvas-swatch canvas-swatch--pattern canvas-pattern-grid is-active" data-canvas-pattern="grid" aria-pressed="true">
+                                                <span class="canvas-swatch__label">Soft grid</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--pattern canvas-pattern-waves" data-canvas-pattern="waves" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Waves</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--pattern canvas-pattern-halftone" data-canvas-pattern="halftone" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Halftone</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="canvas-style-panel" data-canvas-style-panel="brand" hidden aria-hidden="true">
+                                        <p class="canvas-style-panel__description">Pair the canvas with brand gradients or campaign imagery.</p>
+                                        <div class="canvas-swatch-grid" role="list">
+                                            <button type="button" class="canvas-swatch canvas-swatch--brand canvas-brand-aurora is-active" data-canvas-brand="aurora" aria-pressed="true">
+                                                <span class="canvas-swatch__label">Aurora glow</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--brand canvas-brand-sunset" data-canvas-brand="sunset" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Sunset pop</span>
+                                            </button>
+                                            <button type="button" class="canvas-swatch canvas-swatch--brand canvas-brand-midnight" data-canvas-brand="midnight" aria-pressed="false">
+                                                <span class="canvas-swatch__label">Midnight pulse</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
