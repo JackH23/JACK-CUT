@@ -3533,6 +3533,8 @@ function applyTimelineZoom(options = {}) {
     items.forEach((item) => {
         const duration = getTimelineItemPlaybackDuration(item);
         applyTimelineItemDurationStyles(item, duration);
+        const gapMs = getTimelineItemGapBeforeMs(item);
+        applyTimelineItemGapStyles(item, gapMs);
     });
 
     if (preserveScroll) {
@@ -3608,6 +3610,14 @@ function durationToWidth(durationMs) {
     return Math.max(MIN_TIMELINE_ITEM_WIDTH, Math.round(durationMs / perPixel));
 }
 
+function durationToOffsetPixels(durationMs) {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+        return 0;
+    }
+    const perPixel = getTimelineDurationPerPixel();
+    return Math.max(0, Math.round(durationMs / perPixel));
+}
+
 function widthToDuration(widthPx) {
     if (!Number.isFinite(widthPx) || widthPx <= 0) {
         return MIN_IMAGE_DURATION;
@@ -3616,10 +3626,124 @@ function widthToDuration(widthPx) {
     return Math.max(MIN_IMAGE_DURATION, Math.round(widthPx * perPixel));
 }
 
+function offsetPixelsToDuration(widthPx) {
+    if (!Number.isFinite(widthPx) || widthPx <= 0) {
+        return 0;
+    }
+    const perPixel = getTimelineDurationPerPixel();
+    return Math.max(0, Math.round(widthPx * perPixel));
+}
+
 function applyTimelineItemDurationStyles(timelineItem, durationMs) {
     const width = durationToWidth(durationMs);
     timelineItem.style.width = `${width}px`;
     timelineItem.style.flexBasis = `${width}px`;
+}
+
+function getTimelineItemGapBeforeMs(timelineItem) {
+    if (!timelineItem) {
+        return 0;
+    }
+    const rawGap = Number(timelineItem.dataset?.gapBeforeMs);
+    if (!Number.isFinite(rawGap) || rawGap <= 0) {
+        return 0;
+    }
+    return Math.max(0, Math.round(rawGap));
+}
+
+function applyTimelineItemGapStyles(timelineItem, gapMs) {
+    if (!timelineItem) {
+        return;
+    }
+    const offsetPx = durationToOffsetPixels(gapMs);
+    if (offsetPx <= 0) {
+        timelineItem.style.removeProperty('margin-inline-start');
+        timelineItem.style.removeProperty('margin-left');
+        return;
+    }
+    timelineItem.style.marginInlineStart = `${offsetPx}px`;
+    timelineItem.style.marginLeft = `${offsetPx}px`;
+}
+
+function setTimelineItemGapBefore(timelineItem, gapMs) {
+    if (!timelineItem) {
+        return 0;
+    }
+    const safeGap = Math.max(0, Math.round(Number(gapMs) || 0));
+    if (safeGap > 0) {
+        timelineItem.dataset.gapBeforeMs = String(safeGap);
+    } else {
+        delete timelineItem.dataset.gapBeforeMs;
+    }
+    applyTimelineItemGapStyles(timelineItem, safeGap);
+    return safeGap;
+}
+
+function computeTimelineDropGapPx(lane, timelineItem, clientX) {
+    if (!lane || !timelineItem) {
+        return 0;
+    }
+
+    const laneRect = lane.getBoundingClientRect();
+    if (!laneRect) {
+        return 0;
+    }
+
+    const pointerX = clientX - laneRect.left;
+    if (!Number.isFinite(pointerX)) {
+        return 0;
+    }
+
+    const laneStyle = window.getComputedStyle(lane);
+    const paddingLeft = Number.parseFloat(laneStyle.paddingLeft) || 0;
+    const paddingRight = Number.parseFloat(laneStyle.paddingRight) || 0;
+    const contentWidth = Math.max(0, laneRect.width - paddingLeft - paddingRight);
+    const pointerContentX = Math.min(
+        Math.max(pointerX - paddingLeft, 0),
+        contentWidth,
+    );
+
+    const previousSibling = timelineItem.previousElementSibling;
+    const previousEnd = previousSibling
+        ? Math.max(
+            0,
+            (previousSibling.offsetLeft - paddingLeft) + previousSibling.offsetWidth,
+        )
+        : 0;
+
+    const itemWidth = timelineItem.offsetWidth || 0;
+    let proposedStart = Math.max(pointerContentX - itemWidth / 2, previousEnd);
+
+    const nextSibling = timelineItem.nextElementSibling;
+    if (nextSibling) {
+        const nextStart = Math.max(0, nextSibling.offsetLeft - paddingLeft);
+        proposedStart = Math.min(
+            proposedStart,
+            Math.max(previousEnd, nextStart - itemWidth),
+        );
+    }
+
+    return Math.max(0, proposedStart - previousEnd);
+}
+
+function applyDraggingItemDropGap(lane, timelineItem, clientX) {
+    if (!lane || !timelineItem) {
+        return;
+    }
+
+    const gapPx = computeTimelineDropGapPx(lane, timelineItem, clientX);
+    const safeGapPx = Math.max(0, Math.round(gapPx));
+
+    if (safeGapPx <= 0) {
+        timelineItem.style.removeProperty('margin-inline-start');
+        timelineItem.style.removeProperty('margin-left');
+        timelineItem.dataset.dropGapPx = '0';
+        return;
+    }
+
+    timelineItem.style.marginInlineStart = `${safeGapPx}px`;
+    timelineItem.style.marginLeft = `${safeGapPx}px`;
+    timelineItem.dataset.dropGapPx = String(safeGapPx);
 }
 
 function ensureTimelineItemDurationBadge(timelineItem) {
@@ -3724,6 +3848,7 @@ function clearMainTrackSnapOverrides() {
     mainLane.querySelectorAll('.timeline-item').forEach((item) => {
         item.style.removeProperty('margin-inline-start');
         item.style.removeProperty('margin-left');
+        delete item.dataset.gapBeforeMs;
     });
 }
 
@@ -3791,7 +3916,8 @@ function getTimelineLaneEntries() {
         let elapsed = 0;
         laneItems.forEach((item) => {
             const duration = Math.max(0, getTimelineItemPlaybackDuration(item));
-            const start = elapsed;
+            const gapBefore = getTimelineItemGapBeforeMs(item);
+            const start = elapsed + gapBefore;
             const end = start + duration;
             entries.push({
                 item,
@@ -4375,6 +4501,15 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.addEventListener('dragstart', (event) => {
         stopTimelinePlayback();
         timelineItem.classList.add('dragging');
+        const currentGap = getTimelineItemGapBeforeMs(timelineItem);
+        if (currentGap > 0) {
+            timelineItem.dataset.dragOriginalGapMs = String(currentGap);
+            timelineItem.dataset.dropGapPx = String(durationToOffsetPixels(currentGap));
+        } else {
+            delete timelineItem.dataset.dragOriginalGapMs;
+            timelineItem.dataset.dropGapPx = '0';
+        }
+        delete timelineItem.dataset.dropAppliedGap;
         const transfer = event.dataTransfer;
         if (transfer) {
             transfer.effectAllowed = 'move';
@@ -4385,6 +4520,17 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.addEventListener('dragend', () => {
         timelineItem.classList.remove('dragging');
         timelineItem.draggable = true;
+        if (timelineItem.dataset.dropAppliedGap !== '1') {
+            const originalGap = Number(timelineItem.dataset.dragOriginalGapMs);
+            if (Number.isFinite(originalGap) && originalGap > 0) {
+                setTimelineItemGapBefore(timelineItem, originalGap);
+            } else {
+                setTimelineItemGapBefore(timelineItem, 0);
+            }
+        }
+        delete timelineItem.dataset.dragOriginalGapMs;
+        delete timelineItem.dataset.dropAppliedGap;
+        delete timelineItem.dataset.dropGapPx;
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
         updateTimelineEmptyState();
@@ -4402,6 +4548,7 @@ function initializeTimelineItem(timelineItem) {
         const duration = getTimelineItemPlaybackDuration(timelineItem);
         updateTimelineItemDurationBadge(timelineItem, duration);
     }
+    applyTimelineItemGapStyles(timelineItem, getTimelineItemGapBeforeMs(timelineItem));
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
     if (fileType.startsWith('video/')) {
@@ -4445,6 +4592,7 @@ if (timelineTrack) {
         } else if (afterElement !== draggingItem) {
             lane.insertBefore(draggingItem, afterElement);
         }
+        applyDraggingItemDropGap(lane, draggingItem, event.clientX);
         draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
     });
 
@@ -4452,6 +4600,21 @@ if (timelineTrack) {
         event.preventDefault();
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
         if (draggingItem) {
+            const lane = getTimelineLaneFromEvent(event) || draggingItem.closest('.timeline-lane');
+            if (lane) {
+                if (lane.dataset.laneIndex) {
+                    draggingItem.dataset.laneIndex = lane.dataset.laneIndex;
+                }
+                const dropGapPx = draggingItem.dataset.dropGapPx
+                    ? Number(draggingItem.dataset.dropGapPx)
+                    : computeTimelineDropGapPx(lane, draggingItem, event.clientX);
+                const gapMs = offsetPixelsToDuration(dropGapPx);
+                setTimelineItemGapBefore(draggingItem, gapMs);
+            } else {
+                setTimelineItemGapBefore(draggingItem, offsetPixelsToDuration(Number(draggingItem.dataset.dropGapPx)));
+            }
+            draggingItem.dataset.dropAppliedGap = '1';
+            delete draggingItem.dataset.dropGapPx;
             draggingItem.classList.remove('dragging');
             draggingItem.draggable = true;
         }
