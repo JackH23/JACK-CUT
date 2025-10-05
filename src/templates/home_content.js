@@ -215,6 +215,42 @@ const ENTRANCE_ANIMATION_CLASS_NAMES = Object.values(ENTRANCE_ANIMATION_PRESETS)
     (preset) => preset.className,
 );
 
+function resolveAnimationHoldDuration(config, type = 'generic') {
+    if (!config) {
+        return 0;
+    }
+
+    if (config.combo) {
+        if (type === 'entrance') {
+            const comboEntrance = Number(config.combo?.entranceDuration);
+            if (Number.isFinite(comboEntrance)) {
+                return Math.max(0, Math.round(comboEntrance));
+            }
+        } else if (type === 'exit') {
+            const comboExit = Number(config.combo?.exitDuration);
+            if (Number.isFinite(comboExit)) {
+                return Math.max(0, Math.round(comboExit));
+            }
+        }
+
+        const comboCombined = Number(config.combo?.combinedDuration);
+        if (Number.isFinite(comboCombined) && type === 'combo') {
+            return Math.max(0, Math.round(comboCombined));
+        }
+    }
+
+    const totalDuration = Number(config.totalDuration);
+    if (Number.isFinite(totalDuration)) {
+        return Math.max(0, Math.round(totalDuration));
+    }
+
+    const duration = Number(config.duration);
+    const delay = Number(config.delay);
+    const combined = (Number.isFinite(duration) ? duration : 0)
+        + (Number.isFinite(delay) ? delay : 0);
+    return Math.max(0, Math.round(combined));
+}
+
 const COMBO_ENTRANCE_PRESETS = {
     fade: {
         key: 'fade',
@@ -5607,6 +5643,68 @@ function clampRotation(value) {
     return Math.min(MAX_ROTATION_DEGREES, Math.max(MIN_ROTATION_DEGREES, numeric));
 }
 
+function calculateImageKeyframePlaybackProgress(elapsedMs, clipDurationMs, options = {}) {
+    const totalClipDuration = Math.max(0, Math.round(Number(clipDurationMs) || 0));
+    if (totalClipDuration <= 0) {
+        return 0;
+    }
+
+    const rawPlaybackDuration = Number.isFinite(options.playbackDurationMs)
+        ? Math.round(options.playbackDurationMs)
+        : totalClipDuration;
+    const playbackDuration = Math.max(
+        0,
+        Math.min(rawPlaybackDuration, totalClipDuration),
+    );
+
+    const maxProgress = totalClipDuration > 0
+        ? playbackDuration / totalClipDuration
+        : 0;
+
+    if (playbackDuration <= 0 || maxProgress <= 0) {
+        return 0;
+    }
+
+    const entranceHoldRaw = Number.isFinite(options.entranceHoldMs)
+        ? Math.max(0, Math.round(options.entranceHoldMs))
+        : 0;
+    const exitHoldRaw = Number.isFinite(options.exitHoldMs)
+        ? Math.max(0, Math.round(options.exitHoldMs))
+        : 0;
+
+    let entranceHold = Math.min(entranceHoldRaw, playbackDuration);
+    let exitHold = Math.min(exitHoldRaw, playbackDuration);
+
+    const totalHold = entranceHold + exitHold;
+    if (totalHold > playbackDuration && totalHold > 0) {
+        const scale = playbackDuration / totalHold;
+        entranceHold = Math.round(entranceHold * scale);
+        exitHold = Math.round(exitHold * scale);
+    }
+
+    const motionWindow = Math.max(0, playbackDuration - entranceHold - exitHold);
+    const clampedElapsed = Math.min(
+        playbackDuration,
+        Math.max(0, Math.round(Number(elapsedMs) || 0)),
+    );
+
+    if (motionWindow <= 0) {
+        return clampedElapsed >= playbackDuration ? clampProgress(maxProgress) : 0;
+    }
+
+    if (clampedElapsed <= entranceHold) {
+        return 0;
+    }
+
+    if (clampedElapsed >= playbackDuration - exitHold) {
+        return clampProgress(maxProgress);
+    }
+
+    const motionElapsed = clampedElapsed - entranceHold;
+    const motionProgress = motionElapsed / motionWindow;
+    return clampProgress(motionProgress * maxProgress);
+}
+
 function normalizeRotationRange(value) {
     let normalized = Number(value);
     if (!Number.isFinite(normalized)) {
@@ -7328,7 +7426,9 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             clipDurationMs: safeEffectiveDuration,
             settingsOverride: animationSettings,
         });
-        const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
+        const entranceHoldMs = resolveAnimationHoldDuration(entranceConfigOverride, 'entrance');
+        const exitHoldMs = resolveAnimationHoldDuration(exitConfig, 'exit');
+        const exitWindow = exitHoldMs;
         const comboCycleDuration = Number.isFinite(exitConfig?.combo?.combinedDuration)
             ? exitConfig.combo.combinedDuration
             : null;
@@ -7380,9 +7480,15 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
                 const now = performance.now();
                 const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
-                const playbackProgress = clipDuration > 0
-                    ? clampProgress(elapsed / clipDuration)
-                    : 0;
+                const playbackProgress = calculateImageKeyframePlaybackProgress(
+                    elapsed,
+                    clipDuration,
+                    {
+                        entranceHoldMs,
+                        exitHoldMs,
+                        playbackDurationMs: safeEffectiveDuration,
+                    },
+                );
                 setActiveClipProgress(playbackProgress, { source: 'image-playback' });
                 if (elapsed < safeEffectiveDuration && isTimelinePlaying) {
                     animationFrameId = window.requestAnimationFrame(step);
@@ -7411,9 +7517,15 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 resolved = true;
                 startExitAnimation();
                 stopAnimation();
-                const finalProgress = clipDuration > 0
-                    ? clampProgress(safeEffectiveDuration / clipDuration)
-                    : 1;
+                const finalProgress = calculateImageKeyframePlaybackProgress(
+                    safeEffectiveDuration,
+                    clipDuration,
+                    {
+                        entranceHoldMs,
+                        exitHoldMs,
+                        playbackDurationMs: safeEffectiveDuration,
+                    },
+                );
                 setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
