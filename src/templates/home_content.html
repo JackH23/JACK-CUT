@@ -55,11 +55,18 @@
                         <p class="panel-subtitle">Review scenes in a responsive canvas with live aspect toggles.</p>
                     </div>
                     <div class="preview-toolbar">
-                        <label for="preview-aspect">Aspect ratio</label>
-                        <select id="preview-aspect">
-                            <option value="16:9" selected>16:9 (Landscape)</option>
-                            <option value="9:16">9:16 (Portrait)</option>
-                        </select>
+                        <div class="preview-aspect-control">
+                            <label for="preview-aspect">Aspect ratio</label>
+                            <select id="preview-aspect">
+                                <option value="16:9" selected>16:9 (Landscape)</option>
+                                <option value="9:16">9:16 (Portrait)</option>
+                            </select>
+                        </div>
+                        <div class="zoom-controls preview-zoom-controls" role="group" aria-label="Preview zoom level">
+                            <button type="button" id="preview-zoom-out" aria-label="Zoom out preview">−</button>
+                            <span class="zoom-controls__value" id="preview-zoom-display" aria-live="polite">100%</span>
+                            <button type="button" id="preview-zoom-in" aria-label="Zoom in preview">+</button>
+                        </div>
                     </div>
                 </div>
                 <div class="preview-area">
@@ -439,7 +446,14 @@
         </section>
 
         <section class="panel timeline-card timeline-footer">
-            <h2>Timeline overview</h2>
+            <div class="timeline-header">
+                <h2>Timeline overview</h2>
+                <div class="zoom-controls timeline-zoom-controls" role="group" aria-label="Timeline zoom level">
+                    <button type="button" id="timeline-zoom-out" aria-label="Zoom out timeline">−</button>
+                    <span class="zoom-controls__value" id="timeline-zoom-display" aria-live="polite">100%</span>
+                    <button type="button" id="timeline-zoom-in" aria-label="Zoom in timeline">+</button>
+                </div>
+            </div>
             <div class="timeline-track" id="timeline-track">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
                 <div class="timeline-lane-list" id="timeline-lane-list" role="list">

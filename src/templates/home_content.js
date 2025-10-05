@@ -86,6 +86,12 @@ if (timelineProgressInput) {
         seekTimelineToFraction(fraction);
     });
 }
+const previewZoomOutButton = document.getElementById('preview-zoom-out');
+const previewZoomInButton = document.getElementById('preview-zoom-in');
+const previewZoomDisplay = document.getElementById('preview-zoom-display');
+const timelineZoomOutButton = document.getElementById('timeline-zoom-out');
+const timelineZoomInButton = document.getElementById('timeline-zoom-in');
+const timelineZoomDisplay = document.getElementById('timeline-zoom-display');
 const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
@@ -156,7 +162,189 @@ const optionSliderConfigs = [
     },
 ];
 
+function formatZoomPercentage(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return '100%';
+    }
+    const percent = Math.round(numeric * 100);
+    return `${percent}%`;
+}
+
+function clampPreviewZoom(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return PREVIEW_ZOOM_DEFAULT;
+    }
+    return Math.min(PREVIEW_ZOOM_MAX, Math.max(PREVIEW_ZOOM_MIN, numeric));
+}
+
+function getPreviewZoom() {
+    return previewZoomLevel;
+}
+
+function updatePreviewZoomDisplay() {
+    if (previewZoomDisplay) {
+        previewZoomDisplay.textContent = formatZoomPercentage(previewZoomLevel);
+    }
+    if (previewZoomOutButton) {
+        previewZoomOutButton.disabled = previewZoomLevel <= PREVIEW_ZOOM_MIN;
+    }
+    if (previewZoomInButton) {
+        previewZoomInButton.disabled = previewZoomLevel >= PREVIEW_ZOOM_MAX;
+    }
+}
+
+function setPreviewZoom(nextZoom) {
+    const clamped = clampPreviewZoom(nextZoom);
+    if (Math.abs(clamped - previewZoomLevel) < 0.0001) {
+        return;
+    }
+
+    let scrollRatioX = 0.5;
+    let scrollRatioY = 0.5;
+    if (previewArea && previewViewport) {
+        const viewportWidth = Math.max(0, previewViewport.clientWidth);
+        const viewportHeight = Math.max(0, previewViewport.clientHeight);
+        const centerX = previewArea.scrollLeft + (previewArea.clientWidth / 2);
+        const centerY = previewArea.scrollTop + (previewArea.clientHeight / 2);
+        const ratioX = viewportWidth > 0 ? centerX / Math.max(viewportWidth, 1) : 0.5;
+        const ratioY = viewportHeight > 0 ? centerY / Math.max(viewportHeight, 1) : 0.5;
+        scrollRatioX = Math.min(Math.max(ratioX, 0), 1);
+        scrollRatioY = Math.min(Math.max(ratioY, 0), 1);
+    }
+
+    previewZoomLevel = clamped;
+
+    if (previewViewport) {
+        previewViewport.dataset.zoom = clamped.toFixed(2);
+    }
+
+    updatePreviewZoomDisplay();
+    schedulePreviewViewportSizeUpdate();
+
+    if (previewArea && previewViewport) {
+        window.requestAnimationFrame(() => {
+            const viewportWidth = Math.max(0, previewViewport.clientWidth);
+            const viewportHeight = Math.max(0, previewViewport.clientHeight);
+            if (viewportWidth > 0) {
+                const targetCenterX = viewportWidth * scrollRatioX;
+                previewArea.scrollLeft = Math.max(
+                    0,
+                    targetCenterX - (previewArea.clientWidth / 2),
+                );
+            }
+            if (viewportHeight > 0) {
+                const targetCenterY = viewportHeight * scrollRatioY;
+                previewArea.scrollTop = Math.max(
+                    0,
+                    targetCenterY - (previewArea.clientHeight / 2),
+                );
+            }
+        });
+    }
+}
+
+function adjustPreviewZoom(delta) {
+    setPreviewZoom(previewZoomLevel + delta);
+}
+
+function clampTimelineZoom(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return TIMELINE_ZOOM_DEFAULT;
+    }
+    return Math.min(TIMELINE_ZOOM_MAX, Math.max(TIMELINE_ZOOM_MIN, numeric));
+}
+
+function getTimelineDurationPerPixel() {
+    const zoom = Math.min(
+        TIMELINE_ZOOM_MAX,
+        Math.max(TIMELINE_ZOOM_MIN, timelineZoomLevel || TIMELINE_ZOOM_DEFAULT),
+    );
+    return TIMELINE_DURATION_PER_PIXEL / Math.max(zoom, 0.01);
+}
+
+function updateTimelineZoomDisplay() {
+    if (timelineZoomDisplay) {
+        timelineZoomDisplay.textContent = formatZoomPercentage(timelineZoomLevel);
+    }
+    if (timelineZoomOutButton) {
+        timelineZoomOutButton.disabled = timelineZoomLevel <= TIMELINE_ZOOM_MIN;
+    }
+    if (timelineZoomInButton) {
+        timelineZoomInButton.disabled = timelineZoomLevel >= TIMELINE_ZOOM_MAX;
+    }
+}
+
+function updateTimelineItemSizesForZoom() {
+    const items = getTimelineItems();
+    items.forEach((item) => {
+        const durationKey = getTimelineItemDurationKey(item);
+        if (!durationKey) {
+            return;
+        }
+        const stored = Number(item.dataset[durationKey]);
+        const durationMs = Number.isFinite(stored)
+            ? stored
+            : getTimelineItemPlaybackDuration(item);
+        applyTimelineItemDurationStyles(item, durationMs);
+    });
+}
+
+function setTimelineZoom(nextZoom) {
+    const clamped = clampTimelineZoom(nextZoom);
+    if (Math.abs(clamped - timelineZoomLevel) < 0.0001) {
+        return;
+    }
+
+    let scrollRatio = 0.5;
+    if (timelineTrack) {
+        const scrollWidth = Math.max(1, timelineTrack.scrollWidth);
+        const center = timelineTrack.scrollLeft + (timelineTrack.clientWidth / 2);
+        scrollRatio = Math.min(Math.max(center / scrollWidth, 0), 1);
+    }
+
+    timelineZoomLevel = clamped;
+
+    if (timelineTrack) {
+        timelineTrack.dataset.zoom = clamped.toFixed(2);
+    }
+
+    updateTimelineZoomDisplay();
+    updateTimelineItemSizesForZoom();
+    updateActiveTimelineIndicators();
+
+    if (timelineTrack) {
+        window.requestAnimationFrame(() => {
+            const scrollWidth = Math.max(0, timelineTrack.scrollWidth);
+            const clientWidth = timelineTrack.clientWidth;
+            if (scrollWidth > clientWidth) {
+                const targetCenter = scrollWidth * scrollRatio;
+                timelineTrack.scrollLeft = Math.max(0, targetCenter - (clientWidth / 2));
+            } else {
+                timelineTrack.scrollLeft = 0;
+            }
+        });
+    }
+}
+
+function adjustTimelineZoom(delta) {
+    setTimelineZoom(timelineZoomLevel + delta);
+}
+
 const IMAGE_FRAME_DURATION = 1000;
+const PREVIEW_ZOOM_MIN = 0.5;
+const PREVIEW_ZOOM_MAX = 2;
+const PREVIEW_ZOOM_STEP = 0.25;
+const PREVIEW_ZOOM_DEFAULT = 1;
+let previewZoomLevel = PREVIEW_ZOOM_DEFAULT;
+
+const TIMELINE_ZOOM_MIN = 0.5;
+const TIMELINE_ZOOM_MAX = 2;
+const TIMELINE_ZOOM_STEP = 0.25;
+const TIMELINE_ZOOM_DEFAULT = 1;
+let timelineZoomLevel = TIMELINE_ZOOM_DEFAULT;
 
 const ENTRANCE_ANIMATION_PRESETS = {
     fade: {
@@ -3459,14 +3647,24 @@ function durationToWidth(durationMs) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
         return MIN_TIMELINE_ITEM_WIDTH;
     }
-    return Math.max(MIN_TIMELINE_ITEM_WIDTH, Math.round(durationMs / TIMELINE_DURATION_PER_PIXEL));
+    const durationPerPixel = getTimelineDurationPerPixel();
+    const safeDurationPerPixel = Math.max(0.001, durationPerPixel);
+    return Math.max(
+        MIN_TIMELINE_ITEM_WIDTH,
+        Math.round(durationMs / safeDurationPerPixel),
+    );
 }
 
 function widthToDuration(widthPx) {
     if (!Number.isFinite(widthPx) || widthPx <= 0) {
         return MIN_IMAGE_DURATION;
     }
-    return Math.max(MIN_IMAGE_DURATION, Math.round(widthPx * TIMELINE_DURATION_PER_PIXEL));
+    const durationPerPixel = getTimelineDurationPerPixel();
+    const safeDurationPerPixel = Math.max(0.001, durationPerPixel);
+    return Math.max(
+        MIN_IMAGE_DURATION,
+        Math.round(widthPx * safeDurationPerPixel),
+    );
 }
 
 function applyTimelineItemDurationStyles(timelineItem, durationMs) {
@@ -4243,6 +4441,30 @@ if (timelineTrack) {
 ensureTimelineLane(0);
 updateTimelineEmptyState();
 
+if (timelineZoomOutButton) {
+    timelineZoomOutButton.addEventListener('click', () => {
+        adjustTimelineZoom(-TIMELINE_ZOOM_STEP);
+    });
+}
+
+if (timelineZoomInButton) {
+    timelineZoomInButton.addEventListener('click', () => {
+        adjustTimelineZoom(TIMELINE_ZOOM_STEP);
+    });
+}
+
+if (timelineZoomDisplay) {
+    timelineZoomDisplay.title = 'Reset timeline zoom';
+    timelineZoomDisplay.addEventListener('click', () => {
+        setTimelineZoom(TIMELINE_ZOOM_DEFAULT);
+    });
+}
+
+updateTimelineZoomDisplay();
+if (timelineTrack) {
+    timelineTrack.dataset.zoom = TIMELINE_ZOOM_DEFAULT.toFixed(2);
+}
+
 if (window.ResizeObserver) {
     if (previewArea && !previewAreaResizeObserver) {
         previewAreaResizeObserver = new ResizeObserver(() => {
@@ -4313,13 +4535,20 @@ function updatePreviewViewportSize() {
     }
 
     const aspectRatio = currentPreviewAspectRatio > 0 ? currentPreviewAspectRatio : 16 / 9;
-    let nextWidth = availableWidth;
-    let nextHeight = nextWidth / aspectRatio;
+    let baseWidth = availableWidth;
+    let baseHeight = baseWidth / aspectRatio;
 
-    if (nextHeight > availableHeight) {
-        nextHeight = availableHeight;
-        nextWidth = nextHeight * aspectRatio;
+    if (baseHeight > availableHeight) {
+        baseHeight = availableHeight;
+        baseWidth = baseHeight * aspectRatio;
     }
+
+    const zoom = Math.min(
+        PREVIEW_ZOOM_MAX,
+        Math.max(PREVIEW_ZOOM_MIN, getPreviewZoom()),
+    );
+    const nextWidth = Math.max(1, baseWidth * zoom);
+    const nextHeight = Math.max(1, baseHeight * zoom);
 
     previewViewport.style.width = `${nextWidth}px`;
     previewViewport.style.height = `${nextHeight}px`;
@@ -5877,6 +6106,30 @@ if (previewAspectSelect) {
 } else {
     setPreviewAspect('16:9');
     updatePreviewAspectLabel();
+}
+
+if (previewZoomOutButton) {
+    previewZoomOutButton.addEventListener('click', () => {
+        adjustPreviewZoom(-PREVIEW_ZOOM_STEP);
+    });
+}
+
+if (previewZoomInButton) {
+    previewZoomInButton.addEventListener('click', () => {
+        adjustPreviewZoom(PREVIEW_ZOOM_STEP);
+    });
+}
+
+if (previewZoomDisplay) {
+    previewZoomDisplay.title = 'Reset preview zoom';
+    previewZoomDisplay.addEventListener('click', () => {
+        setPreviewZoom(PREVIEW_ZOOM_DEFAULT);
+    });
+}
+
+updatePreviewZoomDisplay();
+if (previewViewport) {
+    previewViewport.dataset.zoom = PREVIEW_ZOOM_DEFAULT.toFixed(2);
 }
 
 if (addKeyframeButton) {
