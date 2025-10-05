@@ -75,6 +75,7 @@
                 </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
+                        <div class="preview-canvas-background" id="preview-canvas-background" hidden aria-hidden="true"></div>
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden preload="auto" playsinline></video>
                         <div class="preview-overlay-stack" id="preview-overlay-stack" hidden aria-hidden="true">
@@ -171,6 +172,252 @@
                                     <label for="image-rotation">Image rotation</label>
                                     <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
                                     <div class="slider-readout" id="image-rotation-value">0°</div>
+                                </div>
+                            </div>
+                            <div class="info-item canvas-panel" aria-labelledby="canvas-background-title">
+                                <div class="info-icon">🖼️</div>
+                                <div class="info-item__body canvas-panel__body">
+                                    <div class="info-item__header canvas-panel__header">
+                                        <div class="canvas-panel__heading">
+                                            <span class="info-item__title" id="canvas-background-title">Canvas background</span>
+                                            <p class="canvas-panel__subtitle">Refresh the area behind your footage with immersive presets.</p>
+                                        </div>
+                                        <span class="canvas-panel__status" id="canvas-background-status" role="status" aria-live="polite"></span>
+                                    </div>
+                                    <div class="canvas-panel__modes" role="tablist" aria-label="Canvas background style">
+                                        <button
+                                            type="button"
+                                            class="canvas-mode-button is-active"
+                                            id="canvas-mode-blur"
+                                            role="tab"
+                                            aria-selected="true"
+                                            aria-controls="canvas-options-blur"
+                                            data-canvas-mode="blur"
+                                        >Blur</button>
+                                        <button
+                                            type="button"
+                                            class="canvas-mode-button"
+                                            id="canvas-mode-color"
+                                            role="tab"
+                                            aria-selected="false"
+                                            aria-controls="canvas-options-color"
+                                            data-canvas-mode="color"
+                                            tabindex="-1"
+                                        >Color</button>
+                                        <button
+                                            type="button"
+                                            class="canvas-mode-button"
+                                            id="canvas-mode-pattern"
+                                            role="tab"
+                                            aria-selected="false"
+                                            aria-controls="canvas-options-pattern"
+                                            data-canvas-mode="pattern"
+                                            tabindex="-1"
+                                        >Pattern</button>
+                                        <button
+                                            type="button"
+                                            class="canvas-mode-button"
+                                            id="canvas-mode-brand"
+                                            role="tab"
+                                            aria-selected="false"
+                                            aria-controls="canvas-options-brand"
+                                            data-canvas-mode="brand"
+                                            tabindex="-1"
+                                        >Brand</button>
+                                    </div>
+                                    <div class="canvas-option-groups">
+                                        <div
+                                            class="canvas-option-group is-active"
+                                            id="canvas-options-blur"
+                                            data-canvas-options="blur"
+                                            role="tabpanel"
+                                            aria-labelledby="canvas-mode-blur"
+                                        >
+                                            <button
+                                                type="button"
+                                                class="canvas-option is-active"
+                                                data-canvas-style="blur-soft"
+                                                aria-pressed="true"
+                                                style="--canvas-option-swatch: radial-gradient(circle at 30% 30%, rgba(56, 189, 248, 0.5), rgba(17, 24, 39, 0.9));"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Soft focus</span>
+                                                    <span class="canvas-option__hint">Gentle haze for cinematic depth.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="blur-deep"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: radial-gradient(circle at 70% 30%, rgba(244, 114, 182, 0.45), rgba(8, 12, 24, 0.9));"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Depth blur</span>
+                                                    <span class="canvas-option__hint">Dreamy diffusion for portraits.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="blur-glass"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, rgba(59, 130, 246, 0.6), rgba(15, 23, 42, 0.6));"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Glass frost</span>
+                                                    <span class="canvas-option__hint">Frosted panel with glassy glow.</span>
+                                                </span>
+                                            </button>
+                                        </div>
+                                        <div
+                                            class="canvas-option-group"
+                                            id="canvas-options-color"
+                                            data-canvas-options="color"
+                                            role="tabpanel"
+                                            aria-labelledby="canvas-mode-color"
+                                            hidden
+                                        >
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="color-midnight"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: #0f172a;"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Midnight</span>
+                                                    <span class="canvas-option__hint">Deep blue backdrop that keeps focus.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="color-dusk"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, #312e81, #1e293b);"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Dusk</span>
+                                                    <span class="canvas-option__hint">Moody indigo wash for titles.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="color-sunrise"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, #f59e0b, #f97316);"
+                                            >
+                                                <span class="canvas-option__swatch" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Sunrise</span>
+                                                    <span class="canvas-option__hint">Vibrant warmth for energy and promos.</span>
+                                                </span>
+                                            </button>
+                                        </div>
+                                        <div
+                                            class="canvas-option-group"
+                                            id="canvas-options-pattern"
+                                            data-canvas-options="pattern"
+                                            role="tabpanel"
+                                            aria-labelledby="canvas-mode-pattern"
+                                            hidden
+                                        >
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="pattern-grid"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, rgba(124, 58, 237, 0.3), rgba(37, 99, 235, 0.25)), repeating-linear-gradient(0deg, rgba(148, 163, 184, 0.24), rgba(148, 163, 184, 0.24) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.24), rgba(148, 163, 184, 0.24) 2px, transparent 2px, transparent 12px);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--pattern" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Modern grid</span>
+                                                    <span class="canvas-option__hint">Crisp lines for design-forward edits.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="pattern-waves"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, rgba(59, 130, 246, 0.4), rgba(14, 116, 144, 0.5)), repeating-radial-gradient(circle at 20% 20%, rgba(148, 163, 184, 0.22), rgba(148, 163, 184, 0.22) 3px, transparent 3px, transparent 12px);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--pattern" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Flow waves</span>
+                                                    <span class="canvas-option__hint">Soft motion-inspired pattern.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="pattern-spotlight"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: radial-gradient(circle at 50% 40%, rgba(248, 250, 252, 0.65), rgba(15, 23, 42, 0.05) 60%), radial-gradient(circle at 0% 100%, rgba(56, 189, 248, 0.35), transparent 65%);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--pattern" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Studio spotlight</span>
+                                                    <span class="canvas-option__hint">Light falloff that frames subjects.</span>
+                                                </span>
+                                            </button>
+                                        </div>
+                                        <div
+                                            class="canvas-option-group"
+                                            id="canvas-options-brand"
+                                            data-canvas-options="brand"
+                                            role="tabpanel"
+                                            aria-labelledby="canvas-mode-brand"
+                                            hidden
+                                        >
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="brand-duotone"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: linear-gradient(135deg, #7c3aed, #38bdf8);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--brand" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Duotone</span>
+                                                    <span class="canvas-option__hint">Signature purple &amp; cyan gradient.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="brand-aurora"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: radial-gradient(120% 120% at 25% 20%, rgba(56, 189, 248, 0.65), transparent 55%), radial-gradient(150% 140% at 75% 80%, rgba(244, 114, 182, 0.6), transparent 60%), rgba(12, 18, 32, 0.9);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--brand" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Aurora</span>
+                                                    <span class="canvas-option__hint">Radiant brand lights with motion.</span>
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="canvas-option"
+                                                data-canvas-style="brand-orbit"
+                                                aria-pressed="false"
+                                                style="--canvas-option-swatch: radial-gradient(120% 120% at 20% 20%, rgba(99, 102, 241, 0.55), transparent 60%), radial-gradient(140% 130% at 80% 70%, rgba(249, 115, 22, 0.55), transparent 62%), rgba(10, 16, 32, 0.92);"
+                                            >
+                                                <span class="canvas-option__swatch canvas-option__swatch--brand" aria-hidden="true"></span>
+                                                <span class="canvas-option__content">
+                                                    <span class="canvas-option__label">Orbit</span>
+                                                    <span class="canvas-option__hint">Bold contrast for call-to-action slides.</span>
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

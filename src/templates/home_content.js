@@ -64,6 +64,17 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const previewCanvasBackground = document.getElementById('preview-canvas-background');
+const canvasBackgroundModeButtons = Array.from(document.querySelectorAll('[data-canvas-mode]'));
+const canvasBackgroundOptionContainers = Array.from(document.querySelectorAll('[data-canvas-options]'));
+const canvasBackgroundOptions = [];
+canvasBackgroundOptionContainers.forEach((container) => {
+    canvasBackgroundOptions.push(...Array.from(container.querySelectorAll('[data-canvas-style]')));
+});
+const canvasBackgroundStatus = document.getElementById('canvas-background-status');
+let activeCanvasBackgroundStyle = null;
+let activeCanvasBackgroundMode =
+    canvasBackgroundModeButtons.find((button) => button.classList.contains('is-active'))?.dataset.canvasMode || null;
 
 if (previewImage) {
     try {
@@ -140,6 +151,222 @@ const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
 const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
+
+const CANVAS_BACKGROUND_PRESETS = {
+    'blur-soft': {
+        className: 'canvas-style-blur-soft',
+        statusLabel: 'Soft focus blur',
+    },
+    'blur-deep': {
+        className: 'canvas-style-blur-deep',
+        statusLabel: 'Depth blur',
+    },
+    'blur-glass': {
+        className: 'canvas-style-blur-glass',
+        statusLabel: 'Glass frost',
+    },
+    'color-midnight': {
+        className: 'canvas-style-solid',
+        customProperties: {
+            '--canvas-solid-color': '#0f172a',
+        },
+        statusLabel: 'Midnight',
+    },
+    'color-dusk': {
+        className: 'canvas-style-solid',
+        customProperties: {
+            '--canvas-solid-color': 'linear-gradient(135deg, #312e81, #1e293b)',
+        },
+        statusLabel: 'Dusk',
+    },
+    'color-sunrise': {
+        className: 'canvas-style-solid',
+        customProperties: {
+            '--canvas-solid-color': 'linear-gradient(135deg, #f59e0b, #f97316)',
+        },
+        statusLabel: 'Sunrise',
+    },
+    'pattern-grid': {
+        className: 'canvas-style-pattern-grid',
+        statusLabel: 'Modern grid',
+    },
+    'pattern-waves': {
+        className: 'canvas-style-pattern-waves',
+        statusLabel: 'Flow waves',
+    },
+    'pattern-spotlight': {
+        className: 'canvas-style-pattern-spotlight',
+        statusLabel: 'Studio spotlight',
+    },
+    'brand-duotone': {
+        className: 'canvas-style-brand-duotone',
+        statusLabel: 'Duotone',
+    },
+    'brand-aurora': {
+        className: 'canvas-style-brand-aurora',
+        statusLabel: 'Aurora',
+    },
+    'brand-orbit': {
+        className: 'canvas-style-brand-orbit',
+        statusLabel: 'Orbit',
+    },
+};
+
+const CANVAS_BACKGROUND_CUSTOM_PROPERTIES = ['--canvas-solid-color'];
+
+function setActiveCanvasMode(mode) {
+    if (!mode) {
+        return;
+    }
+
+    activeCanvasBackgroundMode = mode;
+
+    canvasBackgroundModeButtons.forEach((button) => {
+        const buttonMode = button.dataset.canvasMode;
+        const isActive = buttonMode === mode;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', String(isActive));
+        if (isActive) {
+            button.removeAttribute('tabindex');
+        } else {
+            button.setAttribute('tabindex', '-1');
+        }
+    });
+
+    canvasBackgroundOptionContainers.forEach((container) => {
+        const containerMode = container.dataset.canvasOptions;
+        const isActive = containerMode === mode;
+        container.classList.toggle('is-active', isActive);
+        container.hidden = !isActive;
+        container.setAttribute('aria-hidden', String(!isActive));
+        if (isActive) {
+            const activeOption = container.querySelector('.canvas-option.is-active');
+            if (!activeOption) {
+                const fallbackOption = container.querySelector('.canvas-option');
+                if (fallbackOption?.dataset.canvasStyle) {
+                    selectCanvasStyle(fallbackOption.dataset.canvasStyle, fallbackOption);
+                }
+            }
+        }
+    });
+}
+
+function selectCanvasStyle(styleKey, sourceOption) {
+    if (!styleKey) {
+        return;
+    }
+
+    let resolvedOption = sourceOption || null;
+
+    canvasBackgroundOptions.forEach((option) => {
+        const isActive = option.dataset.canvasStyle === styleKey;
+        option.classList.toggle('is-active', isActive);
+        option.setAttribute('aria-pressed', String(isActive));
+        if (isActive) {
+            resolvedOption = option;
+        }
+    });
+
+    if (!resolvedOption) {
+        return;
+    }
+
+    activeCanvasBackgroundStyle = styleKey;
+    applyCanvasBackgroundPreset(styleKey);
+    updateCanvasBackgroundStatus(resolvedOption);
+}
+
+function applyCanvasBackgroundPreset(styleKey) {
+    if (!previewCanvasBackground) {
+        return;
+    }
+
+    const preset = CANVAS_BACKGROUND_PRESETS[styleKey];
+    if (!preset) {
+        return;
+    }
+
+    previewCanvasBackground.className = 'preview-canvas-background';
+    previewCanvasBackground.removeAttribute('hidden');
+    previewCanvasBackground.classList.add('is-visible');
+    previewCanvasBackground.dataset.canvasStyle = styleKey;
+
+    resetCanvasBackgroundCustomProperties();
+
+    if (preset.customProperties) {
+        Object.entries(preset.customProperties).forEach(([property, value]) => {
+            previewCanvasBackground.style.setProperty(property, value);
+        });
+    }
+
+    if (preset.className) {
+        previewCanvasBackground.classList.add(preset.className);
+    }
+}
+
+function resetCanvasBackgroundCustomProperties() {
+    if (!previewCanvasBackground) {
+        return;
+    }
+
+    CANVAS_BACKGROUND_CUSTOM_PROPERTIES.forEach((property) => {
+        previewCanvasBackground.style.removeProperty(property);
+    });
+}
+
+function updateCanvasBackgroundStatus(option) {
+    if (!canvasBackgroundStatus) {
+        return;
+    }
+
+    if (!option) {
+        canvasBackgroundStatus.textContent = '';
+        return;
+    }
+
+    const styleKey = option.dataset.canvasStyle || '';
+    const preset = CANVAS_BACKGROUND_PRESETS[styleKey];
+    const labelText = preset?.statusLabel || option.querySelector('.canvas-option__label')?.textContent || '';
+    canvasBackgroundStatus.textContent = labelText ? `${labelText} background applied.` : '';
+}
+
+if (canvasBackgroundModeButtons.length) {
+    canvasBackgroundModeButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const mode = button.dataset.canvasMode;
+            if (!mode) {
+                return;
+            }
+            setActiveCanvasMode(mode);
+        });
+    });
+}
+
+if (canvasBackgroundOptions.length) {
+    canvasBackgroundOptions.forEach((option) => {
+        option.addEventListener('click', () => {
+            const styleKey = option.dataset.canvasStyle;
+            if (!styleKey) {
+                return;
+            }
+            selectCanvasStyle(styleKey, option);
+        });
+    });
+
+    const initiallyActiveOption = canvasBackgroundOptions.find((option) => option.classList.contains('is-active'));
+    if (initiallyActiveOption?.dataset.canvasStyle) {
+        selectCanvasStyle(initiallyActiveOption.dataset.canvasStyle, initiallyActiveOption);
+    } else if (canvasBackgroundOptions[0]?.dataset.canvasStyle) {
+        selectCanvasStyle(canvasBackgroundOptions[0].dataset.canvasStyle, canvasBackgroundOptions[0]);
+    }
+
+    if (!activeCanvasBackgroundMode && canvasBackgroundOptionContainers[0]) {
+        activeCanvasBackgroundMode = canvasBackgroundOptionContainers[0].dataset.canvasOptions || null;
+    }
+    if (activeCanvasBackgroundMode) {
+        setActiveCanvasMode(activeCanvasBackgroundMode);
+    }
+}
 
 const optionSliderConfigs = [
     {
