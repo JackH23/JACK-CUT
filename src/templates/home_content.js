@@ -325,6 +325,8 @@ let comboPreviewExitTimeoutId = 0;
 let animationComboApplyStatusTimer = 0;
 let imageDurationApplyStatusTimer = 0;
 
+const RESOLVED_EXIT_ANIMATION_PROMISE = Promise.resolve();
+
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);
     comboPreviewExitTimeoutId = 0;
@@ -1290,6 +1292,7 @@ let previewExitAnimationFallbackTimer = 0;
 let previewExitAnimationState = {
     cleanup: null,
     restoreOnComplete: false,
+    completionPromise: RESOLVED_EXIT_ANIMATION_PROMISE,
 };
 
 function prefersReducedMotion() {
@@ -1415,6 +1418,14 @@ function getPreviewImageExitConfig(options = {}) {
     };
 }
 
+function resetPreviewExitAnimationState() {
+    previewExitAnimationState = {
+        cleanup: null,
+        restoreOnComplete: false,
+        completionPromise: RESOLVED_EXIT_ANIMATION_PROMISE,
+    };
+}
+
 function cancelPreviewExitAnimation(options = {}) {
     const { forceRestore = false } = options;
 
@@ -1425,12 +1436,12 @@ function cancelPreviewExitAnimation(options = {}) {
 
     if (previewExitAnimationState.cleanup) {
         previewExitAnimationState.cleanup(forceRestore ? true : null, true);
-        previewExitAnimationState = {
-            cleanup: null,
-            restoreOnComplete: false,
-        };
     } else if (forceRestore && previewImage && !previewImage.hidden) {
         previewImage.classList.add('is-visible');
+    }
+
+    if (!previewExitAnimationState.cleanup) {
+        resetPreviewExitAnimationState();
     }
 
     if (previewImage) {
@@ -1485,6 +1496,10 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
 
     let completed = false;
     let wasCancelled = false;
+    let resolveCompletion = null;
+    const completionPromise = new Promise((resolve) => {
+        resolveCompletion = resolve;
+    });
 
     const applyRestore = () => {
         if (!previewImage || previewImage.hidden) {
@@ -1500,11 +1515,19 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         });
     };
 
-    const finalize = (forceRestore = null) => {
+    const settleCompletion = () => {
+        if (resolveCompletion) {
+            resolveCompletion();
+            resolveCompletion = null;
+        }
+    };
+
+    const finalize = (forceRestore = null, didCancel = false) => {
         if (completed) {
             return;
         }
         completed = true;
+        wasCancelled = wasCancelled || didCancel;
 
         window.clearTimeout(previewExitAnimationFallbackTimer);
 
@@ -1531,6 +1554,9 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
                 console.error('Error executing exit animation completion callback.', error);
             }
         }
+
+        settleCompletion();
+        resetPreviewExitAnimationState();
     };
 
     previewExitAnimationState = {
@@ -1538,15 +1564,16 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
             if (didCancel) {
                 wasCancelled = true;
             }
-            finalize(forceRestoreParam);
+            finalize(forceRestoreParam, didCancel);
         },
         restoreOnComplete,
+        completionPromise,
     };
 
     if (prefersReducedMotion()) {
         previewImage.classList.remove('is-visible');
         previewExitAnimationFallbackTimer = window.setTimeout(() => {
-            finalize();
+            finalize(null, false);
         }, Math.max(restoreDelay, 16));
         return true;
     }
@@ -1558,24 +1585,32 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
     void previewImage.offsetWidth;
 
     const handleAnimationComplete = () => {
-        finalize();
+        finalize(null, false);
     };
 
     const handleAnimationCancel = () => {
         wasCancelled = true;
-        finalize();
+        finalize(null, true);
     };
 
     previewImage.addEventListener('animationend', handleAnimationComplete, { once: true });
     previewImage.addEventListener('animationcancel', handleAnimationCancel, { once: true });
 
     previewExitAnimationFallbackTimer = window.setTimeout(() => {
-        finalize();
+        finalize(null, false);
     }, Math.max(0, delay + duration + restoreDelay + 120));
 
     previewImage.classList.add('is-exiting', className);
 
     return true;
+}
+
+function waitForPreviewExitAnimationCompletion() {
+    const promise = previewExitAnimationState?.completionPromise;
+    if (promise && typeof promise.then === 'function') {
+        return promise;
+    }
+    return RESOLVED_EXIT_ANIMATION_PROMISE;
 }
 
 function shouldPreviewExitAnimation() {
@@ -7447,6 +7482,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             let animationFrameId = 0;
             let exitAnimationTimeoutId = 0;
             let exitAnimationStarted = false;
+            let exitCompletionPromise = RESOLVED_EXIT_ANIMATION_PROMISE;
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -7460,10 +7496,21 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             };
 
             const startExitAnimation = () => {
-                if (exitAnimationStarted || !exitConfig) {
-                    return;
+                if (!exitConfig) {
+                    exitCompletionPromise = RESOLVED_EXIT_ANIMATION_PROMISE;
+                    return exitCompletionPromise;
                 }
-                exitAnimationStarted = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+
+                if (exitAnimationStarted) {
+                    return exitCompletionPromise;
+                }
+
+                const didAnimate = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+                exitAnimationStarted = didAnimate;
+                exitCompletionPromise = didAnimate
+                    ? waitForPreviewExitAnimationCompletion()
+                    : RESOLVED_EXIT_ANIMATION_PROMISE;
+                return exitCompletionPromise;
             };
 
             const step = () => {
@@ -7496,12 +7543,12 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
             }
 
-            const timeoutId = window.setTimeout(() => {
+            const finalizePlayback = async () => {
                 if (resolved) {
                     return;
                 }
                 resolved = true;
-                startExitAnimation();
+                const exitPromise = startExitAnimation();
                 stopAnimation();
                 const finalProgress = clipDuration > 0
                     ? clampProgress(safeEffectiveDuration / clipDuration)
@@ -7510,7 +7557,16 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
                 }
+                try {
+                    await exitPromise;
+                } catch (error) {
+                    console.warn('Exit animation did not complete before advancing timeline.', error);
+                }
                 resolve();
+            };
+
+            const timeoutId = window.setTimeout(() => {
+                void finalizePlayback();
             }, Math.max(0, Math.round(safeEffectiveDuration)));
 
             const abortPlayback = () => {
