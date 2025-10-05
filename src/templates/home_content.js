@@ -114,6 +114,8 @@ const animationComboInPresetSelect = document.getElementById('animation-combo-in
 const animationComboOutPresetSelect = document.getElementById('animation-combo-out-preset');
 const animationComboSpeedInput = document.getElementById('animation-combo-speed');
 const animationComboSpeedValue = document.getElementById('animation-combo-speed-value');
+const animationComboApplyAllButton = document.getElementById('animation-combo-apply-all');
+const animationComboApplyStatus = document.getElementById('animation-combo-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
@@ -318,6 +320,7 @@ let previewEntranceAnimationState = {
     cleanup: null,
 };
 let comboPreviewExitTimeoutId = 0;
+let animationComboApplyStatusTimer = 0;
 
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);
@@ -707,6 +710,7 @@ const DEFAULT_COMBO_SPEED_MS = Math.min(
 const DEFAULT_ANIMATION_DIRECTION = 'in';
 const DEFAULT_COMBO_ENTRANCE_PRESET = 'fade';
 const DEFAULT_COMBO_EXIT_PRESET = 'fade';
+const COMBO_APPLY_EMPTY_STATE_MESSAGE = 'Add images to apply animations.';
 
 function sanitizeAnimationDirection(value) {
     const normalized = typeof value === 'string' ? value.toLowerCase() : '';
@@ -1904,6 +1908,8 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
         animationComboSpeedInput.value = String(clampedSeconds);
         updateComboSpeedSliderDisplay({ triggerPreview: false });
     }
+
+    refreshComboApplyAllAvailability();
 }
 
 function persistActiveTimelineAnimationDirection(direction) {
@@ -1977,6 +1983,165 @@ function persistActiveTimelineComboSpeed() {
         durationKey: 'imageDuration',
         animationWindowMs: sanitized,
     });
+}
+
+function setAnimationComboApplyStatus(message, options = {}) {
+    if (!animationComboApplyStatus) {
+        return;
+    }
+
+    window.clearTimeout(animationComboApplyStatusTimer);
+    animationComboApplyStatusTimer = 0;
+
+    const nextMessage = message || '';
+    animationComboApplyStatus.textContent = nextMessage;
+
+    if (!nextMessage) {
+        return;
+    }
+
+    const persist = Boolean(options.persist);
+    if (persist) {
+        return;
+    }
+
+    const timeoutMs = Number.isFinite(options.timeoutMs)
+        ? Number(options.timeoutMs)
+        : 4000;
+
+    animationComboApplyStatusTimer = window.setTimeout(() => {
+        animationComboApplyStatus.textContent = '';
+        animationComboApplyStatusTimer = 0;
+    }, Math.max(0, timeoutMs));
+}
+
+function refreshComboApplyAllAvailability() {
+    if (!animationComboApplyAllButton || !timelineTrack) {
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    const hasImages = timelineItems.some((item) => isImageTimelineItem(item));
+    animationComboApplyAllButton.disabled = !hasImages;
+
+    if (!hasImages) {
+        setAnimationComboApplyStatus(COMBO_APPLY_EMPTY_STATE_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (animationComboApplyStatus
+        && animationComboApplyStatus.textContent === COMBO_APPLY_EMPTY_STATE_MESSAGE
+    ) {
+        setAnimationComboApplyStatus('');
+    }
+}
+
+function getCurrentComboAnimationSettingsFromControls() {
+    const comboInPreset = sanitizeComboEntrancePreset(animationComboInPresetSelect?.value);
+    const comboOutPreset = sanitizeComboExitPreset(animationComboOutPresetSelect?.value);
+    const rawWindowMs = getComboSpeedWindowMs();
+    const fallbackWindowMs = Number.isFinite(rawWindowMs)
+        ? rawWindowMs
+        : DEFAULT_COMBO_SPEED_MS;
+    const comboWindowMs = sanitizeComboWindowMs(fallbackWindowMs);
+
+    return {
+        comboInPreset,
+        comboOutPreset,
+        comboWindowMs,
+    };
+}
+
+function applyComboSettingsToTimelineItem(timelineItem, settings) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return false;
+    }
+
+    const previousSettings = getTimelineItemAnimationSettings(timelineItem);
+
+    const sanitizedInPreset = sanitizeComboEntrancePreset(settings?.comboInPreset);
+    const sanitizedOutPreset = sanitizeComboExitPreset(settings?.comboOutPreset);
+    const sanitizedWindowMs = sanitizeComboWindowMs(settings?.comboWindowMs);
+
+    const directionChanged = previousSettings.direction !== 'combo';
+    const inChanged = previousSettings.comboInPreset !== sanitizedInPreset;
+    const outChanged = previousSettings.comboOutPreset !== sanitizedOutPreset;
+    const windowChanged = previousSettings.comboWindowMs !== sanitizedWindowMs;
+
+    setTimelineItemAnimationDataset(
+        timelineItem,
+        'animationDirection',
+        'combo',
+        DEFAULT_ANIMATION_DIRECTION,
+    );
+
+    setTimelineItemAnimationDataset(
+        timelineItem,
+        'animationComboInPreset',
+        sanitizedInPreset,
+        DEFAULT_COMBO_ENTRANCE_PRESET,
+    );
+
+    setTimelineItemAnimationDataset(
+        timelineItem,
+        'animationComboOutPreset',
+        sanitizedOutPreset,
+        DEFAULT_COMBO_EXIT_PRESET,
+    );
+
+    setTimelineItemAnimationDataset(
+        timelineItem,
+        'animationComboWindowMs',
+        String(sanitizedWindowMs),
+        String(DEFAULT_COMBO_SPEED_MS),
+    );
+
+    synchronizeImageAnimationDurations(timelineItem, {
+        source: 'animation',
+        durationKey: 'imageDuration',
+        animationWindowMs: sanitizedWindowMs,
+    });
+
+    return directionChanged || inChanged || outChanged || windowChanged;
+}
+
+function handleComboApplyAllClick() {
+    if (!animationComboApplyAllButton || animationComboApplyAllButton.disabled) {
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+
+    if (!imageItems.length) {
+        refreshComboApplyAllAvailability();
+        return;
+    }
+
+    const settings = getCurrentComboAnimationSettingsFromControls();
+    let appliedCount = 0;
+
+    imageItems.forEach((timelineItem) => {
+        if (applyComboSettingsToTimelineItem(timelineItem, settings)) {
+            appliedCount += 1;
+        }
+    });
+
+    refreshComboApplyAllAvailability();
+
+    if (appliedCount === 0) {
+        setAnimationComboApplyStatus('All images already use this combo animation.', { timeoutMs: 3200 });
+    } else {
+        const pluralSuffix = appliedCount === 1 ? '' : 's';
+        setAnimationComboApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+    }
+
+    syncAnimationControlsToTimelineItem(activeTimelineItem);
+
+    if (isComboModeActive()) {
+        cancelComboPreviewCycle();
+        previewComboAnimationCycle();
+    }
 }
 
 if (animationDirectionSelect && animationModeContainers.length) {
@@ -2057,6 +2222,10 @@ if (animationComboSpeedInput) {
     animationComboSpeedInput.addEventListener('input', handleComboSpeedChange);
 
     updateComboSpeedSliderDisplay();
+}
+
+if (animationComboApplyAllButton) {
+    animationComboApplyAllButton.addEventListener('click', handleComboApplyAllClick);
 }
 
 syncAnimationControlsToTimelineItem(activeTimelineItem);
