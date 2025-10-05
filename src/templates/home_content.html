@@ -75,6 +75,10 @@
                 </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
+                        <div class="preview-canvas-background" id="preview-canvas-background" aria-hidden="true">
+                            <div class="preview-canvas-background__image"></div>
+                            <div class="preview-canvas-background__tint"></div>
+                        </div>
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden preload="auto" playsinline></video>
                         <div class="preview-overlay-stack" id="preview-overlay-stack" hidden aria-hidden="true">
@@ -131,6 +135,7 @@
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
                     <button type="button" class="settings-tab" id="settings-tab-adjustment" role="tab" aria-selected="false" aria-controls="settings-adjustment" data-section="adjustment">Adjustment</button>
+                    <button type="button" class="settings-tab" id="settings-tab-canvas" role="tab" aria-selected="false" aria-controls="settings-canvas" data-section="canvas">Canvas</button>
                 </div>
                 <div class="settings-content">
                     <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
@@ -441,6 +446,68 @@
                                 <div>
                                     <label for="adjustment-contrast">Contrast</label>
                                     <input type="range" id="adjustment-contrast" min="-50" max="50" value="10">
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-canvas" data-section="canvas" role="tabpanel" aria-labelledby="settings-tab-canvas" hidden>
+                        <div class="info-list canvas-settings-list">
+                            <div class="info-item canvas-style-item">
+                                <div class="info-icon">🖼️</div>
+                                <div class="info-item__body">
+                                    <div class="info-item__header">
+                                        <span class="info-item__title">Canvas background</span>
+                                        <p class="info-item__description">Decide how the area around your video or image should appear in wider aspect ratios.</p>
+                                    </div>
+                                    <div class="canvas-style-options" role="radiogroup" aria-label="Canvas background style">
+                                        <label class="canvas-style-option">
+                                            <input type="radio" name="canvas-background-style" value="original" checked>
+                                            <span class="canvas-style-option__label">
+                                                <strong>Original</strong>
+                                                <span>Keep the canvas untouched and show your media as-is.</span>
+                                            </span>
+                                        </label>
+                                        <label class="canvas-style-option">
+                                            <input type="radio" name="canvas-background-style" value="blur">
+                                            <span class="canvas-style-option__label">
+                                                <strong>Blur</strong>
+                                                <span>Softly blur the background behind your subject for cinematic depth.</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="info-item canvas-blur-item">
+                                <div class="info-icon">🌫️</div>
+                                <div class="canvas-slider" role="group" aria-labelledby="canvas-blur-label">
+                                    <div class="canvas-slider__header">
+                                        <label id="canvas-blur-label" for="canvas-blur-strength">Blur amount</label>
+                                        <span class="canvas-slider__hint">Increase to soften sharp edges in the backdrop.</span>
+                                    </div>
+                                    <input type="range" id="canvas-blur-strength" min="0" max="30" value="12" step="1" aria-describedby="canvas-blur-strength-value">
+                                    <div class="slider-readout" id="canvas-blur-strength-value">12 px</div>
+                                </div>
+                            </div>
+                            <div class="info-item canvas-color-item">
+                                <div class="info-icon">🎨</div>
+                                <div class="canvas-color-controls">
+                                    <label for="canvas-background-color">Backdrop tint</label>
+                                    <input type="color" id="canvas-background-color" value="#0f172a">
+                                    <p class="canvas-color-controls__hint">Add a subtle wash that keeps letterboxed areas on-brand.</p>
+                                </div>
+                            </div>
+                            <div class="info-item canvas-preview-item">
+                                <div class="info-icon">👁️</div>
+                                <div class="canvas-preview-wrapper">
+                                    <div class="canvas-preview" id="canvas-preview" aria-hidden="true">
+                                        <div class="canvas-preview__background"></div>
+                                        <div class="canvas-preview__tint"></div>
+                                        <div class="canvas-preview__subject">
+                                            <div class="canvas-preview__subject-glow"></div>
+                                            <div class="canvas-preview__subject-body"></div>
+                                        </div>
+                                    </div>
+                                    <p class="canvas-preview__caption">Preview how the canvas adjusts for square and portrait formats.</p>
                                 </div>
                             </div>
                         </div>

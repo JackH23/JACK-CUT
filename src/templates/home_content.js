@@ -136,6 +136,14 @@ const audioFadeOutInput = document.getElementById('audio-fade-out');
 const audioFadeOutValue = document.getElementById('audio-fade-out-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const canvasBackgroundStyleInputs = Array.from(
+    document.querySelectorAll('input[name="canvas-background-style"]'),
+);
+const canvasBlurInput = document.getElementById('canvas-blur-strength');
+const canvasBlurValue = document.getElementById('canvas-blur-strength-value');
+const canvasBackgroundColorInput = document.getElementById('canvas-background-color');
+const canvasPreviewElement = document.getElementById('canvas-preview');
+const previewCanvasBackground = document.getElementById('preview-canvas-background');
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -2259,6 +2267,153 @@ settingsTabs.forEach((tab) => {
 });
 
 activateSettingsSection(settingsTabs.find((tab) => tab.classList.contains('is-active'))?.dataset.section);
+
+function normalizeHexColor(value) {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const trimmed = value.trim();
+    if (!/^#([\da-f]{3}|[\da-f]{6})$/i.test(trimmed)) {
+        return null;
+    }
+
+    let hex = trimmed.slice(1);
+    if (hex.length === 3) {
+        hex = hex
+            .split('')
+            .map((char) => char + char)
+            .join('');
+    }
+
+    const numeric = Number.parseInt(hex, 16);
+    if (!Number.isFinite(numeric)) {
+        return null;
+    }
+
+    return {
+        r: (numeric >> 16) & 0xff,
+        g: (numeric >> 8) & 0xff,
+        b: numeric & 0xff,
+    };
+}
+
+function resolveCanvasColorTokens(value) {
+    const fallback = { r: 15, g: 23, b: 42 };
+    const rgb = normalizeHexColor(value) || fallback;
+    const solid = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`;
+    const tint = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55)`;
+    return { solid, tint };
+}
+
+function getSelectedCanvasBackgroundStyle() {
+    const selected = canvasBackgroundStyleInputs.find((input) => input.checked);
+    return selected ? selected.value : 'original';
+}
+
+function applyCanvasColorState() {
+    if (!previewViewport) {
+        return;
+    }
+
+    const { solid, tint } = resolveCanvasColorTokens(canvasBackgroundColorInput?.value);
+    previewViewport.style.setProperty('--canvas-background-solid', solid);
+    previewViewport.style.setProperty('--canvas-background-tint', tint);
+    if (previewCanvasBackground) {
+        previewCanvasBackground.style.setProperty('--canvas-background-solid', solid);
+        previewCanvasBackground.style.setProperty('--canvas-background-tint', tint);
+    }
+    if (canvasPreviewElement) {
+        canvasPreviewElement.style.setProperty('--canvas-preview-solid', solid);
+        canvasPreviewElement.style.setProperty('--canvas-preview-tint', tint);
+    }
+}
+
+function applyCanvasBlurState() {
+    if (!previewViewport) {
+        return;
+    }
+
+    const style = getSelectedCanvasBackgroundStyle();
+    const rawValue = canvasBlurInput ? Number(canvasBlurInput.value) : 0;
+    const sanitizedValue = Number.isFinite(rawValue) ? Math.min(Math.max(rawValue, 0), 60) : 0;
+    const isBlurActive = style === 'blur' && sanitizedValue > 0;
+
+    if (canvasBlurInput) {
+        canvasBlurInput.value = String(sanitizedValue);
+        canvasBlurInput.disabled = style !== 'blur';
+        canvasBlurInput.setAttribute('aria-disabled', String(style !== 'blur'));
+    }
+
+    if (canvasBlurValue) {
+        const readout = style === 'blur' && sanitizedValue > 0 ? `${sanitizedValue} px` : 'Off';
+        canvasBlurValue.textContent = readout;
+    }
+
+    const blurItem = canvasBlurInput?.closest('.canvas-blur-item');
+    if (blurItem) {
+        blurItem.classList.toggle('is-disabled', style !== 'blur');
+        blurItem.setAttribute('aria-disabled', String(style !== 'blur'));
+    }
+
+    const blurGroup = canvasBlurInput?.closest('.canvas-slider');
+    if (blurGroup) {
+        blurGroup.setAttribute('aria-disabled', String(style !== 'blur'));
+    }
+
+    previewViewport.classList.toggle('has-canvas-blur', isBlurActive);
+    previewViewport.style.setProperty('--canvas-blur-strength', `${sanitizedValue}px`);
+
+    if (canvasPreviewElement) {
+        const previewBlur = style === 'blur' ? sanitizedValue : 0;
+        canvasPreviewElement.style.setProperty('--canvas-preview-blur', `${previewBlur}px`);
+    }
+}
+
+function updateCanvasStyleSelection() {
+    if (!canvasBackgroundStyleInputs.length) {
+        return;
+    }
+
+    canvasBackgroundStyleInputs.forEach((input) => {
+        const option = input.closest('.canvas-style-option');
+        if (option) {
+            option.classList.toggle('is-selected', input.checked);
+        }
+    });
+
+    applyCanvasBlurState();
+
+    if (previewCanvasBackground) {
+        previewCanvasBackground.removeAttribute('hidden');
+        const blurIsActive = previewViewport?.classList.contains('has-canvas-blur');
+        previewCanvasBackground.classList.toggle('is-blur-disabled', !blurIsActive);
+    }
+}
+
+canvasBackgroundStyleInputs.forEach((input) => {
+    input.addEventListener('change', () => {
+        if (!input.checked) {
+            return;
+        }
+        updateCanvasStyleSelection();
+    });
+});
+
+if (canvasBlurInput) {
+    canvasBlurInput.addEventListener('input', () => {
+        applyCanvasBlurState();
+    });
+}
+
+if (canvasBackgroundColorInput) {
+    canvasBackgroundColorInput.addEventListener('input', () => {
+        applyCanvasColorState();
+    });
+}
+
+updateCanvasStyleSelection();
+applyCanvasColorState();
 
 function updateAnimationModeContent(selectedMode) {
     if (!animationModeContainers.length) {
