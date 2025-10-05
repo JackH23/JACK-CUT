@@ -2288,7 +2288,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: stretch;
-    gap: 10px;
+    gap: 0;
     padding: 12px;
     border-radius: 12px;
     background: rgba(15, 23, 42, 0.6);
@@ -2415,8 +2415,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     width: 120px;
     cursor: grab;
     user-select: none;
-    transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-    scroll-snap-align: start;
+    transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, margin 0.2s ease;
 }
 
 .timeline-item:focus {
