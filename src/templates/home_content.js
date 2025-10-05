@@ -1781,6 +1781,8 @@ const previewImagePointerState = {
     origin: null,
 };
 
+const timelineItemImageKeyframesCache = new WeakMap();
+
 const keyframeMarkerPointerState = {
     pointerId: null,
     marker: null,
@@ -1877,6 +1879,65 @@ function activateSettingsSection(sectionName) {
             tab.tabIndex = isFallback ? 0 : -1;
         });
     }
+}
+
+function freezeKeyframeEntriesForCache(entries, options = {}) {
+    if (!Array.isArray(entries) || !entries.length) {
+        return Object.freeze([]);
+    }
+
+    const { alreadySanitized = false } = options;
+    const sourceEntries = alreadySanitized
+        ? entries
+        : entries
+            .map(sanitizeKeyframeEntry)
+            .filter(Boolean)
+            .sort((a, b) => a.progress - b.progress);
+
+    if (!sourceEntries.length) {
+        return Object.freeze([]);
+    }
+
+    const immutableEntries = sourceEntries.map((entry) => {
+        if (!entry) {
+            return null;
+        }
+
+        const transform = entry.transform && typeof entry.transform === 'object'
+            ? { ...entry.transform }
+            : entry.transform;
+
+        if (transform && typeof transform === 'object') {
+            Object.freeze(transform);
+        }
+
+        return Object.freeze({
+            progress: entry.progress,
+            transform,
+        });
+    }).filter(Boolean);
+
+    return Object.freeze(immutableEntries);
+}
+
+function cacheTimelineItemImageKeyframes(timelineItem, keyframes, options = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+        return;
+    }
+
+    if (!Array.isArray(keyframes) || !keyframes.length) {
+        timelineItemImageKeyframesCache.delete(timelineItem);
+        return;
+    }
+
+    const immutableEntries = freezeKeyframeEntriesForCache(keyframes, options);
+
+    if (!immutableEntries.length) {
+        timelineItemImageKeyframesCache.delete(timelineItem);
+        return;
+    }
+
+    timelineItemImageKeyframesCache.set(timelineItem, immutableEntries);
 }
 
 settingsTabs.forEach((tab) => {
@@ -5891,6 +5952,11 @@ function getTimelineItemImageKeyframes(timelineItem) {
         return [];
     }
 
+    const cached = timelineItemImageKeyframesCache.get(timelineItem);
+    if (cached) {
+        return cached;
+    }
+
     const raw = timelineItem.dataset.imageKeyframes || '';
     if (!raw) {
         return [];
@@ -5905,7 +5971,8 @@ function getTimelineItemImageKeyframes(timelineItem) {
             .map(sanitizeKeyframeEntry)
             .filter(Boolean)
             .sort((a, b) => a.progress - b.progress);
-        return sanitized;
+        cacheTimelineItemImageKeyframes(timelineItem, sanitized, { alreadySanitized: true });
+        return timelineItemImageKeyframesCache.get(timelineItem) || [];
     } catch (error) {
         console.warn('Unable to parse stored image keyframes.', error);
         return [];
@@ -5924,8 +5991,10 @@ function storeTimelineImageKeyframes(timelineItem, keyframes) {
 
     if (sanitized.length) {
         timelineItem.dataset.imageKeyframes = JSON.stringify(sanitized);
+        cacheTimelineItemImageKeyframes(timelineItem, sanitized, { alreadySanitized: true });
     } else {
         delete timelineItem.dataset.imageKeyframes;
+        timelineItemImageKeyframesCache.delete(timelineItem);
     }
 }
 
@@ -6264,6 +6333,7 @@ function handleKeyframeMarkerPointerMove(event) {
         } catch (error) {
             console.warn('Unable to serialize dragged keyframes.', error);
         }
+        cacheTimelineItemImageKeyframes(timelineItem, keyframes, { alreadySanitized: true });
     }
 
     marker.dataset.progress = String(clamped);
