@@ -4884,29 +4884,13 @@ function snapPreviewImageTransform(transform, options = {}) {
     }
 
     const viewportSize = getPreviewViewportSize();
+    const mode = typeof options.mode === 'string' ? options.mode.toLowerCase() : null;
+    const isDragging = mode === 'drag';
     const snappedTransform = { ...transform };
 
-    if (viewportSize.width > 0 && viewportSize.height > 0) {
+    if (!isDragging && viewportSize.width > 0 && viewportSize.height > 0) {
         const threshold = PREVIEW_IMAGE_SNAP_THRESHOLD;
-        if (options.mode === 'drag') {
-            if (Math.abs(snappedTransform.left) <= threshold) {
-                snappedTransform.left = 0;
-            }
-
-            const rightDelta = viewportSize.width - (snappedTransform.left + snappedTransform.width);
-            if (Math.abs(rightDelta) <= threshold) {
-                snappedTransform.left += rightDelta;
-            }
-
-            if (Math.abs(snappedTransform.top) <= threshold) {
-                snappedTransform.top = 0;
-            }
-
-            const bottomDelta = viewportSize.height - (snappedTransform.top + snappedTransform.height);
-            if (Math.abs(bottomDelta) <= threshold) {
-                snappedTransform.top += bottomDelta;
-            }
-        } else if (options.mode === 'resize') {
+        if (mode === 'resize') {
             const handle = typeof options.handle === 'string' ? options.handle.toLowerCase() : '';
 
             if (handle) {
@@ -5000,7 +4984,7 @@ function snapPreviewImageTransform(transform, options = {}) {
         }
     }
 
-    if (viewportSize.width > 0 && viewportSize.height > 0) {
+    if (!isDragging && viewportSize.width > 0 && viewportSize.height > 0) {
         const viewportCenterX = viewportSize.width / 2;
         const viewportCenterY = viewportSize.height / 2;
         const currentCenterX = snappedTransform.left + (snappedTransform.width / 2);
@@ -5015,10 +4999,11 @@ function snapPreviewImageTransform(transform, options = {}) {
         }
     }
 
-    const alignment = evaluatePreviewImageAlignment(snappedTransform, viewportSize);
+    const alignmentTarget = isDragging ? { ...transform } : snappedTransform;
+    const alignment = evaluatePreviewImageAlignment(alignmentTarget, viewportSize);
 
     return {
-        transform: snappedTransform,
+        transform: alignmentTarget,
         alignment,
     };
 }
