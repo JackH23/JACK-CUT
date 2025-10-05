@@ -952,6 +952,45 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
     };
 }
 
+function getTimelineItemComboAnimationWindow(timelineItem) {
+    if (!isImageTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const settings = getTimelineItemAnimationSettings(timelineItem);
+    if (!settings || settings.direction !== 'combo') {
+        return null;
+    }
+
+    const rawClipDuration = Math.round(Number(timelineItem.dataset.imageDuration) || 0);
+    const clipDuration = rawClipDuration > 0 ? rawClipDuration : IMAGE_FRAME_DURATION;
+
+    if (!(clipDuration > 0)) {
+        return null;
+    }
+
+    const entrancePreset = COMBO_ENTRANCE_PRESETS[settings.comboInPreset]
+        || COMBO_ENTRANCE_PRESETS[DEFAULT_COMBO_ENTRANCE_PRESET];
+    const exitPreset = COMBO_EXIT_PRESETS[settings.comboOutPreset]
+        || COMBO_EXIT_PRESETS[DEFAULT_COMBO_EXIT_PRESET];
+
+    const durations = computeComboAnimationDurations(entrancePreset, exitPreset, {
+        clipDurationMs: clipDuration,
+        speedWindowMs: settings.comboWindowMs,
+    }) || {};
+
+    const entranceDuration = Math.max(0, Math.round(durations.entranceDuration || 0));
+    const exitDuration = Math.max(0, Math.round(durations.exitDuration || 0));
+    const availableDuration = Math.max(0, clipDuration - entranceDuration - exitDuration);
+
+    return {
+        clipDuration,
+        entranceDuration,
+        exitDuration,
+        availableDuration,
+    };
+}
+
 function getPreviewImageEntranceConfig(options = {}) {
     if (!previewImage) {
         return null;
@@ -5884,7 +5923,30 @@ function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
         return null;
     }
 
-    const safeProgress = clampProgress(progress);
+    let safeProgress = clampProgress(progress);
+
+    const animationWindow = getTimelineItemComboAnimationWindow(timelineItem);
+    if (animationWindow && animationWindow.clipDuration > 0) {
+        const {
+            clipDuration,
+            entranceDuration,
+            exitDuration,
+            availableDuration,
+        } = animationWindow;
+
+        const timePosition = safeProgress * clipDuration;
+        const boundaryTolerance = clipDuration * KEYFRAME_PROGRESS_TOLERANCE;
+        const exitBoundary = Math.max(0, clipDuration - exitDuration);
+
+        if (timePosition <= entranceDuration + boundaryTolerance) {
+            safeProgress = 0;
+        } else if (timePosition >= exitBoundary - boundaryTolerance) {
+            safeProgress = 1;
+        } else if (availableDuration > 0) {
+            const trimmedTime = timePosition - entranceDuration;
+            safeProgress = clampProgress(trimmedTime / availableDuration);
+        }
+    }
 
     if (keyframes.length === 1) {
         return keyframes[0].transform;
