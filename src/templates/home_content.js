@@ -1077,6 +1077,25 @@ function getPreviewImageEntranceConfig(options = {}) {
     };
 }
 
+function cancelPreviewImageAnimations() {
+    if (!previewImage || typeof previewImage.getAnimations !== 'function') {
+        return;
+    }
+
+    try {
+        const activeAnimations = previewImage.getAnimations() || [];
+        activeAnimations.forEach((animation) => {
+            try {
+                animation.cancel();
+            } catch (error) {
+                // Some browsers throw on cancel when the animation is already finished.
+            }
+        });
+    } catch (error) {
+        // Older browsers may throw if getAnimations is unsupported.
+    }
+}
+
 function cancelPreviewEntranceAnimation() {
     window.clearTimeout(previewEntranceAnimationFallbackTimer);
     previewEntranceAnimationFallbackTimer = 0;
@@ -1092,6 +1111,8 @@ function cancelPreviewEntranceAnimation() {
     if (!previewImage) {
         return;
     }
+
+    cancelPreviewImageAnimations();
 
     previewImage.classList.remove('is-entering');
     ENTRANCE_ANIMATION_CLASS_NAMES.forEach((className) => {
@@ -1344,6 +1365,10 @@ function getPreviewImageExitConfig(options = {}) {
         };
     }
 
+    if (direction === 'in') {
+        return null;
+    }
+
     const presetKey = animationOutPresetSelect?.value || 'fade';
     const preset = EXIT_ANIMATION_PRESETS[presetKey] || EXIT_ANIMATION_PRESETS.fade;
     const delayKey = getExitAnimationDelayKey();
@@ -1409,6 +1434,7 @@ function cancelPreviewExitAnimation(options = {}) {
     }
 
     if (previewImage) {
+        cancelPreviewImageAnimations();
         previewImage.classList.remove('is-exiting');
         EXIT_ANIMATION_CLASS_NAMES.forEach((className) => {
             previewImage.classList.remove(className);
@@ -1443,6 +1469,8 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
     const restoreOnComplete = restoreOverride === true;
     const restoreDelay = Math.max(0, Number(options.restoreDelayMs) || 0);
     const { className, delay, duration, easing } = config;
+
+    cancelPreviewImageAnimations();
 
     previewImage.classList.add('is-visible');
     previewImage.dataset.exitAnimation = config.key;
@@ -1652,6 +1680,8 @@ async function revealPreviewImageSource(objectURL, options = {}) {
     if (!previewImage || !objectURL) {
         return;
     }
+
+    cancelPreviewExitAnimation({ forceRestore: false });
 
     if (!previewImage.hidden && previewImage.src === objectURL) {
         if (immediate) {
