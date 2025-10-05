@@ -4577,6 +4577,8 @@ function applyPreviewImageTransform(alignmentOverride) {
     previewImageFrame.style.width = `${previewImageTransform.width}px`;
     previewImageFrame.style.height = `${previewImageTransform.height}px`;
 
+    updatePreviewImageFrameVisibility();
+
     const rotation = clampRotation(previewImageTransform.rotation);
     previewImageTransform.rotation = rotation;
     if (previewImage) {
@@ -4598,6 +4600,7 @@ function clearPreviewImageTransform() {
         previewImageFrame.style.removeProperty('width');
         previewImageFrame.style.removeProperty('height');
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
+        previewImageFrame.removeAttribute('data-outside-viewport');
     }
     if (previewImage) {
         previewImage.style.removeProperty('--preview-image-rotation');
@@ -4812,6 +4815,39 @@ function hidePreviewImageLayer() {
     previewImagePointerState.mode = null;
     previewImagePointerState.handle = null;
     previewImagePointerState.origin = null;
+}
+
+function updatePreviewImageFrameVisibility() {
+    if (!previewImageFrame || !previewViewport || !previewImageTransform) {
+        if (previewImageFrame) {
+            previewImageFrame.removeAttribute('data-outside-viewport');
+        }
+        return;
+    }
+
+    const viewportWidth = Math.max(0, previewViewport.clientWidth);
+    const viewportHeight = Math.max(0, previewViewport.clientHeight);
+
+    if (viewportWidth === 0 || viewportHeight === 0) {
+        previewImageFrame.removeAttribute('data-outside-viewport');
+        return;
+    }
+
+    const frameLeft = previewImageTransform.left;
+    const frameTop = previewImageTransform.top;
+    const frameRight = frameLeft + previewImageTransform.width;
+    const frameBottom = frameTop + previewImageTransform.height;
+
+    const intersectsViewport = frameRight > 0
+        && frameBottom > 0
+        && frameLeft < viewportWidth
+        && frameTop < viewportHeight;
+
+    if (intersectsViewport) {
+        previewImageFrame.removeAttribute('data-outside-viewport');
+    } else {
+        previewImageFrame.setAttribute('data-outside-viewport', 'true');
+    }
 }
 
 function queuePreviewImageFrameReset() {
