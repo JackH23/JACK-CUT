@@ -451,7 +451,7 @@
 
         <section class="panel timeline-card timeline-footer">
             <h2>Timeline overview</h2>
-            <div class="timeline-track" id="timeline-track">
+            <div class="timeline-track" id="timeline-track" data-main-magnetic="1">
                 <div class="timeline-progress-line" id="timeline-progress-line" aria-hidden="true"></div>
                 <div class="timeline-lane-list" id="timeline-lane-list" role="list">
                     <div class="timeline-lane" data-lane-index="0"></div>
@@ -459,6 +459,23 @@
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
             </div>
             <div class="timeline-controls">
+                <button
+                    type="button"
+                    class="timeline-magnetic-toggle is-active"
+                    id="timeline-magnetic-toggle"
+                    aria-pressed="true"
+                    aria-label="Disable Main Magnetic Track"
+                    title="Main Magnetic Track"
+                >
+                    <span class="timeline-magnetic-toggle__icon" aria-hidden="true">
+                        <span class="timeline-magnetic-toggle__body"></span>
+                        <span class="timeline-magnetic-toggle__bar"></span>
+                    </span>
+                    <span class="timeline-magnetic-toggle__text">
+                        <span class="timeline-magnetic-toggle__title">Magnetic</span>
+                        <span class="timeline-magnetic-toggle__state" id="timeline-magnetic-state">On</span>
+                    </span>
+                </button>
                 <div class="timeline-zoom">
                     <label for="timeline-zoom">Zoom</label>
                     <div class="timeline-zoom__group">

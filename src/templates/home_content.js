@@ -94,6 +94,9 @@ const timelineZoomButtons = timelineZoomInput
             || document).querySelectorAll('[data-timeline-zoom]'),
     )
     : [];
+const timelineMagneticToggle = document.getElementById('timeline-magnetic-toggle');
+const timelineMagneticStateLabel = document.getElementById('timeline-magnetic-state');
+let isMainTrackMagnetic = timelineTrack?.dataset?.mainMagnetic !== '0';
 const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
@@ -3704,6 +3707,73 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     return applied;
 }
 
+function getMainTimelineLane() {
+    const lanes = getTimelineLanes();
+    if (!lanes.length) {
+        return null;
+    }
+    const explicitMain = lanes.find((lane) => lane?.dataset?.laneIndex === '0');
+    return explicitMain || lanes[0] || null;
+}
+
+function clearMainTrackSnapOverrides() {
+    const mainLane = getMainTimelineLane();
+    if (!mainLane) {
+        return;
+    }
+    mainLane.querySelectorAll('.timeline-item').forEach((item) => {
+        item.style.removeProperty('margin-inline-start');
+        item.style.removeProperty('margin-left');
+    });
+}
+
+function snapMainTimelineLane() {
+    clearMainTrackSnapOverrides();
+}
+
+function applyMainTrackMagneticState(forceState = null) {
+    if (typeof forceState === 'boolean') {
+        isMainTrackMagnetic = forceState;
+    }
+
+    const enabled = Boolean(isMainTrackMagnetic);
+
+    if (timelineTrack) {
+        timelineTrack.dataset.mainMagnetic = enabled ? '1' : '0';
+        timelineTrack.classList.toggle('timeline-track--magnetic', enabled);
+    }
+
+    if (timelineMagneticToggle) {
+        timelineMagneticToggle.classList.toggle('is-active', enabled);
+        timelineMagneticToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        timelineMagneticToggle.setAttribute(
+            'aria-label',
+            `${enabled ? 'Disable' : 'Enable'} Main Magnetic Track`,
+        );
+        timelineMagneticToggle.title = enabled
+            ? 'Main Magnetic Track enabled'
+            : 'Main Magnetic Track disabled';
+    }
+
+    if (timelineMagneticStateLabel) {
+        timelineMagneticStateLabel.textContent = enabled ? 'On' : 'Off';
+    }
+
+    if (enabled) {
+        snapMainTimelineLane();
+    } else {
+        clearMainTrackSnapOverrides();
+    }
+
+    return enabled;
+}
+
+function enforceMainTrackMagnetism() {
+    if (isMainTrackMagnetic) {
+        snapMainTimelineLane();
+    }
+}
+
 function getTimelineItems() {
     return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
 }
@@ -4319,6 +4389,7 @@ function enableTimelineItemDragging(timelineItem) {
         cleanupEmptyTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        enforceMainTrackMagnetism();
     });
 }
 
@@ -4340,6 +4411,13 @@ function initializeTimelineItem(timelineItem) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }
+}
+
+if (timelineMagneticToggle) {
+    timelineMagneticToggle.addEventListener('click', () => {
+        isMainTrackMagnetic = !isMainTrackMagnetic;
+        applyMainTrackMagneticState();
+    });
 }
 
 if (timelineTrack) {
@@ -4381,11 +4459,13 @@ if (timelineTrack) {
         cleanupEmptyTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        enforceMainTrackMagnetism();
     });
 }
 
 ensureTimelineLane(0);
 updateTimelineEmptyState();
+applyMainTrackMagneticState(isMainTrackMagnetic);
 
 if (window.ResizeObserver) {
     if (previewArea && !previewAreaResizeObserver) {
@@ -7615,6 +7695,7 @@ async function addToTimeline(file, objectURL) {
     }
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
+    enforceMainTrackMagnetism();
 
     timelineItem.addEventListener('click', () => {
         stopTimelinePlayback();
@@ -7692,6 +7773,7 @@ async function addToTimeline(file, objectURL) {
         updateActiveTimelineIndicators();
         renderExportSummary(getTimelineItems(), null);
         refreshImageDurationApplyAllAvailability();
+        enforceMainTrackMagnetism();
     });
 
     setActiveTimelineItem(timelineItem);
