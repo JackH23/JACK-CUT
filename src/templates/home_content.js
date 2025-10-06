@@ -80,6 +80,7 @@ const timelineEmptyState = document.getElementById('timeline-empty-state');
 const playVideoButton = document.getElementById('play-video-button');
 const timelineProgressLine = document.getElementById('timeline-progress-line');
 const timelineProgressInput = document.getElementById('timeline-progress');
+const timelineSnapIndicator = document.getElementById('timeline-snap-indicator');
 if (timelineProgressInput) {
     timelineProgressInput.addEventListener('input', () => {
         stopTimelinePlayback(true, false);
@@ -1956,10 +1957,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        hideTimelineSnapIndicator();
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        hideTimelineSnapIndicator();
         return;
     }
 
@@ -1986,6 +1989,7 @@ function runTimelineDragOverUpdate() {
     item.dataset.laneIndex = laneIndex;
     item.dataset.startOffsetMs = String(desiredStartMs);
     flushTimelineLaneReflow(lane);
+    updateTimelineSnapIndicatorDuringDrag(lane, item, desiredStartMs);
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -2248,6 +2252,7 @@ const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;
 const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
+const TIMELINE_SNAP_INDICATOR_THRESHOLD_PX = 16;
 
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;
@@ -3766,6 +3771,142 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
     });
 }
 
+function hideTimelineSnapIndicator() {
+    if (!timelineSnapIndicator) {
+        return;
+    }
+    delete timelineSnapIndicator.dataset.visible;
+    timelineSnapIndicator.style.removeProperty('left');
+    timelineSnapIndicator.style.removeProperty('top');
+    timelineSnapIndicator.style.removeProperty('height');
+}
+
+function showTimelineSnapIndicator(lane, offsetMs) {
+    if (!timelineSnapIndicator || !timelineTrack || !lane) {
+        return;
+    }
+
+    const trackRect = timelineTrack.getBoundingClientRect();
+    const laneRect = lane.getBoundingClientRect();
+    if (!trackRect || !laneRect) {
+        return;
+    }
+
+    const laneStyles = window.getComputedStyle(lane);
+    const paddingLeft = Number.parseFloat(laneStyles.paddingLeft) || 0;
+    const paddingTop = Number.parseFloat(laneStyles.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(laneStyles.paddingBottom) || 0;
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        return;
+    }
+
+    const safeOffsetMs = Math.max(0, Number(offsetMs) || 0);
+    const offsetPx = Math.round(safeOffsetMs / perPixel);
+    if (!Number.isFinite(offsetPx)) {
+        return;
+    }
+
+    const left = (
+        laneRect.left
+        - trackRect.left
+        + timelineTrack.scrollLeft
+        + paddingLeft
+        + offsetPx
+    );
+    const top = (
+        laneRect.top
+        - trackRect.top
+        + timelineTrack.scrollTop
+        + paddingTop
+    );
+    const height = Math.max(0, laneRect.height - paddingTop - paddingBottom);
+    if (!Number.isFinite(height) || height <= 0) {
+        return;
+    }
+
+    timelineSnapIndicator.style.left = `${left}px`;
+    timelineSnapIndicator.style.top = `${top}px`;
+    timelineSnapIndicator.style.height = `${height}px`;
+    timelineSnapIndicator.dataset.visible = 'true';
+}
+
+function updateTimelineSnapIndicatorDuringDrag(lane, draggingItem, desiredStartMs) {
+    if (
+        !timelineSnapIndicator
+        || !lane
+        || !draggingItem
+        || !lane.isConnected
+        || !draggingItem.isConnected
+    ) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    const laneIndex = Number.isFinite(Number(lane.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : 0;
+
+    if (!isMagnetEnabledForLaneIndex(laneIndex) || !isImageTimelineItem(draggingItem)) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    const layout = getTimelineLaneLayout(lane, laneIndex);
+    if (!layout.length) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    const targetIndex = layout.findIndex((entry) => entry.item === draggingItem);
+    if (targetIndex === -1) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    const thresholdMs = perPixel * TIMELINE_SNAP_INDICATOR_THRESHOLD_PX;
+    const normalizedStart = Math.max(0, Number(desiredStartMs) || 0);
+    const currentEntry = layout[targetIndex];
+    const previousEntry = targetIndex > 0 ? layout[targetIndex - 1] : null;
+    const nextEntry = targetIndex < layout.length - 1 ? layout[targetIndex + 1] : null;
+
+    let bestCandidate = null;
+
+    if (previousEntry) {
+        const delta = Math.abs(normalizedStart - previousEntry.end);
+        if (Number.isFinite(delta) && delta <= thresholdMs) {
+            bestCandidate = { offsetMs: previousEntry.end, delta };
+        }
+    }
+
+    const currentDuration = Number.isFinite(currentEntry?.duration)
+        ? currentEntry.duration
+        : getTimelineItemPlaybackDuration(draggingItem);
+
+    if (nextEntry && Number.isFinite(currentDuration)) {
+        const desiredEnd = normalizedStart + currentDuration;
+        const delta = Math.abs(desiredEnd - nextEntry.start);
+        if (Number.isFinite(delta) && delta <= thresholdMs) {
+            if (!bestCandidate || delta < bestCandidate.delta) {
+                bestCandidate = { offsetMs: nextEntry.start, delta };
+            }
+        }
+    }
+
+    if (!bestCandidate) {
+        hideTimelineSnapIndicator();
+        return;
+    }
+
+    showTimelineSnapIndicator(lane, bestCandidate.offsetMs);
+}
+
 function reflowTimelineLane(lane) {
     if (!lane) {
         return;
@@ -3821,6 +3962,10 @@ function setMainTrackMagnetEnabled(enable) {
     const mainLane = lanes.length > 0 ? lanes[0] : null;
     if (mainLane) {
         reflowTimelineLane(mainLane);
+    }
+
+    if (!next) {
+        hideTimelineSnapIndicator();
     }
 
     updateActiveTimelineIndicators();
@@ -4207,6 +4352,8 @@ function setActiveDropLane(nextLane) {
     activeDropLane = nextLane || null;
     if (activeDropLane) {
         activeDropLane.classList.add('is-drop-target');
+    } else {
+        hideTimelineSnapIndicator();
     }
 }
 
@@ -4728,6 +4875,7 @@ function enableTimelineItemDragging(timelineItem) {
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
         cleanupTimelineDragPreviewElement(timelineItem);
+        hideTimelineSnapIndicator();
     });
 }
 
@@ -4770,6 +4918,7 @@ if (timelineTrack) {
         if (!draggingItem) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            hideTimelineSnapIndicator();
             return;
         }
         event.preventDefault();
@@ -4777,6 +4926,7 @@ if (timelineTrack) {
         if (!lane) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            hideTimelineSnapIndicator();
             return;
         }
         setActiveDropLane(lane);
@@ -4812,6 +4962,7 @@ if (timelineTrack) {
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        hideTimelineSnapIndicator();
         activeTimelineDragItem = null;
     });
 }
