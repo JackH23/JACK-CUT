@@ -6175,20 +6175,30 @@ function resolveLaneIndex(laneValue) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight) {
+function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight, options = {}) {
     if (!timelineItem || viewportWidth <= 0 || viewportHeight <= 0) {
         return null;
     }
 
-    const stored = getStoredPreviewImageTransform(timelineItem);
-    if (!stored) {
+    const { normalizedTransform = null } = options;
+
+    let transform = null;
+    if (normalizedTransform) {
+        transform = sanitizeNormalizedKeyframeTransform(normalizedTransform);
+    }
+
+    if (!transform) {
+        transform = getStoredPreviewImageTransform(timelineItem);
+    }
+
+    if (!transform) {
         return null;
     }
 
-    const left = stored.left * viewportWidth;
-    const top = stored.top * viewportHeight;
-    const width = stored.width * viewportWidth;
-    const height = stored.height * viewportHeight;
+    const left = transform.left * viewportWidth;
+    const top = transform.top * viewportHeight;
+    const width = transform.width * viewportWidth;
+    const height = transform.height * viewportHeight;
 
     if ([left, top, width, height].some((value) => !Number.isFinite(value))) {
         return null;
@@ -6198,7 +6208,15 @@ function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight) 
         return null;
     }
 
-    return { left, top, width, height };
+    const rotation = clampRotation(transform.rotation);
+
+    return {
+        left,
+        top,
+        width,
+        height,
+        rotation,
+    };
 }
 
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
@@ -6225,19 +6243,54 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     }
 
     const primaryLaneIndex = resolveLaneIndex(primaryTimelineItem.dataset?.laneIndex);
+    const primaryStartTime = getTimelineItemStartTime(primaryTimelineItem);
+    const primaryDuration = Math.max(0, getTimelineItemPlaybackDuration(primaryTimelineItem));
+    const primaryProgress = getActiveClipProgress();
+    const timelineNow = primaryDuration > 0
+        ? primaryStartTime + (primaryDuration * primaryProgress)
+        : primaryStartTime;
+    const safeTimelineNow = Number.isFinite(timelineNow) ? timelineNow : primaryStartTime;
 
     const overlayEntries = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
-        .map((entry) => ({
-            item: entry.item,
-            laneIndex: resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex),
-        }))
+        .map((entry) => {
+            const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);
+            const start = Number.isFinite(entry.start)
+                ? entry.start
+                : getTimelineItemStartTime(entry.item);
+            let end;
+            if (Number.isFinite(entry.end)) {
+                end = entry.end;
+            } else {
+                const fallbackDuration = Math.max(0, getTimelineItemPlaybackDuration(entry.item));
+                end = start + fallbackDuration;
+            }
+            return {
+                item: entry.item,
+                laneIndex,
+                start,
+                end,
+            };
+        })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'));
 
     if (!overlayEntries.length) {
         return;
     }
+
+    overlayEntries.forEach((descriptor) => {
+        const { start, end } = descriptor;
+        const duration = Number.isFinite(end) && Number.isFinite(start) ? Math.max(0, end - start) : 0;
+        if (duration === 0) {
+            descriptor.progress = 0;
+            return;
+        }
+        const relativeTime = (safeTimelineNow - start) / duration;
+        descriptor.progress = Number.isFinite(relativeTime)
+            ? clampProgress(relativeTime)
+            : 0;
+    });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
     const overlayGroups = { below: [], above: [] };
@@ -6272,19 +6325,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             layer.style.borderRadius = `${borderRadius}px`;
         }
 
-        const frame = resolveOverlayFramePixels(descriptor.item, viewportWidth, viewportHeight);
-        if (frame) {
-            layer.style.left = `${frame.left}px`;
-            layer.style.top = `${frame.top}px`;
-            layer.style.width = `${frame.width}px`;
-            layer.style.height = `${frame.height}px`;
-        } else {
-            layer.style.left = '0px';
-            layer.style.top = '0px';
-            layer.style.width = '100%';
-            layer.style.height = '100%';
-        }
-
         const image = document.createElement('img');
         image.src = objectURL;
         image.alt = descriptor.item.dataset.displayName
@@ -6297,6 +6337,33 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         }
         image.loading = 'lazy';
         image.draggable = false;
+
+        const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
+        const normalizedTransform = overlayProgress !== null
+            ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
+            : null;
+
+        const frame = resolveOverlayFramePixels(
+            descriptor.item,
+            viewportWidth,
+            viewportHeight,
+            { normalizedTransform },
+        );
+        if (frame) {
+            layer.style.left = `${frame.left}px`;
+            layer.style.top = `${frame.top}px`;
+            layer.style.width = `${frame.width}px`;
+            layer.style.height = `${frame.height}px`;
+            const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+        } else {
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = '100%';
+            layer.style.height = '100%';
+            image.style.setProperty('--preview-overlay-rotation', '0deg');
+        }
+
         layer.appendChild(image);
         layer.title = image.alt;
         overlayLayerToTimelineItem.set(layer, descriptor.item);
