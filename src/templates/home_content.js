@@ -3532,6 +3532,8 @@ function applyTimelineZoom(options = {}) {
         applyTimelineItemDurationStyles(item, duration);
     });
 
+    reflowAllTimelineLanes();
+
     if (preserveScroll) {
         timelineTrack.scrollLeft = previousScroll;
     }
@@ -3619,6 +3621,119 @@ function applyTimelineItemDurationStyles(timelineItem, durationMs) {
     timelineItem.style.flexBasis = `${width}px`;
 }
 
+function parseTimelineItemOffsetMs(timelineItem) {
+    if (!timelineItem?.dataset) {
+        return null;
+    }
+    const raw = Number(timelineItem.dataset.startOffsetMs);
+    if (!Number.isFinite(raw) || raw < 0) {
+        return null;
+    }
+    return raw;
+}
+
+function applyTimelineItemLeadingGapStyles(timelineItem, gapMs) {
+    if (!timelineItem) {
+        return;
+    }
+    const perPixel = getTimelineDurationPerPixel();
+    const gapPx = Math.max(0, Math.round((Number(gapMs) || 0) / perPixel));
+    if (gapPx > 0) {
+        timelineItem.style.marginLeft = `${gapPx}px`;
+    } else {
+        timelineItem.style.marginLeft = '';
+    }
+}
+
+function getTimelineLaneLayout(lane, fallbackIndex = 0) {
+    if (!lane) {
+        return [];
+    }
+
+    const laneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : fallbackIndex;
+
+    const laneItems = Array.from(lane.querySelectorAll('.timeline-item'));
+
+    if (!laneItems.length) {
+        return [];
+    }
+
+    const orderedItems = laneItems
+        .map((item, order) => ({
+            item,
+            order,
+            laneIndex,
+            preferredStart: parseTimelineItemOffsetMs(item),
+            duration: Math.max(0, getTimelineItemPlaybackDuration(item)),
+        }))
+        .sort((a, b) => {
+            const aStart = Number.isFinite(a.preferredStart)
+                ? a.preferredStart
+                : Number.POSITIVE_INFINITY;
+            const bStart = Number.isFinite(b.preferredStart)
+                ? b.preferredStart
+                : Number.POSITIVE_INFINITY;
+            if (aStart !== bStart) {
+                return aStart - bStart;
+            }
+            return a.order - b.order;
+        });
+
+    let cursor = 0;
+
+    return orderedItems.map((entry) => {
+        const start = Number.isFinite(entry.preferredStart)
+            ? Math.max(0, Math.round(entry.preferredStart))
+            : Math.max(0, Math.round(cursor));
+        const end = start + entry.duration;
+        const leadingGap = Math.max(0, start - cursor);
+        cursor = Math.max(cursor, end);
+        return {
+            item: entry.item,
+            laneIndex: entry.laneIndex,
+            start,
+            end,
+            duration: entry.duration,
+            leadingGap,
+        };
+    });
+}
+
+function reflowTimelineLane(lane) {
+    if (!lane) {
+        return;
+    }
+
+    const fallbackIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : getTimelineLanes().indexOf(lane);
+
+    const layout = getTimelineLaneLayout(lane, fallbackIndex);
+    if (!layout.length) {
+        return;
+    }
+
+    layout.forEach((entry, index) => {
+        const { item, start, leadingGap } = entry;
+        const sanitizedStart = Math.max(0, Math.round(start));
+        item.dataset.startOffsetMs = String(sanitizedStart);
+        item.dataset.laneIndex = lane.dataset.laneIndex || '0';
+        applyTimelineItemLeadingGapStyles(item, leadingGap);
+        const currentChild = lane.children[index] || null;
+        if (currentChild !== item) {
+            lane.insertBefore(item, currentChild);
+        }
+    });
+}
+
+function reflowAllTimelineLanes() {
+    getTimelineLanes().forEach((lane) => {
+        reflowTimelineLane(lane);
+    });
+}
+
 function ensureTimelineItemDurationBadge(timelineItem) {
     if (!timelineItem) {
         return null;
@@ -3701,6 +3816,11 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
         });
     }
 
+    const parentLane = timelineItem.closest('.timeline-lane');
+    if (parentLane) {
+        reflowTimelineLane(parentLane);
+    }
+
     return applied;
 }
 
@@ -3712,24 +3832,16 @@ function getTimelineLaneEntries() {
     const entries = [];
     const lanes = getTimelineLanes();
     lanes.forEach((lane, index) => {
-        const laneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
-            ? Number(lane.dataset.laneIndex)
-            : index;
-        const laneItems = lane
-            ? Array.from(lane.querySelectorAll('.timeline-item'))
-            : [];
-        let elapsed = 0;
-        laneItems.forEach((item) => {
-            const duration = Math.max(0, getTimelineItemPlaybackDuration(item));
-            const start = elapsed;
-            const end = start + duration;
+        const layout = getTimelineLaneLayout(lane, index);
+        layout.forEach((entry) => {
             entries.push({
-                item,
-                laneIndex,
-                start,
-                end,
+                item: entry.item,
+                laneIndex: Number.isFinite(entry?.laneIndex)
+                    ? entry.laneIndex
+                    : index,
+                start: entry.start,
+                end: entry.end,
             });
-            elapsed = end;
         });
     });
     return entries;
@@ -4056,24 +4168,6 @@ function getTimelineLaneFromEvent(event) {
     return closestLane || ensureTimelineLane(0);
 }
 
-function getDragAfterElement(container, clientX) {
-    const siblings = Array.from(
-        container.querySelectorAll('.timeline-item:not(.dragging)'),
-    );
-
-    return siblings.reduce(
-        (closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = clientX - box.left - box.width / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset, element: child };
-            }
-            return closest;
-        },
-        { offset: Number.NEGATIVE_INFINITY, element: null },
-    ).element;
-}
-
 function updateActiveTimelineIndicators() {
     applyTimelineProgressGeometry();
 
@@ -4317,6 +4411,7 @@ function enableTimelineItemDragging(timelineItem) {
         timelineItem.draggable = true;
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
+        reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
     });
@@ -4340,6 +4435,11 @@ function initializeTimelineItem(timelineItem) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }
+
+    const parentLane = timelineItem.closest('.timeline-lane');
+    if (parentLane) {
+        reflowTimelineLane(parentLane);
+    }
 }
 
 if (timelineTrack) {
@@ -4361,13 +4461,17 @@ if (timelineTrack) {
             return;
         }
         setActiveDropLane(lane);
-        const afterElement = getDragAfterElement(lane, event.clientX);
-        if (!afterElement) {
+        if (draggingItem.parentElement !== lane) {
             lane.appendChild(draggingItem);
-        } else if (afterElement !== draggingItem) {
-            lane.insertBefore(draggingItem, afterElement);
         }
+        const styles = window.getComputedStyle(lane);
+        const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+        const relativeX = event.clientX - lane.getBoundingClientRect().left - paddingLeft;
+        const perPixel = getTimelineDurationPerPixel();
+        const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
         draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+        draggingItem.dataset.startOffsetMs = String(desiredStartMs);
+        reflowTimelineLane(lane);
     });
 
     timelineTrack.addEventListener('drop', (event) => {
@@ -4379,6 +4483,7 @@ if (timelineTrack) {
         }
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
+        reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
     });
@@ -4386,6 +4491,7 @@ if (timelineTrack) {
 
 ensureTimelineLane(0);
 updateTimelineEmptyState();
+reflowAllTimelineLanes();
 
 if (window.ResizeObserver) {
     if (previewArea && !previewAreaResizeObserver) {
@@ -7670,10 +7776,14 @@ async function addToTimeline(file, objectURL) {
         if (!targetItem) {
             return;
         }
+        const parentLane = targetItem.closest('.timeline-lane');
         const wasActive = targetItem === activeTimelineItem;
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
         targetItem.remove();
+        if (parentLane) {
+            reflowTimelineLane(parentLane);
+        }
         if (url) {
             setStagedUploadAddedState(url, false);
             if (fileType.startsWith('image/')) {
