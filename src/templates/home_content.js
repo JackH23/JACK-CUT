@@ -1946,6 +1946,12 @@ let timelineIndicatorResizeFrame = null;
 let previewAreaResizeObserver = null;
 let timelineTrackResizeObserver = null;
 let activeDropLane = null;
+let timelineDragOverAnimationFrame = null;
+const timelineDragOverState = {
+    lane: null,
+    item: null,
+    clientX: 0,
+};
 let isExportingTimeline = false;
 let previewImageTransform = null;
 let pendingPreviewImageTransform = null;
@@ -1960,6 +1966,45 @@ const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
         ? HTMLMediaElement.HAVE_ENOUGH_DATA
         : 4;
 const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
+
+function runTimelineDragOverUpdate() {
+    const { lane, item, clientX } = timelineDragOverState;
+    if (!lane || !item) {
+        return;
+    }
+
+    if (!lane.isConnected || !item.isConnected) {
+        return;
+    }
+
+    const styles = window.getComputedStyle(lane);
+    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+    const rect = lane.getBoundingClientRect();
+    const relativeX = clientX - rect.left - paddingLeft;
+    const perPixel = getTimelineDurationPerPixel();
+    const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
+    item.dataset.laneIndex = lane.dataset.laneIndex || '0';
+    item.dataset.startOffsetMs = String(desiredStartMs);
+    reflowTimelineLane(lane);
+}
+
+function scheduleTimelineDragOverUpdate() {
+    if (timelineDragOverAnimationFrame !== null) {
+        return;
+    }
+    timelineDragOverAnimationFrame = window.requestAnimationFrame(() => {
+        timelineDragOverAnimationFrame = null;
+        runTimelineDragOverUpdate();
+    });
+}
+
+function flushTimelineDragOverUpdate() {
+    if (timelineDragOverAnimationFrame !== null) {
+        window.cancelAnimationFrame(timelineDragOverAnimationFrame);
+        timelineDragOverAnimationFrame = null;
+    }
+    runTimelineDragOverUpdate();
+}
 
 function preloadTimelineImage(objectURL) {
     if (!objectURL) {
@@ -4291,6 +4336,41 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         : timelineItem;
     captureTarget?.setPointerCapture?.(event.pointerId);
 
+    let pendingDeltaX = 0;
+    let resizeAnimationFrame = null;
+    let resizeUpdateQueued = false;
+
+    const applyResize = () => {
+        resizeUpdateQueued = false;
+        const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + pendingDeltaX);
+        const nextDuration = widthToDuration(tentativeWidth);
+        setTimelineItemDuration(timelineItem, durationKey, nextDuration, { markCustom: true });
+        updateActiveTimelineIndicators();
+    };
+
+    const scheduleResizeUpdate = () => {
+        resizeUpdateQueued = true;
+        if (resizeAnimationFrame !== null) {
+            return;
+        }
+        resizeAnimationFrame = window.requestAnimationFrame(() => {
+            resizeAnimationFrame = null;
+            if (resizeUpdateQueued) {
+                applyResize();
+            }
+        });
+    };
+
+    const flushResizeUpdate = () => {
+        if (resizeAnimationFrame !== null) {
+            window.cancelAnimationFrame(resizeAnimationFrame);
+            resizeAnimationFrame = null;
+        }
+        if (resizeUpdateQueued) {
+            applyResize();
+        }
+    };
+
     const onPointerMove = (moveEvent) => {
         if (timelineTrack) {
             const trackRect = timelineTrack.getBoundingClientRect();
@@ -4306,17 +4386,13 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
 
         const currentScrollLeft = timelineTrack ? timelineTrack.scrollLeft : initialScrollLeft;
         const scrollDelta = currentScrollLeft - initialScrollLeft;
-        let deltaX = moveEvent.clientX - startX + scrollDelta;
-        if (isLeftResize) {
-            deltaX = -deltaX;
-        }
-        const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + deltaX);
-        const nextDuration = widthToDuration(tentativeWidth);
-        setTimelineItemDuration(timelineItem, durationKey, nextDuration, { markCustom: true });
-        updateActiveTimelineIndicators();
+        const rawDeltaX = moveEvent.clientX - startX + scrollDelta;
+        pendingDeltaX = isLeftResize ? -rawDeltaX : rawDeltaX;
+        scheduleResizeUpdate();
     };
 
     const finishResize = () => {
+        flushResizeUpdate();
         captureTarget?.releasePointerCapture?.(event.pointerId);
         document.removeEventListener('pointermove', onPointerMove);
         document.removeEventListener('pointerup', finishResize);
@@ -4453,29 +4529,33 @@ if (timelineTrack) {
     timelineTrack.addEventListener('dragover', (event) => {
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
         if (!draggingItem) {
+            timelineDragOverState.lane = null;
+            timelineDragOverState.item = null;
             return;
         }
         event.preventDefault();
         const lane = getTimelineLaneFromEvent(event);
         if (!lane) {
+            timelineDragOverState.lane = null;
+            timelineDragOverState.item = null;
             return;
         }
         setActiveDropLane(lane);
         if (draggingItem.parentElement !== lane) {
             lane.appendChild(draggingItem);
         }
-        const styles = window.getComputedStyle(lane);
-        const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
-        const relativeX = event.clientX - lane.getBoundingClientRect().left - paddingLeft;
-        const perPixel = getTimelineDurationPerPixel();
-        const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
-        draggingItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
-        draggingItem.dataset.startOffsetMs = String(desiredStartMs);
-        reflowTimelineLane(lane);
+        timelineDragOverState.lane = lane;
+        timelineDragOverState.item = draggingItem;
+        timelineDragOverState.clientX = event.clientX;
+        scheduleTimelineDragOverUpdate();
     });
 
     timelineTrack.addEventListener('drop', (event) => {
         event.preventDefault();
+        flushTimelineDragOverUpdate();
+        timelineDragOverState.lane = null;
+        timelineDragOverState.item = null;
+        timelineDragOverState.clientX = 0;
         const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
         if (draggingItem) {
             draggingItem.classList.remove('dragging');
