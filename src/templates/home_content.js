@@ -1225,74 +1225,39 @@ function synchronizeImageAnimationDurations(timelineItem, context = {}) {
         return;
     }
 
-    const source = context.source || 'clip';
-    const appliedDuration = Number.isFinite(context.appliedDuration)
-        ? Math.max(0, Math.round(context.appliedDuration))
+    const rawExistingWindow = timelineItem.dataset.animationComboWindowMs;
+    const previousWindowMs = rawExistingWindow
+        ? sanitizeComboWindowMs(rawExistingWindow)
         : null;
+    const fallbackWindowMs = previousWindowMs ?? DEFAULT_COMBO_SPEED_MS;
 
-    const rawClipDuration = appliedDuration !== null
-        ? appliedDuration
-        : Math.max(0, Math.round(Number(timelineItem.dataset.imageDuration) || 0));
-    const hasClipDuration = rawClipDuration > 0;
-
-    const animationWindowInput = context.animationWindowMs ?? timelineItem.dataset.animationComboWindowMs;
-    const hasStoredWindow = !(animationWindowInput === undefined || animationWindowInput === null || animationWindowInput === '');
-
-    let targetWindow = sanitizeComboWindowMs(
-        hasStoredWindow
-            ? animationWindowInput
-            : hasClipDuration
-                ? rawClipDuration
-                : DEFAULT_COMBO_SPEED_MS,
-    );
-
-    if (source === 'clip' && hasClipDuration) {
-        targetWindow = sanitizeComboWindowMs(rawClipDuration);
-    } else if (source === 'animation' && Number.isFinite(context.animationWindowMs)) {
-        targetWindow = sanitizeComboWindowMs(context.animationWindowMs);
-    } else if (source === 'direction' && !hasStoredWindow) {
-        targetWindow = sanitizeComboWindowMs(
-            hasClipDuration ? rawClipDuration : DEFAULT_COMBO_SPEED_MS,
-        );
-    }
-
-    const nextClipDuration = Math.max(MIN_IMAGE_DURATION, targetWindow);
-    const clipChanged = !hasClipDuration || rawClipDuration !== nextClipDuration;
-
-    if (clipChanged) {
-        setTimelineItemDuration(
-            timelineItem,
-            'imageDuration',
-            nextClipDuration,
-            { markCustom: true, skipAnimationSync: true },
-        );
+    const explicitWindowMs = Number.isFinite(context.animationWindowMs)
+        ? sanitizeComboWindowMs(context.animationWindowMs)
+        : null;
+    
+    let targetWindowMs = fallbackWindowMs;
+    if (context.source === 'animation' && explicitWindowMs !== null) {
+        targetWindowMs = explicitWindowMs;
+    } else if (!rawExistingWindow && explicitWindowMs !== null) {
+        targetWindowMs = explicitWindowMs;
     }
 
     setTimelineItemAnimationDataset(
         timelineItem,
         'animationComboWindowMs',
-        String(targetWindow),
+        String(targetWindowMs),
         String(DEFAULT_COMBO_SPEED_MS),
     );
 
-    if (clipChanged) {
-        updateActiveTimelineIndicators();
-    }
-
     if (timelineItem === activeTimelineItem && animationComboSpeedInput) {
-        animationComboSpeedInput.dataset.windowMs = String(targetWindow);
-        animationComboSpeedInput.value = String(Math.round(targetWindow / 1000));
+        const nextSeconds = Math.round(targetWindowMs / 1000);
+        animationComboSpeedInput.dataset.windowMs = String(targetWindowMs);
+        animationComboSpeedInput.value = String(nextSeconds);
         updateComboSpeedSliderDisplay({ triggerPreview: false });
     }
 }
 
 function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}) {
-    const clipDurationOverride = Number.isFinite(options.clipDurationMs)
-        ? Math.max(0, Math.round(options.clipDurationMs))
-        : null;
-    const clipDuration = clipDurationOverride !== null
-        ? clipDurationOverride
-        : getActiveImageClipDurationMs();
 
     const speedWindowOverride = Number.isFinite(options.speedWindowMs)
         ? Math.max(0, Math.round(options.speedWindowMs))
@@ -1318,43 +1283,28 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         targetWindow = Math.round(speedWindowMs);
     }
 
-    const minimumWindow = Math.max(minimumEntrance + minimumExit, COMBO_MIN_COMBINED_DURATION_MS);
-    if (clipDuration && clipDuration > 0) {
-        const minimumWithClip = Math.min(minimumWindow, clipDuration);
-        targetWindow = Math.min(Math.max(targetWindow, minimumWithClip), clipDuration);
-    } else {
-        targetWindow = Math.max(targetWindow, minimumWindow);
+    const clipDurationOverride = Number.isFinite(options.clipDurationMs)
+        ? Math.max(0, Math.round(options.clipDurationMs))
+        : null;
+    if (!Number.isFinite(speedWindowMs) && clipDurationOverride && clipDurationOverride > 0) {
+        targetWindow = Math.round(clipDurationOverride);
     }
+
+    const minimumWindow = Math.max(minimumEntrance + minimumExit, COMBO_MIN_COMBINED_DURATION_MS);
+    targetWindow = Math.max(targetWindow, minimumWindow);
 
     const scale = combinedBase > 0 ? targetWindow / combinedBase : 1;
 
     let entranceDuration = Math.max(minimumEntrance, Math.round(baseEntrance * scale));
     let exitDuration = Math.max(minimumExit, Math.round(baseExit * scale));
 
-    if (clipDuration && clipDuration > 0) {
-        let total = entranceDuration + exitDuration;
-        if (total > clipDuration) {
-            const adjust = clipDuration / total;
-            entranceDuration = Math.max(60, Math.round(entranceDuration * adjust));
-            exitDuration = Math.max(60, Math.round(exitDuration * adjust));
-            total = entranceDuration + exitDuration;
-        }
-
-        if (total > clipDuration) {
-            const overflow = total - clipDuration;
-            if (exitDuration >= entranceDuration) {
-                exitDuration = Math.max(60, exitDuration - overflow);
-            } else {
-                entranceDuration = Math.max(60, entranceDuration - overflow);
-            }
-        }
-    }
+    const combinedDuration = entranceDuration + exitDuration;
 
     return {
         entranceDuration,
         exitDuration,
-        clipDuration,
-        combinedDuration: entranceDuration + exitDuration,
+        clipDuration: targetWindow,
+        combinedDuration,
     };
 }
 
