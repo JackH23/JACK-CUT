@@ -2417,6 +2417,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     user-select: none;
     transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     scroll-snap-align: start;
+    will-change: transform, box-shadow;
 }
 
 .timeline-item:focus {
@@ -2468,6 +2469,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .timeline-item.dragging {
     opacity: 0.6;
     transform: scale(0.98);
+}
+
+.timeline-item--drag-preview {
+    opacity: 0.9;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    transition: none !important;
+    transform: none !important;
+    pointer-events: none;
+    z-index: 9999;
 }
 
 .timeline-item.is-resizing {
