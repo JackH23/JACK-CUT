@@ -3780,9 +3780,13 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
     let cursor = 0;
 
     return orderedItems.map((entry) => {
-        const start = Number.isFinite(entry.preferredStart)
+        const preferredStart = Number.isFinite(entry.preferredStart)
             ? Math.max(0, Math.round(entry.preferredStart))
-            : Math.max(0, Math.round(cursor));
+            : null;
+        const clampedCursor = Math.max(0, Math.round(cursor));
+        const start = preferredStart === null
+            ? clampedCursor
+            : Math.max(preferredStart, clampedCursor);
         const end = start + entry.duration;
         const leadingGap = Math.max(0, start - cursor);
         cursor = Math.max(cursor, end);
