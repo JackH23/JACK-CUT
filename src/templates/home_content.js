@@ -3750,7 +3750,7 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
             ? clampedCursor
             : magnetActive
                 ? clampedCursor
-                : preferredStart;
+                : Math.max(preferredStart, clampedCursor);
         const start = Math.max(0, baseStart);
         const end = start + entry.duration;
         const leadingGap = start - cursor;
