@@ -25,6 +25,7 @@ const previewOverlayGroups = previewOverlayStack
     : null;
 const overlayLayerToTimelineItem = new WeakMap();
 const timelineDragPreviewElements = new WeakMap();
+const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
 const previewOutsideSegments = previewOutsideIndicator
     ? {
@@ -4646,6 +4647,40 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.dataset.draggingInitialized = '1';
     timelineItem.setAttribute('draggable', 'true');
 
+    const clearPointerOffset = () => {
+        timelineDragPointerOffsets.delete(timelineItem);
+    };
+
+    timelineItem.addEventListener('pointerdown', (event) => {
+        if ((event.button && event.button !== 0) || event.pointerType === 'touch') {
+            clearPointerOffset();
+            return;
+        }
+
+        if (event.target && event.target.closest('.timeline-item-remove')) {
+            clearPointerOffset();
+            return;
+        }
+
+        if (getTimelineItemResizeEdgeFromEvent(event, timelineItem)) {
+            clearPointerOffset();
+            return;
+        }
+
+        const rect = timelineItem.getBoundingClientRect();
+        if (!rect) {
+            clearPointerOffset();
+            return;
+        }
+
+        const offsetX = clamp(event.clientX - rect.left, 0, rect.width || 0);
+        const offsetY = clamp(event.clientY - rect.top, 0, rect.height || 0);
+        timelineDragPointerOffsets.set(timelineItem, { x: offsetX, y: offsetY });
+    });
+
+    timelineItem.addEventListener('pointerup', clearPointerOffset);
+    timelineItem.addEventListener('pointercancel', clearPointerOffset);
+
     timelineItem.addEventListener('dragstart', (event) => {
         stopTimelinePlayback();
         activeTimelineDragItem = timelineItem;
@@ -4656,8 +4691,21 @@ function enableTimelineItemDragging(timelineItem) {
             transfer.setData('text/plain', timelineItem.dataset.objectUrl || 'timeline-item');
             const preview = createTimelineDragPreviewElement(timelineItem);
             if (preview) {
-                const rect = preview.getBoundingClientRect();
-                transfer.setDragImage(preview, rect.width / 2, rect.height / 2);
+                const rect = timelineItem.getBoundingClientRect();
+                const pointerOffset = timelineDragPointerOffsets.get(timelineItem);
+                const fallbackX = rect ? rect.width / 2 : 0;
+                const fallbackY = rect ? rect.height / 2 : 0;
+                const offsetX = Number.isFinite(pointerOffset?.x)
+                    ? pointerOffset.x
+                    : clamp(event.clientX - (rect?.left || 0), 0, rect?.width || fallbackX);
+                const offsetY = Number.isFinite(pointerOffset?.y)
+                    ? pointerOffset.y
+                    : clamp(event.clientY - (rect?.top || 0), 0, rect?.height || fallbackY);
+                transfer.setDragImage(
+                    preview,
+                    Number.isFinite(offsetX) ? offsetX : fallbackX,
+                    Number.isFinite(offsetY) ? offsetY : fallbackY,
+                );
             }
         }
     });
@@ -4665,6 +4713,7 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.addEventListener('dragend', () => {
         timelineItem.classList.remove('dragging');
         timelineItem.draggable = true;
+        clearPointerOffset();
         if (activeTimelineDragItem !== timelineItem) {
             return;
         }
