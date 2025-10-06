@@ -2288,7 +2288,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: stretch;
-    gap: 10px;
+    gap: 0;
     padding: 12px;
     border-radius: 12px;
     background: rgba(15, 23, 42, 0.6);
