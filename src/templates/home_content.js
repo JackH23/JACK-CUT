@@ -5003,7 +5003,7 @@ function enableTimelineItemDragging(timelineItem) {
         const transfer = event.dataTransfer;
         if (transfer) {
             transfer.effectAllowed = 'move';
-            transfer.setData('text/plain', timelineItem.dataset.objectUrl || 'timeline-item');
+            transfer.setData('text/plain', getTimelineItemPreviewSource(timelineItem) || 'timeline-item');
             const preview = createTimelineDragPreviewElement(timelineItem);
             if (preview) {
                 const rect = timelineItem.getBoundingClientRect();
@@ -6577,7 +6577,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const { below, above } = previewOverlayGroups;
 
     const createLayerForDescriptor = (descriptor, zIndex) => {
-        const objectURL = descriptor.item.dataset.objectUrl || '';
+        const objectURL = getTimelineItemPreviewSource(descriptor.item);
         if (!objectURL) {
             return null;
         }
@@ -6614,8 +6614,12 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         } catch (error) {
             // Ignore unsupported decoding hint.
         }
-        image.loading = 'lazy';
+        if ('fetchPriority' in image) {
+            image.fetchPriority = 'high';
+        }
+        image.loading = 'eager';
         image.draggable = false;
+        preloadTimelineImage(objectURL).catch(() => {});
         layer.appendChild(image);
         layer.title = image.alt;
         overlayLayerToTimelineItem.set(layer, descriptor.item);
@@ -8082,7 +8086,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     const fileType = timelineItem.dataset.fileType || '';
-    const objectURL = timelineItem.dataset.objectUrl;
+    const objectURL = getTimelineItemPreviewSource(timelineItem);
 
     const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
@@ -8261,24 +8265,92 @@ async function stageUpload(file) {
     }
 }
 
+function getTimelineItemPreviewSource(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return '';
+    }
+
+    return timelineItem.dataset.previewObjectUrl
+        || timelineItem.dataset.objectUrl
+        || '';
+}
+
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
+    if (!objectURL) {
+        return objectURL;
+    }
+
+    const devicePixelRatio = (typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio))
+        ? Math.max(1, window.devicePixelRatio)
+        : 1;
+    const targetWidth = Math.max(1, Math.round(maxWidth * devicePixelRatio));
+    const targetHeight = Math.max(1, Math.round(maxHeight * devicePixelRatio));
+
+    const drawToCanvas = (source, width, height) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context) {
+            return objectURL;
+        }
+        context.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in context) {
+            context.imageSmoothingQuality = 'high';
+        }
+        context.drawImage(source, 0, 0, width, height);
+        return canvas.toDataURL('image/png');
+    };
+
+    const computeDimensions = (width, height) => {
+        const scale = Math.min(targetWidth / width, targetHeight / height, 1);
+        return {
+            width: Math.max(1, Math.round(width * scale)),
+            height: Math.max(1, Math.round(height * scale)),
+        };
+    };
+
+    const attemptBitmapResize = async () => {
+        if (typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
+            return null;
+        }
+
+        try {
+            const response = await fetch(objectURL);
+            if (!response.ok) {
+                throw new Error('Failed to fetch image for thumbnail.');
+            }
+            const blob = await response.blob();
+            const bitmap = await createImageBitmap(blob);
+            const { width, height } = computeDimensions(bitmap.width, bitmap.height);
+            const dataUrl = drawToCanvas(bitmap, width, height);
+            if (typeof bitmap.close === 'function') {
+                bitmap.close();
+            }
+            return dataUrl;
+        } catch (error) {
+            return null;
+        }
+    };
+
+    const bitmapResult = await attemptBitmapResize();
+    if (bitmapResult) {
+        return bitmapResult;
+    }
+
     return new Promise((resolve) => {
         const img = new Image();
+        try {
+            img.decoding = 'async';
+        } catch (error) {
+            // Ignore unsupported decoding hint.
+        }
         img.onload = () => {
-            const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
-            const width = Math.max(1, Math.round(img.width * scale));
-            const height = Math.max(1, Math.round(img.height * scale));
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                resolve(objectURL);
-                return;
-            }
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/png'));
+            const { width, height } = computeDimensions(
+                img.naturalWidth || img.width,
+                img.naturalHeight || img.height,
+            );
+            resolve(drawToCanvas(img, width, height));
         };
         img.onerror = () => resolve(objectURL);
         img.src = objectURL;
@@ -8297,6 +8369,7 @@ async function addToTimeline(file, objectURL) {
     timelineItem.tabIndex = 0;
     timelineItem.dataset.fileType = file.type;
     timelineItem.dataset.objectUrl = objectURL;
+    timelineItem.dataset.previewObjectUrl = objectURL;
     timelineItem.dataset.displayName = file.name;
 
     const label = document.createElement('span');
@@ -8432,20 +8505,23 @@ async function addToTimeline(file, objectURL) {
         const parentLane = targetItem.closest('.timeline-lane');
         const wasActive = targetItem === activeTimelineItem;
         const fileType = targetItem.dataset.fileType || '';
-        const url = targetItem.dataset.objectUrl;
+        const releaseCandidates = new Set([
+            targetItem.dataset.previewObjectUrl || '',
+            targetItem.dataset.objectUrl || '',
+        ].filter(Boolean));
         targetItem.remove();
         if (parentLane) {
             flushTimelineLaneReflow(parentLane);
         }
-        if (url) {
-            setStagedUploadAddedState(url, false);
+        releaseCandidates.forEach((candidateUrl) => {
+            setStagedUploadAddedState(candidateUrl, false);
             if (fileType.startsWith('image/')) {
-                releaseTimelineImage(url);
+                releaseTimelineImage(candidateUrl);
             }
-            if (!stagedUploadsByObjectUrl.has(url)) {
-                URL.revokeObjectURL(url);
+            if (!stagedUploadsByObjectUrl.has(candidateUrl)) {
+                URL.revokeObjectURL(candidateUrl);
             }
-        }
+        });
         if (wasActive) {
             setActiveTimelineItem(null);
             clearPreview();
@@ -8504,7 +8580,7 @@ if (uploadButton) {
 
 async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
     const fileType = timelineItem.dataset.fileType || '';
-    const objectURL = timelineItem.dataset.objectUrl;
+    const objectURL = getTimelineItemPreviewSource(timelineItem);
     const playbackWindow = Number.isFinite(segmentDurationMs)
         ? Math.max(0, Math.round(segmentDurationMs))
         : null;

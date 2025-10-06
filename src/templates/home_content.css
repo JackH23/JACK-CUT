@@ -2546,6 +2546,17 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     object-fit: cover;
 }
 
+@supports (image-rendering: high-quality) {
+    .timeline-item img,
+    .preview-overlay-layer img {
+        image-rendering: high-quality;
+    }
+}
+
+.preview-overlay-layer img {
+    image-rendering: auto;
+}
+
 .timeline-item span {
     font-size: 0.8rem;
     line-height: 1.3;
