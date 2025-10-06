@@ -96,6 +96,7 @@ const timelineZoomButtons = timelineZoomInput
             || document).querySelectorAll('[data-timeline-zoom]'),
     )
     : [];
+const timelineMagnetToggleButton = document.getElementById('timeline-magnet-toggle');
 const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
@@ -1908,6 +1909,7 @@ let activeTimelineDragItem = null;
 let activeTimelineResizeItem = null;
 const pendingTimelineLaneReflows = new Map();
 let isExportingTimeline = false;
+let isMainTrackMagnetEnabled = true;
 let previewImageTransform = null;
 let pendingPreviewImageTransform = null;
 let lastPreviewViewportSize = null;
@@ -3683,12 +3685,20 @@ function applyTimelineItemLeadingGapStyles(timelineItem, gapMs) {
         return;
     }
     const perPixel = getTimelineDurationPerPixel();
-    const gapPx = Math.max(0, Math.round((Number(gapMs) || 0) / perPixel));
-    if (gapPx > 0) {
+    const gapValue = Number(gapMs) || 0;
+    const gapPx = Math.round(gapValue / perPixel);
+    if (gapPx !== 0) {
         timelineItem.style.marginLeft = `${gapPx}px`;
-    } else {
+    } else if (timelineItem.style.marginLeft) {
         timelineItem.style.marginLeft = '';
     }
+}
+
+function isMagnetEnabledForLaneIndex(laneIndex) {
+    if (!Number.isFinite(laneIndex)) {
+        return false;
+    }
+    return laneIndex === 0 && isMainTrackMagnetEnabled;
 }
 
 function getTimelineLaneLayout(lane, fallbackIndex = 0) {
@@ -3699,6 +3709,8 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
     const laneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
         ? Number(lane.dataset.laneIndex)
         : fallbackIndex;
+
+    const magnetActive = isMagnetEnabledForLaneIndex(laneIndex);
 
     const laneItems = Array.from(lane.querySelectorAll('.timeline-item'));
 
@@ -3734,11 +3746,14 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
             ? Math.max(0, Math.round(entry.preferredStart))
             : null;
         const clampedCursor = Math.max(0, Math.round(cursor));
-        const start = preferredStart === null
+        const baseStart = preferredStart === null
             ? clampedCursor
-            : Math.max(preferredStart, clampedCursor);
+            : magnetActive
+                ? clampedCursor
+                : preferredStart;
+        const start = Math.max(0, baseStart);
         const end = start + entry.duration;
-        const leadingGap = Math.max(0, start - cursor);
+        const leadingGap = start - cursor;
         cursor = Math.max(cursor, end);
         return {
             item: entry.item,
@@ -3783,6 +3798,37 @@ function reflowAllTimelineLanes() {
     getTimelineLanes().forEach((lane) => {
         reflowTimelineLane(lane);
     });
+}
+
+function setMainTrackMagnetEnabled(enable) {
+    const next = Boolean(enable);
+    const previous = isMainTrackMagnetEnabled;
+    isMainTrackMagnetEnabled = next;
+
+    if (timelineMagnetToggleButton) {
+        timelineMagnetToggleButton.classList.toggle('is-active', next);
+        timelineMagnetToggleButton.setAttribute('aria-pressed', String(next));
+        const label = next ? 'Disable main track magnet' : 'Enable main track magnet';
+        timelineMagnetToggleButton.setAttribute('aria-label', label);
+        timelineMagnetToggleButton.title = label;
+    }
+
+    if (next === previous) {
+        return isMainTrackMagnetEnabled;
+    }
+
+    const lanes = getTimelineLanes();
+    const mainLane = lanes.length > 0 ? lanes[0] : null;
+    if (mainLane) {
+        reflowTimelineLane(mainLane);
+    }
+
+    updateActiveTimelineIndicators();
+    return isMainTrackMagnetEnabled;
+}
+
+function toggleMainTrackMagnet() {
+    return setMainTrackMagnetEnabled(!isMainTrackMagnetEnabled);
 }
 
 function ensureTimelineItemDurationBadge(timelineItem) {
@@ -6404,6 +6450,13 @@ if (timelineZoomButtons.length) {
             setTimelineDurationPerPixel(getTimelineDurationPerPixel() + delta);
         });
     });
+}
+
+if (timelineMagnetToggleButton) {
+    timelineMagnetToggleButton.addEventListener('click', () => {
+        toggleMainTrackMagnet();
+    });
+    setMainTrackMagnetEnabled(isMainTrackMagnetEnabled);
 }
 
 if (previewFullscreenToggle) {
