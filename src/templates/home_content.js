@@ -1953,6 +1953,9 @@ const timelineDragOverState = {
     item: null,
     clientX: 0,
 };
+let activeTimelineDragItem = null;
+let activeTimelineResizeItem = null;
+const pendingTimelineLaneReflows = new Map();
 let isExportingTimeline = false;
 let previewImageTransform = null;
 let pendingPreviewImageTransform = null;
@@ -2029,7 +2032,7 @@ function runTimelineDragOverUpdate() {
 
     item.dataset.laneIndex = laneIndex;
     item.dataset.startOffsetMs = String(desiredStartMs);
-    reflowTimelineLane(lane);
+    flushTimelineLaneReflow(lane);
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -3821,6 +3824,7 @@ function reflowTimelineLane(lane) {
 }
 
 function reflowAllTimelineLanes() {
+    flushAllTimelineLaneReflows();
     getTimelineLanes().forEach((lane) => {
         reflowTimelineLane(lane);
     });
@@ -3910,7 +3914,7 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
 
     const parentLane = timelineItem.closest('.timeline-lane');
     if (parentLane) {
-        reflowTimelineLane(parentLane);
+        scheduleTimelineLaneReflow(parentLane);
     }
 
     return applied;
@@ -4165,6 +4169,13 @@ function cleanupEmptyTimelineLanes() {
     const lanes = getTimelineLanes();
     lanes.forEach((lane) => {
         if (lane && !lane.querySelector('.timeline-item') && lanes.length > 1) {
+            if (pendingTimelineLaneReflows.has(lane)) {
+                const handle = pendingTimelineLaneReflows.get(lane);
+                if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+                    window.cancelAnimationFrame(handle);
+                }
+                pendingTimelineLaneReflows.delete(lane);
+            }
             lane.remove();
         }
     });
@@ -4342,6 +4353,66 @@ function getTimelineItemResizeEdgeFromEvent(event, timelineItem) {
     return null;
 }
 
+function scheduleTimelineLaneReflow(lane) {
+    if (!lane) {
+        return;
+    }
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        reflowTimelineLane(lane);
+        return;
+    }
+
+    if (pendingTimelineLaneReflows.has(lane)) {
+        return;
+    }
+
+    const handle = window.requestAnimationFrame(() => {
+        pendingTimelineLaneReflows.delete(lane);
+        if (!lane.isConnected) {
+            return;
+        }
+        reflowTimelineLane(lane);
+    });
+    pendingTimelineLaneReflows.set(lane, handle);
+}
+
+function flushTimelineLaneReflow(lane) {
+    if (!lane) {
+        return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        const handle = pendingTimelineLaneReflows.get(lane);
+        if (handle !== undefined) {
+            window.cancelAnimationFrame(handle);
+            pendingTimelineLaneReflows.delete(lane);
+        }
+    } else {
+        pendingTimelineLaneReflows.delete(lane);
+    }
+
+    if (!lane.isConnected) {
+        return;
+    }
+
+    reflowTimelineLane(lane);
+}
+
+function flushAllTimelineLaneReflows() {
+    const entries = Array.from(pendingTimelineLaneReflows.entries());
+    pendingTimelineLaneReflows.clear();
+
+    entries.forEach(([lane, handle]) => {
+        if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(handle);
+        }
+        if (lane?.isConnected) {
+            reflowTimelineLane(lane);
+        }
+    });
+}
+
 function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null) {
     if (!timelineItem) {
         return;
@@ -4374,6 +4445,7 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
     timelineItem.classList.add('is-resizing');
     timelineItem.draggable = false;
     timelineItem.dataset.resizeCursor = resizeEdge;
+    activeTimelineResizeItem = timelineItem;
 
     const captureTarget = handle instanceof HTMLElement && handle !== timelineItem
         ? handle
@@ -4439,6 +4511,13 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         timelineItem.draggable = previousDraggable;
         delete timelineItem.dataset.resizeCursor;
         updateActiveTimelineIndicators();
+        const parentLane = timelineItem.closest('.timeline-lane');
+        if (parentLane) {
+            flushTimelineLaneReflow(parentLane);
+        }
+        if (activeTimelineResizeItem === timelineItem) {
+            activeTimelineResizeItem = null;
+        }
     };
 
     document.addEventListener('pointermove', onPointerMove);
@@ -4459,7 +4538,12 @@ function attachResizeHandles(timelineItem) {
         handle.setAttribute('aria-hidden', 'true');
         handle.dataset.resizeEdge = position;
         handle.title = 'Drag side to adjust clip duration';
-        handle.addEventListener('pointerdown', (event) => startTimelineItemResize(event, timelineItem, position));
+        handle.addEventListener('pointerdown', (event) => {
+            if (activeTimelineResizeItem && activeTimelineResizeItem !== timelineItem) {
+                return;
+            }
+            startTimelineItemResize(event, timelineItem, position);
+        });
         timelineItem.appendChild(handle);
     });
 }
@@ -4481,6 +4565,9 @@ function enableTimelineItemEdgeResizing(timelineItem) {
         if (timelineItem.classList.contains('is-resizing')) {
             return;
         }
+        if (activeTimelineResizeItem && activeTimelineResizeItem !== timelineItem) {
+            return;
+        }
         const edge = getTimelineItemResizeEdgeFromEvent(event, timelineItem);
         if (edge) {
             timelineItem.dataset.resizeCursor = edge;
@@ -4489,10 +4576,18 @@ function enableTimelineItemEdgeResizing(timelineItem) {
         }
     });
 
-    timelineItem.addEventListener('pointerleave', clearCursor);
+    timelineItem.addEventListener('pointerleave', () => {
+        if (activeTimelineResizeItem && activeTimelineResizeItem !== timelineItem) {
+            return;
+        }
+        clearCursor();
+    });
 
     timelineItem.addEventListener('pointerdown', (event) => {
         if (event.button && event.button !== 0) {
+            return;
+        }
+        if (activeTimelineResizeItem && activeTimelineResizeItem !== timelineItem) {
             return;
         }
         const edge = getTimelineItemResizeEdgeFromEvent(event, timelineItem);
@@ -4553,6 +4648,7 @@ function enableTimelineItemDragging(timelineItem) {
 
     timelineItem.addEventListener('dragstart', (event) => {
         stopTimelinePlayback();
+        activeTimelineDragItem = timelineItem;
         timelineItem.classList.add('dragging');
         const transfer = event.dataTransfer;
         if (transfer) {
@@ -4569,8 +4665,16 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.addEventListener('dragend', () => {
         timelineItem.classList.remove('dragging');
         timelineItem.draggable = true;
+        if (activeTimelineDragItem !== timelineItem) {
+            return;
+        }
+        activeTimelineDragItem = null;
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
+        const parentLane = timelineItem.closest('.timeline-lane');
+        if (parentLane) {
+            flushTimelineLaneReflow(parentLane);
+        }
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
@@ -4599,20 +4703,21 @@ function initializeTimelineItem(timelineItem) {
 
     const parentLane = timelineItem.closest('.timeline-lane');
     if (parentLane) {
-        reflowTimelineLane(parentLane);
+        flushTimelineLaneReflow(parentLane);
     }
 }
 
 if (timelineTrack) {
     timelineTrack.addEventListener('dragenter', (event) => {
-        const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
-        if (draggingItem) {
+        if (activeTimelineDragItem && activeTimelineDragItem.isConnected) {
             event.preventDefault();
         }
     });
 
     timelineTrack.addEventListener('dragover', (event) => {
-        const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+        const draggingItem = (activeTimelineDragItem && activeTimelineDragItem.isConnected)
+            ? activeTimelineDragItem
+            : null;
         if (!draggingItem) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
@@ -4641,17 +4746,24 @@ if (timelineTrack) {
         timelineDragOverState.lane = null;
         timelineDragOverState.item = null;
         timelineDragOverState.clientX = 0;
-        const draggingItem = timelineTrack.querySelector('.timeline-item.dragging');
+        const draggingItem = (activeTimelineDragItem && activeTimelineDragItem.isConnected)
+            ? activeTimelineDragItem
+            : null;
         if (draggingItem) {
             draggingItem.classList.remove('dragging');
             draggingItem.draggable = true;
             cleanupTimelineDragPreviewElement(draggingItem);
+            const parentLane = draggingItem.closest('.timeline-lane');
+            if (parentLane) {
+                flushTimelineLaneReflow(parentLane);
+            }
         }
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        activeTimelineDragItem = null;
     });
 }
 
@@ -7948,7 +8060,7 @@ async function addToTimeline(file, objectURL) {
         const url = targetItem.dataset.objectUrl;
         targetItem.remove();
         if (parentLane) {
-            reflowTimelineLane(parentLane);
+            flushTimelineLaneReflow(parentLane);
         }
         if (url) {
             setStagedUploadAddedState(url, false);
