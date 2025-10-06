@@ -2537,6 +2537,19 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
 }
 
+.timeline-item--snap-highlight {
+    border-color: rgba(56, 189, 248, 0.68);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.32), 0 12px 28px rgba(56, 189, 248, 0.18);
+    background: rgba(30, 64, 175, 0.25);
+    opacity: 1;
+    transform: translateY(-2px);
+}
+
+.timeline-item.dragging.timeline-item--snap-highlight {
+    transform: translateY(-2px);
+    opacity: 1;
+}
+
 .timeline-item img,
 .timeline-item video,
 .timeline-thumbnail {

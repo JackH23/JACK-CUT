@@ -1924,6 +1924,89 @@ const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
         : 4;
 const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
 
+function clearTimelineSnapHighlights() {
+    if (!timelineTrack) {
+        return;
+    }
+
+    const highlightedItems = timelineTrack.querySelectorAll('.timeline-item--snap-highlight');
+    highlightedItems.forEach((element) => {
+        element.classList.remove('timeline-item--snap-highlight');
+    });
+}
+
+function updateTimelineSnapHighlight(lane, item, desiredStartMs, layout = null) {
+    if (!timelineTrack) {
+        return;
+    }
+
+    const highlightedItems = timelineTrack.querySelectorAll('.timeline-item--snap-highlight');
+    highlightedItems.forEach((element) => {
+        if (element !== item) {
+            element.classList.remove('timeline-item--snap-highlight');
+        }
+    });
+
+    if (!lane || !item || !isImageTimelineItem(item)) {
+        if (item) {
+            item.classList.remove('timeline-item--snap-highlight');
+        }
+        return;
+    }
+
+    const laneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : getTimelineLanes().indexOf(lane);
+    const computedLayout = Array.isArray(layout) ? layout : getTimelineLaneLayout(lane, laneIndex);
+
+    if (!computedLayout.length) {
+        item.classList.remove('timeline-item--snap-highlight');
+        return;
+    }
+
+    const entryIndex = computedLayout.findIndex((entry) => entry.item === item);
+    if (entryIndex === -1) {
+        item.classList.remove('timeline-item--snap-highlight');
+        return;
+    }
+
+    const entry = computedLayout[entryIndex];
+    const desiredStart = Number.isFinite(desiredStartMs) ? desiredStartMs : entry.start;
+    const perPixel = getTimelineDurationPerPixel();
+    const tolerance = Number.isFinite(perPixel) ? perPixel : 0;
+    const threshold = Math.max(TIMELINE_SNAP_HIGHLIGHT_THRESHOLD_MS, tolerance);
+    const entryStart = Math.max(0, Math.round(entry.start));
+    const entryEnd = Math.max(entryStart, Math.round(entry.end));
+
+    let isSnapped = false;
+
+    const previousEntry = entryIndex > 0 ? computedLayout[entryIndex - 1] : null;
+    if (previousEntry) {
+        const previousEnd = Math.max(0, Math.round(previousEntry.end));
+        const gapToPrevious = entryStart - previousEnd;
+        if (Math.abs(gapToPrevious) <= threshold && Math.abs(desiredStart - entryStart) <= threshold) {
+            isSnapped = true;
+        }
+    } else if (entryStart <= threshold && Math.abs(desiredStart - entryStart) <= threshold) {
+        isSnapped = true;
+    }
+
+    if (!isSnapped) {
+        const nextEntry = entryIndex < computedLayout.length - 1
+            ? computedLayout[entryIndex + 1]
+            : null;
+        if (nextEntry) {
+            const nextStart = Math.max(0, Math.round(nextEntry.start));
+            const gapToNext = nextStart - entryEnd;
+            if (Math.abs(gapToNext) <= threshold && Math.abs(desiredStart - entryStart) <= threshold) {
+                isSnapped = true;
+            }
+        }
+    }
+
+    item.classList.toggle('timeline-item--snap-highlight', isSnapped);
+}
+
 function maybeAutoScrollTimelineTrack(clientX) {
     if (!timelineTrack || !Number.isFinite(clientX)) {
         return 0;
@@ -1956,10 +2039,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        clearTimelineSnapHighlights();
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        clearTimelineSnapHighlights();
         return;
     }
 
@@ -1975,17 +2060,26 @@ function runTimelineDragOverUpdate() {
     const previousLaneIndex = item.dataset.laneIndex || '0';
     const previousOffsetMs = Number(item.dataset.startOffsetMs);
 
+    const numericLaneIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : getTimelineLanes().indexOf(lane);
+
     if (
         previousLaneIndex === laneIndex
         && Number.isFinite(previousOffsetMs)
         && previousOffsetMs === desiredStartMs
     ) {
+        const layout = getTimelineLaneLayout(lane, numericLaneIndex);
+        updateTimelineSnapHighlight(lane, item, desiredStartMs, layout);
         return;
     }
 
     item.dataset.laneIndex = laneIndex;
     item.dataset.startOffsetMs = String(desiredStartMs);
     flushTimelineLaneReflow(lane);
+
+    const layout = getTimelineLaneLayout(lane, numericLaneIndex);
+    updateTimelineSnapHighlight(lane, item, desiredStartMs, layout);
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -2248,6 +2342,7 @@ const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;
 const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
+const TIMELINE_SNAP_HIGHLIGHT_THRESHOLD_MS = 120;
 
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;
@@ -4714,6 +4809,7 @@ function enableTimelineItemDragging(timelineItem) {
         timelineItem.classList.remove('dragging');
         timelineItem.draggable = true;
         clearPointerOffset();
+        clearTimelineSnapHighlights();
         if (activeTimelineDragItem !== timelineItem) {
             return;
         }
@@ -4770,6 +4866,7 @@ if (timelineTrack) {
         if (!draggingItem) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            clearTimelineSnapHighlights();
             return;
         }
         event.preventDefault();
@@ -4777,6 +4874,7 @@ if (timelineTrack) {
         if (!lane) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            clearTimelineSnapHighlights();
             return;
         }
         setActiveDropLane(lane);
@@ -4807,6 +4905,7 @@ if (timelineTrack) {
                 flushTimelineLaneReflow(parentLane);
             }
         }
+        clearTimelineSnapHighlights();
         setActiveDropLane(null);
         cleanupEmptyTimelineLanes();
         reflowAllTimelineLanes();
