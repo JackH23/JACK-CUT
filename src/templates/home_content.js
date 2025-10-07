@@ -6496,15 +6496,16 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     }
 
     const nextActiveItems = new Set();
+    const nextKnownItems = new Set();
 
-    const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
-        if (!container || !descriptor || !descriptor.item || !descriptor.isActive) {
-            return false;
+    const ensureOverlayLayerEntry = (descriptor) => {
+        if (!descriptor || !descriptor.item) {
+            return null;
         }
 
         const objectURL = descriptor.item.dataset.objectUrl || '';
         if (!objectURL) {
-            return false;
+            return null;
         }
 
         let entry = activeOverlayLayers.get(descriptor.item);
@@ -6539,7 +6540,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
-        layer.style.zIndex = String(zIndex);
 
         if (borderRadius > 0) {
             layer.style.borderRadius = `${borderRadius}px`;
@@ -6547,7 +6547,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             layer.style.removeProperty('border-radius');
         }
 
-        if (entry.objectURL !== objectURL) {
+        if (entry.objectURL !== objectURL || !image.src) {
             image.src = objectURL;
             entry.objectURL = objectURL;
         }
@@ -6556,6 +6556,57 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             || descriptor.item.querySelector('span')?.textContent
             || 'Overlay layer';
         layer.title = image.alt;
+
+        return entry;
+    };
+
+    const hideOverlayLayerEntry = (entry) => {
+        if (!entry) {
+            return;
+        }
+
+        entry.isVisible = false;
+        entry.layerGroup = null;
+        entry.zIndex = 0;
+        entry.borderRadius = 0;
+        entry.opacity = 1;
+        entry.frame = null;
+        entry.lastTimelineTime = null;
+
+        if (entry.layer) {
+            overlayLayerToTimelineItem.delete(entry.layer);
+            if (entry.layer.parentElement) {
+                entry.layer.remove();
+            }
+        }
+    };
+
+    overlayEntries.forEach((descriptor) => {
+        const entry = ensureOverlayLayerEntry(descriptor);
+        if (!entry) {
+            return;
+        }
+
+        nextKnownItems.add(descriptor.item);
+
+        if (!descriptor.isActive) {
+            hideOverlayLayerEntry(entry);
+        }
+    });
+
+    const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
+        if (!container || !descriptor || !descriptor.item || !descriptor.isActive) {
+            return false;
+        }
+
+        const entry = ensureOverlayLayerEntry(descriptor);
+        if (!entry) {
+            return false;
+        }
+
+        const { layer, image } = entry;
+
+        layer.style.zIndex = String(zIndex);
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -6672,8 +6723,12 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
     const staleItems = [];
     activeOverlayLayers.forEach((entry, item) => {
-        if (!nextActiveItems.has(item)) {
+        if (!nextKnownItems.has(item)) {
             staleItems.push(item);
+            return;
+        }
+        if (!nextActiveItems.has(item)) {
+            hideOverlayLayerEntry(entry);
         }
     });
     staleItems.forEach((item) => {
@@ -6681,15 +6736,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         if (entry && entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
-        }
-        if (entry) {
-            entry.isVisible = false;
-            entry.frame = null;
-            entry.layerGroup = null;
-            entry.zIndex = 0;
-            entry.borderRadius = 0;
-            entry.opacity = 1;
-            entry.lastTimelineTime = null;
         }
         activeOverlayLayers.delete(item);
     });
