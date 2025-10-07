@@ -75,6 +75,18 @@
                 </div>
                 <div class="preview-area">
                     <div class="preview-viewport">
+                        <div class="preview-canvas-backdrop" id="preview-canvas-backdrop" hidden aria-hidden="true">
+                            <video
+                                id="preview-canvas-video"
+                                muted
+                                loop
+                                playsinline
+                                preload="auto"
+                                hidden
+                                aria-hidden="true"
+                            ></video>
+                            <img id="preview-canvas-image" alt="Canvas background" hidden aria-hidden="true">
+                        </div>
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
                         <video id="preview-video" controls hidden preload="auto" playsinline></video>
                         <div class="preview-overlay-stack" id="preview-overlay-stack" hidden aria-hidden="true">
@@ -131,6 +143,7 @@
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
                     <button type="button" class="settings-tab" id="settings-tab-adjustment" role="tab" aria-selected="false" aria-controls="settings-adjustment" data-section="adjustment">Adjustment</button>
+                    <button type="button" class="settings-tab" id="settings-tab-canvas" role="tab" aria-selected="false" aria-controls="settings-canvas" data-section="canvas">Canvas</button>
                 </div>
                 <div class="settings-content">
                     <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
@@ -443,6 +456,44 @@
                                 <div>
                                     <label for="adjustment-contrast">Contrast</label>
                                     <input type="range" id="adjustment-contrast" min="-50" max="50" value="10">
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-canvas" data-section="canvas" role="tabpanel" aria-labelledby="settings-tab-canvas" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🖌️</div>
+                                <div class="canvas-background-mode">
+                                    <label for="canvas-background-mode">Canvas background</label>
+                                    <select id="canvas-background-mode">
+                                        <option value="none" selected>Editor default</option>
+                                        <option value="clip">Mirror selected clip</option>
+                                        <option value="custom">Custom image</option>
+                                    </select>
+                                    <p class="info-item__description">Choose what appears behind your clip inside the viewport.</p>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🖼️</div>
+                                <div class="canvas-custom-image">
+                                    <div class="canvas-custom-image__header">
+                                        <label for="canvas-background-upload">Custom image source</label>
+                                        <div class="canvas-custom-image__actions">
+                                            <button type="button" id="canvas-background-upload-button">Upload image</button>
+                                            <button type="button" id="canvas-background-remove" disabled>Remove</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" id="canvas-background-upload" accept="image/*" hidden>
+                                    <p class="info-item__description" id="canvas-background-status">No custom image selected.</p>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🌫️</div>
+                                <div class="canvas-blur-controls">
+                                    <label for="canvas-background-blur">Background blur</label>
+                                    <input type="range" id="canvas-background-blur" min="0" max="40" step="1" value="0">
+                                    <div class="slider-readout" id="canvas-background-blur-value">Off</div>
                                 </div>
                             </div>
                         </div>
