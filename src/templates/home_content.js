@@ -10,6 +10,9 @@ const previewVideo = document.getElementById('preview-video');
 const previewImage = document.getElementById('preview-image');
 const previewImageLayer = document.getElementById('preview-image-layer');
 const previewImageFrame = document.getElementById('preview-image-frame');
+const previewCanvasBackdrop = document.getElementById('preview-canvas-backdrop');
+const previewCanvasVideo = document.getElementById('preview-canvas-video');
+const previewCanvasImage = document.getElementById('preview-canvas-image');
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
@@ -141,6 +144,13 @@ const audioFadeInInput = document.getElementById('audio-fade-in');
 const audioFadeInValue = document.getElementById('audio-fade-in-value');
 const audioFadeOutInput = document.getElementById('audio-fade-out');
 const audioFadeOutValue = document.getElementById('audio-fade-out-value');
+const canvasBackgroundModeSelect = document.getElementById('canvas-background-mode');
+const canvasBackgroundUploadInput = document.getElementById('canvas-background-upload');
+const canvasBackgroundUploadButton = document.getElementById('canvas-background-upload-button');
+const canvasBackgroundRemoveButton = document.getElementById('canvas-background-remove');
+const canvasBackgroundStatus = document.getElementById('canvas-background-status');
+const canvasBlurInput = document.getElementById('canvas-background-blur');
+const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const exportMirrorCanvas = document.createElement('canvas');
@@ -173,6 +183,12 @@ const optionSliderConfigs = [
 ];
 
 const IMAGE_FRAME_DURATION = 1000;
+
+const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
+const DEFAULT_CANVAS_BLUR = 18;
+const CANVAS_BLUR_MIN = 0;
+const CANVAS_BLUR_MAX = 40;
+const timelineCanvasCustomImageUrls = new WeakMap();
 
 const ENTRANCE_ANIMATION_PRESETS = {
     fade: {
@@ -1020,6 +1036,413 @@ function syncAudioControlsToTimelineItem(timelineItem) {
     }
 }
 
+function sanitizeCanvasMode(mode) {
+    if (typeof mode !== 'string') {
+        return 'none';
+    }
+    const normalized = mode.trim().toLowerCase();
+    return CANVAS_BACKGROUND_MODES.has(normalized) ? normalized : 'none';
+}
+
+function clampCanvasBlur(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return CANVAS_BLUR_MIN;
+    }
+    return Math.min(
+        Math.max(Math.round(numeric), CANVAS_BLUR_MIN),
+        CANVAS_BLUR_MAX,
+    );
+}
+
+function updateCanvasBlurReadout(value, options = {}) {
+    if (!canvasBlurValue) {
+        return;
+    }
+    const { disabled = false } = options;
+    if (disabled) {
+        canvasBlurValue.textContent = 'Disabled';
+        return;
+    }
+    const clamped = clampCanvasBlur(value);
+    canvasBlurValue.textContent = clamped <= 0 ? 'Off' : `${clamped}px`;
+}
+
+function getTimelineItemCanvasSettings(timelineItem) {
+    const defaults = {
+        mode: 'none',
+        blur: 0,
+        customImageUrl: '',
+        customImageName: '',
+    };
+
+    if (!timelineItem) {
+        return defaults;
+    }
+
+    const dataset = timelineItem.dataset || {};
+    const mode = sanitizeCanvasMode(dataset.canvasMode);
+    const hasStoredBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
+    const rawBlur = hasStoredBlur ? Number(dataset.canvasBlur) : Number.NaN;
+    const blur = mode === 'none'
+        ? clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : 0)
+        : clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : DEFAULT_CANVAS_BLUR);
+    const customImageUrl = dataset.canvasCustomImage || '';
+    const customImageName = dataset.canvasCustomImageName || '';
+
+    if (customImageUrl && !timelineCanvasCustomImageUrls.has(timelineItem)) {
+        timelineCanvasCustomImageUrls.set(timelineItem, customImageUrl);
+    }
+
+    if (mode === 'custom' && !customImageUrl) {
+        return {
+            mode: 'none',
+            blur: 0,
+            customImageUrl: '',
+            customImageName: '',
+        };
+    }
+
+    return {
+        mode,
+        blur,
+        customImageUrl,
+        customImageName,
+    };
+}
+
+function persistTimelineItemCanvasSettings(timelineItem, settings) {
+    if (!timelineItem?.dataset || !settings) {
+        return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'mode')) {
+        const mode = sanitizeCanvasMode(settings.mode);
+        if (mode === 'none') {
+            delete timelineItem.dataset.canvasMode;
+        } else {
+            timelineItem.dataset.canvasMode = mode;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'blur')) {
+        const blur = clampCanvasBlur(settings.blur);
+        timelineItem.dataset.canvasBlur = String(blur);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'customImageUrl')) {
+        const url = settings.customImageUrl;
+        if (url) {
+            timelineItem.dataset.canvasCustomImage = url;
+        } else {
+            delete timelineItem.dataset.canvasCustomImage;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'customImageName')) {
+        const name = settings.customImageName;
+        if (name) {
+            timelineItem.dataset.canvasCustomImageName = name;
+        } else {
+            delete timelineItem.dataset.canvasCustomImageName;
+        }
+    }
+}
+
+function releaseTimelineCanvasCustomImage(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+    const cachedUrl = timelineCanvasCustomImageUrls.get(timelineItem);
+    if (cachedUrl) {
+        URL.revokeObjectURL(cachedUrl);
+        timelineCanvasCustomImageUrls.delete(timelineItem);
+    }
+    if (timelineItem.dataset) {
+        delete timelineItem.dataset.canvasCustomImage;
+        delete timelineItem.dataset.canvasCustomImageName;
+    }
+}
+
+function setTimelineItemCanvasCustomImage(timelineItem, file, objectURL) {
+    if (!timelineItem?.dataset) {
+        return;
+    }
+    const previous = timelineCanvasCustomImageUrls.get(timelineItem);
+    if (previous && previous !== objectURL) {
+        URL.revokeObjectURL(previous);
+    }
+    if (objectURL) {
+        timelineCanvasCustomImageUrls.set(timelineItem, objectURL);
+        persistTimelineItemCanvasSettings(timelineItem, {
+            customImageUrl: objectURL,
+            customImageName: file?.name || '',
+        });
+    } else {
+        if (previous && (!timelineItem.dataset.canvasCustomImage || previous === timelineItem.dataset.canvasCustomImage)) {
+            URL.revokeObjectURL(previous);
+        }
+        timelineCanvasCustomImageUrls.delete(timelineItem);
+        persistTimelineItemCanvasSettings(timelineItem, {
+            customImageUrl: '',
+            customImageName: '',
+        });
+    }
+}
+
+function syncCanvasBlurControlState(timelineItem) {
+    if (!canvasBlurInput || !canvasBlurValue) {
+        return;
+    }
+
+    const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+    if (!isClip) {
+        canvasBlurInput.disabled = true;
+        canvasBlurInput.setAttribute('aria-disabled', 'true');
+        canvasBlurInput.value = '0';
+        updateCanvasBlurReadout(0, { disabled: true });
+        return;
+    }
+
+    const settings = getTimelineItemCanvasSettings(timelineItem);
+    const isDisabled = settings.mode === 'none';
+    canvasBlurInput.disabled = isDisabled;
+    if (isDisabled) {
+        canvasBlurInput.setAttribute('aria-disabled', 'true');
+    } else {
+        canvasBlurInput.removeAttribute('aria-disabled');
+    }
+    const blurValue = isDisabled ? 0 : settings.blur;
+    canvasBlurInput.value = String(blurValue);
+    updateCanvasBlurReadout(blurValue, { disabled: isDisabled });
+}
+
+function syncCanvasCustomImageControls(timelineItem) {
+    if (!canvasBackgroundUploadButton || !canvasBackgroundRemoveButton || !canvasBackgroundStatus) {
+        return;
+    }
+
+    const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+    if (!isClip) {
+        canvasBackgroundUploadButton.disabled = true;
+        canvasBackgroundRemoveButton.disabled = true;
+        canvasBackgroundStatus.textContent = 'Select a clip to customize its canvas background.';
+        return;
+    }
+
+    canvasBackgroundUploadButton.disabled = false;
+    const settings = getTimelineItemCanvasSettings(timelineItem);
+    const hasCustomImage = Boolean(settings.customImageUrl);
+    canvasBackgroundRemoveButton.disabled = !hasCustomImage;
+
+    if (hasCustomImage) {
+        const label = settings.customImageName || 'Custom image';
+        if (settings.mode === 'custom') {
+            canvasBackgroundStatus.textContent = `Using ${label} as the canvas background.`;
+        } else {
+            canvasBackgroundStatus.textContent = `${label} ready to apply as the canvas background.`;
+        }
+    } else if (settings.mode === 'custom') {
+        canvasBackgroundStatus.textContent = 'Upload a custom image to replace the canvas background.';
+    } else {
+        canvasBackgroundStatus.textContent = 'No custom image selected.';
+    }
+}
+
+function syncCanvasControlsToTimelineItem(timelineItem) {
+    if (canvasBackgroundModeSelect) {
+        const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+        if (!isClip) {
+            canvasBackgroundModeSelect.disabled = true;
+            canvasBackgroundModeSelect.setAttribute('aria-disabled', 'true');
+            canvasBackgroundModeSelect.value = 'none';
+        } else {
+            canvasBackgroundModeSelect.disabled = false;
+            canvasBackgroundModeSelect.removeAttribute('aria-disabled');
+            const settings = getTimelineItemCanvasSettings(timelineItem);
+            canvasBackgroundModeSelect.value = settings.mode;
+        }
+    }
+
+    syncCanvasBlurControlState(timelineItem || null);
+    syncCanvasCustomImageControls(timelineItem || null);
+}
+
+function setCanvasBackdropVisibility(isVisible) {
+    if (!previewCanvasBackdrop) {
+        return;
+    }
+    if (isVisible) {
+        previewCanvasBackdrop.hidden = false;
+        previewCanvasBackdrop.classList.add('is-visible');
+    } else {
+        previewCanvasBackdrop.classList.remove('is-visible');
+        previewCanvasBackdrop.hidden = true;
+        delete previewCanvasBackdrop.dataset.mode;
+        delete previewCanvasBackdrop.dataset.source;
+    }
+}
+
+function applyCanvasBlurToPreview(blur) {
+    if (!previewCanvasBackdrop) {
+        return;
+    }
+    const clamped = clampCanvasBlur(blur);
+    previewCanvasBackdrop.style.setProperty('--canvas-blur-radius', `${clamped}px`);
+}
+
+function pausePreviewCanvasVideo() {
+    if (previewCanvasVideo && !previewCanvasVideo.paused) {
+        previewCanvasVideo.pause();
+    }
+}
+
+function clearPreviewCanvasBackdrop() {
+    if (!previewCanvasBackdrop) {
+        return;
+    }
+    applyCanvasBlurToPreview(0);
+    setCanvasBackdropVisibility(false);
+    if (previewCanvasVideo) {
+        previewCanvasVideo.pause();
+        previewCanvasVideo.hidden = true;
+        if (previewCanvasVideo.src) {
+            previewCanvasVideo.removeAttribute('src');
+            previewCanvasVideo.load();
+        }
+    }
+    if (previewCanvasImage) {
+        previewCanvasImage.hidden = true;
+        if (previewCanvasImage.src) {
+            previewCanvasImage.removeAttribute('src');
+        }
+    }
+}
+
+function applyCanvasSettingsToPreview(timelineItem) {
+    if (!previewCanvasBackdrop) {
+        return;
+    }
+
+    const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+    if (!isClip) {
+        clearPreviewCanvasBackdrop();
+        return;
+    }
+
+    const settings = getTimelineItemCanvasSettings(timelineItem);
+    if (settings.mode === 'none') {
+        clearPreviewCanvasBackdrop();
+        return;
+    }
+
+    applyCanvasBlurToPreview(settings.blur);
+    previewCanvasBackdrop.dataset.mode = settings.mode;
+    previewCanvasBackdrop.dataset.source = isVideoTimelineItem(timelineItem) ? 'video' : 'image';
+
+    if (settings.mode === 'custom') {
+        const url = settings.customImageUrl;
+        if (!url) {
+            clearPreviewCanvasBackdrop();
+            return;
+        }
+        if (previewCanvasVideo) {
+            previewCanvasVideo.pause();
+            previewCanvasVideo.hidden = true;
+            if (previewCanvasVideo.src) {
+                previewCanvasVideo.removeAttribute('src');
+                previewCanvasVideo.load();
+            }
+        }
+        if (previewCanvasImage) {
+            if (previewCanvasImage.src !== url) {
+                previewCanvasImage.src = url;
+            }
+            previewCanvasImage.hidden = false;
+        }
+        setCanvasBackdropVisibility(true);
+        return;
+    }
+
+    const objectURL = timelineItem.dataset.objectUrl || '';
+    if (!objectURL) {
+        clearPreviewCanvasBackdrop();
+        return;
+    }
+
+    if (isVideoTimelineItem(timelineItem)) {
+        if (previewCanvasImage) {
+            previewCanvasImage.hidden = true;
+            if (previewCanvasImage.src) {
+                previewCanvasImage.removeAttribute('src');
+            }
+        }
+        if (previewCanvasVideo) {
+            if (previewCanvasVideo.src !== objectURL) {
+                previewCanvasVideo.src = objectURL;
+                previewCanvasVideo.load();
+            }
+            previewCanvasVideo.loop = true;
+            previewCanvasVideo.muted = true;
+            previewCanvasVideo.hidden = false;
+        }
+    } else {
+        if (previewCanvasVideo) {
+            previewCanvasVideo.pause();
+            previewCanvasVideo.hidden = true;
+            if (previewCanvasVideo.src) {
+                previewCanvasVideo.removeAttribute('src');
+                previewCanvasVideo.load();
+            }
+        }
+        if (previewCanvasImage) {
+            if (previewCanvasImage.src !== objectURL) {
+                previewCanvasImage.src = objectURL;
+            }
+            previewCanvasImage.hidden = false;
+        }
+    }
+
+    syncCanvasVideoToPreview();
+    setCanvasBackdropVisibility(true);
+}
+
+function isCanvasBackdropUsingClipVideo() {
+    return Boolean(
+        previewCanvasBackdrop
+        && previewCanvasBackdrop.dataset.mode === 'clip'
+        && previewCanvasBackdrop.dataset.source === 'video'
+        && previewCanvasVideo
+        && !previewCanvasVideo.hidden,
+    );
+}
+
+function syncCanvasVideoToPreview() {
+    if (!previewVideo || !previewCanvasVideo || !isCanvasBackdropUsingClipVideo()) {
+        return;
+    }
+
+    const mainCurrent = previewVideo.currentTime;
+    if (!Number.isFinite(mainCurrent)) {
+        return;
+    }
+
+    if (previewCanvasVideo.readyState >= 1) {
+        try {
+            const delta = Math.abs((previewCanvasVideo.currentTime || 0) - mainCurrent);
+            if (!Number.isFinite(delta) || delta > 0.2) {
+                previewCanvasVideo.currentTime = mainCurrent;
+            }
+        } catch (error) {
+            // Ignore sync errors (may occur before metadata is ready).
+        }
+    }
+
+    if (isTimelinePlaying || !previewVideo.paused) {
+        previewCanvasVideo.play().catch(() => {});
+    }
+}
+
 if (masterVolumeInput) {
     const handleMasterVolumeUpdate = () => {
         if (masterVolumeInput.disabled) {
@@ -1037,7 +1460,130 @@ if (masterVolumeInput) {
     masterVolumeInput.addEventListener('change', handleMasterVolumeUpdate);
 }
 
+if (canvasBackgroundModeSelect) {
+    const handleCanvasModeChange = () => {
+        const sanitized = sanitizeCanvasMode(canvasBackgroundModeSelect.value);
+        canvasBackgroundModeSelect.value = sanitized;
+
+        if (!activeTimelineItem || canvasBackgroundModeSelect.disabled) {
+            return;
+        }
+
+        const dataset = activeTimelineItem.dataset || {};
+        const hadBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
+
+        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: sanitized });
+        if (!hadBlur && sanitized !== 'none') {
+            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
+        }
+
+        syncCanvasBlurControlState(activeTimelineItem);
+        syncCanvasCustomImageControls(activeTimelineItem);
+        applyCanvasSettingsToPreview(activeTimelineItem);
+    };
+
+    canvasBackgroundModeSelect.addEventListener('change', handleCanvasModeChange);
+}
+
+if (canvasBackgroundUploadButton && canvasBackgroundUploadInput) {
+    canvasBackgroundUploadButton.addEventListener('click', () => {
+        if (canvasBackgroundUploadButton.disabled) {
+            return;
+        }
+        canvasBackgroundUploadInput.click();
+    });
+}
+
+if (canvasBackgroundUploadInput) {
+    canvasBackgroundUploadInput.addEventListener('change', (event) => {
+        const files = Array.from(event.target.files || []);
+        const file = files[0];
+        if (!file) {
+            return;
+        }
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file for the canvas background.');
+            canvasBackgroundUploadInput.value = '';
+            return;
+        }
+        if (!activeTimelineItem) {
+            canvasBackgroundUploadInput.value = '';
+            return;
+        }
+
+        const objectURL = URL.createObjectURL(file);
+        setTimelineItemCanvasCustomImage(activeTimelineItem, file, objectURL);
+        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'custom' });
+        if (!Object.prototype.hasOwnProperty.call(activeTimelineItem.dataset || {}, 'canvasBlur')) {
+            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
+        }
+        if (canvasBackgroundModeSelect) {
+            canvasBackgroundModeSelect.disabled = false;
+            canvasBackgroundModeSelect.removeAttribute('aria-disabled');
+            canvasBackgroundModeSelect.value = 'custom';
+        }
+        syncCanvasControlsToTimelineItem(activeTimelineItem);
+        applyCanvasSettingsToPreview(activeTimelineItem);
+        canvasBackgroundUploadInput.value = '';
+    });
+}
+
+if (canvasBackgroundRemoveButton) {
+    canvasBackgroundRemoveButton.addEventListener('click', () => {
+        if (!activeTimelineItem || canvasBackgroundRemoveButton.disabled) {
+            return;
+        }
+        releaseTimelineCanvasCustomImage(activeTimelineItem);
+        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'none' });
+        if (canvasBackgroundModeSelect) {
+            canvasBackgroundModeSelect.value = 'none';
+        }
+        syncCanvasControlsToTimelineItem(activeTimelineItem);
+        applyCanvasSettingsToPreview(activeTimelineItem);
+    });
+}
+
+if (canvasBlurInput) {
+    const handleCanvasBlurUpdate = () => {
+        const rawValue = canvasBlurInput.value;
+        const clamped = clampCanvasBlur(rawValue);
+        canvasBlurInput.value = String(clamped);
+        const isDisabled = canvasBlurInput.disabled;
+        updateCanvasBlurReadout(clamped, { disabled: isDisabled });
+        if (!activeTimelineItem || isDisabled) {
+            return;
+        }
+        persistTimelineItemCanvasSettings(activeTimelineItem, { blur: clamped });
+        applyCanvasBlurToPreview(clamped);
+    };
+
+    canvasBlurInput.addEventListener('input', handleCanvasBlurUpdate);
+    canvasBlurInput.addEventListener('change', handleCanvasBlurUpdate);
+}
+
+if (previewCanvasVideo) {
+    previewCanvasVideo.addEventListener('loadeddata', () => {
+        syncCanvasVideoToPreview();
+    });
+}
+
+if (previewVideo) {
+    const syncCanvasWithPreview = () => {
+        syncCanvasVideoToPreview();
+    };
+    previewVideo.addEventListener('timeupdate', syncCanvasWithPreview);
+    previewVideo.addEventListener('seeked', syncCanvasWithPreview);
+    previewVideo.addEventListener('loadeddata', syncCanvasWithPreview);
+    previewVideo.addEventListener('play', syncCanvasWithPreview);
+    previewVideo.addEventListener('pause', () => {
+        if (!isTimelinePlaying && isCanvasBackdropUsingClipVideo()) {
+            pausePreviewCanvasVideo();
+        }
+    });
+}
+
 syncAudioControlsToTimelineItem(null);
+syncCanvasControlsToTimelineItem(null);
 
 function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
     if (!animationComboSpeedInput) {
@@ -8500,6 +9046,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
 
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
+    pausePreviewCanvasVideo();
 
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
@@ -8540,6 +9087,7 @@ function clearPreview() {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
+    clearPreviewCanvasBackdrop();
     clearPreviewOverlayLayers();
     setActiveTimelineItem(null);
 }
@@ -8567,6 +9115,7 @@ function setActiveTimelineItem(item, options = {}) {
     }
     syncAnimationControlsToTimelineItem(activeTimelineItem);
     syncAudioControlsToTimelineItem(activeTimelineItem);
+    syncCanvasControlsToTimelineItem(activeTimelineItem);
     refreshImageDurationApplyAllAvailability();
     const nextProgress = clipProgressOverride !== null
         ? clipProgressOverride
@@ -8578,6 +9127,7 @@ function setActiveTimelineItem(item, options = {}) {
     });
     updateImageRotationControlState();
     updateActiveTimelineIndicators();
+    applyCanvasSettingsToPreview(activeTimelineItem);
 }
 
 function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
@@ -8629,6 +9179,8 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
     }
+
+    applyCanvasSettingsToPreview(timelineItem);
 }
 
 function formatFileSize(bytes) {
@@ -8938,6 +9490,7 @@ async function addToTimeline(file, objectURL) {
         const wasActive = targetItem === activeTimelineItem;
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
+        releaseTimelineCanvasCustomImage(targetItem);
         targetItem.remove();
         if (parentLane) {
             flushTimelineLaneReflow(parentLane);
@@ -9019,6 +9572,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
 
     const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
+    applyCanvasSettingsToPreview(timelineItem);
 
     if (!objectURL) {
         return;
