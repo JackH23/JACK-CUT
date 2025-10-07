@@ -6351,6 +6351,95 @@ function isClipActiveAtTime(descriptor, timeMs) {
     return timeMs >= start && timeMs < end;
 }
 
+function easeOverlayTransitionProgress(value) {
+    const t = clampProgress(Number(value) || 0);
+    if (t <= 0) {
+        return 0;
+    }
+    if (t >= 1) {
+        return 1;
+    }
+    // Smoothstep for a gentle ease-in/ease-out curve that matches fade behaviour.
+    return (t * t) * (3 - (2 * t));
+}
+
+function computeOverlayDescriptorOpacity(descriptor) {
+    if (!descriptor || !descriptor.item) {
+        return 1;
+    }
+
+    const clipDuration = Math.max(0, Number(descriptor.end) - Number(descriptor.start));
+    if (clipDuration <= 0) {
+        return 1;
+    }
+
+    const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+    const direction = sanitizeAnimationDirection(animationSettings.direction);
+    const elapsed = Math.max(0, Math.min(
+        Number(descriptor.sampleTime) - Number(descriptor.start),
+        clipDuration,
+    ));
+
+    let opacity = 1;
+
+    if (direction === 'in' || direction === 'combo') {
+        const entranceConfig = getPreviewImageEntranceConfig({
+            clipDurationMs: clipDuration,
+            settingsOverride: animationSettings,
+        });
+        const entranceWindow = Math.min(
+            clipDuration,
+            Math.max(0, Number(entranceConfig?.totalDuration) || 0),
+        );
+        if (entranceWindow > 0) {
+            const entranceProgress = easeOverlayTransitionProgress(elapsed / entranceWindow);
+            opacity *= entranceProgress;
+        } else if (elapsed <= 0) {
+            opacity *= 0;
+        }
+    }
+
+    if (direction === 'out' || direction === 'combo') {
+        const exitConfig = getPreviewImageExitConfig({
+            clipDurationMs: clipDuration,
+            settingsOverride: animationSettings,
+        });
+        const totalExitWindow = Math.min(
+            clipDuration,
+            Math.max(0, Number(exitConfig?.totalDuration) || 0),
+        );
+
+        if (totalExitWindow > 0) {
+            const effectiveDelay = Math.min(
+                totalExitWindow,
+                Math.max(0, Number(exitConfig?.delay) || 0),
+            );
+            const effectiveDuration = Math.max(
+                0,
+                Math.min(
+                    totalExitWindow,
+                    Number(exitConfig?.duration) || (totalExitWindow - effectiveDelay),
+                ),
+            );
+            const exitStart = clipDuration - totalExitWindow;
+
+            if (elapsed >= exitStart) {
+                const windowOffset = elapsed - exitStart;
+                if (effectiveDuration <= 0 && windowOffset > effectiveDelay) {
+                    opacity = 0;
+                } else if (effectiveDuration > 0 && windowOffset > effectiveDelay) {
+                    const exitProgress = easeOverlayTransitionProgress(
+                        (windowOffset - effectiveDelay) / effectiveDuration,
+                    );
+                    opacity *= 1 - exitProgress;
+                }
+            }
+        }
+    }
+
+    return clamp(opacity, 0, 1);
+}
+
 function computeOverlayEntryOpacity(entry) {
     if (!entry || !entry.layer || !entry.image) {
         return 1;
@@ -6700,6 +6789,13 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         }
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
+
+        const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
+        const clampedOpacity = clamp(descriptorOpacity, 0, 1);
+        layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+        if (image) {
+            image.style.opacity = '1';
+        }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
 
