@@ -27,6 +27,7 @@ const activeOverlayLayers = new Map();
 const overlayLayerToTimelineItem = new WeakMap();
 let lastOverlayRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
+const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
@@ -6363,17 +6364,97 @@ function easeOverlayTransitionProgress(value) {
     return (t * t) * (3 - (2 * t));
 }
 
+function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
+    if (!descriptor || !descriptor.item) {
+        return false;
+    }
+
+    if (descriptor.isActive) {
+        return true;
+    }
+
+    const clipDuration = Math.max(
+        0,
+        Number.isFinite(descriptor.clipDuration)
+            ? Number(descriptor.clipDuration)
+            : (Number(descriptor.end) - Number(descriptor.start)),
+    );
+    if (clipDuration <= 0) {
+        return false;
+    }
+
+    const descriptorEnd = Number(descriptor.end);
+    if (!Number.isFinite(descriptorEnd)) {
+        return false;
+    }
+
+    const effectiveTimelineNow = Number.isFinite(timelineNow)
+        ? timelineNow
+        : descriptorEnd;
+    if (!Number.isFinite(effectiveTimelineNow)) {
+        return false;
+    }
+
+    const overshoot = effectiveTimelineNow - descriptorEnd;
+    if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) {
+        const activeEntry = activeOverlayLayers.get(descriptor.item);
+        const previousOpacity = Number.isFinite(activeEntry?.opacity)
+            ? activeEntry.opacity
+            : 0;
+        if (previousOpacity <= 0) {
+            return false;
+        }
+    }
+
+    const animationSettings = descriptor.animationSettings
+        || getTimelineItemAnimationSettings(descriptor.item);
+    const direction = sanitizeAnimationDirection(animationSettings?.direction);
+    if (direction !== 'out' && direction !== 'combo') {
+        return false;
+    }
+
+    let exitConfig = descriptor.exitConfig;
+    if (exitConfig === undefined) {
+        exitConfig = getPreviewImageExitConfig({
+            clipDurationMs: clipDuration,
+            settingsOverride: animationSettings,
+        }) || null;
+        descriptor.exitConfig = exitConfig;
+    }
+
+    const totalExitWindow = Math.min(
+        clipDuration,
+        Math.max(0, Number(exitConfig?.totalDuration) || 0),
+    );
+    if (totalExitWindow <= 0) {
+        return false;
+    }
+
+    const exitWindowStart = descriptorEnd - totalExitWindow;
+    if (!Number.isFinite(exitWindowStart)) {
+        return false;
+    }
+
+    return effectiveTimelineNow >= exitWindowStart;
+}
+
 function computeOverlayDescriptorOpacity(descriptor) {
     if (!descriptor || !descriptor.item) {
         return 1;
     }
 
-    const clipDuration = Math.max(0, Number(descriptor.end) - Number(descriptor.start));
+    const clipDuration = Math.max(
+        0,
+        Number.isFinite(descriptor.clipDuration)
+            ? Number(descriptor.clipDuration)
+            : (Number(descriptor.end) - Number(descriptor.start)),
+    );
     if (clipDuration <= 0) {
         return 1;
     }
 
-    const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+    const animationSettings = descriptor.animationSettings
+        || getTimelineItemAnimationSettings(descriptor.item);
     const direction = sanitizeAnimationDirection(animationSettings.direction);
     const elapsed = Math.max(0, Math.min(
         Number(descriptor.sampleTime) - Number(descriptor.start),
@@ -6400,10 +6481,14 @@ function computeOverlayDescriptorOpacity(descriptor) {
     }
 
     if (direction === 'out' || direction === 'combo') {
-        const exitConfig = getPreviewImageExitConfig({
-            clipDurationMs: clipDuration,
-            settingsOverride: animationSettings,
-        });
+        let exitConfig = descriptor.exitConfig;
+        if (exitConfig === undefined) {
+            exitConfig = getPreviewImageExitConfig({
+                clipDurationMs: clipDuration,
+                settingsOverride: animationSettings,
+            }) || null;
+            descriptor.exitConfig = exitConfig;
+        }
         const totalExitWindow = Math.min(
             clipDuration,
             Math.max(0, Number(exitConfig?.totalDuration) || 0),
@@ -6590,15 +6675,33 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
     overlayEntries.forEach((descriptor) => {
         const { start, end } = descriptor;
-        const duration = Number.isFinite(end) && Number.isFinite(start) ? Math.max(0, end - start) : 0;
+        const duration = Number.isFinite(end) && Number.isFinite(start)
+            ? Math.max(0, end - start)
+            : 0;
+
+        descriptor.clipDuration = duration;
+
+        const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+        descriptor.animationSettings = animationSettings;
+        descriptor.exitConfig = duration > 0
+            ? getPreviewImageExitConfig({
+                clipDurationMs: duration,
+                settingsOverride: animationSettings,
+            })
+            : null;
+
         if (duration === 0) {
             descriptor.progress = 0;
+            descriptor.shouldRender = descriptor.isActive;
             return;
         }
+
         const relativeTime = (safeTimelineNow - start) / duration;
         descriptor.progress = Number.isFinite(relativeTime)
             ? clampProgress(relativeTime)
             : 0;
+        descriptor.shouldRender = descriptor.isActive
+            || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
     });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
@@ -6718,13 +6821,13 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
         nextKnownItems.add(descriptor.item);
 
-        if (!descriptor.isActive) {
+        if (!descriptor.shouldRender) {
             hideOverlayLayerEntry(entry);
         }
     });
 
     const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
-        if (!container || !descriptor || !descriptor.item || !descriptor.isActive) {
+        if (!container || !descriptor || !descriptor.item || !descriptor.shouldRender) {
             return false;
         }
 
@@ -6812,7 +6915,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
     if (overlayGroups.below.length && below) {
         overlayGroups.below.forEach((descriptor, index) => {
-            if (!descriptor.isActive) {
+            if (!descriptor.shouldRender) {
                 return;
             }
             const zIndex = 10 + overlayGroups.below.length - index;
@@ -6832,7 +6935,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
     if (overlayGroups.above.length && above) {
         overlayGroups.above.forEach((descriptor, index) => {
-            if (!descriptor.isActive) {
+            if (!descriptor.shouldRender) {
                 return;
             }
             const zIndex = 60 + (overlayGroups.above.length - index);
