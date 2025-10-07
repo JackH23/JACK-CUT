@@ -17,6 +17,8 @@ const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
 const timelineImagePreloadCache = new Map();
+const timelineAudioElements = new WeakMap();
+const activeTimelineAudio = new Map();
 const stagedUploadsByObjectUrl = new Map();
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');
@@ -73,6 +75,9 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const previewPlaceholderDefaultText = previewPlaceholder
+    ? previewPlaceholder.textContent
+    : '';
 
 if (previewImage) {
     try {
@@ -86,6 +91,10 @@ const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
 const playVideoButton = document.getElementById('play-video-button');
 const timelineProgressLine = document.getElementById('timeline-progress-line');
+const audioUploadInput = document.getElementById('audio-upload');
+const audioDropzone = document.getElementById('audio-dropzone');
+const addAudioButton = document.getElementById('add-audio-button');
+const audioUploadStatus = document.getElementById('audio-upload-status');
 const timelineProgressInput = document.getElementById('timeline-progress');
 if (timelineProgressInput) {
     timelineProgressInput.addEventListener('input', () => {
@@ -772,8 +781,12 @@ function getDefaultAudioSettings() {
     };
 }
 
+function supportsTimelineAudio(timelineItem) {
+    return isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
+}
+
 function getTimelineItemAudioSettings(timelineItem) {
-    if (!isVideoTimelineItem(timelineItem)) {
+    if (!supportsTimelineAudio(timelineItem)) {
         return getDefaultAudioSettings();
     }
 
@@ -792,7 +805,7 @@ function getTimelineItemAudioSettings(timelineItem) {
 }
 
 function persistTimelineItemAudioSettings(timelineItem, settings) {
-    if (!isVideoTimelineItem(timelineItem) || !timelineItem.dataset || !settings) {
+    if (!supportsTimelineAudio(timelineItem) || !timelineItem.dataset || !settings) {
         return;
     }
 
@@ -845,7 +858,7 @@ function updateMasterVolumeReadout(percent, options = {}) {
     const { disabled = false } = options;
     if (masterVolumeValue) {
         masterVolumeValue.textContent = disabled
-            ? 'Video only'
+            ? 'Audio unavailable'
             : formatMasterVolumeDisplay(percent);
     }
     if (masterVolumeInput) {
@@ -855,7 +868,7 @@ function updateMasterVolumeReadout(percent, options = {}) {
             masterVolumeInput.setAttribute('aria-valuenow', '0');
             masterVolumeInput.setAttribute(
                 'aria-valuetext',
-                'Audio controls available for video clips',
+                'Audio controls available for audio and video clips',
             );
         } else {
             masterVolumeInput.setAttribute('aria-valuenow', String(percent));
@@ -951,13 +964,179 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs) {
     }
 }
 
+function calculateTimelineAudioVolume(settings, clipDurationMs, elapsedMs) {
+    const normalizedSettings = settings || getDefaultAudioSettings();
+    const volumePercent = clampVolumePercent(normalizedSettings.volumePercent);
+    const baseVolume = clampVolume(volumePercent / 100);
+    if (baseVolume <= 0) {
+        return 0;
+    }
+
+    const fadeInMs = sanitizeFadeMilliseconds(normalizedSettings.fadeInMs);
+    const fadeOutMs = sanitizeFadeMilliseconds(normalizedSettings.fadeOutMs);
+    const safeDuration = Math.max(0, Math.round(Number(clipDurationMs) || 0));
+    const elapsed = Math.min(
+        Math.max(0, Math.round(Number(elapsedMs) || 0)),
+        safeDuration,
+    );
+
+    let fadeMultiplier = 1;
+
+    if (fadeInMs > 0 && elapsed < fadeInMs) {
+        const fadeProgress = clampProgress(elapsed / fadeInMs);
+        fadeMultiplier *= fadeProgress;
+    }
+
+    if (fadeOutMs > 0 && safeDuration > 0) {
+        const remaining = Math.max(0, safeDuration - elapsed);
+        if (remaining < fadeOutMs) {
+            const fadeOutProgress = clampProgress(remaining / fadeOutMs);
+            fadeMultiplier *= fadeOutProgress;
+        }
+    }
+
+    return clampVolume(baseVolume * fadeMultiplier);
+}
+
 function ensureTimelineAudioDefaults(timelineItem) {
-    if (!isVideoTimelineItem(timelineItem) || !timelineItem?.dataset) {
+    if (!supportsTimelineAudio(timelineItem) || !timelineItem?.dataset) {
         return;
     }
     if (!timelineItem.dataset.audioVolumePercent) {
         timelineItem.dataset.audioVolumePercent = String(DEFAULT_AUDIO_VOLUME_PERCENT);
     }
+}
+
+function getTimelineAudioElement(timelineItem) {
+    if (!supportsTimelineAudio(timelineItem) || !timelineItem?.dataset) {
+        return null;
+    }
+    const objectURL = timelineItem.dataset.objectUrl || '';
+    if (!objectURL) {
+        return null;
+    }
+    const existing = timelineAudioElements.get(timelineItem);
+    if (existing && existing.src === objectURL) {
+        return existing;
+    }
+    const audio = new Audio(objectURL);
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
+    timelineAudioElements.set(timelineItem, audio);
+    return audio;
+}
+
+function releaseTimelineAudioElement(timelineItem) {
+    const audio = timelineAudioElements.get(timelineItem);
+    if (!audio) {
+        return;
+    }
+    try {
+        audio.pause();
+    } catch (error) {
+        console.warn('Unable to pause audio track during cleanup.', error);
+    }
+    timelineAudioElements.delete(timelineItem);
+    activeTimelineAudio.delete(timelineItem);
+}
+
+function stopAllTimelineAudio(options = {}) {
+    const { reset = true } = options;
+    activeTimelineAudio.forEach((state, item) => {
+        const element = state?.element;
+        if (element) {
+            try {
+                element.pause();
+                if (reset) {
+                    element.currentTime = 0;
+                }
+            } catch (error) {
+                console.warn('Failed to stop audio element.', error);
+            }
+        }
+        activeTimelineAudio.delete(item);
+    });
+}
+
+function syncSegmentAudioPlayback(entries, segmentStartMs = 0) {
+    const activeItems = new Set();
+    const segmentEntries = Array.isArray(entries) ? entries : [];
+
+    segmentEntries.forEach((entry) => {
+        const item = entry?.item || null;
+        if (!item || !isAudioTimelineItem(item)) {
+            return;
+        }
+        const audioElement = getTimelineAudioElement(item);
+        if (!audioElement) {
+            return;
+        }
+
+        ensureTimelineAudioDefaults(item);
+        const settings = getTimelineItemAudioSettings(item);
+        const clipStart = Number.isFinite(entry.start) ? entry.start : 0;
+        const clipEnd = Number.isFinite(entry.end) ? entry.end : clipStart;
+        const clipDuration = Math.max(0, clipEnd - clipStart);
+        const offsetMs = Math.max(0, segmentStartMs - clipStart);
+        const targetSeconds = clipDuration > 0
+            ? Math.min(clipDuration / 1000, offsetMs / 1000)
+            : 0;
+
+        if (Number.isFinite(targetSeconds)) {
+            try {
+                if (Math.abs(audioElement.currentTime - targetSeconds) > 0.05) {
+                    audioElement.currentTime = targetSeconds;
+                }
+            } catch (error) {
+                const onLoaded = () => {
+                    audioElement.removeEventListener('loadedmetadata', onLoaded);
+                    try {
+                        audioElement.currentTime = targetSeconds;
+                    } catch (seekError) {
+                        console.warn('Unable to seek audio clip.', seekError);
+                    }
+                };
+                audioElement.addEventListener('loadedmetadata', onLoaded, { once: true });
+            }
+        }
+
+        audioElement.loop = false;
+        audioElement.muted = false;
+        const elapsedMs = Math.max(0, Math.round(offsetMs));
+        audioElement.volume = calculateTimelineAudioVolume(
+            settings,
+            clipDuration,
+            elapsedMs,
+        );
+        if (audioElement.paused) {
+            audioElement.play().catch((error) => {
+                console.warn('Unable to play audio track.', error);
+            });
+        }
+
+        activeTimelineAudio.set(item, {
+            element: audioElement,
+            entryStart: clipStart,
+            entryEnd: clipEnd,
+        });
+        activeItems.add(item);
+    });
+
+    activeTimelineAudio.forEach((state, item) => {
+        if (activeItems.has(item)) {
+            return;
+        }
+        const element = state?.element;
+        if (element) {
+            try {
+                element.pause();
+                element.currentTime = 0;
+            } catch (error) {
+                console.warn('Unable to pause audio track.', error);
+            }
+        }
+        activeTimelineAudio.delete(item);
+    });
 }
 
 audioFadeControls.forEach((control) => {
@@ -988,20 +1167,20 @@ audioFadeControls.forEach((control) => {
 });
 
 function syncAudioControlsToTimelineItem(timelineItem) {
-    const isVideo = isVideoTimelineItem(timelineItem);
-    const settings = isVideo
+    const hasAudio = supportsTimelineAudio(timelineItem);
+    const settings = hasAudio
         ? getTimelineItemAudioSettings(timelineItem)
         : getDefaultAudioSettings();
 
     if (masterVolumeInput) {
-        masterVolumeInput.disabled = !isVideo;
-        if (isVideo) {
+        masterVolumeInput.disabled = !hasAudio;
+        if (hasAudio) {
             masterVolumeInput.removeAttribute('aria-disabled');
         } else {
             masterVolumeInput.setAttribute('aria-disabled', 'true');
         }
         masterVolumeInput.value = String(settings.volumePercent);
-        updateMasterVolumeReadout(settings.volumePercent, { disabled: !isVideo });
+        updateMasterVolumeReadout(settings.volumePercent, { disabled: !hasAudio });
     }
 
     audioFadeControls.forEach((control) => {
@@ -1010,14 +1189,14 @@ function syncAudioControlsToTimelineItem(timelineItem) {
             return;
         }
 
-        if (!isVideo) {
+        if (!hasAudio) {
             input.disabled = true;
             input.setAttribute('aria-disabled', 'true');
             input.value = '0';
             input.dataset.fadeSeconds = '0';
             input.setAttribute('aria-valuenow', '0');
-            input.setAttribute('aria-valuetext', 'Audio fades available for video clips');
-            readout.textContent = 'Video only';
+            input.setAttribute('aria-valuetext', 'Audio fades available for audio and video clips');
+            readout.textContent = 'Audio unavailable';
             return;
         }
 
@@ -1029,7 +1208,7 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         syncAudioFadeControl(control, seconds);
     });
 
-    if (isVideo) {
+    if (isVideoTimelineItem(timelineItem)) {
         applyMasterVolumeToPreview(settings.volumePercent);
     } else if (previewVideo) {
         cancelPreviewAudioEnvelope({ restoreVolume: false });
@@ -2821,7 +3000,9 @@ const KEYFRAME_TRACK_KEY_LARGE_STEP = 0.15;
 const MIN_ROTATION_DEGREES = -180;
 const MAX_ROTATION_DEGREES = 180;
 const DEFAULT_VIDEO_DURATION = 3000;
+const DEFAULT_AUDIO_DURATION = 3000;
 const MIN_IMAGE_DURATION = 400;
+const MIN_AUDIO_DURATION = 400;
 const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
 const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
 const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';
@@ -4774,6 +4955,21 @@ function ensureTimelineLane(index = 0) {
     );
 }
 
+function ensureAudioLane() {
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane.dataset.laneType === 'audio');
+    if (existing) {
+        return existing;
+    }
+    const lane = ensureTimelineLane(lanes.length);
+    if (lane) {
+        lane.dataset.laneType = 'audio';
+        lane.classList.add('timeline-lane--audio');
+        lane.setAttribute('aria-label', 'Audio track');
+    }
+    return lane;
+}
+
 function cleanupEmptyTimelineLanes() {
     if (!timelineLaneList) {
         return;
@@ -4919,6 +5115,9 @@ function getTimelineItemDurationKey(timelineItem) {
     if (fileType.startsWith('image/')) {
         return 'imageDuration';
     }
+    if (fileType.startsWith('audio/')) {
+        return 'audioDuration';
+    }
     if (fileType.startsWith('video/')) {
         return 'videoDuration';
     }
@@ -4935,6 +5134,13 @@ function getTimelineItemMinimumDuration(timelineItem) {
         if (Number.isFinite(minimum) && minimum > 0) {
             return minimum;
         }
+    }
+    if (fileType.startsWith('audio/')) {
+        const minimum = Number(timelineItem.dataset.minAudioDuration);
+        if (Number.isFinite(minimum) && minimum > 0) {
+            return minimum;
+        }
+        return MIN_AUDIO_DURATION;
     }
     return MIN_IMAGE_DURATION;
 }
@@ -5354,10 +5560,10 @@ function initializeTimelineItem(timelineItem) {
     }
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
-    if (fileType.startsWith('video/')) {
+    if (supportsTimelineAudio(timelineItem)) {
         ensureTimelineAudioDefaults(timelineItem);
     }
-    if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
+    if (fileType.startsWith('image/') || supportsTimelineAudio(timelineItem)) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }
@@ -8177,6 +8383,14 @@ function isVideoTimelineItem(timelineItem) {
     return fileType.startsWith('video/');
 }
 
+function isAudioTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('audio/');
+}
+
 function isImageTimelineItem(timelineItem) {
     if (!timelineItem || !timelineItem.dataset) {
         return false;
@@ -9024,6 +9238,13 @@ function getTimelineItemPlaybackDuration(timelineItem) {
             return duration;
         }
     }
+    if (fileType.startsWith('audio/')) {
+        const duration = Number(timelineItem.dataset.audioDuration);
+        if (Number.isFinite(duration) && duration > 0) {
+            return duration;
+        }
+        return DEFAULT_AUDIO_DURATION;
+    }
     return 0;
 }
 
@@ -9047,6 +9268,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
     pausePreviewCanvasVideo();
+    stopAllTimelineAudio();
 
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
@@ -9081,6 +9303,9 @@ function clearPreview() {
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
     previewPlaceholder.hidden = false;
+    if (previewPlaceholder && previewPlaceholderDefaultText) {
+        previewPlaceholder.textContent = previewPlaceholderDefaultText;
+    }
     playVideoButton.textContent = 'Play Back';
     setPreviewMode(null);
     resetPreviewScroll();
@@ -9146,13 +9371,26 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         return;
     }
 
-    previewPlaceholder.hidden = true;
+    const isAudioClip = fileType.startsWith('audio/');
+    if (previewPlaceholder) {
+        if (isAudioClip) {
+            previewPlaceholder.hidden = false;
+        } else {
+            previewPlaceholder.hidden = true;
+            if (previewPlaceholderDefaultText) {
+                previewPlaceholder.textContent = previewPlaceholderDefaultText;
+            }
+        }
+    }
 
     if (isTimelinePlaying) {
         stopTimelinePlayback();
     }
 
     if (fileType.startsWith('video/')) {
+        if (previewPlaceholder && previewPlaceholderDefaultText) {
+            previewPlaceholder.textContent = previewPlaceholderDefaultText;
+        }
         const audioSettings = getTimelineItemAudioSettings(timelineItem);
         setPreviewMode('has-video');
         resetPreviewScroll();
@@ -9168,6 +9406,9 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         applyMasterVolumeToPreview(audioSettings.volumePercent);
         playVideoButton.textContent = 'Play Back';
     } else if (fileType.startsWith('image/')) {
+        if (previewPlaceholder && previewPlaceholderDefaultText) {
+            previewPlaceholder.textContent = previewPlaceholderDefaultText;
+        }
         cancelPreviewExitAnimation({ forceRestore: true });
         setPreviewMode('has-image');
         previewVideo.pause();
@@ -9178,6 +9419,17 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
+    } else if (fileType.startsWith('audio/')) {
+        setPreviewMode(null);
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        setPreviewImageVisibility(false);
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = false;
+            previewPlaceholder.textContent = 'Audio clip selected. Press Play to preview.';
+        }
+        playVideoButton.textContent = 'Play Back';
     }
 
     applyCanvasSettingsToPreview(timelineItem);
@@ -9224,9 +9476,10 @@ function setStagedUploadAddedState(objectURL, isAdded) {
 async function stageUpload(file) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
 
-    if (!isVideo && !isImage) {
-        alert('Unsupported file type. Please upload an image or video file.');
+    if (!isVideo && !isImage && !isAudio) {
+        alert('Unsupported file type. Please upload an audio, image, or video file.');
         return;
     }
 
@@ -9261,6 +9514,11 @@ async function stageUpload(file) {
         video.playsInline = true;
         video.autoplay = true;
         previewWrapper.appendChild(video);
+    } else if (isAudio) {
+        const icon = document.createElement('div');
+        icon.className = 'upload-gallery__audio-preview';
+        icon.innerText = '🎵';
+        previewWrapper.appendChild(icon);
     }
 
     const meta = document.createElement('div');
@@ -9401,6 +9659,7 @@ async function addToTimeline(file, objectURL) {
             }
         });
         timelineItem.appendChild(videoThumb);
+        ensureTimelineAudioDefaults(timelineItem);
     } else if (file.type.startsWith('image/')) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
@@ -9416,12 +9675,51 @@ async function addToTimeline(file, objectURL) {
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
+    } else if (file.type.startsWith('audio/')) {
+        timelineItem.classList.add('timeline-item--audio');
+        const waveform = document.createElement('div');
+        waveform.className = 'timeline-audio-waveform';
+        timelineItem.appendChild(waveform);
+        setTimelineItemDuration(
+            timelineItem,
+            'audioDuration',
+            DEFAULT_AUDIO_DURATION,
+            { markCustom: false, skipAnimationSync: true },
+        );
+        ensureTimelineAudioDefaults(timelineItem);
+        const audioElement = getTimelineAudioElement(timelineItem);
+        if (audioElement) {
+            const updateDuration = () => {
+                if (Number.isFinite(audioElement.duration) && audioElement.duration > 0) {
+                    const intrinsic = Math.round(audioElement.duration * 1000);
+                    timelineItem.dataset.minAudioDuration = String(intrinsic);
+                    setTimelineItemDuration(
+                        timelineItem,
+                        'audioDuration',
+                        intrinsic,
+                        { markCustom: false, skipAnimationSync: true },
+                    );
+                }
+            };
+            if (audioElement.readyState >= 1) {
+                updateDuration();
+            } else {
+                audioElement.addEventListener('loadedmetadata', updateDuration, { once: true });
+            }
+            audioElement.load();
+        }
     }
 
     timelineItem.appendChild(label);
     timelineItem.appendChild(removeButton);
 
-    const targetLane = defaultLane || ensureTimelineLane(0);
+    let targetLane = defaultLane || null;
+    if (file.type.startsWith('audio/')) {
+        targetLane = ensureAudioLane();
+    }
+    if (!targetLane) {
+        targetLane = ensureTimelineLane(0);
+    }
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
         targetLane.appendChild(timelineItem);
@@ -9491,6 +9789,9 @@ async function addToTimeline(file, objectURL) {
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
         releaseTimelineCanvasCustomImage(targetItem);
+        if (fileType.startsWith('audio/')) {
+            releaseTimelineAudioElement(targetItem);
+        }
         targetItem.remove();
         if (parentLane) {
             flushTimelineLaneReflow(parentLane);
@@ -9517,6 +9818,51 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+}
+
+function setAudioUploadStatus(message) {
+    if (audioUploadStatus) {
+        audioUploadStatus.textContent = message || '';
+    }
+}
+
+async function addAudioFilesToTimeline(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) {
+        setAudioUploadStatus('No audio files selected.');
+        return;
+    }
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const file of files) {
+        if (!file.type.startsWith('audio/')) {
+            skipped += 1;
+            continue;
+        }
+
+        const objectURL = URL.createObjectURL(file);
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            await addToTimeline(file, objectURL);
+            added += 1;
+        } catch (error) {
+            console.error('Failed to add audio clip to timeline.', error);
+            skipped += 1;
+            URL.revokeObjectURL(objectURL);
+        }
+    }
+
+    if (added && skipped) {
+        setAudioUploadStatus(`Added ${added} audio ${added === 1 ? 'clip' : 'clips'}. ${skipped} file(s) were skipped.`);
+    } else if (added) {
+        setAudioUploadStatus(`Added ${added} audio ${added === 1 ? 'clip' : 'clips'} to the timeline.`);
+    } else if (skipped) {
+        setAudioUploadStatus('Only audio files are supported in this panel.');
+    } else {
+        setAudioUploadStatus('');
+    }
 }
 
 uploadInput.addEventListener('change', async (event) => {
@@ -9559,6 +9905,67 @@ uploadInput.addEventListener('change', async (event) => {
 if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
 }
+
+if (audioUploadInput) {
+    audioUploadInput.addEventListener('change', async (event) => {
+        await addAudioFilesToTimeline(event.target.files || []);
+        audioUploadInput.value = '';
+    });
+}
+
+if (addAudioButton) {
+    addAudioButton.addEventListener('click', () => {
+        if (audioUploadInput) {
+            audioUploadInput.click();
+        }
+    });
+}
+
+if (audioDropzone) {
+    const setDragState = (isActive) => {
+        audioDropzone.classList.toggle('is-dragover', Boolean(isActive));
+    };
+
+    audioDropzone.addEventListener('dragenter', (event) => {
+        event.preventDefault();
+        setDragState(true);
+    });
+
+    audioDropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        setDragState(true);
+    });
+
+    ['dragleave', 'dragend'].forEach((eventName) => {
+        audioDropzone.addEventListener(eventName, () => setDragState(false));
+    });
+
+    audioDropzone.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        setDragState(false);
+        const files = event.dataTransfer?.files;
+        if (files && files.length) {
+            await addAudioFilesToTimeline(files);
+        }
+    });
+
+    audioDropzone.addEventListener('click', () => {
+        if (audioUploadInput) {
+            audioUploadInput.click();
+        }
+    });
+
+    audioDropzone.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+            event.preventDefault();
+            if (audioUploadInput) {
+                audioUploadInput.click();
+            }
+        }
+    });
+}
+
+setAudioUploadStatus('');
 
 async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
     const fileType = timelineItem.dataset.fileType || '';
@@ -9895,6 +10302,21 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
 
             timelinePlaybackAbort = abortPlayback;
         });
+    } else if (fileType.startsWith('audio/')) {
+        setPreviewMode(null);
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        setPreviewImageVisibility(false);
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = false;
+            previewPlaceholder.textContent = 'Audio clip selected. Press Play to preview.';
+        }
+        playVideoButton.textContent = 'Play Back';
+        const waitDuration = playbackWindow !== null
+            ? Math.max(0, playbackWindow)
+            : Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        await waitForGapDuration(waitDuration);
     }
 }
 
@@ -9935,13 +10357,13 @@ function waitForGapDuration(durationMs) {
 async function playTimelineSequence(startIndex = 0) {
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload audio, image, or video to build your timeline.');
         return false;
     }
 
     const { segments, totalDuration } = getTimelinePlaybackSegments();
     if (!segments.length || totalDuration <= 0) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload audio, image, or video to build your timeline.');
         return false;
     }
 
@@ -9968,6 +10390,7 @@ async function playTimelineSequence(startIndex = 0) {
     resetTimelineProgressLine(getTimelineFractionForTime(startElapsed));
     updatePlaybackTimeDisplay(startElapsed, totalDuration);
     startPlaybackClock(startElapsed, totalDuration);
+    stopAllTimelineAudio({ reset: true });
 
     let completedNaturally = true;
 
@@ -9980,6 +10403,7 @@ async function playTimelineSequence(startIndex = 0) {
             const segment = segments[index];
             const { item, start, end, duration } = segment;
             if (duration <= 0) {
+                syncSegmentAudioPlayback(segment.items || [], start);
                 continue;
             }
             const nextSegment = segments[index + 1];
@@ -9993,6 +10417,7 @@ async function playTimelineSequence(startIndex = 0) {
             const startFraction = getTimelineFractionForTime(start);
             const endFraction = getTimelineFractionForTime(end);
             animateTimelineProgress(startFraction, endFraction, duration);
+            syncSegmentAudioPlayback(segment.items || [], start);
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
                 await playTimelineItem(item, duration, segment.items || null);
@@ -10018,7 +10443,7 @@ if (exportButton) {
     exportButton.addEventListener('click', () => {
         const timelineItems = getTimelineItems();
         if (!timelineItems.length) {
-            alert('Upload an image or video to build your timeline.');
+            alert('Upload audio, image, or video to build your timeline.');
             return;
         }
 
@@ -10131,7 +10556,7 @@ async function handleConfirmExport() {
 
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload audio, image, or video to build your timeline.');
         return;
     }
 
@@ -10322,7 +10747,7 @@ playVideoButton.addEventListener('click', () => {
 
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload audio, image, or video to build your timeline.');
         return;
     }
 
