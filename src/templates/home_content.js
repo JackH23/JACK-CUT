@@ -8959,13 +8959,6 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             settingsOverride: animationSettings,
         });
         const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
-        const comboCycleDuration = Number.isFinite(exitConfig?.combo?.combinedDuration)
-            ? exitConfig.combo.combinedDuration
-            : null;
-        const exitPlaybackWindow = comboCycleDuration && comboCycleDuration > 0
-            ? Math.min(safeEffectiveDuration, Math.max(comboCycleDuration, exitWindow))
-            : safeEffectiveDuration;
-
         setPreviewMode('has-image');
         previewVideo.pause();
         previewVideo.hidden = true;
@@ -9014,9 +9007,8 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 return didAnimate;
             };
 
-            const exitStartOffset = exitConfig ? Math.max(0, exitPlaybackWindow - exitWindow) : 0;
-            const exitStartSlack = exitConfig
-                ? Math.min(120, Math.round(Math.max(exitWindow, safeEffectiveDuration) * 0.1))
+            const exitStartOffset = exitConfig
+                ? Math.max(0, safeEffectiveDuration - exitWindow)
                 : 0;
 
             const step = () => {
@@ -9034,7 +9026,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
 
                 if (exitConfig && !exitAnimationRequested) {
                     const shouldStartExit = safeEffectiveDuration === 0
-                        || (elapsed + exitStartSlack) >= exitStartOffset;
+                        || elapsed >= exitStartOffset;
                     if (shouldStartExit) {
                         startExitAnimation();
                     }
