@@ -6228,6 +6228,28 @@ function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight, 
     };
 }
 
+function isClipActiveAtTime(descriptor, timeMs) {
+    if (!descriptor) {
+        return false;
+    }
+
+    const { start, end } = descriptor;
+
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        return false;
+    }
+
+    if (end <= start) {
+        return false;
+    }
+
+    if (!Number.isFinite(timeMs)) {
+        return false;
+    }
+
+    return timeMs >= start && timeMs < end;
+}
+
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
@@ -6258,8 +6280,16 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const defaultTimelineNow = primaryDuration > 0
         ? primaryStartTime + (primaryDuration * primaryProgress)
         : primaryStartTime;
-    const timelineNowCandidate = isTimelinePlaying
+    const playbackTimestamp = Number.isFinite(playbackDisplayCurrentMs)
         ? playbackDisplayCurrentMs
+        : null;
+    const primaryRangeEnd = primaryStartTime + primaryDuration;
+    const endTolerance = Math.max(1, Math.round(primaryDuration * 0.01));
+    const playbackWithinPrimary = playbackTimestamp !== null
+        && playbackTimestamp >= primaryStartTime
+        && playbackTimestamp <= (primaryRangeEnd + endTolerance);
+    const timelineNowCandidate = (isTimelinePlaying || playbackWithinPrimary) && playbackTimestamp !== null
+        ? playbackTimestamp
         : defaultTimelineNow;
     const safeTimelineNow = Number.isFinite(timelineNowCandidate)
         ? timelineNowCandidate
@@ -6288,19 +6318,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
-        .filter((descriptor) => {
-            const { start, end } = descriptor;
-            if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-                return false;
-            }
-            if (safeTimelineNow < start) {
-                return false;
-            }
-            if (safeTimelineNow >= end) {
-                return false;
-            }
-            return true;
-        });
+        .filter((descriptor) => isClipActiveAtTime(descriptor, safeTimelineNow));
 
     if (!overlayEntries.length) {
         return;
@@ -7795,6 +7813,8 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     if (resetButton) {
         playVideoButton.textContent = 'Play Back';
     }
+
+    refreshActiveOverlayLayers();
 }
 
 function clearPreview() {
