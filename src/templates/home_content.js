@@ -3328,7 +3328,12 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
     playbackDisplayCurrentMs = Math.max(0, Math.floor(Number(currentMs) || 0));
     playbackDisplayTotalMs = Math.max(0, Math.floor(Number(totalMs) || 0));
 
+    const shouldRefreshOverlay = isTimelinePlaying && activeTimelineItem;
+
     if (!playbackTimeDisplay) {
+        if (shouldRefreshOverlay) {
+            refreshActiveOverlayLayers();
+        }
         return;
     }
 
@@ -3336,6 +3341,10 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
     playbackTimeDisplay.textContent = `${formatTime(clampedCurrent)} / ${formatTime(playbackDisplayTotalMs)}`;
     playbackTimeDisplay.dataset.current = String(clampedCurrent);
     playbackTimeDisplay.dataset.total = String(playbackDisplayTotalMs);
+
+    if (shouldRefreshOverlay) {
+        refreshActiveOverlayLayers();
+    }
 }
 
 function formatSecondsLabel(durationMs) {
@@ -6246,10 +6255,15 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const primaryStartTime = getTimelineItemStartTime(primaryTimelineItem);
     const primaryDuration = Math.max(0, getTimelineItemPlaybackDuration(primaryTimelineItem));
     const primaryProgress = getActiveClipProgress();
-    const timelineNow = primaryDuration > 0
+    const defaultTimelineNow = primaryDuration > 0
         ? primaryStartTime + (primaryDuration * primaryProgress)
         : primaryStartTime;
-    const safeTimelineNow = Number.isFinite(timelineNow) ? timelineNow : primaryStartTime;
+    const timelineNowCandidate = isTimelinePlaying
+        ? playbackDisplayCurrentMs
+        : defaultTimelineNow;
+    const safeTimelineNow = Number.isFinite(timelineNowCandidate)
+        ? timelineNowCandidate
+        : defaultTimelineNow;
 
     const overlayEntries = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
@@ -6273,7 +6287,20 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             };
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
-        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'));
+        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
+        .filter((descriptor) => {
+            const { start, end } = descriptor;
+            if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+                return false;
+            }
+            if (safeTimelineNow < start) {
+                return false;
+            }
+            if (safeTimelineNow >= end) {
+                return false;
+            }
+            return true;
+        });
 
     if (!overlayEntries.length) {
         return;
@@ -7493,6 +7520,7 @@ function setTimelineProgressForActiveClip(progress) {
     resetTimelineProgressLine(fraction);
     updatePlaybackTimeDisplay(targetTime, totalDuration);
     renderExportSummary(getTimelineItems(), null);
+    refreshActiveOverlayLayers();
 }
 
 function applyActiveImageKeyframe(options = {}) {
@@ -7536,6 +7564,7 @@ function setActiveClipProgress(progress, options = {}) {
         updateKeyframeTrackPlayhead(0);
         updateActiveKeyframeMarker(0);
         updateImageRotationControlState();
+        refreshActiveOverlayLayers();
         return;
     }
 
@@ -7553,6 +7582,8 @@ function setActiveClipProgress(progress, options = {}) {
     } else {
         updateImageRotationControlState();
     }
+
+    refreshActiveOverlayLayers();
 }
 
 function createActiveTimelineKeyframe(progressOverride = null) {
