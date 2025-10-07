@@ -6668,7 +6668,36 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => descriptor.intersectsWindow);
 
+        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    let hasRecentOverlayLayers = false;
+    activeOverlayLayers.forEach((entry) => {
+        if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
+            return;
+        }
+        const lastTime = Number(entry.lastTimelineTime);
+        if (!Number.isFinite(lastTime)) {
+            return;
+        }
+        const age = Math.abs(safeTimelineNow - lastTime);
+        if (age <= recentOverlayHoldThreshold) {
+            hasRecentOverlayLayers = true;
+        }
+    });
+
     if (!overlayEntries.length) {
+
+        if (hasRecentOverlayLayers) {
+            activeOverlayLayers.forEach((entry) => {
+                if (!entry || !entry.isVisible) {
+                    return;
+                }
+                entry.lastTimelineTime = safeTimelineNow;
+                entry.opacity = computeOverlayEntryOpacity(entry);
+            });
+            lastOverlayRenderTimestamp = safeTimelineNow;
+            return;
+        }
+        
         clearPreviewOverlayLayers();
         return;
     }
