@@ -23,6 +23,7 @@ const previewOverlayGroups = previewOverlayStack
         above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
     }
     : null;
+const activeOverlayLayers = new Map();
 const overlayLayerToTimelineItem = new WeakMap();
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
@@ -6165,13 +6166,21 @@ function clearPreviewOverlayLayers() {
         return;
     }
 
+    activeOverlayLayers.forEach((entry) => {
+        if (entry && entry.layer) {
+            overlayLayerToTimelineItem.delete(entry.layer);
+            entry.layer.remove();
+        }
+    });
+    activeOverlayLayers.clear();
+
     if (previewOverlayGroups) {
         const { below, above } = previewOverlayGroups;
         if (below) {
-            below.innerHTML = '';
+            below.textContent = '';
         }
         if (above) {
-            above.innerHTML = '';
+            above.textContent = '';
         }
     }
 
@@ -6259,9 +6268,8 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         return;
     }
 
-    clearPreviewOverlayLayers();
-
     if (!primaryTimelineItem) {
+        clearPreviewOverlayLayers();
         return;
     }
 
@@ -6270,6 +6278,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const viewportHeight = Math.max(0, viewportSize.height || 0);
 
     if (viewportWidth === 0 || viewportHeight === 0) {
+        clearPreviewOverlayLayers();
         return;
     }
 
@@ -6321,6 +6330,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         .filter((descriptor) => isClipActiveAtTime(descriptor, safeTimelineNow));
 
     if (!overlayEntries.length) {
+        clearPreviewOverlayLayers();
         return;
     }
 
@@ -6355,33 +6365,65 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
     const { below, above } = previewOverlayGroups;
 
-    const createLayerForDescriptor = (descriptor, zIndex) => {
-        const objectURL = descriptor.item.dataset.objectUrl || '';
-        if (!objectURL) {
-            return null;
+    if (!below && !above) {
+        clearPreviewOverlayLayers();
+        return;
+    }
+
+    const nextActiveItems = new Set();
+
+    const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
+        if (!container || !descriptor || !descriptor.item) {
+            return false;
         }
 
-        const layer = document.createElement('div');
+        const objectURL = descriptor.item.dataset.objectUrl || '';
+        if (!objectURL) {
+            return false;
+        }
+
+        let entry = activeOverlayLayers.get(descriptor.item);
+        if (!entry || !entry.layer || !entry.image) {
+            const layer = document.createElement('div');
+            layer.className = 'preview-overlay-layer';
+            const image = document.createElement('img');
+            try {
+                image.decoding = 'async';
+            } catch (error) {
+                // Ignore unsupported decoding hint.
+            }
+            image.loading = 'eager';
+            image.draggable = false;
+            layer.appendChild(image);
+            entry = {
+                layer,
+                image,
+                objectURL: '',
+            };
+            activeOverlayLayers.set(descriptor.item, entry);
+        }
+
+        const { layer, image } = entry;
+
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
         layer.style.zIndex = String(zIndex);
 
         if (borderRadius > 0) {
             layer.style.borderRadius = `${borderRadius}px`;
+        } else {
+            layer.style.removeProperty('border-radius');
         }
 
-        const image = document.createElement('img');
-        image.src = objectURL;
+        if (entry.objectURL !== objectURL) {
+            image.src = objectURL;
+            entry.objectURL = objectURL;
+        }
+
         image.alt = descriptor.item.dataset.displayName
             || descriptor.item.querySelector('span')?.textContent
             || 'Overlay layer';
-        try {
-            image.decoding = 'async';
-        } catch (error) {
-            // Ignore unsupported decoding hint.
-        }
-        image.loading = 'lazy';
-        image.draggable = false;
+        layer.title = image.alt;
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -6394,6 +6436,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             viewportHeight,
             { normalizedTransform },
         );
+
         if (frame) {
             layer.style.left = `${frame.left}px`;
             layer.style.top = `${frame.top}px`;
@@ -6409,18 +6452,22 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             image.style.setProperty('--preview-overlay-rotation', '0deg');
         }
 
-        layer.appendChild(image);
-        layer.title = image.alt;
+        if (layer.parentElement !== container) {
+            container.appendChild(layer);
+        } else {
+            container.appendChild(layer);
+        }
+
         overlayLayerToTimelineItem.set(layer, descriptor.item);
-        return layer;
+
+        return true;
     };
 
     if (overlayGroups.below.length && below) {
         overlayGroups.below.forEach((descriptor, index) => {
             const zIndex = 10 + overlayGroups.below.length - index;
-            const layer = createLayerForDescriptor(descriptor, zIndex);
-            if (layer) {
-                below.appendChild(layer);
+            if (renderDescriptorIntoContainer(descriptor, zIndex, below)) {
+                nextActiveItems.add(descriptor.item);
             }
         });
     }
@@ -6428,18 +6475,35 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     if (overlayGroups.above.length && above) {
         overlayGroups.above.forEach((descriptor, index) => {
             const zIndex = 60 + (overlayGroups.above.length - index);
-            const layer = createLayerForDescriptor(descriptor, zIndex);
-            if (layer) {
-                above.appendChild(layer);
+            if (renderDescriptorIntoContainer(descriptor, zIndex, above)) {
+                nextActiveItems.add(descriptor.item);
             }
         });
     }
+
+    const staleItems = [];
+    activeOverlayLayers.forEach((entry, item) => {
+        if (!nextActiveItems.has(item)) {
+            staleItems.push(item);
+        }
+    });
+    staleItems.forEach((item) => {
+        const entry = activeOverlayLayers.get(item);
+        if (entry && entry.layer) {
+            overlayLayerToTimelineItem.delete(entry.layer);
+            entry.layer.remove();
+        }
+        activeOverlayLayers.delete(item);
+    });
 
     const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
 
     if (hasLayers) {
         previewOverlayStack.removeAttribute('hidden');
         previewOverlayStack.setAttribute('aria-hidden', 'false');
+    } else {
+        previewOverlayStack.setAttribute('hidden', '');
+        previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
 }
 
