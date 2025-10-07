@@ -6351,6 +6351,46 @@ function isClipActiveAtTime(descriptor, timeMs) {
     return timeMs >= start && timeMs < end;
 }
 
+function computeOverlayEntryOpacity(entry) {
+    if (!entry || !entry.layer || !entry.image) {
+        return 1;
+    }
+
+    if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
+        return 0;
+    }
+
+    if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+        return 1;
+    }
+
+    let opacity = 1;
+
+    const layerStyle = window.getComputedStyle(entry.layer);
+    if (layerStyle) {
+        if (layerStyle.display === 'none' || layerStyle.visibility === 'hidden') {
+            return 0;
+        }
+        const parsedLayerOpacity = Number.parseFloat(layerStyle.opacity);
+        if (Number.isFinite(parsedLayerOpacity)) {
+            opacity *= clamp(parsedLayerOpacity, 0, 1);
+        }
+    }
+
+    const imageStyle = window.getComputedStyle(entry.image);
+    if (imageStyle) {
+        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
+            return 0;
+        }
+        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
+        if (Number.isFinite(parsedImageOpacity)) {
+            opacity *= clamp(parsedImageOpacity, 0, 1);
+        }
+    }
+
+    return clamp(opacity, 0, 1);
+}
+
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
@@ -6638,17 +6678,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
         const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
 
-        let layerOpacity = 1;
-        if (window && typeof window.getComputedStyle === 'function') {
-            const computedLayerStyle = window.getComputedStyle(layer);
-            if (computedLayerStyle) {
-                const parsedOpacity = Number.parseFloat(computedLayerStyle.opacity);
-                if (Number.isFinite(parsedOpacity)) {
-                    layerOpacity = clamp(parsedOpacity, 0, 1);
-                }
-            }
-        }
-
         if (frame) {
             layer.style.left = `${frame.left}px`;
             layer.style.top = `${frame.top}px`;
@@ -6671,6 +6700,8 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         }
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
+
+        const layerOpacity = computeOverlayEntryOpacity(entry);
 
         entry.frame = resolvedFrame;
         entry.isVisible = true;
@@ -6696,6 +6727,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
+                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -6715,6 +6747,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
+                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -6771,6 +6804,12 @@ function getActiveOverlayLayerSnapshots() {
 
         const { image } = entry;
         if (!image || !image.complete) {
+            return;
+        }
+
+        const liveOpacity = computeOverlayEntryOpacity(entry);
+        entry.opacity = liveOpacity;
+        if (liveOpacity <= 0) {
             return;
         }
 
