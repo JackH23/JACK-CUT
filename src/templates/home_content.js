@@ -25,6 +25,8 @@ const previewOverlayGroups = previewOverlayStack
     : null;
 const activeOverlayLayers = new Map();
 const overlayLayerToTimelineItem = new WeakMap();
+let lastOverlayRenderTimestamp = null;
+const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
@@ -6229,6 +6231,7 @@ function clearPreviewOverlayLayers() {
         entry.zIndex = 0;
         entry.borderRadius = 0;
         entry.opacity = 1;
+        entry.lastTimelineTime = null;
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
@@ -6248,6 +6251,8 @@ function clearPreviewOverlayLayers() {
 
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
+
+    lastOverlayRenderTimestamp = null;
 }
 
 function resolveLaneIndex(laneValue) {
@@ -6297,6 +6302,31 @@ function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight, 
         height,
         rotation,
     };
+}
+
+function doesClipIntersectWindow(descriptor, windowStart, windowEnd) {
+    if (!descriptor) {
+        return false;
+    }
+
+    const { start, end } = descriptor;
+
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        return false;
+    }
+
+    if (end <= start) {
+        return false;
+    }
+
+    if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
+        return false;
+    }
+
+    const safeWindowStart = Math.min(windowStart, windowEnd);
+    const safeWindowEnd = Math.max(windowStart, windowEnd);
+
+    return end > safeWindowStart && start < safeWindowEnd;
 }
 
 function isClipActiveAtTime(descriptor, timeMs) {
@@ -6366,6 +6396,24 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         ? timelineNowCandidate
         : defaultTimelineNow;
 
+    const previousTimelineNow = Number.isFinite(lastOverlayRenderTimestamp)
+        ? lastOverlayRenderTimestamp
+        : null;
+    const timelineDelta = previousTimelineNow !== null
+        ? Math.abs(safeTimelineNow - previousTimelineNow)
+        : 0;
+    const usePreviousWindow = previousTimelineNow !== null
+        && timelineDelta > 0
+        && timelineDelta <= (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 4);
+    const timelineWindowStart = usePreviousWindow
+        ? Math.min(previousTimelineNow, safeTimelineNow)
+        : safeTimelineNow;
+    const timelineWindowEnd = usePreviousWindow
+        ? Math.max(previousTimelineNow, safeTimelineNow)
+        : safeTimelineNow;
+    const expandedWindowStart = timelineWindowStart - OVERLAY_TIMELINE_WINDOW_SLACK_MS;
+    const expandedWindowEnd = timelineWindowEnd + OVERLAY_TIMELINE_WINDOW_SLACK_MS;
+
     const overlayEntries = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {
@@ -6380,16 +6428,31 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 const fallbackDuration = Math.max(0, getTimelineItemPlaybackDuration(entry.item));
                 end = start + fallbackDuration;
             }
-            return {
+            const descriptor = {
                 item: entry.item,
                 laneIndex,
                 start,
                 end,
             };
+            descriptor.isActive = isClipActiveAtTime(descriptor, safeTimelineNow);
+            descriptor.intersectsWindow = doesClipIntersectWindow(
+                descriptor,
+                expandedWindowStart,
+                expandedWindowEnd,
+            );
+            if (descriptor.isActive) {
+                descriptor.sampleTime = safeTimelineNow;
+            } else {
+                const clamped = Math.min(Math.max(safeTimelineNow, start), end);
+                descriptor.sampleTime = Number.isFinite(clamped)
+                    ? clamped
+                    : safeTimelineNow;
+            }
+            return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
-        .filter((descriptor) => isClipActiveAtTime(descriptor, safeTimelineNow));
+        .filter((descriptor) => descriptor.intersectsWindow);
 
     if (!overlayEntries.length) {
         clearPreviewOverlayLayers();
@@ -6435,7 +6498,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const nextActiveItems = new Set();
 
     const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
-        if (!container || !descriptor || !descriptor.item) {
+        if (!container || !descriptor || !descriptor.item || !descriptor.isActive) {
             return false;
         }
 
@@ -6467,6 +6530,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 zIndex: 0,
                 borderRadius: 0,
                 opacity: 1,
+                lastTimelineTime: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -6563,12 +6627,16 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         entry.zIndex = zIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
+        entry.lastTimelineTime = safeTimelineNow;
 
         return true;
     };
 
     if (overlayGroups.below.length && below) {
         overlayGroups.below.forEach((descriptor, index) => {
+            if (!descriptor.isActive) {
+                return;
+            }
             const zIndex = 10 + overlayGroups.below.length - index;
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
             if (rendered) {
@@ -6578,12 +6646,16 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 nextActiveItems.add(descriptor.item);
+                fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
         });
     }
 
     if (overlayGroups.above.length && above) {
         overlayGroups.above.forEach((descriptor, index) => {
+            if (!descriptor.isActive) {
+                return;
+            }
             const zIndex = 60 + (overlayGroups.above.length - index);
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
             if (rendered) {
@@ -6593,6 +6665,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 nextActiveItems.add(descriptor.item);
+                fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
         });
     }
@@ -6616,6 +6689,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             entry.zIndex = 0;
             entry.borderRadius = 0;
             entry.opacity = 1;
+            entry.lastTimelineTime = null;
         }
         activeOverlayLayers.delete(item);
     });
@@ -6629,6 +6703,8 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         previewOverlayStack.setAttribute('hidden', '');
         previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
+
+    lastOverlayRenderTimestamp = safeTimelineNow;
 }
 
 function getActiveOverlayLayerSnapshots() {
@@ -6638,6 +6714,13 @@ function getActiveOverlayLayerSnapshots() {
     activeOverlayLayers.forEach((entry) => {
         if (!entry || !entry.isVisible || !entry.frame) {
             return;
+        }
+
+        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
+            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
+            if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
+                return;
+            }
         }
 
         const { image } = entry;
