@@ -235,6 +235,13 @@ const ENTRANCE_ANIMATION_CLASS_NAMES = Object.values(ENTRANCE_ANIMATION_PRESETS)
 );
 
 const COMBO_ENTRANCE_PRESETS = {
+    none: {
+        key: 'none',
+        className: '',
+        baseDuration: 0,
+        minDuration: 0,
+        easing: 'linear',
+    },
     fade: {
         key: 'fade',
         className: 'preview-image--combo-enter-fade',
@@ -273,6 +280,13 @@ const COMBO_ENTRANCE_PRESETS = {
 };
 
 const COMBO_EXIT_PRESETS = {
+    none: {
+        key: 'none',
+        className: '',
+        baseDuration: 0,
+        minDuration: 0,
+        easing: 'linear',
+    },
     fade: {
         key: 'fade',
         className: 'preview-image--combo-exit-fade',
@@ -310,13 +324,13 @@ const COMBO_EXIT_PRESETS = {
     },
 };
 
-const COMBO_ENTRANCE_CLASS_NAMES = Object.values(COMBO_ENTRANCE_PRESETS).map(
-    (preset) => preset.className,
-);
+const COMBO_ENTRANCE_CLASS_NAMES = Object.values(COMBO_ENTRANCE_PRESETS)
+    .map((preset) => preset.className)
+    .filter((className) => Boolean(className));
 
-const COMBO_EXIT_CLASS_NAMES = Object.values(COMBO_EXIT_PRESETS).map(
-    (preset) => preset.className,
-);
+const COMBO_EXIT_CLASS_NAMES = Object.values(COMBO_EXIT_PRESETS)
+    .map((preset) => preset.className)
+    .filter((className) => Boolean(className));
 
 function getActiveImageClipDurationMs() {
     if (!activeTimelineItem) {
@@ -1268,17 +1282,32 @@ function computeComboAnimationDurations(entrancePreset, exitPreset, options = {}
         ? speedWindowOverride
         : getComboSpeedWindowMs();
 
-    const rawEntranceBase = Number(entrancePreset?.baseDuration) || 560;
-    const rawExitBase = Number(exitPreset?.baseDuration) || 520;
-    const rawEntranceMinimum = Number(entrancePreset?.minDuration) || 160;
-    const rawExitMinimum = Number(exitPreset?.minDuration) || 160;
+    const resolveDurationValue = (value, fallback) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+    };
+
+    const entranceIsNone = Boolean(entrancePreset?.key === 'none');
+    const exitIsNone = Boolean(exitPreset?.key === 'none');
+
+    const rawEntranceBase = resolveDurationValue(entrancePreset?.baseDuration, 560);
+    const rawExitBase = resolveDurationValue(exitPreset?.baseDuration, 520);
+    const rawEntranceMinimum = resolveDurationValue(entrancePreset?.minDuration, 160);
+    const rawExitMinimum = resolveDurationValue(exitPreset?.minDuration, 160);
 
     const minimumSegmentDuration = 80;
-    const baseEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceBase));
-    const baseExit = Math.max(minimumSegmentDuration, Math.round(rawExitBase));
-    const minimumEntrance = Math.max(minimumSegmentDuration, Math.round(rawEntranceMinimum));
-    const minimumExit = Math.max(minimumSegmentDuration, Math.round(rawExitMinimum));
-    const combinedBase = Math.max(baseEntrance + baseExit, minimumEntrance + minimumExit, 240);
+    const entranceSegmentMinimum = entranceIsNone ? 0 : minimumSegmentDuration;
+    const exitSegmentMinimum = exitIsNone ? 0 : minimumSegmentDuration;
+    const baseEntrance = Math.max(entranceSegmentMinimum, Math.round(rawEntranceBase));
+    const baseExit = Math.max(exitSegmentMinimum, Math.round(rawExitBase));
+    const minimumEntrance = Math.max(entranceSegmentMinimum, Math.round(rawEntranceMinimum));
+    const minimumExit = Math.max(exitSegmentMinimum, Math.round(rawExitMinimum));
+    const combinedFallback = entranceIsNone && exitIsNone ? 0 : 240;
+    const combinedBase = Math.max(
+        baseEntrance + baseExit,
+        minimumEntrance + minimumExit,
+        combinedFallback,
+    );
 
     let targetWindow = Math.round(combinedBase);
     if (Number.isFinite(speedWindowMs) && speedWindowMs > 0) {
@@ -1481,7 +1510,9 @@ function runPreviewImageEntranceAnimation(options = {}) {
         previewEntranceAnimationFallbackTimer = 0;
 
         previewImage.classList.remove('is-entering');
-        previewImage.classList.remove(className);
+        if (className) {
+            previewImage.classList.remove(className);
+        }
         previewImage.removeAttribute('data-enter-animation');
         previewImage.style.removeProperty('--enter-animation-delay');
         previewImage.style.removeProperty('--enter-animation-duration');
@@ -1515,7 +1546,10 @@ function runPreviewImageEntranceAnimation(options = {}) {
         finalize(false);
     }, Math.max(0, safeDelay + safeDuration + 120));
 
-    previewImage.classList.add('is-entering', className);
+    previewImage.classList.add('is-entering');
+    if (className) {
+        previewImage.classList.add(className);
+    }
 
     return true;
 }
@@ -1800,7 +1834,9 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         window.clearTimeout(previewExitAnimationFallbackTimer);
 
         previewImage.classList.remove('is-exiting');
-        previewImage.classList.remove(className);
+        if (className) {
+            previewImage.classList.remove(className);
+        }
         previewImage.removeAttribute('data-exit-animation');
         previewImage.style.removeProperty('--exit-animation-delay');
         previewImage.style.removeProperty('--exit-animation-duration');
@@ -1864,7 +1900,10 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         finalize();
     }, Math.max(0, delay + duration + restoreDelay + 120));
 
-    previewImage.classList.add('is-exiting', className);
+    previewImage.classList.add('is-exiting');
+    if (className) {
+        previewImage.classList.add(className);
+    }
 
     return true;
 }
