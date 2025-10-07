@@ -1538,12 +1538,16 @@ function runPreviewImageEntranceAnimation(options = {}) {
         finalize(false);
     };
 
+    const handleAnimationCancel = () => {
+        finalize(true);
+    };
+
     previewEntranceAnimationState = {
         cleanup: finalize,
     };
 
     previewImage.addEventListener('animationend', handleAnimationComplete, { once: true });
-    previewImage.addEventListener('animationcancel', handleAnimationComplete, { once: true });
+    previewImage.addEventListener('animationcancel', handleAnimationCancel, { once: true });
 
     previewEntranceAnimationFallbackTimer = window.setTimeout(() => {
         finalize(false);
@@ -6370,16 +6374,164 @@ function isClipActiveAtTime(descriptor, timeMs) {
     return timeMs >= start && timeMs < end;
 }
 
-function easeOverlayTransitionProgress(value) {
-    const t = clampProgress(Number(value) || 0);
-    if (t <= 0) {
+const NAMED_CUBIC_BEZIER_EASINGS = {
+    linear: [0, 0, 1, 1],
+    ease: [0.25, 0.1, 0.25, 1],
+    'ease-in': [0.42, 0, 1, 1],
+    'ease-out': [0, 0, 0.58, 1],
+    'ease-in-out': [0.42, 0, 0.58, 1],
+};
+
+const overlayEasingResolverCache = new Map();
+
+function createCubicBezierResolver(x1, y1, x2, y2) {
+    const normalizedX1 = Number.isFinite(x1) ? Math.min(Math.max(x1, 0), 1) : 0;
+    const normalizedX2 = Number.isFinite(x2) ? Math.min(Math.max(x2, 0), 1) : 1;
+    const normalizedY1 = Number.isFinite(y1) ? y1 : 0;
+    const normalizedY2 = Number.isFinite(y2) ? y2 : 1;
+
+    const kSplineTableSize = 11;
+    const sampleStep = 1 / (kSplineTableSize - 1);
+
+    const cx = 3 * normalizedX1;
+    const bx = 3 * (normalizedX2 - normalizedX1) - cx;
+    const ax = 1 - cx - bx;
+
+    const cy = 3 * normalizedY1;
+    const by = 3 * (normalizedY2 - normalizedY1) - cy;
+    const ay = 1 - cy - by;
+
+    const sampleValues = new Float32Array(kSplineTableSize);
+    for (let i = 0; i < kSplineTableSize; i += 1) {
+        const t = i * sampleStep;
+        sampleValues[i] = ((ax * t + bx) * t + cx) * t;
+    }
+
+    const sampleCurveDerivativeX = (t) => ((3 * ax * t) + (2 * bx)) * t + cx;
+    const sampleCurveY = (t) => ((ay * t + by) * t + cy) * t;
+
+    const binarySubdivide = (x, a, b) => {
+        let lower = a;
+        let upper = b;
+        let current = 0;
+        for (let i = 0; i < 10; i += 1) {
+            current = lower + ((upper - lower) / 2);
+            const estimate = ((ax * current + bx) * current + cx) * current - x;
+            if (Math.abs(estimate) < 1e-7) {
+                return current;
+            }
+            if (estimate > 0) {
+                upper = current;
+            } else {
+                lower = current;
+            }
+        }
+        return current;
+    };
+
+    const newtonRaphsonIterate = (x, guess) => {
+        let currentGuess = guess;
+        for (let i = 0; i < 6; i += 1) {
+            const slope = sampleCurveDerivativeX(currentGuess);
+            if (Math.abs(slope) < 1e-6) {
+                return currentGuess;
+            }
+            const estimate = ((ax * currentGuess + bx) * currentGuess + cx) * currentGuess - x;
+            currentGuess -= estimate / slope;
+        }
+        return currentGuess;
+    };
+
+    const getTForX = (x) => {
+        let intervalStart = 0;
+        let currentSample = 1;
+        const lastSample = kSplineTableSize - 1;
+
+        while (currentSample < lastSample && sampleValues[currentSample] <= x) {
+            intervalStart += sampleStep;
+            currentSample += 1;
+        }
+
+        currentSample -= 1;
+
+        const sampleStart = sampleValues[currentSample];
+        const sampleEnd = sampleValues[currentSample + 1];
+        const sampleDelta = sampleEnd - sampleStart;
+        let guess = intervalStart;
+        if (sampleDelta > 0) {
+            const progress = (x - sampleStart) / sampleDelta;
+            guess += progress * sampleStep;
+        }
+
+        const initialSlope = sampleCurveDerivativeX(guess);
+        if (initialSlope >= 0.001) {
+            return newtonRaphsonIterate(x, guess);
+        }
+        if (initialSlope === 0) {
+            return guess;
+        }
+        return binarySubdivide(x, intervalStart, intervalStart + sampleStep);
+    };
+
+    return (x) => {
+        if (x <= 0) {
+            return 0;
+        }
+        if (x >= 1) {
+            return 1;
+        }
+        const param = getTForX(x);
+        return sampleCurveY(param);
+    };
+}
+
+function getOverlayAnimationResolver(easing) {
+    const key = typeof easing === 'string' ? easing.trim().toLowerCase() : '';
+    if (!key) {
+        return null;
+    }
+
+    if (overlayEasingResolverCache.has(key)) {
+        return overlayEasingResolverCache.get(key);
+    }
+
+    let resolver = null;
+    const named = NAMED_CUBIC_BEZIER_EASINGS[key];
+    if (named) {
+        resolver = createCubicBezierResolver(named[0], named[1], named[2], named[3]);
+    } else if (key.startsWith('cubic-bezier')) {
+        const match = key.match(/^cubic-bezier\s*\(([^)]+)\)/);
+        if (match && match[1]) {
+            const parts = match[1].split(',').map((value) => Number.parseFloat(value.trim()));
+            if (parts.length === 4 && parts.every((value) => Number.isFinite(value))) {
+                resolver = createCubicBezierResolver(parts[0], parts[1], parts[2], parts[3]);
+            }
+        }
+    }
+
+    overlayEasingResolverCache.set(key, resolver);
+    return resolver;
+}
+
+function sampleOverlayAnimationProgress(value, easing) {
+    const progress = clampProgress(Number(value) || 0);
+    if (progress <= 0) {
         return 0;
     }
-    if (t >= 1) {
+    if (progress >= 1) {
         return 1;
     }
-    // Smoothstep for a gentle ease-in/ease-out curve that matches fade behaviour.
-    return (t * t) * (3 - (2 * t));
+
+    const resolver = getOverlayAnimationResolver(easing);
+    if (typeof resolver === 'function') {
+        const resolved = resolver(progress);
+        if (Number.isFinite(resolved)) {
+            return clampProgress(resolved);
+        }
+    }
+
+    const smooth = (progress * progress) * (3 - (2 * progress));
+    return clampProgress(smooth);
 }
 
 function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
@@ -6491,7 +6643,10 @@ function computeOverlayDescriptorOpacity(descriptor) {
             Math.max(0, Number(entranceConfig?.totalDuration) || 0),
         );
         if (entranceWindow > 0) {
-            const entranceProgress = easeOverlayTransitionProgress(elapsed / entranceWindow);
+            const entranceProgress = sampleOverlayAnimationProgress(
+                elapsed / entranceWindow,
+                entranceConfig?.easing,
+            );
             opacity *= entranceProgress;
         } else if (elapsed <= 0) {
             opacity *= 0;
@@ -6531,8 +6686,9 @@ function computeOverlayDescriptorOpacity(descriptor) {
                 if (effectiveDuration <= 0 && windowOffset > effectiveDelay) {
                     opacity = 0;
                 } else if (effectiveDuration > 0 && windowOffset > effectiveDelay) {
-                    const exitProgress = easeOverlayTransitionProgress(
+                    const exitProgress = sampleOverlayAnimationProgress(
                         (windowOffset - effectiveDelay) / effectiveDuration,
+                        exitConfig?.easing,
                     );
                     opacity *= 1 - exitProgress;
                 }

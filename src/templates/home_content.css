@@ -1662,9 +1662,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     --exit-animation-delay: 0ms;
     --exit-animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 0;
-    transform: rotate(var(--preview-image-rotation, 0deg));
+    transform: rotate(var(--preview-image-rotation, 0deg)) translateZ(0);
     transition: opacity 180ms ease;
     will-change: transform, opacity;
+    backface-visibility: hidden;
 }
 
 .preview-image-layer img.is-visible {
@@ -1682,10 +1683,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .preview-image-layer img.is-exiting {
     pointer-events: none;
-    animation-fill-mode: forwards;
+    animation-fill-mode: both;
     animation-duration: var(--exit-animation-duration, 520ms);
     animation-delay: var(--exit-animation-delay, 0ms);
     animation-timing-function: var(--exit-animation-easing, cubic-bezier(0.4, 0, 0.2, 1));
+    transition: none;
 }
 
 .preview-image-layer img.preview-image--enter-fade.is-entering {
@@ -1950,8 +1952,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     height: 100%;
     object-fit: cover;
     display: block;
-    transform: rotate(var(--preview-overlay-rotation, 0deg));
+    transform: rotate(var(--preview-overlay-rotation, 0deg)) translateZ(0);
     pointer-events: none;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
 }
 
 .preview-image-layer {
