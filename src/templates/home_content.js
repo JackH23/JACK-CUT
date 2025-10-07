@@ -3265,6 +3265,16 @@ function startPreviewMirroring(width, height) {
         exportMirrorContext.fillStyle = '#000000';
         exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
 
+        const viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
+        const viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
+        const overlaySnapshots = (viewportWidth > 0 && viewportHeight > 0)
+            ? getActiveOverlayLayerSnapshots()
+            : [];
+
+        if (overlaySnapshots.length) {
+            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
+        }
+
         if (!previewVideo.hidden && previewVideo.readyState >= 2) {
             const dimensions = computeContainDimensions(
                 previewVideo.videoWidth,
@@ -3309,6 +3319,10 @@ function startPreviewMirroring(width, height) {
                 exportMirrorCanvas.width / 2,
                 exportMirrorCanvas.height / 2,
             );
+        }
+
+        if (overlaySnapshots.length) {
+            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
         }
 
         rafId = window.requestAnimationFrame(drawFrame);
@@ -6167,7 +6181,16 @@ function clearPreviewOverlayLayers() {
     }
 
     activeOverlayLayers.forEach((entry) => {
-        if (entry && entry.layer) {
+        if (!entry) {
+            return;
+        }
+        entry.isVisible = false;
+        entry.frame = null;
+        entry.layerGroup = null;
+        entry.zIndex = 0;
+        entry.borderRadius = 0;
+        entry.opacity = 1;
+        if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
@@ -6399,6 +6422,12 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 layer,
                 image,
                 objectURL: '',
+                frame: null,
+                isVisible: false,
+                layerGroup: null,
+                zIndex: 0,
+                borderRadius: 0,
+                opacity: 1,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -6437,6 +6466,35 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             { normalizedTransform },
         );
 
+        const resolvedFrame = frame
+            ? {
+                left: frame.left,
+                top: frame.top,
+                width: frame.width,
+                height: frame.height,
+                rotation: Number.isFinite(frame.rotation) ? frame.rotation : 0,
+            }
+            : {
+                left: 0,
+                top: 0,
+                width: viewportWidth,
+                height: viewportHeight,
+                rotation: 0,
+            };
+
+        const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
+
+        let layerOpacity = 1;
+        if (window && typeof window.getComputedStyle === 'function') {
+            const computedLayerStyle = window.getComputedStyle(layer);
+            if (computedLayerStyle) {
+                const parsedOpacity = Number.parseFloat(computedLayerStyle.opacity);
+                if (Number.isFinite(parsedOpacity)) {
+                    layerOpacity = clamp(parsedOpacity, 0, 1);
+                }
+            }
+        }
+
         if (frame) {
             layer.style.left = `${frame.left}px`;
             layer.style.top = `${frame.top}px`;
@@ -6460,13 +6518,26 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
 
+        entry.frame = resolvedFrame;
+        entry.isVisible = true;
+        entry.layerGroup = groupName;
+        entry.zIndex = zIndex;
+        entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
+        entry.opacity = layerOpacity;
+
         return true;
     };
 
     if (overlayGroups.below.length && below) {
         overlayGroups.below.forEach((descriptor, index) => {
             const zIndex = 10 + overlayGroups.below.length - index;
-            if (renderDescriptorIntoContainer(descriptor, zIndex, below)) {
+            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
+            if (rendered) {
+                nextActiveItems.add(descriptor.item);
+                return;
+            }
+            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            if (fallbackEntry?.isVisible) {
                 nextActiveItems.add(descriptor.item);
             }
         });
@@ -6475,7 +6546,13 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     if (overlayGroups.above.length && above) {
         overlayGroups.above.forEach((descriptor, index) => {
             const zIndex = 60 + (overlayGroups.above.length - index);
-            if (renderDescriptorIntoContainer(descriptor, zIndex, above)) {
+            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
+            if (rendered) {
+                nextActiveItems.add(descriptor.item);
+                return;
+            }
+            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            if (fallbackEntry?.isVisible) {
                 nextActiveItems.add(descriptor.item);
             }
         });
@@ -6493,6 +6570,14 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
+        if (entry) {
+            entry.isVisible = false;
+            entry.frame = null;
+            entry.layerGroup = null;
+            entry.zIndex = 0;
+            entry.borderRadius = 0;
+            entry.opacity = 1;
+        }
         activeOverlayLayers.delete(item);
     });
 
@@ -6505,6 +6590,128 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         previewOverlayStack.setAttribute('hidden', '');
         previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
+}
+
+function getActiveOverlayLayerSnapshots() {
+    const snapshots = [];
+    const groupPriority = { below: 0, above: 1 };
+
+    activeOverlayLayers.forEach((entry) => {
+        if (!entry || !entry.isVisible || !entry.frame) {
+            return;
+        }
+
+        const { image } = entry;
+        if (!image || !image.complete) {
+            return;
+        }
+
+        const naturalWidth = Math.max(0, image.naturalWidth || 0);
+        const naturalHeight = Math.max(0, image.naturalHeight || 0);
+        if (naturalWidth <= 0 || naturalHeight <= 0) {
+            return;
+        }
+
+        const frameWidth = Math.max(0, entry.frame.width || 0);
+        const frameHeight = Math.max(0, entry.frame.height || 0);
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            return;
+        }
+
+        const group = entry.layerGroup === 'below' ? 'below' : 'above';
+
+        snapshots.push({
+            image,
+            frame: {
+                left: entry.frame.left,
+                top: entry.frame.top,
+                width: frameWidth,
+                height: frameHeight,
+                rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+            },
+            group,
+            zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
+            borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
+            opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+            priority: groupPriority[group] ?? 1,
+        });
+    });
+
+    snapshots.sort((a, b) => {
+        if (a.priority !== b.priority) {
+            return a.priority - b.priority;
+        }
+        if (a.zIndex !== b.zIndex) {
+            return a.zIndex - b.zIndex;
+        }
+        return 0;
+    });
+
+    return snapshots;
+}
+
+function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, viewportHeight) {
+    if (!Array.isArray(snapshots) || !snapshots.length) {
+        return;
+    }
+
+    const canvasWidth = Math.max(1, exportMirrorCanvas.width);
+    const canvasHeight = Math.max(1, exportMirrorCanvas.height);
+    const scaleX = viewportWidth > 0 ? canvasWidth / viewportWidth : 0;
+    const scaleY = viewportHeight > 0 ? canvasHeight / viewportHeight : 0;
+
+    if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+        return;
+    }
+
+    snapshots
+        .filter((snapshot) => snapshot.group === group)
+        .forEach((snapshot) => {
+            const { image, frame } = snapshot;
+            if (!frame || frame.width <= 0 || frame.height <= 0) {
+                return;
+            }
+
+            const naturalWidth = Math.max(1, image.naturalWidth || 0);
+            const naturalHeight = Math.max(1, image.naturalHeight || 0);
+            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
+                return;
+            }
+
+            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
+            if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                return;
+            }
+
+            const rotationRadians = Number.isFinite(frame.rotation)
+                ? (frame.rotation * Math.PI) / 180
+                : 0;
+
+            exportMirrorContext.save();
+            exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+            exportMirrorContext.translate(frame.left + (frame.width / 2), frame.top + (frame.height / 2));
+            if (rotationRadians !== 0) {
+                exportMirrorContext.rotate(rotationRadians);
+            }
+            exportMirrorContext.translate(-(frame.width / 2), -(frame.height / 2));
+
+            const radius = Math.max(0, snapshot.borderRadius || 0);
+            if (radius > 0) {
+                clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
+                exportMirrorContext.clip();
+            }
+
+            const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
+            exportMirrorContext.globalAlpha *= clampedOpacity;
+
+            const drawWidth = naturalWidth * drawScale;
+            const drawHeight = naturalHeight * drawScale;
+            const offsetX = (frame.width - drawWidth) / 2;
+            const offsetY = (frame.height - drawHeight) / 2;
+
+            exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+            exportMirrorContext.restore();
+        });
 }
 
 function onPreviewOverlayPointerDown(event) {
