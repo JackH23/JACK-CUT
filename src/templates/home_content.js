@@ -1625,6 +1625,7 @@ let previewExitAnimationFallbackTimer = 0;
 let previewExitAnimationState = {
     cleanup: null,
     restoreOnComplete: false,
+    completionPromise: null,
 };
 
 function prefersReducedMotion() {
@@ -1759,6 +1760,7 @@ function cancelPreviewExitAnimation(options = {}) {
         previewExitAnimationState = {
             cleanup: null,
             restoreOnComplete: false,
+            completionPromise: null,
         };
     } else if (forceRestore && previewImage && !previewImage.hidden) {
         previewImage.classList.add('is-visible');
@@ -1813,6 +1815,10 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
 
     let completed = false;
     let wasCancelled = false;
+    let resolveCompletion = null;
+    const completionPromise = new Promise((resolve) => {
+        resolveCompletion = resolve;
+    });
 
     const applyRestore = () => {
         if (!previewImage || previewImage.hidden) {
@@ -1854,6 +1860,11 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
             }
         }
 
+        if (resolveCompletion) {
+            resolveCompletion({ cancelled: wasCancelled, config });
+            resolveCompletion = null;
+        }
+
         if (!wasCancelled && typeof onComplete === 'function') {
             try {
                 onComplete(config);
@@ -1861,6 +1872,12 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
                 console.error('Error executing exit animation completion callback.', error);
             }
         }
+
+        previewExitAnimationState = {
+            cleanup: null,
+            restoreOnComplete: false,
+            completionPromise: null,
+        };
     };
 
     previewExitAnimationState = {
@@ -1871,6 +1888,7 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
             finalize(forceRestoreParam);
         },
         restoreOnComplete,
+        completionPromise,
     };
 
     if (prefersReducedMotion()) {
@@ -9245,6 +9263,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             let animationFrameId = 0;
             let exitAnimationRequested = false;
             let exitAnimationStarted = false;
+            let exitAnimationCompletion = null;
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -9253,24 +9272,29 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
             };
 
-            const startExitAnimation = (options = {}) => {
+            const getExitAnimationCompletion = () => previewExitAnimationState?.completionPromise || null;
+
+            const startExitAnimation = () => {
                 if (!exitConfig) {
+                    exitAnimationCompletion = null;
                     return false;
                 }
 
-                const force = options.force === true;
-                if (!force && exitAnimationRequested) {
+                if (exitAnimationRequested) {
+                    exitAnimationCompletion = getExitAnimationCompletion() || exitAnimationCompletion;
                     return exitAnimationStarted;
                 }
 
                 exitAnimationRequested = true;
                 const didAnimate = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
 
-                if (!didAnimate && !force) {
+                exitAnimationStarted = exitAnimationStarted || didAnimate;
+                exitAnimationCompletion = didAnimate ? (getExitAnimationCompletion() || null) : null;
+
+                if (!didAnimate) {
                     exitAnimationRequested = false;
                 }
 
-                exitAnimationStarted = exitAnimationStarted || didAnimate;
                 return didAnimate;
             };
 
@@ -9307,24 +9331,36 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
             animationFrameId = window.requestAnimationFrame(step);
 
             if (exitConfig && safeEffectiveDuration === 0) {
-                startExitAnimation({ force: true });
+                startExitAnimation();
             }
 
             const timeoutId = window.setTimeout(() => {
                 if (resolved) {
                     return;
                 }
-                resolved = true;
-                startExitAnimation({ force: true });
+                startExitAnimation();
                 stopAnimation();
                 const finalProgress = clipDuration > 0
                     ? clampProgress(safeEffectiveDuration / clipDuration)
                     : 1;
                 setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
-                if (timelinePlaybackAbort === abortPlayback) {
-                    timelinePlaybackAbort = null;
+                const finalizePlayback = () => {
+                    if (resolved) {
+                        return;
+                    }
+                    resolved = true;
+                    if (timelinePlaybackAbort === abortPlayback) {
+                        timelinePlaybackAbort = null;
+                    }
+                    exitAnimationCompletion = null;
+                    resolve();
+                };
+                const completion = exitAnimationCompletion || getExitAnimationCompletion();
+                if (completion && typeof completion.finally === 'function') {
+                    completion.finally(finalizePlayback);
+                } else {
+                    finalizePlayback();
                 }
-                resolve();
             }, Math.max(0, Math.round(safeEffectiveDuration)));
 
             const abortPlayback = () => {
@@ -9336,6 +9372,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 stopAnimation();
                 cancelPreviewExitAnimation({ forceRestore: true });
                 timelinePlaybackAbort = null;
+                exitAnimationCompletion = null;
                 resolve();
             };
 
