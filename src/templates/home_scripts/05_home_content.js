@@ -1177,7 +1177,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const expandedWindowStart = timelineWindowStart - OVERLAY_TIMELINE_WINDOW_SLACK_MS;
     const expandedWindowEnd = timelineWindowEnd + OVERLAY_TIMELINE_WINDOW_SLACK_MS;
 
-    const overlayEntries = (Array.isArray(entries) ? entries : [])
+    const overlayDescriptors = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {
             const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);

@@ -11,10 +11,48 @@
             return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
-        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
-        .filter((descriptor) => descriptor.intersectsWindow);
+        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'));
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    overlayDescriptors.forEach((descriptor) => {
+        if (!descriptor) {
+            return;
+        }
+
+        const { start, end } = descriptor;
+        const duration = Number.isFinite(end) && Number.isFinite(start)
+            ? Math.max(0, end - start)
+            : 0;
+
+        descriptor.clipDuration = duration;
+
+        const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+        descriptor.animationSettings = animationSettings;
+        descriptor.exitConfig = duration > 0
+            ? getPreviewImageExitConfig({
+                clipDurationMs: duration,
+                settingsOverride: animationSettings,
+            })
+            : null;
+
+        if (duration === 0) {
+            descriptor.progress = 0;
+            descriptor.shouldRender = descriptor.isActive;
+            return;
+        }
+
+        const relativeTime = (safeTimelineNow - start) / duration;
+        descriptor.progress = Number.isFinite(relativeTime)
+            ? clampProgress(relativeTime)
+            : 0;
+        descriptor.shouldRender = descriptor.isActive
+            || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+    });
+
+    const overlayEntries = overlayDescriptors.filter(
+        (descriptor) => descriptor && (descriptor.shouldRender || descriptor.intersectsWindow),
+    );
+
+    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -47,38 +85,6 @@
         clearPreviewOverlayLayers();
         return;
     }
-
-    overlayEntries.forEach((descriptor) => {
-        const { start, end } = descriptor;
-        const duration = Number.isFinite(end) && Number.isFinite(start)
-            ? Math.max(0, end - start)
-            : 0;
-
-        descriptor.clipDuration = duration;
-
-        const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
-        descriptor.animationSettings = animationSettings;
-        descriptor.exitConfig = duration > 0
-            ? getPreviewImageExitConfig({
-                clipDurationMs: duration,
-                settingsOverride: animationSettings,
-            })
-            : null;
-
-        if (duration === 0) {
-            descriptor.progress = 0;
-            descriptor.shouldRender = descriptor.isActive;
-            return;
-        }
-
-        const relativeTime = (safeTimelineNow - start) / duration;
-        descriptor.progress = Number.isFinite(relativeTime)
-            ? clampProgress(relativeTime)
-            : 0;
-        descriptor.shouldRender = descriptor.isActive
-            || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
-    });
-
     const borderRadius = getPreviewImageFrameBorderRadius();
     const overlayGroups = { below: [], above: [] };
 
