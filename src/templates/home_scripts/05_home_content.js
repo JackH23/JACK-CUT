@@ -987,10 +987,22 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
     return effectiveTimelineNow >= exitWindowStart;
 }
 
-function computeOverlayDescriptorOpacity(descriptor) {
+function computeOverlayDescriptorOpacity(descriptor, options = {}) {
     if (!descriptor || !descriptor.item) {
-        return 1;
+        return {
+            entrance: 1,
+            exit: 1,
+            combined: 1,
+            byGroup: {
+                above: 1,
+                below: 1,
+            },
+        };
     }
+
+    const normalizedGroup = options.group === 'below'
+        ? 'below'
+        : (options.group === 'above' ? 'above' : null);
 
     const clipDuration = Math.max(
         0,
@@ -999,7 +1011,15 @@ function computeOverlayDescriptorOpacity(descriptor) {
             : (Number(descriptor.end) - Number(descriptor.start)),
     );
     if (clipDuration <= 0) {
-        return 1;
+        return {
+            entrance: 1,
+            exit: 1,
+            combined: 1,
+            byGroup: {
+                above: 1,
+                below: 1,
+            },
+        };
     }
 
     const animationSettings = descriptor.animationSettings
@@ -1010,7 +1030,8 @@ function computeOverlayDescriptorOpacity(descriptor) {
         clipDuration,
     ));
 
-    let opacity = 1;
+    let entranceOpacity = 1;
+    let exitOpacity = 1;
 
     if (direction === 'in' || direction === 'combo') {
         const entranceConfig = getPreviewImageEntranceConfig({
@@ -1022,10 +1043,9 @@ function computeOverlayDescriptorOpacity(descriptor) {
             Math.max(0, Number(entranceConfig?.totalDuration) || 0),
         );
         if (entranceWindow > 0) {
-            const entranceProgress = easeOverlayTransitionProgress(elapsed / entranceWindow);
-            opacity *= entranceProgress;
+            entranceOpacity = easeOverlayTransitionProgress(elapsed / entranceWindow);
         } else if (elapsed <= 0) {
-            opacity *= 0;
+            entranceOpacity = 0;
         }
     }
 
@@ -1060,18 +1080,38 @@ function computeOverlayDescriptorOpacity(descriptor) {
             if (elapsed >= exitStart) {
                 const windowOffset = elapsed - exitStart;
                 if (effectiveDuration <= 0 && windowOffset > effectiveDelay) {
-                    opacity = 0;
+                    exitOpacity = 0;
                 } else if (effectiveDuration > 0 && windowOffset > effectiveDelay) {
                     const exitProgress = easeOverlayTransitionProgress(
                         (windowOffset - effectiveDelay) / effectiveDuration,
                     );
-                    opacity *= 1 - exitProgress;
+                    exitOpacity = 1 - exitProgress;
                 }
             }
         }
     }
 
-    return clamp(opacity, 0, 1);
+    const clampedEntrance = clamp(entranceOpacity, 0, 1);
+    const clampedExit = clamp(exitOpacity, 0, 1);
+    const combinedOpacity = clamp(clampedEntrance * clampedExit, 0, 1);
+
+    const byGroup = {
+        above: combinedOpacity,
+        below: combinedOpacity,
+    };
+
+    if (normalizedGroup === 'above') {
+        byGroup.above = combinedOpacity;
+    } else if (normalizedGroup === 'below') {
+        byGroup.below = combinedOpacity;
+    }
+
+    return {
+        entrance: clampedEntrance,
+        exit: clampedExit,
+        combined: combinedOpacity,
+        byGroup,
+    };
 }
 
 function computeOverlayEntryOpacity(entry) {

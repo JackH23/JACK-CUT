@@ -38,7 +38,14 @@
                     return;
                 }
                 entry.lastTimelineTime = safeTimelineNow;
-                entry.opacity = computeOverlayEntryOpacity(entry);
+                const liveOpacity = computeOverlayEntryOpacity(entry);
+                entry.opacity = liveOpacity;
+                if (!entry.opacityByGroup) {
+                    entry.opacityByGroup = { above: 1, below: 1 };
+                }
+                if (entry.layerGroup) {
+                    entry.opacityByGroup[entry.layerGroup] = liveOpacity;
+                }
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
             return;
@@ -138,6 +145,11 @@
                 zIndex: 0,
                 borderRadius: 0,
                 opacity: 1,
+                opacityState: null,
+                opacityByGroup: {
+                    above: 1,
+                    below: 1,
+                },
                 lastTimelineTime: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
@@ -177,6 +189,11 @@
         entry.zIndex = 0;
         entry.borderRadius = 0;
         entry.opacity = 1;
+        entry.opacityState = null;
+        if (entry.opacityByGroup) {
+            entry.opacityByGroup.above = 1;
+            entry.opacityByGroup.below = 1;
+        }
         entry.frame = null;
         entry.lastTimelineTime = null;
 
@@ -268,9 +285,15 @@
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
 
-        const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
-        const clampedOpacity = clamp(descriptorOpacity, 0, 1);
-        layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+        const opacityState = computeOverlayDescriptorOpacity(descriptor, { group: groupName });
+        const groupOpacity = clamp(
+            (opacityState?.byGroup && Number.isFinite(opacityState.byGroup[groupName]))
+                ? opacityState.byGroup[groupName]
+                : opacityState.combined,
+            0,
+            1,
+        );
+        layer.style.opacity = groupOpacity >= 1 ? '1' : String(groupOpacity);
         if (image) {
             image.style.opacity = '1';
         }
@@ -282,6 +305,15 @@
         entry.layerGroup = groupName;
         entry.zIndex = zIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
+        entry.opacityState = opacityState;
+        if (entry.opacityByGroup) {
+            entry.opacityByGroup[groupName] = groupOpacity;
+        } else {
+            entry.opacityByGroup = {
+                above: groupName === 'above' ? groupOpacity : 1,
+                below: groupName === 'below' ? groupOpacity : 1,
+            };
+        }
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
@@ -301,7 +333,14 @@
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
-                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                const liveOpacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.opacity = liveOpacity;
+                if (!fallbackEntry.opacityByGroup) {
+                    fallbackEntry.opacityByGroup = { above: 1, below: 1 };
+                }
+                if (fallbackEntry.layerGroup) {
+                    fallbackEntry.opacityByGroup[fallbackEntry.layerGroup] = liveOpacity;
+                }
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -321,7 +360,14 @@
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
-                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                const liveOpacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.opacity = liveOpacity;
+                if (!fallbackEntry.opacityByGroup) {
+                    fallbackEntry.opacityByGroup = { above: 1, below: 1 };
+                }
+                if (fallbackEntry.layerGroup) {
+                    fallbackEntry.opacityByGroup[fallbackEntry.layerGroup] = liveOpacity;
+                }
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -400,6 +446,15 @@ function getActiveOverlayLayerSnapshots() {
         }
 
         const group = entry.layerGroup === 'below' ? 'below' : 'above';
+        const groupOpacity = entry.opacityByGroup && Number.isFinite(entry.opacityByGroup[group])
+            ? entry.opacityByGroup[group]
+            : entry.opacity;
+        const entrancePhase = entry.opacityState && Number.isFinite(entry.opacityState.entrance)
+            ? clamp(entry.opacityState.entrance, 0, 1)
+            : null;
+        const exitPhase = entry.opacityState && Number.isFinite(entry.opacityState.exit)
+            ? clamp(entry.opacityState.exit, 0, 1)
+            : null;
 
         snapshots.push({
             image,
@@ -413,7 +468,13 @@ function getActiveOverlayLayerSnapshots() {
             group,
             zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
-            opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+            opacity: Number.isFinite(groupOpacity) ? clamp(groupOpacity, 0, 1) : 1,
+            phases: entrancePhase !== null || exitPhase !== null
+                ? {
+                    entrance: entrancePhase !== null ? entrancePhase : 1,
+                    exit: exitPhase !== null ? exitPhase : 1,
+                }
+                : null,
             priority: groupPriority[group] ?? 1,
         });
     });
@@ -482,8 +543,28 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
                 exportMirrorContext.clip();
             }
 
-            const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
-            exportMirrorContext.globalAlpha *= clampedOpacity;
+            const rawOpacity = Number(snapshot.opacity);
+            const hasRawOpacity = Number.isFinite(rawOpacity);
+            const entrancePhase = snapshot.phases && Number.isFinite(snapshot.phases.entrance)
+                ? clamp(snapshot.phases.entrance, 0, 1)
+                : null;
+            const exitPhase = snapshot.phases && Number.isFinite(snapshot.phases.exit)
+                ? clamp(snapshot.phases.exit, 0, 1)
+                : null;
+            const hasPhaseData = (entrancePhase !== null) || (exitPhase !== null);
+            const combinedPhase = hasPhaseData
+                ? clamp(
+                    (entrancePhase !== null ? entrancePhase : 1)
+                        * (exitPhase !== null ? exitPhase : 1),
+                    0,
+                    1,
+                )
+                : 1;
+            const fallbackOpacity = hasRawOpacity ? clamp(rawOpacity, 0, 1) : 1;
+            const finalOpacity = hasPhaseData
+                ? combinedPhase
+                : fallbackOpacity;
+            exportMirrorContext.globalAlpha *= finalOpacity;
 
             const drawWidth = naturalWidth * drawScale;
             const drawHeight = naturalHeight * drawScale;
