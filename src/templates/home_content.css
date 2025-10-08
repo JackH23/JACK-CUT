@@ -2057,6 +2057,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     overflow: hidden;
     pointer-events: auto;
     cursor: pointer;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
 }
 
 .preview-overlay-layer img {
@@ -2065,8 +2067,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     height: 100%;
     object-fit: cover;
     display: block;
-    transform: rotate(var(--preview-overlay-rotation, 0deg));
+    backface-visibility: hidden;
+    transform: translateZ(0) rotate(var(--preview-overlay-rotation, 0deg));
     pointer-events: none;
+    will-change: transform;
 }
 
 .preview-image-layer {

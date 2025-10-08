@@ -14,13 +14,14 @@
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => descriptor.intersectsWindow);
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
             return;
         }
-        const lastTime = Number(entry.lastTimelineTime);
+        const lastTime = getOverlayEntryTimelineTime(entry);
         if (!Number.isFinite(lastTime)) {
             return;
         }
@@ -38,6 +39,7 @@
                     return;
                 }
                 entry.lastTimelineTime = safeTimelineNow;
+                entry.sampleTime = safeTimelineNow;
                 entry.opacity = computeOverlayEntryOpacity(entry);
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
@@ -139,6 +141,7 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                sampleTime: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -147,6 +150,10 @@
 
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
+
+        if ('style' in layer) {
+            layer.style.willChange = 'transform, opacity';
+        }
 
         if (borderRadius > 0) {
             layer.style.borderRadius = `${borderRadius}px`;
@@ -157,7 +164,16 @@
         if (entry.objectURL !== objectURL || !image.src) {
             image.src = objectURL;
             entry.objectURL = objectURL;
+            if ('decode' in image && typeof image.decode === 'function') {
+                image.decode().catch(() => {});
+            }
         }
+
+        if ('fetchPriority' in image) {
+            image.fetchPriority = 'high';
+        }
+
+        image.style.willChange = 'transform';
 
         image.alt = descriptor.item.dataset.displayName
             || descriptor.item.querySelector('span')?.textContent
@@ -179,6 +195,7 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.sampleTime = null;
 
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -212,6 +229,9 @@
         }
 
         const { layer, image } = entry;
+        const sampleTime = Number.isFinite(descriptor.sampleTime)
+            ? descriptor.sampleTime
+            : safeTimelineNow;
 
         layer.style.zIndex = String(zIndex);
 
@@ -283,7 +303,8 @@
         entry.zIndex = zIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
-        entry.lastTimelineTime = safeTimelineNow;
+        entry.lastTimelineTime = sampleTime;
+        entry.sampleTime = sampleTime;
 
         return true;
     };
@@ -303,7 +324,11 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                const fallbackSampleTime = Number.isFinite(descriptor.sampleTime)
+                    ? descriptor.sampleTime
+                    : safeTimelineNow;
+                fallbackEntry.lastTimelineTime = fallbackSampleTime;
+                fallbackEntry.sampleTime = fallbackSampleTime;
             }
         });
     }
@@ -323,7 +348,11 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                const fallbackSampleTime = Number.isFinite(descriptor.sampleTime)
+                    ? descriptor.sampleTime
+                    : safeTimelineNow;
+                fallbackEntry.lastTimelineTime = fallbackSampleTime;
+                fallbackEntry.sampleTime = fallbackSampleTime;
             }
         });
     }
@@ -369,8 +398,9 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
-            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
+        const entryTime = getOverlayEntryTimelineTime(entry);
+        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entryTime)) {
+            const age = Math.abs(lastOverlayRenderTimestamp - entryTime);
             if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
                 return;
             }
@@ -443,6 +473,11 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
 
     if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
         return;
+    }
+
+    exportMirrorContext.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in exportMirrorContext) {
+        exportMirrorContext.imageSmoothingQuality = 'high';
     }
 
     snapshots
