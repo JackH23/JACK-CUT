@@ -81,6 +81,8 @@ function previewExitAnimationDemo() {
 
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
+let isTimelinePaused = false;
+let timelinePauseState = null;
 let timelinePlaybackAbort = null;
 let currentPreviewAspectRatio = 16 / 9;
 let previewViewportResizeFrame = null;
