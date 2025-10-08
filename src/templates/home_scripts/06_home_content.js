@@ -14,6 +14,80 @@
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => descriptor.intersectsWindow);
 
+    const evaluateDescriptorAnimationState = (descriptor) => {
+        if (!descriptor || !descriptor.item || !descriptor.shouldRender) {
+            return false;
+        }
+
+        const clipDuration = Math.max(
+            0,
+            Number.isFinite(descriptor.clipDuration)
+                ? Number(descriptor.clipDuration)
+                : (Number(descriptor.end) - Number(descriptor.start)),
+        );
+        if (clipDuration <= 0) {
+            return false;
+        }
+
+        const animationSettings = descriptor.animationSettings
+            || getTimelineItemAnimationSettings(descriptor.item);
+        const direction = sanitizeAnimationDirection(animationSettings?.direction);
+        if (!direction) {
+            return false;
+        }
+
+        const sampleTime = Number.isFinite(descriptor.sampleTime)
+            ? Number(descriptor.sampleTime)
+            : safeTimelineNow;
+        if (!Number.isFinite(sampleTime)) {
+            return false;
+        }
+
+        const startTime = Number(descriptor.start);
+        if (!Number.isFinite(startTime)) {
+            return false;
+        }
+
+        const elapsed = Math.max(0, Math.min(sampleTime - startTime, clipDuration));
+
+        if (direction === 'in' || direction === 'combo') {
+            const entranceConfig = getPreviewImageEntranceConfig({
+                clipDurationMs: clipDuration,
+                settingsOverride: animationSettings,
+            });
+            const entranceWindow = Math.min(
+                clipDuration,
+                Math.max(0, Number(entranceConfig?.totalDuration) || 0),
+            );
+            if (entranceWindow > 0 && elapsed < entranceWindow) {
+                return true;
+            }
+        }
+
+        if (direction === 'out' || direction === 'combo') {
+            let exitConfig = descriptor.exitConfig;
+            if (exitConfig === undefined) {
+                exitConfig = getPreviewImageExitConfig({
+                    clipDurationMs: clipDuration,
+                    settingsOverride: animationSettings,
+                }) || null;
+                descriptor.exitConfig = exitConfig;
+            }
+            const totalExitWindow = Math.min(
+                clipDuration,
+                Math.max(0, Number(exitConfig?.totalDuration) || 0),
+            );
+            if (totalExitWindow > 0) {
+                const exitStart = clipDuration - totalExitWindow;
+                if (elapsed >= exitStart && elapsed <= clipDuration) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
     const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
 
     let hasRecentOverlayLayers = false;
@@ -70,6 +144,7 @@
         if (duration === 0) {
             descriptor.progress = 0;
             descriptor.shouldRender = descriptor.isActive;
+            descriptor.isAnimating = false;
             return;
         }
 
@@ -79,6 +154,7 @@
             : 0;
         descriptor.shouldRender = descriptor.isActive
             || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+        descriptor.isAnimating = evaluateDescriptorAnimationState(descriptor);
     });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
@@ -96,6 +172,10 @@
 
     overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
     overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+
+    const hasActiveAboveAnimation = overlayGroups.above.some((descriptor) => (
+        descriptor.shouldRender && descriptor.isAnimating
+    ));
 
     const { below, above } = previewOverlayGroups;
 
@@ -312,6 +392,13 @@
     if (overlayGroups.below.length && below) {
         overlayGroups.below.forEach((descriptor, index) => {
             if (!descriptor.shouldRender) {
+                return;
+            }
+            if (hasActiveAboveAnimation && descriptor.isAnimating) {
+                const suppressedEntry = activeOverlayLayers.get(descriptor.item);
+                if (suppressedEntry?.isVisible) {
+                    hideOverlayLayerEntry(suppressedEntry);
+                }
                 return;
             }
             const zIndex = 10 + overlayGroups.below.length - index;
