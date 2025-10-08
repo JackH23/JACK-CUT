@@ -633,7 +633,8 @@ renderKeyframeTrack(activeTimelineItem);
 updateImageRotationControlState();
 refreshImageDurationApplyAllAvailability();
 
-function stopTimelinePlayback(resetButton = true, resetProgress = true) {
+function stopTimelinePlayback(resetButton = true, resetProgress = true, options = {}) {
+    const preservePauseState = options && options.preservePauseState === true;
     const abort = timelinePlaybackAbort;
     timelinePlaybackAbort = null;
 
@@ -641,8 +642,11 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
         abort();
     }
 
-    const wasPlaying = isTimelinePlaying;
     isTimelinePlaying = false;
+    if (!preservePauseState) {
+        isTimelinePaused = false;
+        timelinePauseState = null;
+    }
 
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
@@ -1160,13 +1164,21 @@ if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
 }
 
-async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
+async function playTimelineItem(
+    timelineItem,
+    segmentDurationMs = null,
+    overlayEntriesOverride = null,
+    options = {},
+) {
     const fileType = timelineItem.dataset.fileType || '';
     const objectURL = timelineItem.dataset.objectUrl;
     const playbackWindow = Number.isFinite(segmentDurationMs)
         ? Math.max(0, Math.round(segmentDurationMs))
         : null;
     const audioSettings = getTimelineItemAudioSettings(timelineItem);
+    const startOffsetMs = Number.isFinite(options?.startOffsetMs)
+        ? Math.max(0, Math.round(options.startOffsetMs))
+        : 0;
 
     setActiveTimelineItem(timelineItem);
 

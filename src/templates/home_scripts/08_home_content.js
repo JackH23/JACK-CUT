@@ -19,7 +19,9 @@
                 cleanup();
                 previewVideo.pause();
                 previewVideo.loop = false;
-                previewVideo.currentTime = 0;
+                if (!isTimelinePaused) {
+                    previewVideo.currentTime = 0;
+                }
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
                 }
@@ -71,6 +73,14 @@
                 }
 
                 const { intrinsicDuration, targetDuration, effectiveDuration } = ensureVideoDuration();
+                const maximumSeekDuration = intrinsicDuration > 0
+                    ? intrinsicDuration
+                    : targetDuration;
+                const safeStartOffset = Math.min(
+                    startOffsetMs,
+                    Math.max(0, maximumSeekDuration),
+                );
+                const startOffsetSeconds = safeStartOffset / 1000;
                 const shouldLoop = intrinsicDuration > 0
                     && effectiveDuration > intrinsicDuration + 50;
                 previewVideo.loop = shouldLoop;
@@ -84,7 +94,6 @@
                     return;
                 }
 
-                previewVideo.currentTime = 0;
                 previewVideo.muted = false;
                 const baseVolume = clampVolume(audioSettings.volumePercent / 100);
                 previewAudioEnvelopeState.baseVolume = baseVolume;
@@ -104,6 +113,56 @@
                     finalize();
                     return;
                 }
+
+                const seekToStartOffset = () => new Promise((resolveSeek) => {
+                    if (safeStartOffset <= 0) {
+                        previewVideo.currentTime = 0;
+                        resolveSeek();
+                        return;
+                    }
+
+                    let settled = false;
+                    const cleanupSeek = () => {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        previewVideo.removeEventListener('seeked', handleSeeked);
+                        previewVideo.removeEventListener('error', handleError);
+                        if (abortController) {
+                            abortController.signal.removeEventListener('abort', handleAbort);
+                        }
+                        resolveSeek();
+                    };
+                    const handleSeeked = () => {
+                        cleanupSeek();
+                    };
+                    const handleError = () => {
+                        cleanupSeek();
+                    };
+                    const handleAbort = () => {
+                        cleanupSeek();
+                    };
+
+                    previewVideo.addEventListener('seeked', handleSeeked);
+                    previewVideo.addEventListener('error', handleError);
+                    if (abortController) {
+                        abortController.signal.addEventListener('abort', handleAbort);
+                    }
+
+                    try {
+                        previewVideo.currentTime = startOffsetSeconds;
+                        if (previewVideo.readyState >= 2
+                            && Math.abs(previewVideo.currentTime - startOffsetSeconds) < 0.05
+                        ) {
+                            cleanupSeek();
+                        }
+                    } catch (error) {
+                        cleanupSeek();
+                    }
+                });
+
+                await seekToStartOffset();
 
                 try {
                     const playPromise = previewVideo.play();
@@ -170,6 +229,10 @@
             ? clipDuration
             : Math.min(clipDuration, playbackWindowMs);
         const safeEffectiveDuration = Math.max(0, effectiveDuration);
+        const initialElapsed = Math.min(startOffsetMs, clipDuration);
+        const initialProgress = clipDuration > 0
+            ? clampProgress(initialElapsed / clipDuration)
+            : 0;
         const animationSettings = getTimelineItemAnimationSettings(timelineItem);
         const entranceConfigOverride = getPreviewImageEntranceConfig({
             clipDurationMs: safeEffectiveDuration,
@@ -191,11 +254,11 @@
             entranceConfigOverride,
         });
         resetPreviewScroll();
-        setActiveClipProgress(0, { source: 'image-playback' });
+        setActiveClipProgress(initialProgress, { source: 'image-playback' });
 
         await new Promise((resolve) => {
             let resolved = false;
-            const startTimestamp = performance.now();
+            const startTimestamp = performance.now() - initialElapsed;
             let animationFrameId = 0;
             let exitAnimationRequested = false;
             let exitAnimationStarted = false;
@@ -239,6 +302,7 @@
 
                 const now = performance.now();
                 const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
+                const elapsedSinceResume = Math.max(0, elapsed - initialElapsed);
                 const playbackProgress = clipDuration > 0
                     ? clampProgress(elapsed / clipDuration)
                     : 0;
@@ -247,13 +311,13 @@
 
                 if (exitConfig && !exitAnimationRequested) {
                     const shouldStartExit = safeEffectiveDuration === 0
-                        || elapsed >= exitStartOffset;
+                        || elapsedSinceResume >= exitStartOffset;
                     if (shouldStartExit) {
                         startExitAnimation();
                     }
                 }
 
-                if (elapsed < safeEffectiveDuration && isTimelinePlaying) {
+                if (elapsedSinceResume < safeEffectiveDuration && isTimelinePlaying) {
                     animationFrameId = window.requestAnimationFrame(step);
                 }
             };
@@ -271,8 +335,12 @@
                 resolved = true;
                 startExitAnimation({ force: true });
                 stopAnimation();
+                const finalElapsed = Math.min(
+                    clipDuration,
+                    initialElapsed + safeEffectiveDuration,
+                );
                 const finalProgress = clipDuration > 0
-                    ? clampProgress(safeEffectiveDuration / clipDuration)
+                    ? clampProgress(finalElapsed / clipDuration)
                     : 1;
                 setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
                 if (timelinePlaybackAbort === abortPlayback) {
@@ -332,7 +400,7 @@ function waitForGapDuration(durationMs) {
     });
 }
 
-async function playTimelineSequence(startIndex = 0) {
+async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
         alert('Upload an image or video to build your timeline.');
@@ -345,13 +413,26 @@ async function playTimelineSequence(startIndex = 0) {
         return false;
     }
 
+    const resumeTimeMs = Number.isFinite(resumeOptions?.timeMs)
+        ? Math.max(0, Math.round(resumeOptions.timeMs))
+        : null;
+
     const boundedIndex = Math.min(
         Math.max(0, startIndex),
         Math.max(timelineItems.length - 1, 0),
     );
     const initialItem = timelineItems[boundedIndex] || null;
     let initialSegmentIndex = 0;
-    if (initialItem) {
+    if (resumeTimeMs !== null) {
+        const resumeSegmentIndex = segments.findIndex(
+            (segment) => resumeTimeMs >= segment.start && resumeTimeMs < segment.end,
+        );
+        if (resumeSegmentIndex >= 0) {
+            initialSegmentIndex = resumeSegmentIndex;
+        } else if (resumeTimeMs >= totalDuration) {
+            initialSegmentIndex = segments.length ? segments.length - 1 : 0;
+        }
+    } else if (initialItem) {
         const foundSegmentIndex = segments.findIndex(
             (segment) => segment.item === initialItem,
         );
@@ -360,8 +441,12 @@ async function playTimelineSequence(startIndex = 0) {
         }
     }
     const startSegment = segments[initialSegmentIndex] || null;
-    const startElapsed = startSegment ? startSegment.start : 0;
+    const startElapsed = resumeTimeMs !== null
+        ? Math.min(resumeTimeMs, totalDuration)
+        : (startSegment ? startSegment.start : 0);
 
+    isTimelinePaused = false;
+    timelinePauseState = null;
     isTimelinePlaying = true;
     playVideoButton.textContent = 'Pause playback';
     updateKeyframeControlsState();
@@ -370,6 +455,7 @@ async function playTimelineSequence(startIndex = 0) {
     startPlaybackClock(startElapsed, totalDuration);
 
     let completedNaturally = true;
+    let pendingResumeTime = resumeTimeMs;
 
     try {
         for (let index = initialSegmentIndex; index < segments.length; index += 1) {
@@ -382,6 +468,9 @@ async function playTimelineSequence(startIndex = 0) {
             if (duration <= 0) {
                 continue;
             }
+            if (pendingResumeTime !== null && pendingResumeTime >= end) {
+                continue;
+            }
             const nextSegment = segments[index + 1];
             if (nextSegment?.item) {
                 const nextUrl = nextSegment.item.dataset?.objectUrl;
@@ -390,28 +479,140 @@ async function playTimelineSequence(startIndex = 0) {
                     preloadTimelineImage(nextUrl).catch(() => {});
                 }
             }
-            const startFraction = getTimelineFractionForTime(start);
+            let segmentStartTime = start;
+            let segmentStartOffset = 0;
+            if (pendingResumeTime !== null) {
+                if (pendingResumeTime <= start) {
+                    segmentStartTime = start;
+                    segmentStartOffset = 0;
+                } else if (pendingResumeTime < end) {
+                    segmentStartTime = pendingResumeTime;
+                    segmentStartOffset = pendingResumeTime - start;
+                } else {
+                    continue;
+                }
+            }
+            const startFraction = getTimelineFractionForTime(segmentStartTime);
             const endFraction = getTimelineFractionForTime(end);
-            animateTimelineProgress(startFraction, endFraction, duration);
+            const remainingDuration = pendingResumeTime !== null
+                ? Math.max(0, Math.round(end - segmentStartTime))
+                : duration;
+            animateTimelineProgress(startFraction, endFraction, remainingDuration);
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
-                await playTimelineItem(item, duration, segment.items || null);
+                await playTimelineItem(item, remainingDuration, segment.items || null, {
+                    startOffsetMs: segmentStartOffset,
+                });
             } else {
                 // eslint-disable-next-line no-await-in-loop
-                await waitForGapDuration(duration);
+                await waitForGapDuration(remainingDuration);
             }
+            pendingResumeTime = null;
         }
     } finally {
-        stopTimelinePlayback(true, false);
-        if (completedNaturally) {
+        const preservePause = isTimelinePaused;
+        stopTimelinePlayback(!preservePause, !preservePause, { preservePauseState: preservePause });
+        if (completedNaturally && !isTimelinePaused) {
             resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
             updatePlaybackTimeDisplay(totalDuration, totalDuration);
-        } else {
+        } else if (!isTimelinePaused) {
             updateActiveTimelineIndicators();
         }
     }
 
     return completedNaturally;
+}
+
+function pauseTimelinePlayback() {
+    if (!isTimelinePlaying || isTimelinePaused) {
+        return;
+    }
+
+    const { segments, totalDuration } = getTimelinePlaybackSegments();
+    if (!segments.length || totalDuration <= 0) {
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    const clampedTime = Math.max(
+        0,
+        Math.min(Number(playbackDisplayCurrentMs) || 0, totalDuration),
+    );
+
+    const segmentIndex = segments.findIndex(
+        (segment) => clampedTime >= segment.start && clampedTime < segment.end,
+    );
+    const activeIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : -1;
+    const fallbackIndex = segmentIndex >= 0 && segments[segmentIndex].item
+        ? timelineItems.indexOf(segments[segmentIndex].item)
+        : -1;
+    const resumeItemIndex = activeIndex >= 0
+        ? activeIndex
+        : (fallbackIndex >= 0 ? fallbackIndex : 0);
+
+    const pauseState = {
+        resumeItemIndex,
+        resumeTimeMs: clampedTime,
+    };
+
+    isTimelinePaused = true;
+    timelinePauseState = pauseState;
+
+    stopTimelinePlayback(false, false, { preservePauseState: true });
+
+    const pausedFraction = totalDuration > 0
+        ? clampProgress(clampedTime / totalDuration)
+        : 0;
+    if (timelineProgressLine) {
+        timelineProgressLine.style.transition = 'none';
+        timelineProgressLine.style.transform = `scaleX(${pausedFraction})`;
+        timelineProgressLine.dataset.progress = String(pausedFraction);
+    }
+    updateTimelineProgressInput(pausedFraction);
+    updatePlaybackTimeDisplay(clampedTime, totalDuration);
+    playVideoButton.textContent = 'Resume playback';
+}
+
+function resumeTimelinePlayback() {
+    if (!isTimelinePaused || !timelinePauseState) {
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    if (!timelineItems.length) {
+        isTimelinePaused = false;
+        timelinePauseState = null;
+        playVideoButton.textContent = 'Play Back';
+        return;
+    }
+
+    const { resumeItemIndex, resumeTimeMs } = timelinePauseState;
+    const { totalDuration } = getTimelinePlaybackSegments();
+    const clampedResumeTime = Math.max(
+        0,
+        Math.min(Number(resumeTimeMs) || 0, totalDuration),
+    );
+
+    if (clampedResumeTime >= totalDuration) {
+        isTimelinePaused = false;
+        timelinePauseState = null;
+        resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
+        updatePlaybackTimeDisplay(totalDuration, totalDuration);
+        playVideoButton.textContent = 'Play Back';
+        return;
+    }
+
+    const boundedIndex = Math.min(
+        Math.max(0, Number(resumeItemIndex) || 0),
+        Math.max(timelineItems.length - 1, 0),
+    );
+
+    isTimelinePaused = false;
+    timelinePauseState = null;
+
+    playTimelineSequence(boundedIndex, { timeMs: clampedResumeTime }).catch((error) => {
+        console.error('Timeline playback failed.', error);
+    });
 }
 
 if (exportButton) {
@@ -716,7 +917,12 @@ document.addEventListener('keydown', (event) => {
 
 playVideoButton.addEventListener('click', () => {
     if (isTimelinePlaying) {
-        stopTimelinePlayback();
+        pauseTimelinePlayback();
+        return;
+    }
+
+    if (isTimelinePaused && timelinePauseState) {
+        resumeTimelinePlayback();
         return;
     }
 
