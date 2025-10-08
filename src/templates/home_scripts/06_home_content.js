@@ -213,7 +213,10 @@
 
         const { layer, image } = entry;
 
-        layer.style.zIndex = String(zIndex);
+        const zIndexValue = Number.isFinite(zIndex) ? zIndex : 0;
+        if (layer.style.zIndex !== String(zIndexValue)) {
+            layer.style.zIndex = String(zIndexValue);
+        }
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -280,7 +283,7 @@
         entry.frame = resolvedFrame;
         entry.isVisible = true;
         entry.layerGroup = groupName;
-        entry.zIndex = zIndex;
+        entry.zIndex = zIndexValue;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
@@ -293,7 +296,12 @@
             if (!descriptor.shouldRender) {
                 return;
             }
-            const zIndex = 10 + overlayGroups.below.length - index;
+            const zIndex = computeOverlayLayerZIndex(
+                descriptor,
+                primaryLaneIndex,
+                'below',
+                index,
+            );
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
             if (rendered) {
                 nextActiveItems.add(descriptor.item);
@@ -302,6 +310,11 @@
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.zIndex = Number.isFinite(zIndex) ? zIndex : fallbackEntry.zIndex;
+                fallbackEntry.layerGroup = 'below';
+                if (fallbackEntry.layer) {
+                    fallbackEntry.layer.style.zIndex = String(fallbackEntry.zIndex);
+                }
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -313,7 +326,12 @@
             if (!descriptor.shouldRender) {
                 return;
             }
-            const zIndex = 60 + (overlayGroups.above.length - index);
+            const zIndex = computeOverlayLayerZIndex(
+                descriptor,
+                primaryLaneIndex,
+                'above',
+                index,
+            );
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
             if (rendered) {
                 nextActiveItems.add(descriptor.item);
@@ -322,6 +340,11 @@
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.zIndex = Number.isFinite(zIndex) ? zIndex : fallbackEntry.zIndex;
+                fallbackEntry.layerGroup = 'above';
+                if (fallbackEntry.layer) {
+                    fallbackEntry.layer.style.zIndex = String(fallbackEntry.zIndex);
+                }
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }

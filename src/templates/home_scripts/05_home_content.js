@@ -1111,6 +1111,38 @@ function computeOverlayEntryOpacity(entry) {
     return clamp(opacity, 0, 1);
 }
 
+const OVERLAY_LAYER_Z_INDEX_BASE_BELOW = 2000000;
+const OVERLAY_LAYER_Z_INDEX_BASE_ABOVE = 4000000;
+const OVERLAY_LAYER_Z_INDEX_LANE_STEP = 1024;
+
+function computeOverlayLayerRenderRank(laneOffset, orderIndex = 0) {
+    const normalizedOffset = Math.max(0, Number(laneOffset) || 0);
+    const normalizedOrder = Math.max(0, Number(orderIndex) || 0);
+    return (normalizedOffset * OVERLAY_LAYER_Z_INDEX_LANE_STEP) + normalizedOrder;
+}
+
+function computeOverlayLayerZIndex(descriptor, primaryLaneIndex, groupName, orderIndex = 0) {
+    if (!descriptor) {
+        return groupName === 'below'
+            ? OVERLAY_LAYER_Z_INDEX_BASE_BELOW
+            : OVERLAY_LAYER_Z_INDEX_BASE_ABOVE;
+    }
+
+    const laneIndex = Number.isFinite(descriptor.laneIndex)
+        ? descriptor.laneIndex
+        : primaryLaneIndex;
+
+    if (groupName === 'below') {
+        const laneOffset = Math.max(0, laneIndex - primaryLaneIndex);
+        const rank = computeOverlayLayerRenderRank(laneOffset, orderIndex);
+        return OVERLAY_LAYER_Z_INDEX_BASE_BELOW - rank;
+    }
+
+    const laneOffset = Math.max(0, primaryLaneIndex - laneIndex);
+    const rank = computeOverlayLayerRenderRank(laneOffset, orderIndex);
+    return OVERLAY_LAYER_Z_INDEX_BASE_ABOVE + rank;
+}
+
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
