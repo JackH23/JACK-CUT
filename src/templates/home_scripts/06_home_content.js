@@ -549,9 +549,27 @@ function getOverlayEntriesForTimelineItem(timelineItem, entriesOverride = null) 
     const end = start + duration;
     const safeEnd = end > start ? end : start + 1;
 
+    const overlapSlack = typeof OVERLAY_ACTIVE_TIME_SLACK_MS === 'number'
+        ? OVERLAY_ACTIVE_TIME_SLACK_MS
+        : 0;
+    const windowStart = start - overlapSlack;
+    const windowEnd = safeEnd + overlapSlack;
+
     return candidateEntries
         .filter((entry) => entry && entry.item)
-        .filter((entry) => entry.end > start && entry.start < safeEnd)
+        .filter((entry) => {
+            const entryStart = Number.isFinite(entry.start)
+                ? entry.start
+                : getTimelineItemStartTime(entry.item);
+            let entryEnd;
+            if (Number.isFinite(entry.end)) {
+                entryEnd = entry.end;
+            } else {
+                const fallbackDuration = Math.max(0, getTimelineItemPlaybackDuration(entry.item));
+                entryEnd = entryStart + fallbackDuration;
+            }
+            return entryEnd > windowStart && entryStart < windowEnd;
+        })
         .sort((a, b) => {
             const aIndex = resolveLaneIndex(a.laneIndex ?? a.item?.dataset?.laneIndex);
             const bIndex = resolveLaneIndex(b.laneIndex ?? b.item?.dataset?.laneIndex);

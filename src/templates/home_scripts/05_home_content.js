@@ -851,6 +851,17 @@ function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight, 
     };
 }
 
+const OVERLAY_ACTIVE_TIME_SLACK_MS = (() => {
+    const base = typeof OVERLAY_TIMELINE_WINDOW_SLACK_MS === 'number'
+        ? OVERLAY_TIMELINE_WINDOW_SLACK_MS
+        : 0;
+    const candidate = Math.round(base * 1.5);
+    if (candidate > 0) {
+        return Math.max(candidate, 6);
+    }
+    return 6;
+})();
+
 function doesClipIntersectWindow(descriptor, windowStart, windowEnd) {
     if (!descriptor) {
         return false;
@@ -870,10 +881,13 @@ function doesClipIntersectWindow(descriptor, windowStart, windowEnd) {
         return false;
     }
 
-    const safeWindowStart = Math.min(windowStart, windowEnd);
-    const safeWindowEnd = Math.max(windowStart, windowEnd);
+    const slack = OVERLAY_ACTIVE_TIME_SLACK_MS;
+    const safeWindowStart = Math.min(windowStart, windowEnd) - slack;
+    const safeWindowEnd = Math.max(windowStart, windowEnd) + slack;
+    const clipStart = start - slack;
+    const clipEnd = end + slack;
 
-    return end > safeWindowStart && start < safeWindowEnd;
+    return clipEnd > safeWindowStart && clipStart < safeWindowEnd;
 }
 
 function isClipActiveAtTime(descriptor, timeMs) {
@@ -895,7 +909,11 @@ function isClipActiveAtTime(descriptor, timeMs) {
         return false;
     }
 
-    return timeMs >= start && timeMs < end;
+    const slack = OVERLAY_ACTIVE_TIME_SLACK_MS;
+    const safeStart = start - slack;
+    const safeEnd = end + slack;
+
+    return timeMs >= safeStart && timeMs < safeEnd;
 }
 
 function easeOverlayTransitionProgress(value) {
@@ -942,7 +960,8 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
     }
 
     const overshoot = effectiveTimelineNow - descriptorEnd;
-    if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) {
+    const overshootAllowance = OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS + OVERLAY_ACTIVE_TIME_SLACK_MS;
+    if (overshoot > overshootAllowance) {
         const activeEntry = activeOverlayLayers.get(descriptor.item);
         const previousOpacity = Number.isFinite(activeEntry?.opacity)
             ? activeEntry.opacity
@@ -981,7 +1000,7 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
-    return effectiveTimelineNow >= exitWindowStart;
+    return effectiveTimelineNow >= (exitWindowStart - OVERLAY_ACTIVE_TIME_SLACK_MS);
 }
 
 function computeOverlayDescriptorOpacity(descriptor) {
