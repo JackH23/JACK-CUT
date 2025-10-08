@@ -1001,7 +1001,12 @@ function getTimelinePlaybackSegments() {
                 return aIndex - bIndex;
             });
 
-        const activeEntry = orderedEntries[0] || null;
+        const activeEntry = orderedEntries
+            .slice()
+            .reverse()
+            .find((entry) => Number.isFinite(entry?.laneIndex))
+            || orderedEntries[orderedEntries.length - 1]
+            || null;
 
         segments.push({
             start,
