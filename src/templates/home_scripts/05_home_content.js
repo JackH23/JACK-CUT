@@ -779,6 +779,7 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        entry.sampleTime = null;
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
@@ -1112,6 +1113,18 @@ function computeOverlayEntryOpacity(entry) {
     }
 
     return clamp(opacity, 0, 1);
+}
+
+function getOverlayEntryTimelineTime(entry) {
+    if (!entry) {
+        return null;
+    }
+    const sampleTime = Number(entry.sampleTime);
+    if (Number.isFinite(sampleTime)) {
+        return sampleTime;
+    }
+    const lastTime = Number(entry.lastTimelineTime);
+    return Number.isFinite(lastTime) ? lastTime : null;
 }
 
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
