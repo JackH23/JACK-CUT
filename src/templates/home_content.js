@@ -2660,6 +2660,8 @@ function previewExitAnimationDemo() {
 
 let activeTimelineItem = null;
 let isTimelinePlaying = false;
+let isTimelinePaused = false;
+let timelinePlaybackResumeTime = null;
 let timelinePlaybackAbort = null;
 let currentPreviewAspectRatio = 16 / 9;
 let previewViewportResizeFrame = null;
@@ -9201,6 +9203,11 @@ function resetTimelineProgressLine(fraction = 0) {
     updateTimelineProgressInput(clamped);
 }
 
+function clearTimelinePauseState() {
+    isTimelinePaused = false;
+    timelinePlaybackResumeTime = null;
+}
+
 function animateTimelineProgress(startFraction, endFraction, durationMs) {
     if (!timelineProgressLine) {
         updateTimelineProgressInput(endFraction);
@@ -9254,7 +9261,8 @@ renderKeyframeTrack(activeTimelineItem);
 updateImageRotationControlState();
 refreshImageDurationApplyAllAvailability();
 
-function stopTimelinePlayback(resetButton = true, resetProgress = true) {
+function stopTimelinePlayback(resetButton = true, resetProgress = true, options = {}) {
+    const { preserveResumeState = false } = options;
     const abort = timelinePlaybackAbort;
     timelinePlaybackAbort = null;
 
@@ -9262,13 +9270,16 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
         abort();
     }
 
-    const wasPlaying = isTimelinePlaying;
     isTimelinePlaying = false;
+
+    if (!preserveResumeState) {
+        clearTimelinePauseState();
+    }
 
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
     pausePreviewCanvasVideo();
-    stopAllTimelineAudio();
+    stopAllTimelineAudio({ reset: !preserveResumeState });
 
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
@@ -9286,10 +9297,33 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true) {
     }
 
     if (resetButton) {
-        playVideoButton.textContent = 'Play Back';
+        playVideoButton.textContent = preserveResumeState ? 'Resume playback' : 'Play Back';
     }
 
     refreshActiveOverlayLayers();
+}
+
+function pauseTimelinePlayback() {
+    if (!isTimelinePlaying) {
+        return;
+    }
+
+    const totalDuration = getTotalTimelineDuration();
+    const currentElapsed = Math.max(
+        0,
+        Math.min(
+            Number.isFinite(playbackDisplayCurrentMs) ? playbackDisplayCurrentMs : 0,
+            Math.max(totalDuration, 0),
+        ),
+    );
+
+    timelinePlaybackResumeTime = currentElapsed;
+    stopTimelinePlayback(false, false, { preserveResumeState: true });
+    isTimelinePaused = true;
+
+    if (playVideoButton) {
+        playVideoButton.textContent = 'Resume playback';
+    }
 }
 
 function clearPreview() {
@@ -9967,12 +10001,13 @@ if (audioDropzone) {
 
 setAudioUploadStatus('');
 
-async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null) {
+async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayEntriesOverride = null, options = {}) {
     const fileType = timelineItem.dataset.fileType || '';
     const objectURL = timelineItem.dataset.objectUrl;
     const playbackWindow = Number.isFinite(segmentDurationMs)
         ? Math.max(0, Math.round(segmentDurationMs))
         : null;
+    const clipOffsetMs = Math.max(0, Math.round(options?.startOffsetMs || 0));
     const audioSettings = getTimelineItemAudioSettings(timelineItem);
 
     setActiveTimelineItem(timelineItem);
@@ -10078,6 +10113,10 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
 
                 const { intrinsicDuration, targetDuration, effectiveDuration } = ensureVideoDuration();
+                const offsetSeconds = clipOffsetMs / 1000;
+                const safeOffsetSeconds = intrinsicDuration > 0
+                    ? Math.min(offsetSeconds, intrinsicDuration / 1000)
+                    : offsetSeconds;
                 const shouldLoop = intrinsicDuration > 0
                     && effectiveDuration > intrinsicDuration + 50;
                 previewVideo.loop = shouldLoop;
@@ -10091,7 +10130,6 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     return;
                 }
 
-                previewVideo.currentTime = 0;
                 previewVideo.muted = false;
                 const baseVolume = clampVolume(audioSettings.volumePercent / 100);
                 previewAudioEnvelopeState.baseVolume = baseVolume;
@@ -10100,6 +10138,44 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 } else {
                     previewVideo.volume = baseVolume;
                 }
+
+                const ensureVideoOffset = async () => {
+                    if (!Number.isFinite(safeOffsetSeconds) || safeOffsetSeconds <= 0) {
+                        return;
+                    }
+                    try {
+                        if (Math.abs(previewVideo.currentTime - safeOffsetSeconds) <= 0.05) {
+                            return;
+                        }
+                    } catch (seekError) {
+                        // Ignore and attempt to seek below.
+                    }
+                    await new Promise((resolve) => {
+                        let settled = false;
+                        const cleanup = () => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            previewVideo.removeEventListener('seeked', handleSeeked);
+                            previewVideo.removeEventListener('error', handleError);
+                            resolve();
+                        };
+                        const handleSeeked = () => {
+                            cleanup();
+                        };
+                        const handleError = () => {
+                            cleanup();
+                        };
+                        previewVideo.addEventListener('seeked', handleSeeked, { once: true });
+                        previewVideo.addEventListener('error', handleError, { once: true });
+                        try {
+                            previewVideo.currentTime = safeOffsetSeconds;
+                        } catch (setError) {
+                            cleanup();
+                        }
+                    });
+                };
 
                 try {
                     await waitForMediaReady(previewVideo, { signal: abortController.signal });
@@ -10110,6 +10186,12 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                     console.warn('Preview video was unable to buffer before playback.', error);
                     finalize();
                     return;
+                }
+
+                try {
+                    await ensureVideoOffset();
+                } catch (error) {
+                    console.warn('Unable to seek preview video to resume position.', error);
                 }
 
                 try {
@@ -10173,15 +10255,19 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         const playbackWindowMs = Number.isFinite(playbackWindow)
             ? Math.max(0, Math.round(playbackWindow))
             : null;
-        const effectiveDuration = playbackWindowMs === null
-            ? clipDuration
-            : Math.min(clipDuration, playbackWindowMs);
-        const safeEffectiveDuration = Math.max(0, effectiveDuration);
+        const clipOffset = Math.max(0, Math.min(clipOffsetMs, clipDuration));
+        const remainingClipDuration = Math.max(0, clipDuration - clipOffset);
+        const effectiveWindow = playbackWindowMs === null
+            ? remainingClipDuration
+            : Math.min(remainingClipDuration, playbackWindowMs);
+        const safeEffectiveDuration = Math.max(0, effectiveWindow);
         const animationSettings = getTimelineItemAnimationSettings(timelineItem);
-        const entranceConfigOverride = getPreviewImageEntranceConfig({
-            clipDurationMs: safeEffectiveDuration,
-            settingsOverride: animationSettings,
-        });
+        const entranceConfigOverride = clipOffset > 0
+            ? null
+            : getPreviewImageEntranceConfig({
+                clipDurationMs: safeEffectiveDuration,
+                settingsOverride: animationSettings,
+            });
         const exitConfig = getPreviewImageExitConfig({
             clipDurationMs: safeEffectiveDuration,
             settingsOverride: animationSettings,
@@ -10196,9 +10282,13 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
         await revealPreviewImageSource(objectURL, {
             clipDurationMs: safeEffectiveDuration,
             entranceConfigOverride,
+            immediate: clipOffset > 0,
         });
         resetPreviewScroll();
-        setActiveClipProgress(0, { source: 'image-playback' });
+        const initialProgress = clipDuration > 0
+            ? clampProgress(clipOffset / clipDuration)
+            : 0;
+        setActiveClipProgress(initialProgress, { source: 'image-playback' });
 
         await new Promise((resolve) => {
             let resolved = false;
@@ -10245,7 +10335,9 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 }
 
                 const now = performance.now();
-                const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
+                const delta = Math.max(0, now - startTimestamp);
+                const elapsed = Math.max(0, Math.min(clipOffset + delta, clipDuration));
+                const relativeElapsed = Math.max(0, elapsed - clipOffset);
                 const playbackProgress = clipDuration > 0
                     ? clampProgress(elapsed / clipDuration)
                     : 0;
@@ -10254,13 +10346,13 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
 
                 if (exitConfig && !exitAnimationRequested) {
                     const shouldStartExit = safeEffectiveDuration === 0
-                        || elapsed >= exitStartOffset;
+                        || relativeElapsed >= exitStartOffset;
                     if (shouldStartExit) {
                         startExitAnimation();
                     }
                 }
 
-                if (elapsed < safeEffectiveDuration && isTimelinePlaying) {
+                if (relativeElapsed < safeEffectiveDuration && isTimelinePlaying) {
                     animationFrameId = window.requestAnimationFrame(step);
                 }
             };
@@ -10279,7 +10371,7 @@ async function playTimelineItem(timelineItem, segmentDurationMs = null, overlayE
                 startExitAnimation({ force: true });
                 stopAnimation();
                 const finalProgress = clipDuration > 0
-                    ? clampProgress(safeEffectiveDuration / clipDuration)
+                    ? clampProgress((clipOffset + safeEffectiveDuration) / clipDuration)
                     : 1;
                 setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
                 if (timelinePlaybackAbort === abortPlayback) {
@@ -10354,7 +10446,7 @@ function waitForGapDuration(durationMs) {
     });
 }
 
-async function playTimelineSequence(startIndex = 0) {
+async function playTimelineSequence(startIndex = 0, options = {}) {
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
         alert('Upload audio, image, or video to build your timeline.');
@@ -10367,22 +10459,50 @@ async function playTimelineSequence(startIndex = 0) {
         return false;
     }
 
-    const boundedIndex = Math.min(
-        Math.max(0, startIndex),
-        Math.max(timelineItems.length - 1, 0),
-    );
-    const initialItem = timelineItems[boundedIndex] || null;
+    const resumeFromTime = Number.isFinite(options?.startTimeMs)
+        ? Math.max(0, Math.round(options.startTimeMs))
+        : null;
+
     let initialSegmentIndex = 0;
-    if (initialItem) {
-        const foundSegmentIndex = segments.findIndex(
-            (segment) => segment.item === initialItem,
+    let startElapsed = 0;
+    let initialSegmentOffset = 0;
+
+    if (resumeFromTime !== null) {
+        const safeTotal = Math.max(totalDuration, 0);
+        const safeResumeTime = Math.min(resumeFromTime, safeTotal);
+        const resumeSegmentIndex = segments.findIndex(
+            (segment) => safeResumeTime < segment.end,
         );
-        if (foundSegmentIndex >= 0) {
-            initialSegmentIndex = foundSegmentIndex;
+        if (resumeSegmentIndex < 0) {
+            resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
+            updatePlaybackTimeDisplay(totalDuration, totalDuration);
+            clearTimelinePauseState();
+            playVideoButton.textContent = 'Play Back';
+            return true;
         }
+        const resumeSegment = segments[resumeSegmentIndex];
+        initialSegmentIndex = resumeSegmentIndex;
+        startElapsed = Math.max(resumeSegment.start, safeResumeTime);
+        initialSegmentOffset = Math.max(0, startElapsed - resumeSegment.start);
+    } else {
+        const boundedIndex = Math.min(
+            Math.max(0, startIndex),
+            Math.max(timelineItems.length - 1, 0),
+        );
+        const initialItem = timelineItems[boundedIndex] || null;
+        if (initialItem) {
+            const foundSegmentIndex = segments.findIndex(
+                (segment) => segment.item === initialItem,
+            );
+            if (foundSegmentIndex >= 0) {
+                initialSegmentIndex = foundSegmentIndex;
+            }
+        }
+        const startSegment = segments[initialSegmentIndex] || null;
+        startElapsed = startSegment ? startSegment.start : 0;
     }
-    const startSegment = segments[initialSegmentIndex] || null;
-    const startElapsed = startSegment ? startSegment.start : 0;
+
+    clearTimelinePauseState();
 
     isTimelinePlaying = true;
     playVideoButton.textContent = 'Pause playback';
@@ -10401,9 +10521,14 @@ async function playTimelineSequence(startIndex = 0) {
                 break;
             }
             const segment = segments[index];
-            const { item, start, end, duration } = segment;
-            if (duration <= 0) {
-                syncSegmentAudioPlayback(segment.items || [], start);
+            const { item, start, end } = segment;
+            const clipOffset = index === initialSegmentIndex ? initialSegmentOffset : 0;
+            const segmentStartTime = clipOffset > 0
+                ? Math.min(end, start + clipOffset)
+                : start;
+            const segmentDuration = Math.max(0, end - segmentStartTime);
+            if (segmentDuration <= 0) {
+                syncSegmentAudioPlayback(segment.items || [], segmentStartTime);
                 continue;
             }
             const nextSegment = segments[index + 1];
@@ -10414,24 +10539,26 @@ async function playTimelineSequence(startIndex = 0) {
                     preloadTimelineImage(nextUrl).catch(() => {});
                 }
             }
-            const startFraction = getTimelineFractionForTime(start);
+            const startFraction = getTimelineFractionForTime(segmentStartTime);
             const endFraction = getTimelineFractionForTime(end);
-            animateTimelineProgress(startFraction, endFraction, duration);
-            syncSegmentAudioPlayback(segment.items || [], start);
+            animateTimelineProgress(startFraction, endFraction, segmentDuration);
+            syncSegmentAudioPlayback(segment.items || [], segmentStartTime);
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
-                await playTimelineItem(item, duration, segment.items || null);
+                await playTimelineItem(item, segmentDuration, segment.items || null, {
+                    startOffsetMs: clipOffset,
+                });
             } else {
                 // eslint-disable-next-line no-await-in-loop
-                await waitForGapDuration(duration);
+                await waitForGapDuration(segmentDuration);
             }
         }
     } finally {
-        stopTimelinePlayback(true, false);
+        stopTimelinePlayback(true, false, { preserveResumeState: isTimelinePaused });
         if (completedNaturally) {
             resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
             updatePlaybackTimeDisplay(totalDuration, totalDuration);
-        } else {
+        } else if (!isTimelinePaused) {
             updateActiveTimelineIndicators();
         }
     }
@@ -10741,15 +10868,52 @@ document.addEventListener('keydown', (event) => {
 
 playVideoButton.addEventListener('click', () => {
     if (isTimelinePlaying) {
-        stopTimelinePlayback();
+        pauseTimelinePlayback();
         return;
     }
 
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
+        clearTimelinePauseState();
         alert('Upload audio, image, or video to build your timeline.');
         return;
     }
+
+    const totalDuration = getTotalTimelineDuration();
+    const hasResumeState = isTimelinePaused && Number.isFinite(timelinePlaybackResumeTime);
+    const resumeTime = hasResumeState
+        ? Math.max(0, Math.min(timelinePlaybackResumeTime, Math.max(totalDuration, 0)))
+        : null;
+
+    if (resumeTime !== null) {
+        const { segments, totalDuration: playbackDuration } = getTimelinePlaybackSegments();
+        if (!segments.length || playbackDuration <= 0) {
+            clearTimelinePauseState();
+        } else if (resumeTime >= playbackDuration) {
+            resetTimelineProgressLine(playbackDuration > 0 ? 1 : 0);
+            updatePlaybackTimeDisplay(playbackDuration, playbackDuration);
+            clearTimelinePauseState();
+            playVideoButton.textContent = 'Play Back';
+            return;
+        } else {
+            const resumeSegment = segments.find((segment) => (
+                resumeTime >= segment.start && resumeTime < segment.end
+            )) || null;
+            const resumeItem = resumeSegment?.item || null;
+            let resumeIndex = resumeItem ? timelineItems.indexOf(resumeItem) : -1;
+            if (resumeIndex < 0 && activeTimelineItem) {
+                resumeIndex = timelineItems.indexOf(activeTimelineItem);
+            }
+            const safeIndex = resumeIndex >= 0 ? resumeIndex : 0;
+            clearTimelinePauseState();
+            playTimelineSequence(safeIndex, { startTimeMs: resumeTime }).catch((error) => {
+                console.error('Timeline playback failed.', error);
+            });
+            return;
+        }
+    }
+
+    clearTimelinePauseState();
 
     const startIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : 0;
     playTimelineSequence(startIndex >= 0 ? startIndex : 0).catch((error) => {
