@@ -779,6 +779,16 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        if (entry.renderState) {
+            entry.renderState.left = null;
+            entry.renderState.top = null;
+            entry.renderState.width = null;
+            entry.renderState.height = null;
+            entry.renderState.rotation = null;
+            entry.renderState.zIndex = null;
+            entry.renderState.opacity = null;
+            entry.renderState.borderRadius = null;
+        }
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
@@ -1078,6 +1088,16 @@ function computeOverlayEntryOpacity(entry) {
 
     if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
         return 0;
+    }
+
+    if (entry.renderState && entry.renderState.opacity !== null) {
+        const storedOpacity = Number.parseFloat(entry.renderState.opacity);
+        if (Number.isFinite(storedOpacity)) {
+            return clamp(storedOpacity, 0, 1);
+        }
+        if (entry.renderState.opacity === '1') {
+            return 1;
+        }
     }
 
     if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {

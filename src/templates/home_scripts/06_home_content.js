@@ -139,6 +139,16 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                renderState: {
+                    left: null,
+                    top: null,
+                    width: null,
+                    height: null,
+                    rotation: null,
+                    zIndex: null,
+                    opacity: null,
+                    borderRadius: null,
+                },
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -148,10 +158,25 @@
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
+        const state = entry.renderState || (entry.renderState = {
+            left: null,
+            top: null,
+            width: null,
+            height: null,
+            rotation: null,
+            zIndex: null,
+            opacity: null,
+            borderRadius: null,
+        });
+
         if (borderRadius > 0) {
-            layer.style.borderRadius = `${borderRadius}px`;
-        } else {
+            if (state.borderRadius !== borderRadius) {
+                layer.style.borderRadius = `${borderRadius}px`;
+                state.borderRadius = borderRadius;
+            }
+        } else if (state.borderRadius !== 0) {
             layer.style.removeProperty('border-radius');
+            state.borderRadius = 0;
         }
 
         if (entry.objectURL !== objectURL || !image.src) {
@@ -179,6 +204,16 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        if (entry.renderState) {
+            entry.renderState.left = null;
+            entry.renderState.top = null;
+            entry.renderState.width = null;
+            entry.renderState.height = null;
+            entry.renderState.rotation = null;
+            entry.renderState.zIndex = null;
+            entry.renderState.opacity = null;
+            entry.renderState.borderRadius = null;
+        }
 
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -211,9 +246,25 @@
             return false;
         }
 
-        const { layer, image } = entry;
+        if (!entry.renderState) {
+            entry.renderState = {
+                left: null,
+                top: null,
+                width: null,
+                height: null,
+                rotation: null,
+                zIndex: null,
+                opacity: null,
+                borderRadius: null,
+            };
+        }
 
-        layer.style.zIndex = String(zIndex);
+        const { layer, image, renderState: state } = entry;
+
+        if (state.zIndex !== zIndex) {
+            layer.style.zIndex = String(zIndex);
+            state.zIndex = zIndex;
+        }
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -246,23 +297,51 @@
         const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
 
         if (frame) {
-            layer.style.left = `${frame.left}px`;
-            layer.style.top = `${frame.top}px`;
-            layer.style.width = `${frame.width}px`;
-            layer.style.height = `${frame.height}px`;
+            if (state.left !== frame.left) {
+                layer.style.left = `${frame.left}px`;
+                state.left = frame.left;
+            }
+            if (state.top !== frame.top) {
+                layer.style.top = `${frame.top}px`;
+                state.top = frame.top;
+            }
+            if (state.width !== frame.width) {
+                layer.style.width = `${frame.width}px`;
+                state.width = frame.width;
+            }
+            if (state.height !== frame.height) {
+                layer.style.height = `${frame.height}px`;
+                state.height = frame.height;
+            }
             const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            if (state.rotation !== rotationValue) {
+                image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+                state.rotation = rotationValue;
+            }
         } else {
-            layer.style.left = '0px';
-            layer.style.top = '0px';
-            layer.style.width = '100%';
-            layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            if (state.left !== null) {
+                layer.style.left = '0px';
+                state.left = null;
+            }
+            if (state.top !== null) {
+                layer.style.top = '0px';
+                state.top = null;
+            }
+            if (state.width !== null) {
+                layer.style.width = '100%';
+                state.width = null;
+            }
+            if (state.height !== null) {
+                layer.style.height = '100%';
+                state.height = null;
+            }
+            if (state.rotation !== 0) {
+                image.style.setProperty('--preview-overlay-rotation', '0deg');
+                state.rotation = 0;
+            }
         }
 
         if (layer.parentElement !== container) {
-            container.appendChild(layer);
-        } else {
             container.appendChild(layer);
         }
 
@@ -270,8 +349,12 @@
 
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
-        layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
-        if (image) {
+        const opacityValue = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+        if (state.opacity !== opacityValue) {
+            layer.style.opacity = opacityValue;
+            state.opacity = opacityValue;
+        }
+        if (image && image.style.opacity !== '1') {
             image.style.opacity = '1';
         }
 
