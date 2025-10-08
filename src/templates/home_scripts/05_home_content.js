@@ -872,8 +872,11 @@ function doesClipIntersectWindow(descriptor, windowStart, windowEnd) {
 
     const safeWindowStart = Math.min(windowStart, windowEnd);
     const safeWindowEnd = Math.max(windowStart, windowEnd);
+    const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0);
+    const extendedWindowStart = safeWindowStart - tolerance;
+    const extendedWindowEnd = safeWindowEnd + tolerance;
 
-    return end > safeWindowStart && start < safeWindowEnd;
+    return end >= extendedWindowStart && start <= extendedWindowEnd;
 }
 
 function isClipActiveAtTime(descriptor, timeMs) {

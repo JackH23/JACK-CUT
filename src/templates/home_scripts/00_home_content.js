@@ -31,6 +31,7 @@ const overlayLayerToTimelineItem = new WeakMap();
 let lastOverlayRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
+const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = 1;
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
