@@ -718,6 +718,75 @@ function getTimelineSnapThresholdMs() {
     return perPixel * thresholdPx;
 }
 
+let timelineSnapLineLabel = null;
+let timelineSnapLineCaps = { top: null, bottom: null };
+
+function ensureTimelineSnapLineDecorations() {
+    if (!timelineSnapLine) {
+        timelineSnapLineLabel = null;
+        timelineSnapLineCaps = { top: null, bottom: null };
+        return;
+    }
+
+    if (!timelineSnapLineCaps.top || !timelineSnapLineCaps.top.isConnected) {
+        const topCap = document.createElement('span');
+        topCap.className = 'timeline-snap-line__cap timeline-snap-line__cap--top';
+        topCap.setAttribute('aria-hidden', 'true');
+        timelineSnapLine.insertBefore(topCap, timelineSnapLine.firstChild || null);
+        timelineSnapLineCaps.top = topCap;
+    }
+
+    if (!timelineSnapLineCaps.bottom || !timelineSnapLineCaps.bottom.isConnected) {
+        const bottomCap = document.createElement('span');
+        bottomCap.className = 'timeline-snap-line__cap timeline-snap-line__cap--bottom';
+        bottomCap.setAttribute('aria-hidden', 'true');
+        timelineSnapLine.appendChild(bottomCap);
+        timelineSnapLineCaps.bottom = bottomCap;
+    }
+
+    if (!timelineSnapLineLabel || !timelineSnapLineLabel.isConnected) {
+        timelineSnapLineLabel = document.createElement('span');
+        timelineSnapLineLabel.className = 'timeline-snap-line__label';
+        timelineSnapLineLabel.setAttribute('aria-hidden', 'true');
+        timelineSnapLine.appendChild(timelineSnapLineLabel);
+    }
+}
+
+function formatTimelineSnapLabel(state, laneIndex = null) {
+    if (!state) {
+        return '';
+    }
+
+    const edgeName = state.edge === 'end' ? 'End' : 'Start';
+    let targetName = 'Marker';
+
+    switch (state.targetType) {
+        case 'clip-start':
+            targetName = 'Clip start';
+            break;
+        case 'clip-end':
+            targetName = 'Clip end';
+            break;
+        case 'playhead':
+            targetName = 'Playhead';
+            break;
+        default:
+            targetName = 'Marker';
+            break;
+    }
+
+    if (state.targetType === 'playhead') {
+        return `${edgeName} ↔ Playhead`;
+    }
+
+    const numericLaneIndex = Number.isFinite(laneIndex) ? laneIndex : null;
+    const laneSuffix = Number.isFinite(numericLaneIndex)
+        ? ` (Lane ${numericLaneIndex + 1})`
+        : '';
+
+    return `${edgeName} ↔ ${targetName}${laneSuffix}`;
+}
+
 function getTimelineSnapTargets(excludeItem = null) {
     const entries = getTimelineLaneEntries();
     const targets = [];
@@ -785,6 +854,7 @@ function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeI
                 targetTimeMs: targetTime,
                 targetType: target.type,
                 laneIndex: target.laneIndex,
+                targetItem: target.item || null,
             };
         }
 
@@ -801,6 +871,7 @@ function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeI
                     targetTimeMs: targetTime,
                     targetType: target.type,
                     laneIndex: target.laneIndex,
+                    targetItem: target.item || null,
                 };
             }
         }
@@ -825,6 +896,7 @@ function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeI
         targetType: bestMatch.targetType,
         edge: bestMatch.edge,
         laneIndex: bestMatch.laneIndex,
+        targetItem: bestMatch.targetItem || null,
     };
 }
 
@@ -871,6 +943,7 @@ function resolveTimelineSnapForResize({
                     targetTimeMs: Math.round(targetTime),
                     targetType: target.type,
                     laneIndex: target.laneIndex,
+                    targetItem: target.item || null,
                 };
             }
         });
@@ -882,6 +955,7 @@ function resolveTimelineSnapForResize({
                 targetType: best.targetType,
                 edge: 'end',
                 laneIndex: best.laneIndex,
+                targetItem: best.targetItem || null,
             };
         }
     }
@@ -906,6 +980,7 @@ function resolveTimelineSnapForResize({
                     targetTimeMs: Math.round(targetTime),
                     targetType: target.type,
                     laneIndex: target.laneIndex,
+                    targetItem: target.item || null,
                 };
             }
         });
@@ -918,6 +993,7 @@ function resolveTimelineSnapForResize({
                 targetType: best.targetType,
                 edge: 'start',
                 laneIndex: best.laneIndex,
+                targetItem: best.targetItem || null,
             };
         }
     }
@@ -933,14 +1009,25 @@ function setTimelineSnapLineState(state) {
 
     if (!state) {
         if (activeTimelineSnapState) {
+            if (activeTimelineSnapState.laneElement && activeTimelineSnapState.laneElement.isConnected) {
+                activeTimelineSnapState.laneElement.classList.remove('timeline-lane--snap-target');
+            }
             activeTimelineSnapState = null;
             timelineSnapLine.classList.remove('is-visible');
             timelineSnapLine.style.transform = 'translateX(-9999px)';
+            timelineSnapLine.style.removeProperty('top');
+            timelineSnapLine.style.removeProperty('height');
             timelineSnapLine.removeAttribute('data-edge');
             timelineSnapLine.removeAttribute('data-source');
+            if (timelineSnapLineLabel) {
+                timelineSnapLineLabel.textContent = '';
+                timelineSnapLineLabel.classList.remove('has-text');
+            }
         }
         return;
     }
+
+    ensureTimelineSnapLineDecorations();
 
     const perPixel = getTimelineDurationPerPixel();
     if (!Number.isFinite(perPixel) || perPixel <= 0) {
@@ -960,8 +1047,17 @@ function setTimelineSnapLineState(state) {
     const targetLaneIndex = parseLaneIndex(state.laneIndex);
     const explicitLane = state.lane && state.lane.isConnected ? state.lane : null;
     const explicitLaneIndex = explicitLane ? parseLaneIndex(explicitLane.dataset?.laneIndex) : null;
+    const targetItem = state.targetItem && state.targetItem.isConnected ? state.targetItem : null;
+    const targetItemLane = targetItem ? targetItem.closest('.timeline-lane') : null;
+    const connectedTargetItemLane = targetItemLane && targetItemLane.isConnected
+        ? targetItemLane
+        : null;
 
     let resolvedLane = null;
+
+    if (connectedTargetItemLane) {
+        resolvedLane = connectedTargetItemLane;
+    }
 
     if (explicitLane) {
         const explicitMatchesTarget = !Number.isFinite(targetLaneIndex)
@@ -987,6 +1083,9 @@ function setTimelineSnapLineState(state) {
     }
 
     if (!resolvedLane) {
+        if (activeTimelineSnapState?.laneElement && activeTimelineSnapState.laneElement.isConnected) {
+            activeTimelineSnapState.laneElement.classList.remove('timeline-lane--snap-target');
+        }
         setTimelineSnapLineState(null);
         return;
     }
@@ -1000,16 +1099,34 @@ function setTimelineSnapLineState(state) {
         : 0;
     const offset = (laneRect.left - trackRect.left) + paddingLeft + (targetTime / perPixel);
     const appliedLeft = Math.round(offset);
+    const laneTop = Math.round(laneRect.top - trackRect.top);
+    const laneHeight = Math.max(0, Math.round(laneRect.height));
     const previousState = activeTimelineSnapState;
+
+    const resolvedLaneIndex = parseLaneIndex(resolvedLane?.dataset?.laneIndex);
+    const labelLaneIndex = Number.isFinite(targetLaneIndex) ? targetLaneIndex : resolvedLaneIndex;
+    const label = formatTimelineSnapLabel(state, labelLaneIndex);
+
+    if (previousState && previousState.laneElement && previousState.laneElement !== resolvedLane) {
+        if (previousState.laneElement.isConnected) {
+            previousState.laneElement.classList.remove('timeline-lane--snap-target');
+        }
+    }
 
     if (previousState
         && previousState.targetTimeMs === targetTime
         && previousState.edge === (state.edge || '')
-        && previousState.appliedLeft === appliedLeft) {
+        && previousState.appliedLeft === appliedLeft
+        && previousState.laneTop === laneTop
+        && previousState.laneHeight === laneHeight
+        && previousState.label === label
+        && previousState.laneElement === resolvedLane) {
         return;
     }
 
     timelineSnapLine.style.transform = `translateX(${appliedLeft}px)`;
+    timelineSnapLine.style.top = `${laneTop}px`;
+    timelineSnapLine.style.height = `${laneHeight}px`;
     timelineSnapLine.classList.add('is-visible');
 
     if (state.edge) {
@@ -1024,10 +1141,23 @@ function setTimelineSnapLineState(state) {
         timelineSnapLine.removeAttribute('data-source');
     }
 
+    if (timelineSnapLineLabel) {
+        timelineSnapLineLabel.textContent = label;
+        timelineSnapLineLabel.classList.toggle('has-text', Boolean(label));
+    }
+
+    if (resolvedLane && resolvedLane.isConnected) {
+        resolvedLane.classList.add('timeline-lane--snap-target');
+    }
+
     activeTimelineSnapState = {
         targetTimeMs: targetTime,
         edge: state.edge || '',
         appliedLeft,
+        laneTop,
+        laneHeight,
+        label,
+        laneElement: resolvedLane,
     };
 }
 
