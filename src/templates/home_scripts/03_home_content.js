@@ -372,6 +372,9 @@ function describeFileType(fileType) {
     if (fileType.startsWith('image/')) {
         return 'Image frame';
     }
+    if (fileType.startsWith('audio/')) {
+        return 'Audio track';
+    }
     return 'Media clip';
 }
 
@@ -902,7 +905,10 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     const { skipAnimationSync = false } = options;
     const minimum = getTimelineItemMinimumDuration(timelineItem);
     const desired = Math.round(Number(durationMs) || 0);
-    const applied = Math.max(minimum, desired);
+    let applied = Math.max(minimum, desired);
+    if (durationKey === 'audioDuration' && Number.isFinite(minimum) && minimum > 0) {
+        applied = minimum;
+    }
 
     timelineItem.dataset[durationKey] = String(applied);
 

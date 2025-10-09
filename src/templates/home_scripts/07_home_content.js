@@ -1,3 +1,156 @@
+const activeAudioPlaybackSessions = new Map();
+
+function getTimelineNow() {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+        return performance.now();
+    }
+    return Date.now();
+}
+
+function requestTimelineFrame(callback) {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        return window.requestAnimationFrame(callback);
+    }
+    return setTimeout(callback, 16);
+}
+
+function cancelTimelineFrame(handle) {
+    if (!handle) {
+        return;
+    }
+    if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(handle);
+    } else {
+        clearTimeout(handle);
+    }
+}
+
+function cancelTimelineAudioEnvelope(session, options = {}) {
+    if (!session) {
+        return;
+    }
+
+    const { restoreVolume = false } = options;
+
+    if (session.fadeInFrameId) {
+        cancelTimelineFrame(session.fadeInFrameId);
+        session.fadeInFrameId = 0;
+    }
+
+    if (session.fadeOutFrameId) {
+        cancelTimelineFrame(session.fadeOutFrameId);
+        session.fadeOutFrameId = 0;
+    }
+
+    if (session.fadeOutTimeoutId) {
+        clearTimeout(session.fadeOutTimeoutId);
+        session.fadeOutTimeoutId = 0;
+    }
+
+    if (restoreVolume && session.element) {
+        const base = Number.isFinite(session.baseVolume)
+            ? clampVolume(session.baseVolume)
+            : clampVolume(session.element.volume);
+        session.element.volume = base;
+    }
+}
+
+function applyTimelineAudioEnvelope(session, envelope = {}) {
+    if (!session || !session.element) {
+        return;
+    }
+
+    cancelTimelineAudioEnvelope(session, { restoreVolume: false });
+
+    const element = session.element;
+    const baseVolume = clampVolume(envelope.baseVolume);
+    const fadeInMs = Math.max(0, Math.round(Number(envelope.fadeInMs) || 0));
+    const fadeOutMs = Math.max(0, Math.round(Number(envelope.fadeOutMs) || 0));
+    const clipOffsetMs = Math.max(0, Math.round(Number(envelope.clipOffsetMs) || 0));
+    const clipDurationMs = Math.max(0, Math.round(Number(envelope.clipDurationMs) || 0));
+    const clipRemainingMs = Math.max(0, Math.round(Number(envelope.clipRemainingMs) || 0));
+
+    session.baseVolume = baseVolume;
+
+    if (baseVolume <= 0) {
+        element.volume = 0;
+        return;
+    }
+
+    const applyVolume = (value) => {
+        element.volume = clampVolume(value);
+    };
+
+    if (fadeInMs > 0 && clipOffsetMs < fadeInMs) {
+        const initialProgress = clampProgress(clipOffsetMs / Math.max(fadeInMs, 1));
+        applyVolume(baseVolume * initialProgress);
+        const fadeInStart = getTimelineNow();
+        const startOffset = clipOffsetMs;
+        const stepFadeIn = () => {
+            const elapsed = getTimelineNow() - fadeInStart;
+            const progress = clampProgress((startOffset + elapsed) / Math.max(fadeInMs, 1));
+            applyVolume(baseVolume * progress);
+            if (progress < 1) {
+                session.fadeInFrameId = requestTimelineFrame(stepFadeIn);
+            }
+        };
+        session.fadeInFrameId = requestTimelineFrame(stepFadeIn);
+    } else {
+        applyVolume(baseVolume);
+    }
+
+    if (fadeOutMs <= 0 || clipDurationMs <= 0 || clipRemainingMs <= 0) {
+        return;
+    }
+
+    const fadeOutStartMs = Math.max(clipDurationMs - fadeOutMs, 0);
+    const currentOffset = Math.min(clipOffsetMs, clipDurationMs);
+    const offsetIntoFade = Math.max(0, currentOffset - fadeOutStartMs);
+
+    if (offsetIntoFade >= fadeOutMs) {
+        applyVolume(0);
+        return;
+    }
+
+    const beginFadeOut = (initialOffsetIntoFade) => {
+        const boundedOffset = Math.min(Math.max(initialOffsetIntoFade, 0), fadeOutMs);
+        const initialProgress = fadeOutMs > 0 ? boundedOffset / fadeOutMs : 1;
+        const startingVolume = clampVolume(baseVolume * (1 - initialProgress));
+        applyVolume(startingVolume);
+        if (startingVolume <= 0) {
+            return;
+        }
+        const fadeOutStart = getTimelineNow();
+        const offsetSeed = boundedOffset;
+        const stepFadeOut = () => {
+            const elapsed = getTimelineNow() - fadeOutStart;
+            const progress = clampProgress((offsetSeed + elapsed) / Math.max(fadeOutMs, 1));
+            const nextVolume = clampVolume(baseVolume * (1 - progress));
+            applyVolume(nextVolume);
+            if (progress < 1) {
+                session.fadeOutFrameId = requestTimelineFrame(stepFadeOut);
+            }
+        };
+        session.fadeOutFrameId = requestTimelineFrame(stepFadeOut);
+    };
+
+    if (offsetIntoFade > 0) {
+        beginFadeOut(offsetIntoFade);
+        return;
+    }
+
+    const delay = Math.max(0, fadeOutStartMs - currentOffset);
+    if (delay <= 0) {
+        beginFadeOut(0);
+        return;
+    }
+
+    const boundedDelay = Math.min(delay, clipRemainingMs);
+    session.fadeOutTimeoutId = setTimeout(() => {
+        session.fadeOutTimeoutId = 0;
+        beginFadeOut(0);
+    }, boundedDelay);
+}
 
 function updateKeyframeControlsState() {
     if (addKeyframeButton) {
@@ -650,6 +803,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
 
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
+    stopAllTimelineAudio({ resetPosition: resetProgress });
     pausePreviewCanvasVideo();
 
     stopPlaybackClock(resetProgress);
@@ -685,6 +839,9 @@ function clearPreview() {
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
     previewPlaceholder.hidden = false;
+    if (previewPlaceholder && previewPlaceholderDefaultText) {
+        previewPlaceholder.textContent = previewPlaceholderDefaultText;
+    }
     playVideoButton.textContent = 'Play Back';
     setPreviewMode(null);
     resetPreviewScroll();
@@ -782,6 +939,20 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
+    } else if (fileType.startsWith('audio/')) {
+        cancelPreviewExitAnimation({ forceRestore: true });
+        setPreviewMode('has-audio');
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        setPreviewImageVisibility(false);
+        resetPreviewScroll();
+        playVideoButton.textContent = 'Play Back';
+        if (previewPlaceholder) {
+            const clipName = timelineItem.dataset.displayName || 'Audio clip';
+            previewPlaceholder.textContent = `Audio • ${clipName}`;
+            previewPlaceholder.hidden = false;
+        }
     }
 
     applyCanvasSettingsToPreview(timelineItem);
@@ -828,9 +999,10 @@ function setStagedUploadAddedState(objectURL, isAdded) {
 async function stageUpload(file) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
 
-    if (!isVideo && !isImage) {
-        alert('Unsupported file type. Please upload an image or video file.');
+    if (!isVideo && !isImage && !isAudio) {
+        alert('Unsupported file type. Please upload an image, video, or audio file.');
         return;
     }
 
@@ -865,6 +1037,11 @@ async function stageUpload(file) {
         video.playsInline = true;
         video.autoplay = true;
         previewWrapper.appendChild(video);
+    } else if (isAudio) {
+        const audioPreview = document.createElement('div');
+        audioPreview.className = 'upload-gallery__audio';
+        audioPreview.textContent = '🎵';
+        previewWrapper.appendChild(audioPreview);
     }
 
     const meta = document.createElement('div');
@@ -959,6 +1136,9 @@ async function addToTimeline(file, objectURL) {
     timelineItem.dataset.fileType = file.type;
     timelineItem.dataset.objectUrl = objectURL;
     timelineItem.dataset.displayName = file.name;
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
 
     const label = document.createElement('span');
     label.textContent = file.name;
@@ -969,7 +1149,7 @@ async function addToTimeline(file, objectURL) {
     removeButton.setAttribute('aria-label', 'Remove clip');
     removeButton.textContent = '✕';
 
-    if (file.type.startsWith('video/')) {
+    if (isVideo) {
         const videoThumb = document.createElement('video');
         videoThumb.src = objectURL;
         videoThumb.muted = true;
@@ -1005,7 +1185,7 @@ async function addToTimeline(file, objectURL) {
             }
         });
         timelineItem.appendChild(videoThumb);
-    } else if (file.type.startsWith('image/')) {
+    } else if (isImage) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
@@ -1020,6 +1200,68 @@ async function addToTimeline(file, objectURL) {
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
+    } else if (isAudio) {
+        timelineItem.classList.add('timeline-item--audio');
+        const audioThumb = document.createElement('div');
+        audioThumb.className = 'timeline-audio-thumbnail';
+        const audioIcon = document.createElement('span');
+        audioIcon.setAttribute('aria-hidden', 'true');
+        audioIcon.textContent = '🎵';
+        audioThumb.appendChild(audioIcon);
+        timelineItem.appendChild(audioThumb);
+
+        const audioElement = document.createElement('audio');
+        audioElement.src = objectURL;
+        audioElement.preload = 'auto';
+        audioElement.loop = false;
+        audioElement.muted = false;
+
+        timelineItem.dataset.audioDuration = '0';
+        setTimelineItemDuration(
+            timelineItem,
+            'audioDuration',
+            0,
+            { skipAnimationSync: true },
+        );
+
+        const metadataReady = new Promise((resolve) => {
+            if (Number.isFinite(audioElement.duration) && audioElement.duration > 0) {
+                resolve();
+                return;
+            }
+            const handleLoaded = () => {
+                audioElement.removeEventListener('loadedmetadata', handleLoaded);
+                audioElement.removeEventListener('error', handleError);
+                resolve();
+            };
+            const handleError = () => {
+                audioElement.removeEventListener('loadedmetadata', handleLoaded);
+                audioElement.removeEventListener('error', handleError);
+                resolve();
+            };
+            audioElement.addEventListener('loadedmetadata', handleLoaded, { once: true });
+            audioElement.addEventListener('error', handleError, { once: true });
+        }).then(() => {
+            if (!timelineItem.isConnected) {
+                return audioElement;
+            }
+            const intrinsicDuration = Number.isFinite(audioElement.duration)
+                && audioElement.duration > 0
+                ? Math.round(audioElement.duration * 1000)
+                : 0;
+            const safeDuration = Math.max(intrinsicDuration, 0);
+            timelineItem.dataset.audioDuration = String(safeDuration);
+            setTimelineItemDuration(
+                timelineItem,
+                'audioDuration',
+                safeDuration,
+                { skipAnimationSync: true },
+            );
+            updateActiveTimelineIndicators();
+            renderExportSummary(getTimelineItems(), null);
+            return audioElement;
+        });
+        registerTimelineAudioElement(timelineItem, audioElement, metadataReady);
     }
 
     timelineItem.appendChild(label);
@@ -1095,6 +1337,10 @@ async function addToTimeline(file, objectURL) {
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
         releaseTimelineCanvasCustomImage(targetItem);
+        if (fileType.startsWith('audio/')) {
+            stopTimelineAudioForItem(targetItem, { resetPosition: true });
+            unregisterTimelineAudioElement(targetItem);
+        }
         targetItem.remove();
         if (parentLane) {
             flushTimelineLaneReflow(parentLane);
@@ -1162,6 +1408,172 @@ uploadInput.addEventListener('change', async (event) => {
 
 if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
+}
+
+function stopTimelineAudioForItem(timelineItem, options = {}) {
+    if (!timelineItem) {
+        return;
+    }
+    const { resetPosition = false } = options;
+    const session = activeAudioPlaybackSessions.get(timelineItem);
+    if (session) {
+        const { element, timeoutId } = session;
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
+        cancelTimelineAudioEnvelope(session, { restoreVolume: true });
+        if (element) {
+            element.pause();
+            if (resetPosition) {
+                try {
+                    element.currentTime = 0;
+                } catch (error) {
+                    // Ignore inability to reset the playhead.
+                }
+            }
+        }
+        activeAudioPlaybackSessions.delete(timelineItem);
+    } else if (resetPosition) {
+        const element = getTimelineAudioElement(timelineItem);
+        if (element) {
+            try {
+                element.currentTime = 0;
+            } catch (error) {
+                // Ignore inability to reset the playhead.
+            }
+        }
+    }
+}
+
+function stopAllTimelineAudio(options = {}) {
+    const { resetPosition = false } = options;
+    Array.from(activeAudioPlaybackSessions.keys()).forEach((item) => {
+        stopTimelineAudioForItem(item, { resetPosition });
+    });
+    if (resetPosition) {
+        registeredTimelineAudioItems.forEach((item) => {
+            const element = getTimelineAudioElement(item);
+            if (!element) {
+                return;
+            }
+            try {
+                element.pause();
+                element.currentTime = 0;
+            } catch (error) {
+                // Ignore inability to reset the playhead.
+            }
+        });
+    }
+}
+
+async function syncTimelineAudioForSegment(segmentStartTime, segmentItems = []) {
+    const audioEntries = Array.isArray(segmentItems)
+        ? segmentItems.filter((entry) => entry?.item && isAudioTimelineItem(entry.item))
+        : [];
+
+    if (!audioEntries.length) {
+        activeAudioPlaybackSessions.forEach((session, item) => {
+            stopTimelineAudioForItem(item, { resetPosition: false });
+        });
+        return;
+    }
+
+    const activeItems = new Set();
+
+    for (const entry of audioEntries) {
+        const timelineItem = entry.item;
+        if (!timelineItem) {
+            // eslint-disable-next-line no-continue
+            continue;
+        }
+        activeItems.add(timelineItem);
+        const audioElement = getTimelineAudioElement(timelineItem);
+        if (!audioElement) {
+            // eslint-disable-next-line no-continue
+            continue;
+        }
+        const readyPromise = getTimelineAudioReadyPromise(timelineItem);
+        if (readyPromise) {
+            try {
+                await readyPromise;
+            } catch (error) {
+                // eslint-disable-next-line no-continue
+                continue;
+            }
+        }
+
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        const clipStart = Number.isFinite(entry.start)
+            ? entry.start
+            : getTimelineItemStartTime(timelineItem);
+        const clipEnd = Number.isFinite(entry.end)
+            ? entry.end
+            : clipStart + clipDuration;
+        const offsetMs = Math.max(0, segmentStartTime - clipStart);
+        const targetSeconds = offsetMs / 1000;
+
+        let session = activeAudioPlaybackSessions.get(timelineItem);
+        if (!session) {
+            session = {
+                element: audioElement,
+                timeoutId: 0,
+                fadeInFrameId: 0,
+                fadeOutFrameId: 0,
+                fadeOutTimeoutId: 0,
+                baseVolume: 0,
+            };
+            activeAudioPlaybackSessions.set(timelineItem, session);
+        } else {
+            session.element = audioElement;
+            if (session.timeoutId) {
+                window.clearTimeout(session.timeoutId);
+                session.timeoutId = 0;
+            }
+        }
+
+        const audioSettings = getTimelineItemAudioSettings(timelineItem);
+        const baseVolume = clampVolume(audioSettings.volumePercent / 100);
+        audioElement.muted = baseVolume <= 0;
+
+        const currentTime = Number(audioElement.currentTime) || 0;
+        if (!Number.isFinite(currentTime) || Math.abs(currentTime - targetSeconds) > 0.05) {
+            try {
+                audioElement.currentTime = targetSeconds;
+            } catch (error) {
+                // Ignore inability to seek within the audio element.
+            }
+        }
+
+        const clipRemainingMs = Math.max(0, clipEnd - segmentStartTime);
+        const clipDurationMs = Math.max(0, clipEnd - clipStart);
+        applyTimelineAudioEnvelope(session, {
+            baseVolume,
+            fadeInMs: audioSettings.fadeInMs,
+            fadeOutMs: audioSettings.fadeOutMs,
+            clipOffsetMs: offsetMs,
+            clipDurationMs,
+            clipRemainingMs,
+        });
+
+        const playPromise = audioElement.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch((error) => {
+                console.warn('Audio playback failed.', error);
+            });
+        }
+
+        if (clipRemainingMs > 0) {
+            session.timeoutId = window.setTimeout(() => {
+                stopTimelineAudioForItem(timelineItem, { resetPosition: false });
+            }, clipRemainingMs + 30);
+        }
+    }
+
+    activeAudioPlaybackSessions.forEach((session, item) => {
+        if (!activeItems.has(item)) {
+            stopTimelineAudioForItem(item, { resetPosition: false });
+        }
+    });
 }
 
 async function playTimelineItem(

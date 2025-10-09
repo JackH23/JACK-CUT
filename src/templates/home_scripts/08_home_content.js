@@ -217,6 +217,30 @@
                 startPlayback();
             }
         });
+    } else if (fileType.startsWith('audio/')) {
+        setPreviewMode('has-audio');
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        setPreviewImageVisibility(false);
+        resetPreviewScroll();
+        playVideoButton.textContent = 'Play Back';
+        if (previewPlaceholder) {
+            const clipName = timelineItem.dataset.displayName || 'Audio clip';
+            previewPlaceholder.textContent = `Audio • ${clipName}`;
+            previewPlaceholder.hidden = false;
+        }
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        const playbackWindowMs = Number.isFinite(playbackWindow)
+            ? Math.max(0, Math.round(playbackWindow))
+            : null;
+        const remainingDuration = playbackWindowMs === null
+            ? Math.max(0, clipDuration - startOffsetMs)
+            : playbackWindowMs;
+        if (remainingDuration > 0) {
+            await waitForGapDuration(remainingDuration);
+        }
+        return;
     } else if (fileType.startsWith('image/')) {
         const rawClipDuration = Number(timelineItem.dataset.imageDuration);
         const clipDuration = Number.isFinite(rawClipDuration) && rawClipDuration > 0
@@ -403,19 +427,21 @@ function waitForGapDuration(durationMs) {
 async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload an image, video, or audio file to build your timeline.');
         return false;
     }
 
     const { segments, totalDuration } = getTimelinePlaybackSegments();
     if (!segments.length || totalDuration <= 0) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload an image, video, or audio file to build your timeline.');
         return false;
     }
 
     const resumeTimeMs = Number.isFinite(resumeOptions?.timeMs)
         ? Math.max(0, Math.round(resumeOptions.timeMs))
         : null;
+
+    stopAllTimelineAudio({ resetPosition: false });
 
     const boundedIndex = Math.min(
         Math.max(0, startIndex),
@@ -498,6 +524,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
                 ? Math.max(0, Math.round(end - segmentStartTime))
                 : duration;
             animateTimelineProgress(startFraction, endFraction, remainingDuration);
+            await syncTimelineAudioForSegment(segmentStartTime, segment.items || []);
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
                 await playTimelineItem(item, remainingDuration, segment.items || null, {
@@ -538,6 +565,8 @@ function pauseTimelinePlayback() {
         0,
         Math.min(Number(playbackDisplayCurrentMs) || 0, totalDuration),
     );
+
+    stopAllTimelineAudio({ resetPosition: false });
 
     const segmentIndex = segments.findIndex(
         (segment) => clampedTime >= segment.start && clampedTime < segment.end,
@@ -619,7 +648,7 @@ if (exportButton) {
     exportButton.addEventListener('click', () => {
         const timelineItems = getTimelineItems();
         if (!timelineItems.length) {
-            alert('Upload an image or video to build your timeline.');
+            alert('Upload an image, video, or audio file to build your timeline.');
             return;
         }
 
@@ -663,7 +692,10 @@ function attachPreviewAudioToStream(previewVideo, combinedStream) {
 
     let lastError = null;
 
-    if (typeof previewVideo.captureStream === 'function') {
+    const additionalAudioElements = listRegisteredTimelineAudioElements()
+        .filter((element) => element && element !== previewVideo);
+
+    if (!additionalAudioElements.length && typeof previewVideo.captureStream === 'function') {
         try {
             const audioStream = previewVideo.captureStream();
             if (audioStream) {
@@ -687,14 +719,16 @@ function attachPreviewAudioToStream(previewVideo, combinedStream) {
         };
     }
 
+    const audioElements = [previewVideo, ...additionalAudioElements];
     let audioContext = null;
     try {
         audioContext = new AudioContextConstructor();
-        const sourceNode = audioContext.createMediaElementSource(previewVideo);
         const destination = audioContext.createMediaStreamDestination();
-        sourceNode.connect(destination);
-        sourceNode.connect(audioContext.destination);
-
+        audioElements.forEach((element) => {
+            const sourceNode = audioContext.createMediaElementSource(element);
+            sourceNode.connect(destination);
+            sourceNode.connect(audioContext.destination);
+        });
         const audioTracks = destination.stream.getAudioTracks();
         audioTracks.forEach((track) => combinedStream.addTrack(track));
         if (!audioTracks.length) {
@@ -707,6 +741,10 @@ function attachPreviewAudioToStream(previewVideo, combinedStream) {
                 success: false,
                 error: lastError || new Error('No audio tracks available from preview video.'),
             };
+        }
+
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
         }
 
         return { audioContext, success: true, error: null };
@@ -732,7 +770,7 @@ async function handleConfirmExport() {
 
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload an image, video, or audio file to build your timeline.');
         return;
     }
 
@@ -928,7 +966,7 @@ playVideoButton.addEventListener('click', () => {
 
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
-        alert('Upload an image or video to build your timeline.');
+        alert('Upload an image, video, or audio file to build your timeline.');
         return;
     }
 

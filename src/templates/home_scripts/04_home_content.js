@@ -122,6 +122,9 @@ function getTimelineItemDurationKey(timelineItem) {
     if (fileType.startsWith('video/')) {
         return 'videoDuration';
     }
+    if (fileType.startsWith('audio/')) {
+        return 'audioDuration';
+    }
     return null;
 }
 
@@ -134,6 +137,12 @@ function getTimelineItemMinimumDuration(timelineItem) {
         const minimum = Number(timelineItem.dataset.minVideoDuration);
         if (Number.isFinite(minimum) && minimum > 0) {
             return minimum;
+        }
+    }
+    if (fileType.startsWith('audio/')) {
+        const audioDuration = Number(timelineItem.dataset.audioDuration);
+        if (Number.isFinite(audioDuration) && audioDuration > 0) {
+            return audioDuration;
         }
     }
     return MIN_IMAGE_DURATION;
@@ -554,7 +563,7 @@ function initializeTimelineItem(timelineItem) {
     }
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
-    if (fileType.startsWith('video/')) {
+    if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
     if (fileType.startsWith('image/') || fileType.startsWith('video/')) {

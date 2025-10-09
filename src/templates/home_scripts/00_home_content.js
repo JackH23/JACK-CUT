@@ -32,6 +32,9 @@ let lastOverlayRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
 const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = 1;
+const timelineAudioElements = new WeakMap();
+const timelineAudioReadyPromises = new WeakMap();
+const registeredTimelineAudioItems = new Set();
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
@@ -74,6 +77,9 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const previewPlaceholderDefaultText = previewPlaceholder
+    ? previewPlaceholder.textContent
+    : '';
 
 if (previewImage) {
     try {
@@ -739,6 +745,48 @@ const previewAudioEnvelopeState = {
     baseVolume: clampVolume(DEFAULT_AUDIO_VOLUME_PERCENT / 100),
 };
 
+function registerTimelineAudioElement(timelineItem, audioElement, readyPromise = null) {
+    if (!timelineItem) {
+        return;
+    }
+    if (audioElement) {
+        timelineAudioElements.set(timelineItem, audioElement);
+        registeredTimelineAudioItems.add(timelineItem);
+        if (readyPromise) {
+            timelineAudioReadyPromises.set(timelineItem, Promise.resolve(readyPromise));
+        } else {
+            timelineAudioReadyPromises.delete(timelineItem);
+        }
+    } else {
+        timelineAudioElements.delete(timelineItem);
+        timelineAudioReadyPromises.delete(timelineItem);
+        registeredTimelineAudioItems.delete(timelineItem);
+    }
+}
+
+function unregisterTimelineAudioElement(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+    timelineAudioElements.delete(timelineItem);
+    timelineAudioReadyPromises.delete(timelineItem);
+    registeredTimelineAudioItems.delete(timelineItem);
+}
+
+function getTimelineAudioElement(timelineItem) {
+    return timelineAudioElements.get(timelineItem) || null;
+}
+
+function getTimelineAudioReadyPromise(timelineItem) {
+    return timelineAudioReadyPromises.get(timelineItem) || null;
+}
+
+function listRegisteredTimelineAudioElements() {
+    return Array.from(registeredTimelineAudioItems)
+        .map((item) => timelineAudioElements.get(item))
+        .filter((element) => Boolean(element));
+}
+
 function clampVolumePercent(value) {
     const numeric = Number.parseFloat(value);
     if (!Number.isFinite(numeric)) {
@@ -774,7 +822,7 @@ function getDefaultAudioSettings() {
 }
 
 function getTimelineItemAudioSettings(timelineItem) {
-    if (!isVideoTimelineItem(timelineItem)) {
+    if (!isVideoTimelineItem(timelineItem) && !isAudioTimelineItem(timelineItem)) {
         return getDefaultAudioSettings();
     }
 
@@ -793,7 +841,9 @@ function getTimelineItemAudioSettings(timelineItem) {
 }
 
 function persistTimelineItemAudioSettings(timelineItem, settings) {
-    if (!isVideoTimelineItem(timelineItem) || !timelineItem.dataset || !settings) {
+    if ((!isVideoTimelineItem(timelineItem) && !isAudioTimelineItem(timelineItem))
+        || !timelineItem.dataset
+        || !settings) {
         return;
     }
 
@@ -846,7 +896,7 @@ function updateMasterVolumeReadout(percent, options = {}) {
     const { disabled = false } = options;
     if (masterVolumeValue) {
         masterVolumeValue.textContent = disabled
-            ? 'Video only'
+            ? 'Media only'
             : formatMasterVolumeDisplay(percent);
     }
     if (masterVolumeInput) {
@@ -856,7 +906,7 @@ function updateMasterVolumeReadout(percent, options = {}) {
             masterVolumeInput.setAttribute('aria-valuenow', '0');
             masterVolumeInput.setAttribute(
                 'aria-valuetext',
-                'Audio controls available for video clips',
+                'Audio controls available for media clips',
             );
         } else {
             masterVolumeInput.setAttribute('aria-valuenow', String(percent));
@@ -869,11 +919,20 @@ function updateMasterVolumeReadout(percent, options = {}) {
 }
 
 function applyMasterVolumeToPreview(volumePercent) {
+    const percent = clampVolumePercent(volumePercent);
+    const normalized = clampVolume(percent / 100);
+
+    if (activeTimelineItem && isAudioTimelineItem(activeTimelineItem)) {
+        const activeAudioElement = getTimelineAudioElement(activeTimelineItem);
+        if (activeAudioElement) {
+            activeAudioElement.muted = normalized <= 0;
+            activeAudioElement.volume = normalized;
+        }
+    }
+
     if (!previewVideo) {
         return;
     }
-    const percent = clampVolumePercent(volumePercent);
-    const normalized = clampVolume(percent / 100);
     previewVideo.muted = false;
     previewVideo.volume = normalized;
     previewAudioEnvelopeState.baseVolume = normalized;
@@ -953,7 +1012,8 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs) {
 }
 
 function ensureTimelineAudioDefaults(timelineItem) {
-    if (!isVideoTimelineItem(timelineItem) || !timelineItem?.dataset) {
+    if ((!isVideoTimelineItem(timelineItem) && !isAudioTimelineItem(timelineItem))
+        || !timelineItem?.dataset) {
         return;
     }
     if (!timelineItem.dataset.audioVolumePercent) {
@@ -989,20 +1049,21 @@ audioFadeControls.forEach((control) => {
 });
 
 function syncAudioControlsToTimelineItem(timelineItem) {
-    const isVideo = isVideoTimelineItem(timelineItem);
-    const settings = isVideo
+    const supportsAudioControls = isVideoTimelineItem(timelineItem)
+        || isAudioTimelineItem(timelineItem);
+    const settings = supportsAudioControls
         ? getTimelineItemAudioSettings(timelineItem)
         : getDefaultAudioSettings();
 
     if (masterVolumeInput) {
-        masterVolumeInput.disabled = !isVideo;
-        if (isVideo) {
+        masterVolumeInput.disabled = !supportsAudioControls;
+        if (supportsAudioControls) {
             masterVolumeInput.removeAttribute('aria-disabled');
         } else {
             masterVolumeInput.setAttribute('aria-disabled', 'true');
         }
         masterVolumeInput.value = String(settings.volumePercent);
-        updateMasterVolumeReadout(settings.volumePercent, { disabled: !isVideo });
+        updateMasterVolumeReadout(settings.volumePercent, { disabled: !supportsAudioControls });
     }
 
     audioFadeControls.forEach((control) => {
@@ -1011,14 +1072,14 @@ function syncAudioControlsToTimelineItem(timelineItem) {
             return;
         }
 
-        if (!isVideo) {
+        if (!supportsAudioControls) {
             input.disabled = true;
             input.setAttribute('aria-disabled', 'true');
             input.value = '0';
             input.dataset.fadeSeconds = '0';
             input.setAttribute('aria-valuenow', '0');
-            input.setAttribute('aria-valuetext', 'Audio fades available for video clips');
-            readout.textContent = 'Video only';
+            input.setAttribute('aria-valuetext', 'Audio fades available for media clips');
+            readout.textContent = 'Media only';
             return;
         }
 
@@ -1030,7 +1091,7 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         syncAudioFadeControl(control, seconds);
     });
 
-    if (isVideo) {
+    if (supportsAudioControls) {
         applyMasterVolumeToPreview(settings.volumePercent);
     } else if (previewVideo) {
         cancelPreviewAudioEnvelope({ restoreVolume: false });
