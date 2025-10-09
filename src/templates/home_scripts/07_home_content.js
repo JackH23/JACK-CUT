@@ -1087,7 +1087,12 @@ function drawAudioWaveform(canvas, audioBuffer, options = {}) {
     }
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = 'rgba(30, 64, 175, 0.18)';
+
+    const backgroundGradient = ctx.createLinearGradient(0, 0, 0, height);
+    backgroundGradient.addColorStop(0, 'rgba(30, 41, 59, 0.85)');
+    backgroundGradient.addColorStop(0.6, 'rgba(17, 24, 39, 0.9)');
+    backgroundGradient.addColorStop(1, 'rgba(15, 23, 42, 0.95)');
+    ctx.fillStyle = backgroundGradient;
     ctx.fillRect(0, 0, width, height);
 
     let channelData = null;
@@ -1114,11 +1119,10 @@ function drawAudioWaveform(canvas, audioBuffer, options = {}) {
 
     const samplesPerPixel = totalSamples / width;
     const centerY = height / 2;
-    const amplitudeScale = centerY * 0.9;
+    const amplitudeScale = centerY * 0.92;
 
-    ctx.strokeStyle = 'rgba(96, 165, 250, 0.9)';
-    ctx.lineWidth = Math.max(1, Math.round(pixelRatio));
-    ctx.beginPath();
+    const mins = new Float32Array(width);
+    const maxes = new Float32Array(width);
 
     for (let x = 0; x < width; x += 1) {
         const startIndex = Math.floor(x * samplesPerPixel);
@@ -1140,12 +1144,63 @@ function drawAudioWaveform(canvas, audioBuffer, options = {}) {
                 }
             }
         }
-        const top = centerY - (max * amplitudeScale);
-        const bottom = centerY - (min * amplitudeScale);
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, bottom);
+        mins[x] = min;
+        maxes[x] = max;
     }
 
+    const smoothingRadius = Math.min(18, Math.max(0, Math.round(width / 320)));
+    const smoothedMins = new Float32Array(width);
+    const smoothedMaxes = new Float32Array(width);
+    smoothedMins.set(mins);
+    smoothedMaxes.set(maxes);
+
+    if (smoothingRadius > 0) {
+        const minPrefix = new Float32Array(width + 1);
+        const maxPrefix = new Float32Array(width + 1);
+        for (let i = 0; i < width; i += 1) {
+            minPrefix[i + 1] = minPrefix[i] + mins[i];
+            maxPrefix[i + 1] = maxPrefix[i] + maxes[i];
+        }
+        for (let x = 0; x < width; x += 1) {
+            const start = Math.max(0, x - smoothingRadius);
+            const end = Math.min(width - 1, x + smoothingRadius);
+            const count = (end - start) + 1;
+            const minSum = minPrefix[end + 1] - minPrefix[start];
+            const maxSum = maxPrefix[end + 1] - maxPrefix[start];
+            smoothedMins[x] = minSum / count;
+            smoothedMaxes[x] = maxSum / count;
+        }
+    }
+
+    const waveformGradient = ctx.createLinearGradient(0, 0, 0, height);
+    waveformGradient.addColorStop(0, 'rgba(96, 165, 250, 0.95)');
+    waveformGradient.addColorStop(0.5, 'rgba(14, 165, 233, 0.8)');
+    waveformGradient.addColorStop(1, 'rgba(37, 99, 235, 0.95)');
+
+    ctx.beginPath();
+    ctx.moveTo(0, centerY - (smoothedMaxes[0] * amplitudeScale));
+    for (let x = 1; x < width; x += 1) {
+        const top = centerY - (smoothedMaxes[x] * amplitudeScale);
+        ctx.lineTo(x, top);
+    }
+    ctx.lineTo(width - 1, centerY - (smoothedMins[width - 1] * amplitudeScale));
+    for (let x = width - 1; x >= 0; x -= 1) {
+        const bottom = centerY - (smoothedMins[x] * amplitudeScale);
+        ctx.lineTo(x, bottom);
+    }
+    ctx.closePath();
+    ctx.fillStyle = waveformGradient;
+    ctx.fill();
+
+    ctx.lineWidth = Math.max(1, Math.round(pixelRatio));
+    ctx.strokeStyle = 'rgba(191, 219, 254, 0.65)';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+    ctx.lineWidth = Math.max(1, pixelRatio / 2);
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
     ctx.stroke();
 }
 
