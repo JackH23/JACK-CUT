@@ -98,6 +98,7 @@ const timelineDragOverState = {
 };
 let activeTimelineDragItem = null;
 let activeTimelineResizeItem = null;
+let activeTimelineSnapMatch = null;
 const pendingTimelineLaneReflows = new Map();
 let isExportingTimeline = false;
 let isMainTrackMagnetEnabled = true;
@@ -147,10 +148,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        hideTimelineSnapLine();
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        hideTimelineSnapLine();
         return;
     }
 
@@ -166,17 +169,25 @@ function runTimelineDragOverUpdate() {
     const previousLaneIndex = item.dataset.laneIndex || '0';
     const previousOffsetMs = Number(item.dataset.startOffsetMs);
 
-    if (
+    const shouldUpdateLayout = !(
         previousLaneIndex === laneIndex
         && Number.isFinite(previousOffsetMs)
         && previousOffsetMs === desiredStartMs
-    ) {
-        return;
+    );
+
+    if (shouldUpdateLayout) {
+        item.dataset.laneIndex = laneIndex;
+        item.dataset.startOffsetMs = String(desiredStartMs);
+        flushTimelineLaneReflow(lane);
     }
 
-    item.dataset.laneIndex = laneIndex;
-    item.dataset.startOffsetMs = String(desiredStartMs);
-    flushTimelineLaneReflow(lane);
+    const durationMs = Math.max(0, getTimelineItemPlaybackDuration(item));
+    updateTimelineSnapLineForRange(
+        item,
+        lane,
+        desiredStartMs,
+        desiredStartMs + durationMs,
+    );
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -195,6 +206,219 @@ function flushTimelineDragOverUpdate() {
         timelineDragOverAnimationFrame = null;
     }
     runTimelineDragOverUpdate();
+}
+
+function getTimelineSnapToleranceMs() {
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        return 0;
+    }
+    return Math.max(1, Math.round(perPixel * TIMELINE_SNAP_LINE_TOLERANCE_FACTOR));
+}
+
+function choosePreferredTimelineSnapMatch(current, candidate) {
+    if (!candidate) {
+        return current || null;
+    }
+    if (!current) {
+        return { ...candidate };
+    }
+
+    if (candidate.delta < current.delta) {
+        return { ...candidate };
+    }
+    if (candidate.delta > current.delta) {
+        return current;
+    }
+
+    const currentPriority = TIMELINE_SNAP_SOURCE_PRIORITY[current.source] || 0;
+    const candidatePriority = TIMELINE_SNAP_SOURCE_PRIORITY[candidate.source] || 0;
+    if (candidatePriority > currentPriority) {
+        return { ...candidate };
+    }
+    if (candidatePriority < currentPriority) {
+        return current;
+    }
+
+    if (candidate.reference === 'start' && current.reference !== 'start') {
+        return { ...candidate };
+    }
+    if (candidate.reference !== 'start' && current.reference === 'start') {
+        return current;
+    }
+
+    if (candidate.time < current.time) {
+        return { ...candidate };
+    }
+
+    return current;
+}
+
+function evaluateTimelineSnapMatch(targetMs, entries, options = {}) {
+    const { excludeItem = null, reference = '' } = options;
+
+    if (!Number.isFinite(targetMs)) {
+        return null;
+    }
+
+    const sanitizedTarget = Math.max(0, Math.round(targetMs));
+    const tolerance = getTimelineSnapToleranceMs();
+    const sourceEntries = Array.isArray(entries) ? entries : getTimelineLaneEntries();
+    let bestMatch = null;
+
+    sourceEntries.forEach((entry) => {
+        if (!entry || (excludeItem && entry.item === excludeItem)) {
+            return;
+        }
+
+        const startDelta = Math.abs(entry.start - sanitizedTarget);
+        if (startDelta <= tolerance) {
+            bestMatch = choosePreferredTimelineSnapMatch(bestMatch, {
+                time: entry.start,
+                source: 'clip-start',
+                delta: startDelta,
+                reference,
+                laneIndex: entry.laneIndex,
+            });
+        }
+
+        const endDelta = Math.abs(entry.end - sanitizedTarget);
+        if (endDelta <= tolerance) {
+            bestMatch = choosePreferredTimelineSnapMatch(bestMatch, {
+                time: entry.end,
+                source: 'clip-end',
+                delta: endDelta,
+                reference,
+                laneIndex: entry.laneIndex,
+            });
+        }
+    });
+
+    const playheadTime = Number.isFinite(playbackDisplayCurrentMs)
+        ? Math.max(0, Math.round(playbackDisplayCurrentMs))
+        : null;
+    if (playheadTime !== null) {
+        const playheadDelta = Math.abs(playheadTime - sanitizedTarget);
+        if (playheadDelta <= tolerance) {
+            bestMatch = choosePreferredTimelineSnapMatch(bestMatch, {
+                time: playheadTime,
+                source: 'playhead',
+                delta: playheadDelta,
+                reference,
+                laneIndex: null,
+            });
+        }
+    }
+
+    return bestMatch;
+}
+
+function applyTimelineSnapMatch(match, lane) {
+    if (!timelineSnapLine) {
+        activeTimelineSnapMatch = null;
+        return;
+    }
+
+    if (!match || !lane || !lane.isConnected) {
+        hideTimelineSnapLine();
+        return;
+    }
+
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        hideTimelineSnapLine();
+        return;
+    }
+
+    const computed = window.getComputedStyle(lane);
+    const paddingLeft = Number.parseFloat(computed.paddingLeft) || 0;
+    const leftPx = Math.round(lane.offsetLeft + paddingLeft + (match.time / perPixel));
+    const previous = activeTimelineSnapMatch;
+
+    if (!previous
+        || previous.left !== leftPx
+        || previous.source !== match.source
+        || previous.reference !== match.reference
+    ) {
+        timelineSnapLine.style.left = `${leftPx}px`;
+        if (match.source) {
+            timelineSnapLine.dataset.source = match.source;
+        } else {
+            delete timelineSnapLine.dataset.source;
+        }
+        if (match.reference) {
+            timelineSnapLine.dataset.reference = match.reference;
+        } else {
+            delete timelineSnapLine.dataset.reference;
+        }
+    }
+
+    timelineSnapLine.classList.add('is-visible');
+    activeTimelineSnapMatch = {
+        left: leftPx,
+        time: match.time,
+        source: match.source,
+        reference: match.reference,
+        lane,
+    };
+}
+
+function updateTimelineSnapLineForRange(item, lane, startMs, endMs) {
+    if (!timelineSnapLine) {
+        return null;
+    }
+
+    if (!lane || !lane.isConnected) {
+        hideTimelineSnapLine();
+        return null;
+    }
+
+    const entries = getTimelineLaneEntries();
+    const matches = [];
+
+    if (Number.isFinite(startMs)) {
+        const startMatch = evaluateTimelineSnapMatch(startMs, entries, {
+            excludeItem: item,
+            reference: 'start',
+        });
+        if (startMatch) {
+            matches.push(startMatch);
+        }
+    }
+
+    if (Number.isFinite(endMs)) {
+        const endMatch = evaluateTimelineSnapMatch(endMs, entries, {
+            excludeItem: item,
+            reference: 'end',
+        });
+        if (endMatch) {
+            matches.push(endMatch);
+        }
+    }
+
+    if (!matches.length) {
+        hideTimelineSnapLine();
+        return null;
+    }
+
+    const preferred = matches.reduce(choosePreferredTimelineSnapMatch, null);
+    applyTimelineSnapMatch(preferred, lane);
+    return preferred;
+}
+
+function hideTimelineSnapLine() {
+    if (!timelineSnapLine) {
+        activeTimelineSnapMatch = null;
+        return;
+    }
+
+    if (timelineSnapLine.classList.contains('is-visible')) {
+        timelineSnapLine.classList.remove('is-visible');
+    }
+    timelineSnapLine.style.removeProperty('left');
+    delete timelineSnapLine.dataset.source;
+    delete timelineSnapLine.dataset.reference;
+    activeTimelineSnapMatch = null;
 }
 
 function preloadTimelineImage(objectURL) {
@@ -440,6 +664,12 @@ const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;
 const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
+const TIMELINE_SNAP_LINE_TOLERANCE_FACTOR = 0.55;
+const TIMELINE_SNAP_SOURCE_PRIORITY = {
+    'clip-start': 3,
+    'clip-end': 3,
+    playhead: 2,
+};
 
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;

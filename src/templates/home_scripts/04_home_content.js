@@ -280,11 +280,27 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         const tentativeWidth = Math.max(MIN_TIMELINE_ITEM_WIDTH, initialWidth + pendingDeltaX);
         const nextDuration = widthToDuration(tentativeWidth);
         const previousDuration = Number(timelineItem.dataset[durationKey]);
-        if (Number.isFinite(previousDuration) && previousDuration === nextDuration) {
-            return;
+        let appliedDuration = previousDuration;
+        if (!Number.isFinite(previousDuration) || previousDuration !== nextDuration) {
+            appliedDuration = setTimelineItemDuration(
+                timelineItem,
+                durationKey,
+                nextDuration,
+                { markCustom: true },
+            );
+            updateActiveTimelineIndicators();
         }
-        setTimelineItemDuration(timelineItem, durationKey, nextDuration, { markCustom: true });
-        updateActiveTimelineIndicators();
+
+        const lane = timelineItem.closest('.timeline-lane');
+        const startOffset = Number.isFinite(Number(timelineItem.dataset.startOffsetMs))
+            ? Math.max(0, Math.round(Number(timelineItem.dataset.startOffsetMs)))
+            : 0;
+        updateTimelineSnapLineForRange(
+            timelineItem,
+            lane,
+            startOffset,
+            startOffset + Math.max(0, Math.round(Number(appliedDuration) || nextDuration || 0)),
+        );
     };
 
     const scheduleResizeUpdate = () => {
@@ -329,6 +345,7 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         timelineItem.classList.remove('is-resizing');
         timelineItem.draggable = previousDraggable;
         delete timelineItem.dataset.resizeCursor;
+        hideTimelineSnapLine();
         updateActiveTimelineIndicators();
         const parentLane = timelineItem.closest('.timeline-lane');
         if (parentLane) {
@@ -503,6 +520,7 @@ function enableTimelineItemDragging(timelineItem) {
         stopTimelinePlayback();
         activeTimelineDragItem = timelineItem;
         timelineItem.classList.add('dragging');
+        hideTimelineSnapLine();
         const transfer = event.dataTransfer;
         if (transfer) {
             transfer.effectAllowed = 'move';
@@ -537,6 +555,7 @@ function enableTimelineItemDragging(timelineItem) {
         }
         activeTimelineDragItem = null;
         setActiveDropLane(null);
+        hideTimelineSnapLine();
         cleanupEmptyTimelineLanes();
         const parentLane = timelineItem.closest('.timeline-lane');
         if (parentLane) {
@@ -588,6 +607,7 @@ if (timelineTrack) {
         if (!draggingItem) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            hideTimelineSnapLine();
             return;
         }
         event.preventDefault();
@@ -595,6 +615,7 @@ if (timelineTrack) {
         if (!lane) {
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
+            hideTimelineSnapLine();
             return;
         }
         setActiveDropLane(lane);
@@ -626,6 +647,7 @@ if (timelineTrack) {
             }
         }
         setActiveDropLane(null);
+        hideTimelineSnapLine();
         cleanupEmptyTimelineLanes();
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
