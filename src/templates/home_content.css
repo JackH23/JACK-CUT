@@ -2405,6 +2405,25 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 2;
 }
 
+.timeline-snap-line {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.85), rgba(124, 58, 237, 0.85));
+    box-shadow: 0 0 14px rgba(59, 130, 246, 0.35);
+    opacity: 0;
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 5;
+}
+
+.timeline-snap-line[data-visible="true"] {
+    opacity: 1;
+}
+
 .timeline-lane {
     position: relative;
     display: inline-flex;

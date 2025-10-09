@@ -147,10 +147,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        hideTimelineSnapLine();
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        hideTimelineSnapLine();
         return;
     }
 
@@ -171,12 +173,14 @@ function runTimelineDragOverUpdate() {
         && Number.isFinite(previousOffsetMs)
         && previousOffsetMs === desiredStartMs
     ) {
+        updateTimelineSnapLineForItem(item);
         return;
     }
 
     item.dataset.laneIndex = laneIndex;
     item.dataset.startOffsetMs = String(desiredStartMs);
     flushTimelineLaneReflow(lane);
+    updateTimelineSnapLineForItem(item);
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -440,6 +444,7 @@ const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;
 const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
+const TIMELINE_SNAP_TOLERANCE_MS = 16;
 
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;
