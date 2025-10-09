@@ -565,6 +565,8 @@ function pauseTimelinePlayback() {
         return;
     }
 
+    pausePlaybackClock();
+
     const timelineItems = getTimelineItems();
     const clampedTime = Math.max(
         0,
@@ -597,6 +599,7 @@ function pauseTimelinePlayback() {
         : 0;
     setTimelineProgressFraction(pausedFraction, {
         skipInput: false,
+        applyGeometry: true,
         forceUpdate: true,
     });
     updatePlaybackTimeDisplay(clampedTime, totalDuration);
@@ -636,6 +639,16 @@ function resumeTimelinePlayback() {
         Math.max(0, Number(resumeItemIndex) || 0),
         Math.max(timelineItems.length - 1, 0),
     );
+
+    const resumeFraction = totalDuration > 0
+        ? clampProgress(clampedResumeTime / totalDuration)
+        : 0;
+    setTimelineProgressFraction(resumeFraction, {
+        skipInput: false,
+        applyGeometry: true,
+        forceUpdate: true,
+    });
+    updatePlaybackTimeDisplay(clampedResumeTime, totalDuration);
 
     isTimelinePaused = false;
     timelinePauseState = null;
