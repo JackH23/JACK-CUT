@@ -279,6 +279,7 @@ function evaluateTimelineSnapMatch(targetMs, entries, options = {}) {
                 delta: startDelta,
                 reference,
                 laneIndex: entry.laneIndex,
+                item: entry.item,
             });
         }
 
@@ -290,6 +291,7 @@ function evaluateTimelineSnapMatch(targetMs, entries, options = {}) {
                 delta: endDelta,
                 reference,
                 laneIndex: entry.laneIndex,
+                item: entry.item,
             });
         }
     });
@@ -311,6 +313,56 @@ function evaluateTimelineSnapMatch(targetMs, entries, options = {}) {
     }
 
     return bestMatch;
+}
+
+function getTimelineLaneElementByIndex(laneIndex) {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const numericIndex = Number(laneIndex);
+    if (!Number.isFinite(numericIndex) || numericIndex < 0) {
+        return null;
+    }
+
+    return timelineLaneList.querySelector(`.timeline-lane[data-lane-index="${numericIndex}"]`);
+}
+
+function formatTimelineSnapLineLabel(match) {
+    if (!match) {
+        return '';
+    }
+
+    const referenceLabels = {
+        start: 'Aligning start',
+        end: 'Aligning end',
+    };
+
+    const sourceLabels = {
+        'clip-start': 'Clip start',
+        'clip-end': 'Clip end',
+        playhead: 'Playhead',
+    };
+
+    const laneIndex = Number(match.laneIndex);
+    const laneLabel = Number.isFinite(laneIndex) ? `Lane ${laneIndex + 1}` : '';
+    const parts = [];
+
+    const referenceLabel = referenceLabels[match.reference];
+    if (referenceLabel) {
+        parts.push(referenceLabel);
+    }
+
+    const sourceLabel = sourceLabels[match.source];
+    if (sourceLabel) {
+        parts.push(sourceLabel);
+    }
+
+    if (laneLabel && match.source !== 'playhead') {
+        parts.push(`(${laneLabel})`);
+    }
+
+    return parts.join(' • ');
 }
 
 function applyTimelineSnapMatch(match, lane) {
@@ -335,10 +387,40 @@ function applyTimelineSnapMatch(match, lane) {
     const leftPx = Math.round(lane.offsetLeft + paddingLeft + (match.time / perPixel));
     const previous = activeTimelineSnapMatch;
 
+    const targetLane = Number.isFinite(Number(match.laneIndex))
+        ? getTimelineLaneElementByIndex(match.laneIndex)
+        : null;
+    const targetItem = match.item && match.item.isConnected ? match.item : null;
+
+    const previousLane = previous?.targetLane && previous.targetLane.isConnected
+        ? previous.targetLane
+        : null;
+    if (previousLane && previousLane !== targetLane) {
+        previousLane.classList.remove('timeline-lane--snap-source');
+    }
+
+    if (targetLane && !targetLane.classList.contains('timeline-lane--snap-source')) {
+        targetLane.classList.add('timeline-lane--snap-source');
+    }
+
+    const previousTargetItem = previous?.targetItem && previous.targetItem.isConnected
+        ? previous.targetItem
+        : null;
+    if (previousTargetItem && previousTargetItem !== targetItem) {
+        previousTargetItem.classList.remove('timeline-item--snap-target');
+    }
+
+    if (targetItem && !targetItem.classList.contains('timeline-item--snap-target')) {
+        targetItem.classList.add('timeline-item--snap-target');
+    }
+
+    const label = formatTimelineSnapLineLabel(match);
+
     if (!previous
         || previous.left !== leftPx
         || previous.source !== match.source
         || previous.reference !== match.reference
+        || previous.label !== label
     ) {
         timelineSnapLine.style.left = `${leftPx}px`;
         if (match.source) {
@@ -351,6 +433,11 @@ function applyTimelineSnapMatch(match, lane) {
         } else {
             delete timelineSnapLine.dataset.reference;
         }
+        if (label) {
+            timelineSnapLine.dataset.label = label;
+        } else {
+            delete timelineSnapLine.dataset.label;
+        }
     }
 
     timelineSnapLine.classList.add('is-visible');
@@ -359,7 +446,10 @@ function applyTimelineSnapMatch(match, lane) {
         time: match.time,
         source: match.source,
         reference: match.reference,
+        label,
         lane,
+        targetLane,
+        targetItem,
     };
 }
 
@@ -412,12 +502,28 @@ function hideTimelineSnapLine() {
         return;
     }
 
+    const previous = activeTimelineSnapMatch;
+    const previousLane = previous?.targetLane && previous.targetLane.isConnected
+        ? previous.targetLane
+        : null;
+    if (previousLane) {
+        previousLane.classList.remove('timeline-lane--snap-source');
+    }
+
+    const previousTargetItem = previous?.targetItem && previous.targetItem.isConnected
+        ? previous.targetItem
+        : null;
+    if (previousTargetItem) {
+        previousTargetItem.classList.remove('timeline-item--snap-target');
+    }
+
     if (timelineSnapLine.classList.contains('is-visible')) {
         timelineSnapLine.classList.remove('is-visible');
     }
     timelineSnapLine.style.removeProperty('left');
     delete timelineSnapLine.dataset.source;
     delete timelineSnapLine.dataset.reference;
+    delete timelineSnapLine.dataset.label;
     activeTimelineSnapMatch = null;
 }
 

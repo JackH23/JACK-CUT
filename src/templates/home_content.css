@@ -2420,6 +2420,26 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 4;
 }
 
+.timeline-snap-line::before {
+    content: attr(data-label);
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translate(-50%, -6px);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.92);
+    color: rgba(226, 232, 240, 0.95);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+}
+
 .timeline-snap-line::after {
     content: '';
     position: absolute;
@@ -2434,6 +2454,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .timeline-snap-line.is-visible {
     opacity: 1;
+}
+
+.timeline-snap-line.is-visible::before {
+    opacity: 1;
+    transform: translate(-50%, -10px);
+}
+
+.timeline-snap-line[data-label='']::before,
+.timeline-snap-line:not([data-label])::before {
+    display: none;
 }
 
 .timeline-snap-line[data-source='playhead'] {
@@ -2456,6 +2486,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     min-width: 100%;
     width: max-content;
     transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.timeline-lane--snap-source {
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.2), 0 0 0 1px rgba(56, 189, 248, 0.3);
 }
 
 .timeline-lane--audio {
@@ -2640,6 +2675,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     scroll-snap-align: start;
     will-change: transform, box-shadow;
+}
+
+.timeline-item--snap-target {
+    border-color: rgba(56, 189, 248, 0.75);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45), 0 12px 24px rgba(15, 23, 42, 0.2);
 }
 
 .timeline-item--audio {
