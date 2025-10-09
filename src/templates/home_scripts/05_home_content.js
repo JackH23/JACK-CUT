@@ -778,6 +778,8 @@ function clearPreviewOverlayLayers() {
         entry.zIndex = 0;
         entry.borderRadius = 0;
         entry.opacity = 1;
+        entry.layerOpacity = 1;
+        entry.imageOpacity = 1;
         entry.lastTimelineTime = null;
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -1083,32 +1085,66 @@ function computeOverlayEntryOpacity(entry) {
         return 0;
     }
 
-    if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
-        return 1;
+    if (!entry.isVisible) {
+        return 0;
     }
+
+    const isInlineHidden = (element) => {
+        if (!element || !element.style) {
+            return false;
+        }
+        const { display, visibility } = element.style;
+        if (typeof display === 'string' && display.trim().toLowerCase() === 'none') {
+            return true;
+        }
+        if (typeof visibility === 'string' && visibility.trim().toLowerCase() === 'hidden') {
+            return true;
+        }
+        return false;
+    };
+
+    if (isInlineHidden(entry.layer) || isInlineHidden(entry.image)) {
+        return 0;
+    }
+
+    const parseOpacityValue = (value) => {
+        if (value === undefined || value === null) {
+            return null;
+        }
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return null;
+            }
+            const parsed = Number.parseFloat(trimmed);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+    };
 
     let opacity = 1;
 
-    const layerStyle = window.getComputedStyle(entry.layer);
-    if (layerStyle) {
-        if (layerStyle.display === 'none' || layerStyle.visibility === 'hidden') {
+    const layerOpacity = parseOpacityValue(entry.layer.style.opacity)
+        ?? parseOpacityValue(entry.layerOpacity);
+    if (layerOpacity !== null) {
+        const clampedLayerOpacity = clamp(layerOpacity, 0, 1);
+        if (clampedLayerOpacity <= 0) {
             return 0;
         }
-        const parsedLayerOpacity = Number.parseFloat(layerStyle.opacity);
-        if (Number.isFinite(parsedLayerOpacity)) {
-            opacity *= clamp(parsedLayerOpacity, 0, 1);
-        }
+        opacity *= clampedLayerOpacity;
     }
 
-    const imageStyle = window.getComputedStyle(entry.image);
-    if (imageStyle) {
-        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
+    const imageOpacity = parseOpacityValue(entry.image.style.opacity)
+        ?? parseOpacityValue(entry.imageOpacity);
+    if (imageOpacity !== null) {
+        const clampedImageOpacity = clamp(imageOpacity, 0, 1);
+        if (clampedImageOpacity <= 0) {
             return 0;
         }
-        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
-        if (Number.isFinite(parsedImageOpacity)) {
-            opacity *= clamp(parsedImageOpacity, 0, 1);
-        }
+        opacity *= clampedImageOpacity;
     }
 
     return clamp(opacity, 0, 1);

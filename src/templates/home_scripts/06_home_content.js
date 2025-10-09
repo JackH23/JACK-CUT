@@ -138,6 +138,8 @@
                 zIndex: 0,
                 borderRadius: 0,
                 opacity: 1,
+                layerOpacity: 1,
+                imageOpacity: 1,
                 lastTimelineTime: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
@@ -177,6 +179,8 @@
         entry.zIndex = 0;
         entry.borderRadius = 0;
         entry.opacity = 1;
+        entry.layerOpacity = 1;
+        entry.imageOpacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
 
@@ -271,8 +275,10 @@
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
         layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+        entry.layerOpacity = clampedOpacity;
         if (image) {
             image.style.opacity = '1';
+            entry.imageOpacity = 1;
         }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
