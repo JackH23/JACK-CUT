@@ -1191,7 +1191,11 @@ function syncTimelinePlaybackIndicator() {
         return;
     }
 
-    if (!isTimelinePlaying || !Number.isFinite(playbackDisplayCurrentMs)) {
+    const hasValidTime = Number.isFinite(playbackDisplayCurrentMs);
+    const shouldShowPlayhead = hasValidTime
+        && (isTimelinePlaying || isTimelinePaused);
+
+    if (!shouldShowPlayhead) {
         if (timelinePlaybackIndicatorActive && (!activeTimelineSnapState
             || activeTimelineSnapState.owner === 'playback')) {
             setTimelineSnapLineState(null);
