@@ -1161,11 +1161,40 @@ function setTimelineSnapLineState(state) {
     };
 }
 
-function isMagnetEnabledForLaneIndex(laneIndex) {
-    if (!Number.isFinite(laneIndex)) {
+function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
+    if (!isMainTrackMagnetEnabled) {
         return false;
     }
-    return laneIndex === 0 && isMainTrackMagnetEnabled;
+    const resolvedIndex = Number.isFinite(laneIndex) ? laneIndex : 0;
+    const laneElement = lane && typeof lane === 'object' && 'classList' in lane
+        ? lane
+        : getTimelineLanes()[resolvedIndex] || null;
+
+    if (laneElement?.classList?.contains('timeline-lane--audio')) {
+        return false;
+    }
+
+    const items = Array.isArray(laneItems)
+        ? laneItems
+        : laneElement
+            ? Array.from(laneElement.querySelectorAll('.timeline-item'))
+            : [];
+
+    const detectVideo = typeof isVideoTimelineItem === 'function'
+        ? isVideoTimelineItem
+        : ((item) => (item?.dataset?.fileType || '').startsWith('video/'));
+
+    const detectImage = typeof isImageTimelineItem === 'function'
+        ? isImageTimelineItem
+        : ((item) => (item?.dataset?.fileType || '').startsWith('image/'));
+
+    const hasVisualItems = items.some((item) => detectVideo(item) || detectImage(item));
+
+    if (hasVisualItems) {
+        return true;
+    }
+
+    return resolvedIndex === 0;
 }
 
 function getTimelineLaneLayout(lane, fallbackIndex = 0) {
@@ -1177,9 +1206,9 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
         ? Number(lane.dataset.laneIndex)
         : fallbackIndex;
 
-    const magnetActive = isMagnetEnabledForLaneIndex(laneIndex);
-
     const laneItems = Array.from(lane.querySelectorAll('.timeline-item'));
+
+    const magnetActive = isMagnetEnabledForLaneIndex(laneIndex, lane, laneItems);
 
     if (!laneItems.length) {
         return [];
