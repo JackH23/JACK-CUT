@@ -337,6 +337,7 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
         if (shouldRefreshOverlay) {
             refreshActiveOverlayLayers();
         }
+        syncTimelinePlaybackIndicator();
         return;
     }
 
@@ -348,6 +349,8 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
     if (shouldRefreshOverlay) {
         refreshActiveOverlayLayers();
     }
+
+    syncTimelinePlaybackIndicator();
 }
 
 function formatSecondsLabel(durationMs) {
@@ -720,6 +723,7 @@ function getTimelineSnapThresholdMs() {
 
 let timelineSnapLineLabel = null;
 let timelineSnapLineCaps = { top: null, bottom: null };
+let timelinePlaybackIndicatorActive = false;
 
 function ensureTimelineSnapLineDecorations() {
     if (!timelineSnapLine) {
@@ -1009,7 +1013,12 @@ function setTimelineSnapLineState(state) {
 
     if (!state) {
         if (activeTimelineSnapState) {
-            if (activeTimelineSnapState.laneElement && activeTimelineSnapState.laneElement.isConnected) {
+            if (activeTimelineSnapState.owner === 'playback') {
+                timelinePlaybackIndicatorActive = false;
+            }
+            if (activeTimelineSnapState.highlighted
+                && activeTimelineSnapState.laneElement
+                && activeTimelineSnapState.laneElement.isConnected) {
                 activeTimelineSnapState.laneElement.classList.remove('timeline-lane--snap-target');
             }
             activeTimelineSnapState = null;
@@ -1036,6 +1045,7 @@ function setTimelineSnapLineState(state) {
     }
 
     const laneCandidates = getTimelineLanes();
+    const coverTrack = state.coverTrack === true;
     const parseLaneIndex = (value) => {
         if (value === null || value === undefined || value === '') {
             return null;
@@ -1083,7 +1093,9 @@ function setTimelineSnapLineState(state) {
     }
 
     if (!resolvedLane) {
-        if (activeTimelineSnapState?.laneElement && activeTimelineSnapState.laneElement.isConnected) {
+        if (activeTimelineSnapState?.highlighted
+            && activeTimelineSnapState?.laneElement
+            && activeTimelineSnapState.laneElement.isConnected) {
             activeTimelineSnapState.laneElement.classList.remove('timeline-lane--snap-target');
         }
         setTimelineSnapLineState(null);
@@ -1099,15 +1111,22 @@ function setTimelineSnapLineState(state) {
         : 0;
     const offset = (laneRect.left - trackRect.left) + paddingLeft + (targetTime / perPixel);
     const appliedLeft = Math.round(offset);
-    const laneTop = Math.round(laneRect.top - trackRect.top);
-    const laneHeight = Math.max(0, Math.round(laneRect.height));
+    let laneTop = Math.round(laneRect.top - trackRect.top);
+    let laneHeight = Math.max(0, Math.round(laneRect.height));
+    if (coverTrack) {
+        laneTop = 0;
+        laneHeight = Math.max(0, Math.round(trackRect.height));
+    }
     const previousState = activeTimelineSnapState;
 
     const resolvedLaneIndex = parseLaneIndex(resolvedLane?.dataset?.laneIndex);
     const labelLaneIndex = Number.isFinite(targetLaneIndex) ? targetLaneIndex : resolvedLaneIndex;
     const label = formatTimelineSnapLabel(state, labelLaneIndex);
 
-    if (previousState && previousState.laneElement && previousState.laneElement !== resolvedLane) {
+    if (previousState
+        && previousState.highlighted
+        && previousState.laneElement
+        && previousState.laneElement !== resolvedLane) {
         if (previousState.laneElement.isConnected) {
             previousState.laneElement.classList.remove('timeline-lane--snap-target');
         }
@@ -1146,7 +1165,8 @@ function setTimelineSnapLineState(state) {
         timelineSnapLineLabel.classList.toggle('has-text', Boolean(label));
     }
 
-    if (resolvedLane && resolvedLane.isConnected) {
+    const shouldHighlightLane = !coverTrack && resolvedLane?.classList?.contains('timeline-lane');
+    if (shouldHighlightLane && resolvedLane.isConnected) {
         resolvedLane.classList.add('timeline-lane--snap-target');
     }
 
@@ -1158,7 +1178,63 @@ function setTimelineSnapLineState(state) {
         laneHeight,
         label,
         laneElement: resolvedLane,
+        highlighted: shouldHighlightLane,
+        owner: state.owner || '',
+        targetType: state.targetType || '',
+        coverTrack,
     };
+}
+
+function syncTimelinePlaybackIndicator() {
+    if (!timelineSnapLine || !timelineTrack) {
+        timelinePlaybackIndicatorActive = false;
+        return;
+    }
+
+    if (!isTimelinePlaying || !Number.isFinite(playbackDisplayCurrentMs)) {
+        if (timelinePlaybackIndicatorActive && (!activeTimelineSnapState
+            || activeTimelineSnapState.owner === 'playback')) {
+            setTimelineSnapLineState(null);
+        }
+        timelinePlaybackIndicatorActive = false;
+        return;
+    }
+
+    if (activeTimelineSnapState && activeTimelineSnapState.owner !== 'playback') {
+        timelinePlaybackIndicatorActive = false;
+        return;
+    }
+
+    const laneCandidates = getTimelineLanes();
+    const activeLane = activeTimelineItem
+        ? activeTimelineItem.closest('.timeline-lane')
+        : null;
+    const lane = (activeLane && activeLane.isConnected)
+        ? activeLane
+        : laneCandidates[0] || null;
+
+    if (!lane) {
+        if (timelinePlaybackIndicatorActive && activeTimelineSnapState?.owner === 'playback') {
+            setTimelineSnapLineState(null);
+        }
+        timelinePlaybackIndicatorActive = false;
+        return;
+    }
+
+    const laneIndexValue = lane.dataset?.laneIndex;
+    const parsedLaneIndex = Number.parseInt(laneIndexValue, 10);
+    const laneIndex = Number.isFinite(parsedLaneIndex) ? parsedLaneIndex : null;
+
+    setTimelineSnapLineState({
+        targetTimeMs: playbackDisplayCurrentMs,
+        targetType: 'playhead',
+        lane,
+        laneIndex,
+        owner: 'playback',
+        coverTrack: true,
+    });
+
+    timelinePlaybackIndicatorActive = activeTimelineSnapState?.owner === 'playback';
 }
 
 function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
