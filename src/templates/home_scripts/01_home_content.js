@@ -252,8 +252,16 @@ if (masterVolumeInput) {
         masterVolumeInput.value = String(percent);
         updateMasterVolumeReadout(percent);
         persistActiveTimelineAudioSettings({ volumePercent: percent });
-        cancelPreviewAudioEnvelope({ restoreVolume: false });
-        applyMasterVolumeToPreview(percent);
+        cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
+        cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+        const isVideo = isVideoTimelineItem(activeTimelineItem);
+        const isAudio = isAudioTimelineItem(activeTimelineItem);
+        if (isVideo) {
+            applyMasterVolumeToPreview(percent, { mediaElement: previewVideo });
+        }
+        if (isAudio) {
+            applyMasterVolumeToPreview(percent, { mediaElement: previewAudio });
+        }
     };
 
     masterVolumeInput.addEventListener('input', handleMasterVolumeUpdate);

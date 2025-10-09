@@ -96,7 +96,10 @@
 
                 previewVideo.muted = false;
                 const baseVolume = clampVolume(audioSettings.volumePercent / 100);
-                previewAudioEnvelopeState.baseVolume = baseVolume;
+                const previewState = getMediaEnvelopeState(previewVideo);
+                if (previewState) {
+                    previewState.baseVolume = baseVolume;
+                }
                 if (audioSettings.fadeInMs > 0 && baseVolume > 0) {
                     previewVideo.volume = 0;
                 } else {
@@ -217,6 +220,34 @@
                 startPlayback();
             }
         });
+    } else if (fileType.startsWith('audio/')) {
+        cancelPreviewExitAnimation({ forceRestore: true });
+        setPreviewMode(null);
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = false;
+            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+        }
+
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        const remainingClipDuration = Math.max(0, clipDuration - startOffsetMs);
+        const playbackWindowMs = Number.isFinite(playbackWindow)
+            ? Math.max(0, Math.round(playbackWindow))
+            : null;
+        const effectiveDuration = playbackWindowMs === null
+            ? remainingClipDuration
+            : Math.min(remainingClipDuration, playbackWindowMs);
+        const baseSegmentStart = Math.max(
+            0,
+            Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+        );
+        const segmentStartTime = baseSegmentStart + startOffsetMs;
+
+        syncPreviewAudioOverlay(overlayEntries, segmentStartTime);
+        playVideoButton.textContent = 'Play Back';
+        await waitForGapDuration(effectiveDuration);
     } else if (fileType.startsWith('image/')) {
         const rawClipDuration = Number(timelineItem.dataset.imageDuration);
         const clipDuration = Number.isFinite(rawClipDuration) && rawClipDuration > 0
@@ -492,6 +523,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
                     continue;
                 }
             }
+            syncPreviewAudioOverlay(segment.items || [], segmentStartTime);
             const startFraction = getTimelineFractionForTime(segmentStartTime);
             const endFraction = getTimelineFractionForTime(end);
             const remainingDuration = pendingResumeTime !== null
@@ -652,30 +684,39 @@ if (cancelExportButton) {
     });
 }
 
-function attachPreviewAudioToStream(previewVideo, combinedStream) {
-    if (!previewVideo || !combinedStream) {
+function attachPreviewAudioToStream(mediaElements, combinedStream) {
+    const elements = Array.isArray(mediaElements)
+        ? mediaElements.filter(Boolean)
+        : [mediaElements].filter(Boolean);
+    if (!elements.length || !combinedStream) {
         return {
             audioContext: null,
             success: false,
-            error: new Error('Missing preview video or combined stream.'),
+            error: new Error('Missing media elements or combined stream.'),
         };
     }
 
     let lastError = null;
 
-    if (typeof previewVideo.captureStream === 'function') {
-        try {
-            const audioStream = previewVideo.captureStream();
-            if (audioStream) {
-                const audioTracks = audioStream.getAudioTracks();
-                audioTracks.forEach((track) => combinedStream.addTrack(track));
-                if (audioTracks.length) {
-                    return { audioContext: null, success: true, error: null };
+    const directTracks = [];
+    elements.forEach((element) => {
+        if (typeof element?.captureStream === 'function') {
+            try {
+                const audioStream = element.captureStream();
+                if (audioStream) {
+                    const tracks = audioStream.getAudioTracks();
+                    tracks.forEach((track) => {
+                        combinedStream.addTrack(track);
+                        directTracks.push(track);
+                    });
                 }
+            } catch (error) {
+                lastError = error;
             }
-        } catch (error) {
-            lastError = error;
         }
+    });
+    if (directTracks.length) {
+        return { audioContext: null, success: true, error: null };
     }
 
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
@@ -690,10 +731,30 @@ function attachPreviewAudioToStream(previewVideo, combinedStream) {
     let audioContext = null;
     try {
         audioContext = new AudioContextConstructor();
-        const sourceNode = audioContext.createMediaElementSource(previewVideo);
         const destination = audioContext.createMediaStreamDestination();
-        sourceNode.connect(destination);
-        sourceNode.connect(audioContext.destination);
+        let hasSource = false;
+        elements.forEach((element) => {
+            try {
+                const sourceNode = audioContext.createMediaElementSource(element);
+                sourceNode.connect(destination);
+                sourceNode.connect(audioContext.destination);
+                hasSource = true;
+            } catch (error) {
+                lastError = error;
+            }
+        });
+
+        if (!hasSource) {
+            const closeResult = audioContext.close();
+            if (closeResult && typeof closeResult.catch === 'function') {
+                closeResult.catch(() => {});
+            }
+            return {
+                audioContext: null,
+                success: false,
+                error: lastError || new Error('Unable to create audio sources for export.'),
+            };
+        }
 
         const audioTracks = destination.stream.getAudioTracks();
         audioTracks.forEach((track) => combinedStream.addTrack(track));
@@ -796,7 +857,7 @@ async function handleConfirmExport() {
         combinedStream = new MediaStream();
         canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
 
-        const audioAttachment = attachPreviewAudioToStream(previewVideo, combinedStream);
+        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
         exportAudioContext = audioAttachment.audioContext;
         if (!audioAttachment.success) {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);

@@ -985,6 +985,14 @@ function isImageTimelineItem(timelineItem) {
     return fileType.startsWith('image/');
 }
 
+function isAudioTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('audio/');
+}
+
 function getTimelineItemImageKeyframes(timelineItem) {
     if (!isImageTimelineItem(timelineItem)) {
         return [];
