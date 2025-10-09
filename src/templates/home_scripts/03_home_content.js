@@ -949,11 +949,42 @@ function setTimelineSnapLineState(state) {
     }
 
     const laneCandidates = getTimelineLanes();
-    const resolvedLane = state.lane && state.lane.isConnected
-        ? state.lane
-        : (Number.isFinite(state.laneIndex) ? laneCandidates[state.laneIndex] : null)
-            || laneCandidates[0]
-            || null;
+    const parseLaneIndex = (value) => {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const targetLaneIndex = parseLaneIndex(state.laneIndex);
+    const explicitLane = state.lane && state.lane.isConnected ? state.lane : null;
+    const explicitLaneIndex = explicitLane ? parseLaneIndex(explicitLane.dataset?.laneIndex) : null;
+
+    let resolvedLane = null;
+
+    if (explicitLane) {
+        const explicitMatchesTarget = !Number.isFinite(targetLaneIndex)
+            || (Number.isFinite(explicitLaneIndex) && explicitLaneIndex === targetLaneIndex);
+        if (explicitMatchesTarget) {
+            resolvedLane = explicitLane;
+        }
+    }
+
+    if (!resolvedLane && Number.isFinite(targetLaneIndex)) {
+        resolvedLane = laneCandidates.find((candidate) => {
+            const candidateIndex = parseLaneIndex(candidate?.dataset?.laneIndex);
+            return Number.isFinite(candidateIndex) && candidateIndex === targetLaneIndex;
+        }) || null;
+
+        if (!resolvedLane && targetLaneIndex >= 0 && targetLaneIndex < laneCandidates.length) {
+            resolvedLane = laneCandidates[targetLaneIndex] || null;
+        }
+    }
+
+    if (!resolvedLane) {
+        resolvedLane = explicitLane || laneCandidates[0] || null;
+    }
 
     if (!resolvedLane) {
         setTimelineSnapLineState(null);
