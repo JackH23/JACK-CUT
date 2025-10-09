@@ -98,6 +98,7 @@ const timelineDragOverState = {
 };
 let activeTimelineDragItem = null;
 let activeTimelineResizeItem = null;
+let activeTimelineSnapMatch = null;
 const pendingTimelineLaneReflows = new Map();
 let isExportingTimeline = false;
 let isMainTrackMagnetEnabled = true;
@@ -147,10 +148,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        hideTimelineSnapIndicator();
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        hideTimelineSnapIndicator();
         return;
     }
 
@@ -177,6 +180,10 @@ function runTimelineDragOverUpdate() {
     item.dataset.laneIndex = laneIndex;
     item.dataset.startOffsetMs = String(desiredStartMs);
     flushTimelineLaneReflow(lane);
+
+    const appliedStart = getTimelineItemStartTime(item);
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+    previewTimelineSnap(item, appliedStart, appliedStart + clipDuration, { preferredAlignment: 'start' });
 }
 
 function scheduleTimelineDragOverUpdate() {
@@ -433,6 +440,7 @@ const TIMELINE_DURATION_PER_PIXEL_MIN = 2;
 const TIMELINE_DURATION_PER_PIXEL_MAX = 60;
 const TIMELINE_ZOOM_BUTTON_STEP = 1;
 const MIN_TIMELINE_ITEM_WIDTH = 96;
+const TIMELINE_SNAP_GUIDE_THRESHOLD_PX = 6;
 const MIN_IMAGE_FRAME_SIZE = 96;
 const MAX_TIMELINE_STACK_LANES = 4;
 const TIMELINE_LANE_INSERT_HOTZONE = 28;
