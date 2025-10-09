@@ -304,56 +304,122 @@ function findTimelineSnapMatch({
     return bestMatch;
 }
 
-function showTimelineSnapIndicator(match) {
-    if (!timelineSnapIndicator || !match || !Number.isFinite(match.timeMs)) {
+const TIMELINE_SNAP_LINE_RESET_POSITION = '-9999px';
+
+function getTimelineSnapIndicatorLabel(match) {
+    if (!match) {
+        return '';
+    }
+    if (match.source === 'playhead') {
+        return 'Playhead';
+    }
+    if (match.source === 'timeline-start') {
+        return 'Timeline start';
+    }
+    if (match.alignment === 'end') {
+        return 'Clip end';
+    }
+    return 'Clip start';
+}
+
+function resetTimelineSnapIndicatorStyles() {
+    if (!timelineSnapIndicator) {
+        return;
+    }
+    timelineSnapIndicator.classList.remove('is-visible');
+    timelineSnapIndicator.removeAttribute('data-snap-alignment');
+    timelineSnapIndicator.removeAttribute('data-snap-source');
+    timelineSnapIndicator.removeAttribute('data-snap-label');
+    timelineSnapIndicator.style.setProperty('--timeline-snap-position', TIMELINE_SNAP_LINE_RESET_POSITION);
+    activeTimelineSnapMatch = null;
+}
+
+function commitTimelineSnapIndicatorUpdate(match) {
+    if (!timelineSnapIndicator) {
+        return;
+    }
+
+    if (!match || !Number.isFinite(match.timeMs)) {
+        resetTimelineSnapIndicatorStyles();
         return;
     }
 
     const perPixel = getTimelineDurationPerPixel();
     if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        resetTimelineSnapIndicatorStyles();
         return;
     }
 
     const position = getTimelineSnapBaseOffset() + (match.timeMs / perPixel);
     if (!Number.isFinite(position)) {
+        resetTimelineSnapIndicatorStyles();
         return;
     }
 
-    const roundedPosition = Math.round(position);
+    const normalizedAlignment = match.alignment === 'end' ? 'end' : 'start';
+    const normalizedSource = match.source || 'clip';
 
-    if (activeTimelineSnapMatch
+    const isSameAsActive = Boolean(activeTimelineSnapMatch)
         && activeTimelineSnapMatch.timeMs === match.timeMs
-        && activeTimelineSnapMatch.alignment === match.alignment
-        && activeTimelineSnapMatch.source === match.source
-        && activeTimelineSnapMatch.position === roundedPosition) {
-        timelineSnapIndicator.classList.add('is-visible');
+        && activeTimelineSnapMatch.alignment === normalizedAlignment
+        && activeTimelineSnapMatch.source === normalizedSource
+        && Math.abs(activeTimelineSnapMatch.position - position) < 0.5;
+
+    if (!isSameAsActive) {
+        const label = getTimelineSnapIndicatorLabel({ alignment: normalizedAlignment, source: normalizedSource });
+        timelineSnapIndicator.style.setProperty('--timeline-snap-position', `${position}px`);
+        timelineSnapIndicator.dataset.snapAlignment = normalizedAlignment;
+        timelineSnapIndicator.dataset.snapSource = normalizedSource;
+        if (label) {
+            timelineSnapIndicator.dataset.snapLabel = label;
+        } else {
+            timelineSnapIndicator.removeAttribute('data-snap-label');
+        }
+        activeTimelineSnapMatch = {
+            timeMs: match.timeMs,
+            alignment: normalizedAlignment,
+            source: normalizedSource,
+            position,
+        };
+    } else if (activeTimelineSnapMatch) {
+        activeTimelineSnapMatch.position = position;
+    }
+
+    timelineSnapIndicator.classList.add('is-visible');
+}
+
+function scheduleTimelineSnapIndicatorUpdate(match) {
+    pendingTimelineSnapMatch = match ? { ...match } : null;
+    if (pendingTimelineSnapAnimationFrame) {
         return;
     }
 
-    activeTimelineSnapMatch = {
-        timeMs: match.timeMs,
-        alignment: match.alignment,
-        source: match.source,
-        position: roundedPosition,
-    };
+    pendingTimelineSnapAnimationFrame = window.requestAnimationFrame(() => {
+        pendingTimelineSnapAnimationFrame = null;
+        const nextMatch = pendingTimelineSnapMatch;
+        pendingTimelineSnapMatch = null;
+        commitTimelineSnapIndicatorUpdate(nextMatch);
+    });
+}
 
-    timelineSnapIndicator.style.transform = `translateX(${roundedPosition}px)`;
-    timelineSnapIndicator.dataset.snapAlignment = match.alignment;
-    timelineSnapIndicator.dataset.snapSource = match.source || 'clip';
-    timelineSnapIndicator.classList.add('is-visible');
+function showTimelineSnapIndicator(match) {
+    if (!timelineSnapIndicator || !match || !Number.isFinite(match.timeMs)) {
+        scheduleTimelineSnapIndicatorUpdate(null);
+        return;
+    }
+
+    scheduleTimelineSnapIndicatorUpdate({
+        timeMs: Math.max(0, match.timeMs),
+        alignment: match.alignment === 'end' ? 'end' : 'start',
+        source: match.source || 'clip',
+    });
 }
 
 function hideTimelineSnapIndicator() {
     if (!timelineSnapIndicator) {
         return;
     }
-    if (!timelineSnapIndicator.classList.contains('is-visible') && !activeTimelineSnapMatch) {
-        return;
-    }
-    timelineSnapIndicator.classList.remove('is-visible');
-    timelineSnapIndicator.removeAttribute('data-snap-alignment');
-    timelineSnapIndicator.removeAttribute('data-snap-source');
-    activeTimelineSnapMatch = null;
+    scheduleTimelineSnapIndicatorUpdate(null);
 }
 
 function previewTimelineSnap(timelineItem, startMs, endMs, options = {}) {

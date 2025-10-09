@@ -2861,33 +2861,114 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .timeline-snap-line {
+    --timeline-snap-position: -9999px;
+    --timeline-snap-line-width: 3px;
+    --timeline-snap-primary: rgba(56, 189, 248, 0.95);
+    --timeline-snap-secondary: rgba(124, 58, 237, 0.95);
     position: absolute;
-    top: 4px;
-    bottom: 4px;
-    width: 2px;
+    top: 2px;
+    bottom: 2px;
+    width: var(--timeline-snap-line-width);
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(124, 58, 237, 0.95));
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35), 0 0 20px rgba(56, 189, 248, 0.5);
+    background: linear-gradient(180deg, var(--timeline-snap-primary), var(--timeline-snap-secondary));
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.38), 0 0 24px rgba(56, 189, 248, 0.55);
     opacity: 0;
-    transform: translateX(-9999px);
-    transition: opacity 0.12s ease;
-    will-change: transform;
+    transform: translate3d(
+        calc(var(--timeline-snap-position, -9999px) - (var(--timeline-snap-line-width, 3px) / 2)),
+        0,
+        0
+    );
+    transition: opacity 0.12s ease, transform 0.08s ease-out;
+    will-change: transform, opacity;
     pointer-events: none;
-    z-index: 5;
+    z-index: 6;
+}
+
+.timeline-snap-line::before {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--timeline-snap-primary), var(--timeline-snap-secondary));
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.45), 0 0 0 2px rgba(15, 23, 42, 0.6);
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.9);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+}
+
+.timeline-snap-line::after {
+    content: attr(data-snap-label);
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translate(-50%, -4px) scale(0.92);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.88);
+    color: #e2e8f0;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
 .timeline-snap-line.is-visible {
     opacity: 1;
 }
 
+.timeline-snap-line.is-visible::before,
+.timeline-snap-line.is-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+}
+
+.timeline-snap-line.is-visible::after {
+    transform: translate(-50%, -8px) scale(1);
+}
+
 .timeline-snap-line[data-snap-source="playhead"] {
-    background: linear-gradient(180deg, rgba(248, 113, 113, 0.96), rgba(244, 114, 182, 0.96));
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35), 0 0 20px rgba(244, 114, 182, 0.55);
+    --timeline-snap-primary: rgba(248, 113, 113, 0.96);
+    --timeline-snap-secondary: rgba(244, 114, 182, 0.96);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35), 0 0 24px rgba(244, 114, 182, 0.55);
+}
+
+.timeline-snap-line[data-snap-source="playhead"]::after {
+    background: rgba(76, 29, 29, 0.92);
+    color: #fee2e2;
 }
 
 .timeline-snap-line[data-snap-source="timeline-start"] {
-    background: linear-gradient(180deg, rgba(34, 197, 94, 0.92), rgba(16, 185, 129, 0.92));
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.32), 0 0 18px rgba(16, 185, 129, 0.5);
+    --timeline-snap-primary: rgba(34, 197, 94, 0.92);
+    --timeline-snap-secondary: rgba(16, 185, 129, 0.92);
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.32), 0 0 20px rgba(16, 185, 129, 0.5);
+}
+
+.timeline-snap-line[data-snap-source="timeline-start"]::after {
+    background: rgba(20, 83, 45, 0.92);
+    color: #dcfce7;
+}
+
+.timeline-snap-line[data-snap-alignment="end"]::after {
+    text-transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .timeline-snap-line {
+        transition: opacity 0.12s linear;
+    }
+
+    .timeline-snap-line::before,
+    .timeline-snap-line::after {
+        transition: opacity 0.12s linear;
+    }
 }
 
 .timeline-progress button:hover {
