@@ -1351,22 +1351,77 @@ function stopPreviewAudio(options = {}) {
     activeAudioOverlayEntry = null;
 }
 
-function getAudioOverlayEntry(entries) {
-    if (!Array.isArray(entries)) {
+function getAudioOverlayEntry(entries, segmentStartTimeMs = null) {
+    if (Array.isArray(entries)) {
+        const directEntry = entries.find((entry) => isAudioTimelineItem(entry?.item));
+        if (directEntry) {
+            return directEntry;
+        }
+    }
+
+    const targetTime = Number.isFinite(segmentStartTimeMs)
+        ? Math.max(0, Math.round(segmentStartTimeMs))
+        : null;
+
+    if (targetTime === null || typeof getTimelineLaneEntries !== 'function') {
         return null;
     }
-    return entries.find((entry) => isAudioTimelineItem(entry?.item));
+
+    const laneEntries = getTimelineLaneEntries();
+    if (!Array.isArray(laneEntries) || !laneEntries.length) {
+        return null;
+    }
+
+    const candidates = laneEntries.filter((entry) => (
+        isAudioTimelineItem(entry?.item)
+        && targetTime >= entry.start
+        && targetTime < entry.end
+    ));
+
+    if (!candidates.length) {
+        return null;
+    }
+
+    candidates.sort((a, b) => {
+        const aIndex = Number.isFinite(a?.laneIndex) ? a.laneIndex : Number.POSITIVE_INFINITY;
+        const bIndex = Number.isFinite(b?.laneIndex) ? b.laneIndex : Number.POSITIVE_INFINITY;
+        if (aIndex !== bIndex) {
+            return aIndex - bIndex;
+        }
+        return a.start - b.start;
+    });
+
+    return candidates[candidates.length - 1] || candidates[0] || null;
 }
 
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
-    const audioEntry = getAudioOverlayEntry(entries);
+    let audioEntry = getAudioOverlayEntry(entries, segmentStartTimeMs);
+
+    if (!audioEntry && activeAudioOverlayEntry) {
+        const targetTime = Number.isFinite(segmentStartTimeMs)
+            ? Math.max(0, Math.round(segmentStartTimeMs))
+            : null;
+        if (targetTime !== null
+            && targetTime >= activeAudioOverlayEntry.start
+            && targetTime < activeAudioOverlayEntry.end
+        ) {
+            audioEntry = activeAudioOverlayEntry;
+        }
+    }
+
     if (!audioEntry || !previewAudio) {
         stopPreviewAudio({ resetTime: false });
         return;
     }
 
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(audioEntry.item));
-    const offsetMs = Math.max(0, Math.min(Math.round(segmentStartTimeMs - audioEntry.start), clipDuration));
+    const safeSegmentStart = Number.isFinite(segmentStartTimeMs)
+        ? Math.max(0, Math.round(segmentStartTimeMs))
+        : audioEntry.start;
+    const offsetMs = Math.max(
+        0,
+        Math.min(Math.round(safeSegmentStart - audioEntry.start), clipDuration),
+    );
     const objectURL = audioEntry.item?.dataset?.objectUrl || '';
 
     const needsRestart = !activeAudioOverlayEntry
