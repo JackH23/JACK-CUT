@@ -984,10 +984,42 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
     });
 }
 
-const AUDIO_WAVEFORM_WIDTH = 640;
 const AUDIO_WAVEFORM_HEIGHT = 80;
 const audioWaveformByObjectUrl = new Map();
 let audioDecodeContextLock = Promise.resolve();
+const audioWaveformResizeObservers = new WeakMap();
+
+function getWaveformCssWidth(canvas, timelineItem, widthOverride) {
+    if (Number.isFinite(widthOverride) && widthOverride > 0) {
+        return Math.max(1, Math.round(widthOverride));
+    }
+    if (timelineItem instanceof HTMLElement) {
+        const rect = timelineItem.getBoundingClientRect();
+        if (rect.width > 0) {
+            return Math.max(1, Math.round(rect.width));
+        }
+    }
+    if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0) {
+            return Math.max(1, Math.round(rect.width));
+        }
+    }
+    return AUDIO_WAVEFORM_HEIGHT * 4;
+}
+
+function getWaveformCssHeight(canvas, heightOverride) {
+    if (Number.isFinite(heightOverride) && heightOverride > 0) {
+        return Math.max(1, Math.round(heightOverride));
+    }
+    if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.height > 0) {
+            return Math.max(1, Math.round(rect.height));
+        }
+    }
+    return AUDIO_WAVEFORM_HEIGHT;
+}
 
 function ensureAudioTimelineLane() {
     if (!timelineLaneList) {
@@ -1032,7 +1064,7 @@ async function decodeAudioBufferFromFile(file) {
     });
 }
 
-function drawAudioWaveform(canvas, audioBuffer) {
+function drawAudioWaveform(canvas, audioBuffer, options = {}) {
     if (!canvas || !audioBuffer) {
         return;
     }
@@ -1041,23 +1073,46 @@ function drawAudioWaveform(canvas, audioBuffer) {
         return;
     }
 
-    const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-    const width = Math.max(1, Math.round(AUDIO_WAVEFORM_WIDTH * pixelRatio));
-    const height = Math.max(1, Math.round(AUDIO_WAVEFORM_HEIGHT * pixelRatio));
+    const { timelineItem = null, widthOverride = null, heightOverride = null } = options;
 
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.width = `${AUDIO_WAVEFORM_WIDTH}px`;
-    canvas.style.height = `${AUDIO_WAVEFORM_HEIGHT}px`;
+    const cssWidth = getWaveformCssWidth(canvas, timelineItem, widthOverride);
+    const cssHeight = getWaveformCssHeight(canvas, heightOverride);
+    const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+    const width = Math.max(1, Math.round(cssWidth * pixelRatio));
+    const height = Math.max(1, Math.round(cssHeight * pixelRatio));
+
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+    }
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = 'rgba(30, 64, 175, 0.18)';
     ctx.fillRect(0, 0, width, height);
 
-    const channelData = audioBuffer.numberOfChannels > 1
-        ? audioBuffer.getChannelData(0)
-        : audioBuffer.getChannelData(0);
-    const samplesPerPixel = Math.max(1, Math.floor(channelData.length / width));
+    let channelData = null;
+    const isAudioBuffer = typeof AudioBuffer !== 'undefined'
+        && audioBuffer instanceof AudioBuffer;
+    if (isAudioBuffer) {
+        channelData = audioBuffer.numberOfChannels > 0
+            ? audioBuffer.getChannelData(0)
+            : null;
+    } else if (audioBuffer?.channelData instanceof Float32Array) {
+        channelData = audioBuffer.channelData;
+    } else if (audioBuffer instanceof Float32Array) {
+        channelData = audioBuffer;
+    }
+
+    if (!channelData) {
+        return;
+    }
+
+    const totalSamples = channelData.length;
+    if (!Number.isFinite(totalSamples) || totalSamples <= 0) {
+        return;
+    }
+
+    const samplesPerPixel = totalSamples / width;
     const centerY = height / 2;
     const amplitudeScale = centerY * 0.9;
 
@@ -1066,16 +1121,23 @@ function drawAudioWaveform(canvas, audioBuffer) {
     ctx.beginPath();
 
     for (let x = 0; x < width; x += 1) {
-        const startIndex = x * samplesPerPixel;
+        const startIndex = Math.floor(x * samplesPerPixel);
+        const endIndex = Math.min(totalSamples, Math.floor((x + 1) * samplesPerPixel));
         let min = 1;
         let max = -1;
-        for (let i = 0; i < samplesPerPixel; i += 1) {
-            const sample = channelData[startIndex + i] || 0;
-            if (sample < min) {
-                min = sample;
-            }
-            if (sample > max) {
-                max = sample;
+        if (endIndex <= startIndex) {
+            const sample = channelData[startIndex] || 0;
+            min = Math.min(min, sample);
+            max = Math.max(max, sample);
+        } else {
+            for (let i = startIndex; i < endIndex; i += 1) {
+                const sample = channelData[i] || 0;
+                if (sample < min) {
+                    min = sample;
+                }
+                if (sample > max) {
+                    max = sample;
+                }
             }
         }
         const top = centerY - (max * amplitudeScale);
@@ -1087,8 +1149,8 @@ function drawAudioWaveform(canvas, audioBuffer) {
     ctx.stroke();
 }
 
-function applyCachedWaveform(canvas, cacheEntry) {
-    if (!canvas || !cacheEntry?.imageDataUrl) {
+function applyCachedWaveform(canvas, cacheEntry, options = {}) {
+    if (!canvas || !cacheEntry) {
         return false;
     }
     const ctx = canvas.getContext('2d');
@@ -1096,13 +1158,25 @@ function applyCachedWaveform(canvas, cacheEntry) {
         return false;
     }
 
+    if (cacheEntry.audioBuffer || cacheEntry.channelData instanceof Float32Array) {
+        drawAudioWaveform(canvas, cacheEntry.audioBuffer || cacheEntry.channelData, options);
+        return true;
+    }
+
+    if (!cacheEntry.imageDataUrl) {
+        return false;
+    }
+
+    const { timelineItem = null, widthOverride = null, heightOverride = null } = options;
+    const cssWidth = getWaveformCssWidth(canvas, timelineItem, widthOverride);
+    const cssHeight = getWaveformCssHeight(canvas, heightOverride);
     const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-    const width = Math.max(1, Math.round(AUDIO_WAVEFORM_WIDTH * pixelRatio));
-    const height = Math.max(1, Math.round(AUDIO_WAVEFORM_HEIGHT * pixelRatio));
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.width = `${AUDIO_WAVEFORM_WIDTH}px`;
-    canvas.style.height = `${AUDIO_WAVEFORM_HEIGHT}px`;
+    const width = Math.max(1, Math.round(cssWidth * pixelRatio));
+    const height = Math.max(1, Math.round(cssHeight * pixelRatio));
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+    }
 
     const image = new Image();
     image.onload = () => {
@@ -1113,37 +1187,121 @@ function applyCachedWaveform(canvas, cacheEntry) {
     return true;
 }
 
+function attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL) {
+    if (!timelineItem || !waveformCanvas || !objectURL) {
+        return;
+    }
+
+    if (typeof ResizeObserver !== 'function') {
+        return;
+    }
+
+    const existingEntry = audioWaveformResizeObservers.get(timelineItem);
+    if (existingEntry?.observer) {
+        if (existingEntry.canvas === waveformCanvas && existingEntry.objectURL === objectURL) {
+            return;
+        }
+        existingEntry.observer.disconnect();
+        if (existingEntry.rafHandle) {
+            window.cancelAnimationFrame(existingEntry.rafHandle);
+        }
+    }
+
+    const state = {
+        observer: null,
+        canvas: waveformCanvas,
+        objectURL,
+        lastWidth: 0,
+        rafHandle: null,
+    };
+
+    const observer = new ResizeObserver((entries) => {
+        entries.forEach((entry) => {
+            const contentWidth = Math.max(0, Math.round(entry.contentRect?.width || 0));
+            if (contentWidth <= 0 || contentWidth === state.lastWidth) {
+                return;
+            }
+            state.lastWidth = contentWidth;
+            if (state.rafHandle) {
+                window.cancelAnimationFrame(state.rafHandle);
+            }
+            state.rafHandle = window.requestAnimationFrame(() => {
+                state.rafHandle = null;
+                const cacheEntry = audioWaveformByObjectUrl.get(objectURL);
+                if (!cacheEntry) {
+                    return;
+                }
+                applyCachedWaveform(waveformCanvas, cacheEntry, {
+                    timelineItem,
+                    widthOverride: contentWidth,
+                });
+            });
+        });
+    });
+
+    observer.observe(timelineItem);
+    state.observer = observer;
+    audioWaveformResizeObservers.set(timelineItem, state);
+}
+
+function detachAudioWaveformResizeObserver(timelineItem) {
+    const entry = audioWaveformResizeObservers.get(timelineItem);
+    if (!entry) {
+        return;
+    }
+    if (entry.observer) {
+        entry.observer.disconnect();
+    }
+    if (entry.rafHandle) {
+        window.cancelAnimationFrame(entry.rafHandle);
+    }
+    audioWaveformResizeObservers.delete(timelineItem);
+}
+
 async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas) {
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
-        if (waveformCanvas) {
-            applyCachedWaveform(waveformCanvas, existing);
-        }
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
+        if (waveformCanvas) {
+            const widthOverride = timelineItem
+                ? Math.round(timelineItem.getBoundingClientRect().width)
+                : null;
+            applyCachedWaveform(waveformCanvas, existing, {
+                timelineItem,
+                widthOverride,
+            });
+            attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL);
+        }
         return;
     }
 
     const audioBuffer = await decodeAudioBufferFromFile(file);
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
-        if (waveformCanvas) {
-            drawAudioWaveform(waveformCanvas, audioBuffer);
-        }
-        let imageDataUrl = null;
-        if (waveformCanvas) {
-            try {
-                imageDataUrl = waveformCanvas.toDataURL('image/png');
-            } catch (error) {
-                imageDataUrl = null;
-            }
-        }
-        audioWaveformByObjectUrl.set(objectURL, {
-            imageDataUrl,
+        const cacheEntry = {
+            imageDataUrl: null,
             durationMs,
             drawn: true,
-        });
+            audioBuffer,
+        };
+        audioWaveformByObjectUrl.set(objectURL, cacheEntry);
         setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
+        if (waveformCanvas) {
+            const widthOverride = timelineItem
+                ? Math.round(timelineItem.getBoundingClientRect().width)
+                : null;
+            drawAudioWaveform(waveformCanvas, audioBuffer, {
+                timelineItem,
+                widthOverride,
+            });
+            try {
+                cacheEntry.imageDataUrl = waveformCanvas.toDataURL('image/png');
+            } catch (error) {
+                cacheEntry.imageDataUrl = null;
+            }
+            attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL);
+        }
         return;
     }
 
@@ -1160,6 +1318,9 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
                     drawn: false,
                 });
                 setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
+                if (waveformCanvas) {
+                    attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL);
+                }
             }
             resolve();
         }, { once: true });
@@ -1431,6 +1592,7 @@ async function addToTimeline(file, objectURL) {
         const wasActive = targetItem === activeTimelineItem;
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
+        detachAudioWaveformResizeObserver(targetItem);
         releaseTimelineCanvasCustomImage(targetItem);
         targetItem.remove();
         if (parentLane) {
