@@ -1351,47 +1351,62 @@ function stopPreviewAudio(options = {}) {
     activeAudioOverlayEntry = null;
 }
 
-function getAudioOverlayEntry(entries, segmentStartTimeMs = null) {
-    if (Array.isArray(entries)) {
-        const directEntry = entries.find((entry) => isAudioTimelineItem(entry?.item));
-        if (directEntry) {
-            return directEntry;
-        }
-    }
+const AUDIO_ENTRY_TOLERANCE_MS = 20;
 
+function getAudioOverlayEntry(entries, segmentStartTimeMs = null) {
     const targetTime = Number.isFinite(segmentStartTimeMs)
         ? Math.max(0, Math.round(segmentStartTimeMs))
         : null;
 
-    if (targetTime === null || typeof getTimelineLaneEntries !== 'function') {
+    const findAudioEntry = (sourceEntries) => {
+        if (!Array.isArray(sourceEntries) || !sourceEntries.length) {
+            return null;
+        }
+
+        const detector = (typeof isAudioTimelineItem === 'function')
+            ? isAudioTimelineItem
+            : ((item) => (item?.dataset?.fileType || '').startsWith('audio/'));
+
+        const audioEntries = sourceEntries
+            .filter((entry) => entry && detector(entry.item));
+
+        if (!audioEntries.length) {
+            return null;
+        }
+
+        if (targetTime === null) {
+            return audioEntries[audioEntries.length - 1] || audioEntries[0] || null;
+        }
+
+        const withinWindow = audioEntries.find((entry) => {
+            if (!entry) {
+                return false;
+            }
+            const start = Number.isFinite(entry.start) ? Math.round(entry.start) : 0;
+            const end = Number.isFinite(entry.end) ? Math.round(entry.end) : start;
+            const effectiveEnd = end + AUDIO_ENTRY_TOLERANCE_MS;
+            const effectiveStart = Math.max(0, start - AUDIO_ENTRY_TOLERANCE_MS);
+            return targetTime >= effectiveStart && targetTime < effectiveEnd;
+        });
+
+        if (withinWindow) {
+            return withinWindow;
+        }
+
+        return audioEntries[audioEntries.length - 1] || null;
+    };
+
+    const directEntry = findAudioEntry(entries);
+    if (directEntry) {
+        return directEntry;
+    }
+
+    if (typeof getTimelineLaneEntries !== 'function') {
         return null;
     }
 
     const laneEntries = getTimelineLaneEntries();
-    if (!Array.isArray(laneEntries) || !laneEntries.length) {
-        return null;
-    }
-
-    const candidates = laneEntries.filter((entry) => (
-        isAudioTimelineItem(entry?.item)
-        && targetTime >= entry.start
-        && targetTime < entry.end
-    ));
-
-    if (!candidates.length) {
-        return null;
-    }
-
-    candidates.sort((a, b) => {
-        const aIndex = Number.isFinite(a?.laneIndex) ? a.laneIndex : Number.POSITIVE_INFINITY;
-        const bIndex = Number.isFinite(b?.laneIndex) ? b.laneIndex : Number.POSITIVE_INFINITY;
-        if (aIndex !== bIndex) {
-            return aIndex - bIndex;
-        }
-        return a.start - b.start;
-    });
-
-    return candidates[candidates.length - 1] || candidates[0] || null;
+    return findAudioEntry(laneEntries);
 }
 
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
