@@ -32,16 +32,22 @@ function hideTimelineSnapLine() {
         line.removeAttribute('data-visible');
         line.style.removeProperty('left');
         delete line.dataset.align;
+        delete line.dataset.crossTrack;
     });
 }
 
-function setTimelineSnapLinePosition(positionPx, alignType = '', overviewPositionPx = null) {
+function setTimelineSnapLinePosition(positionPx, alignType = '', overviewPositionPx = null, metadata = null) {
     if (timelineSnapLine) {
         timelineSnapLine.style.left = `${Number(positionPx).toFixed(2)}px`;
         if (alignType) {
             timelineSnapLine.dataset.align = alignType;
         } else {
             delete timelineSnapLine.dataset.align;
+        }
+        if (metadata?.crossTrack) {
+            timelineSnapLine.dataset.crossTrack = 'true';
+        } else {
+            delete timelineSnapLine.dataset.crossTrack;
         }
         timelineSnapLine.setAttribute('data-visible', 'true');
     }
@@ -57,11 +63,17 @@ function setTimelineSnapLinePosition(positionPx, alignType = '', overviewPositio
         } else {
             delete timelineOverviewSnapLine.dataset.align;
         }
+        if (metadata?.crossTrack) {
+            timelineOverviewSnapLine.dataset.crossTrack = 'true';
+        } else {
+            delete timelineOverviewSnapLine.dataset.crossTrack;
+        }
         timelineOverviewSnapLine.setAttribute('data-visible', 'true');
     } else {
         timelineOverviewSnapLine.removeAttribute('data-visible');
         timelineOverviewSnapLine.style.removeProperty('left');
         delete timelineOverviewSnapLine.dataset.align;
+        delete timelineOverviewSnapLine.dataset.crossTrack;
     }
 }
 
@@ -88,22 +100,45 @@ function updateTimelineSnapLineForItem(timelineItem) {
         return;
     }
 
-    const startMs = Number(timelineItem.dataset.startOffsetMs);
+    const parseLaneIndex = (value) => {
+        const parsed = Number.parseInt(value ?? '', 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const laneIndex = parseLaneIndex(timelineItem.dataset.laneIndex);
+    const toleranceMs = Math.max(1, Math.round(TIMELINE_SNAP_TOLERANCE_MS));
+
+    const laneEntries = (typeof getTimelineLaneEntries === 'function')
+        ? getTimelineLaneEntries()
+        : [];
+
+    const laneEntryByItem = new Map();
+    laneEntries.forEach((entry) => {
+        if (entry?.item) {
+            laneEntryByItem.set(entry.item, entry);
+        }
+    });
+
+    const entryForItem = laneEntryByItem.get(timelineItem) || null;
+
+    const startMs = entryForItem && Number.isFinite(entryForItem.start)
+        ? entryForItem.start
+        : Number(timelineItem.dataset.startOffsetMs);
     if (!Number.isFinite(startMs)) {
         hideTimelineSnapLine();
         return;
     }
 
-    const duration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
-    const endMs = startMs + duration;
-    const toleranceMs = Math.max(1, Math.round(TIMELINE_SNAP_TOLERANCE_MS));
-    const lanes = getTimelineLanes();
+    const duration = entryForItem && Number.isFinite(entryForItem.duration)
+        ? entryForItem.duration
+        : Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+    const endMs = startMs + Math.max(0, duration);
 
-    const considerMatch = (timeMs, alignType, deltaMs) => {
+    const considerMatch = (timeMs, alignType, deltaMs, metadata = null) => {
         if (!Number.isFinite(timeMs) || deltaMs > toleranceMs) {
             return null;
         }
-        return { timeMs, alignType, deltaMs };
+        return { timeMs, alignType, deltaMs, metadata };
     };
 
     let bestMatch = null;
@@ -117,27 +152,52 @@ function updateTimelineSnapLineForItem(timelineItem) {
         }
     };
 
-    lanes.forEach((candidateLane) => {
-        const items = candidateLane.querySelectorAll('.timeline-item');
-        items.forEach((candidate) => {
-            if (candidate === timelineItem) {
+    const lanes = getTimelineLanes();
+    lanes.forEach((candidateLane, candidateLaneIndex) => {
+        const candidates = Array.from(candidateLane.querySelectorAll('.timeline-item'));
+        candidates.forEach((candidate) => {
+            if (candidate === timelineItem || !candidate.isConnected) {
                 return;
             }
-            if (!candidate.isConnected) {
-                return;
-            }
-            const candidateStart = Number(candidate.dataset.startOffsetMs);
+
+            const candidateEntry = laneEntryByItem.get(candidate) || null;
+            const candidateStart = candidateEntry && Number.isFinite(candidateEntry.start)
+                ? candidateEntry.start
+                : Number(candidate.dataset.startOffsetMs);
             if (!Number.isFinite(candidateStart)) {
                 return;
             }
-            const candidateDuration = Math.max(0, getTimelineItemPlaybackDuration(candidate));
-            const candidateEnd = candidateStart + candidateDuration;
+
+            const candidateDuration = candidateEntry && Number.isFinite(candidateEntry.duration)
+                ? candidateEntry.duration
+                : Math.max(0, getTimelineItemPlaybackDuration(candidate));
+            const candidateEnd = candidateStart + Math.max(0, candidateDuration);
+
+            const candidateLaneIndexValue = candidateEntry && Number.isFinite(candidateEntry.laneIndex)
+                ? candidateEntry.laneIndex
+                : parseLaneIndex(candidate.dataset.laneIndex ?? candidateLane.dataset.laneIndex ?? candidateLaneIndex);
+
+            const isCrossTrack = Number.isFinite(candidateLaneIndexValue)
+                && candidateLaneIndexValue !== laneIndex;
+            const decorateAlignType = (baseType) => (
+                isCrossTrack
+                    ? `${baseType} cross-track`
+                    : baseType
+            );
 
             [
-                considerMatch(startMs, 'start-start', Math.abs(startMs - candidateStart)),
-                considerMatch(startMs, 'start-end', Math.abs(startMs - candidateEnd)),
-                considerMatch(endMs, 'end-start', Math.abs(endMs - candidateStart)),
-                considerMatch(endMs, 'end-end', Math.abs(endMs - candidateEnd)),
+                considerMatch(startMs, decorateAlignType('start-start'), Math.abs(startMs - candidateStart), {
+                    crossTrack: isCrossTrack,
+                }),
+                considerMatch(startMs, decorateAlignType('start-end'), Math.abs(startMs - candidateEnd), {
+                    crossTrack: isCrossTrack,
+                }),
+                considerMatch(endMs, decorateAlignType('end-start'), Math.abs(endMs - candidateStart), {
+                    crossTrack: isCrossTrack,
+                }),
+                considerMatch(endMs, decorateAlignType('end-end'), Math.abs(endMs - candidateEnd), {
+                    crossTrack: isCrossTrack,
+                }),
             ].forEach(considerBestMatch);
         });
     });
@@ -190,7 +250,7 @@ function updateTimelineSnapLineForItem(timelineItem) {
         ? (listRect.left - trackRect.left) + relativeLeft
         : null;
 
-    setTimelineSnapLinePosition(relativeLeft, bestMatch.alignType, overviewLeft);
+    setTimelineSnapLinePosition(relativeLeft, bestMatch.alignType, overviewLeft, bestMatch.metadata);
 }
 
 function getTimelineLaneFromEvent(event) {
