@@ -527,6 +527,20 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
 
 let lastTimelineProgressSliderPercent = null;
 let lastTimelineProgressSliderValue = null;
+let lastTimelineProgressFraction = null;
+const TIMELINE_PROGRESS_PERCENT_PRECISION = 4;
+const TIMELINE_PROGRESS_EPSILON = 1e-6;
+
+function formatProgressPercent(value, decimals = TIMELINE_PROGRESS_PERCENT_PRECISION) {
+    if (!Number.isFinite(value)) {
+        return '0';
+    }
+    if (Number.isInteger(value)) {
+        return `${value}`;
+    }
+    const fixed = value.toFixed(decimals);
+    return fixed.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
 
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
@@ -535,19 +549,29 @@ function updateTimelineProgressInput(fraction) {
 
     const clamped = clampProgress(fraction);
     const percent = Math.min(100, Math.max(0, clamped * 100));
-    const formattedPercent = Number.isInteger(percent)
-        ? `${percent}`
-        : percent.toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-    const sliderValue = formattedPercent;
+    const sliderValue = formatProgressPercent(percent);
+    const ariaValue = formatProgressPercent(percent, 1);
 
     if (lastTimelineProgressSliderValue !== sliderValue) {
         timelineProgressInput.value = sliderValue;
+        timelineProgressInput.setAttribute('aria-valuenow', sliderValue);
+        timelineProgressInput.setAttribute('aria-valuetext', `${ariaValue}%`);
+        timelineProgressInput.dataset.progressFraction = String(clamped);
         lastTimelineProgressSliderValue = sliderValue;
+    } else if (timelineProgressInput.dataset.progressFraction !== String(clamped)) {
+        timelineProgressInput.dataset.progressFraction = String(clamped);
     }
 
-    if (lastTimelineProgressSliderPercent !== formattedPercent) {
-        timelineProgressInput.style.setProperty('--line-slider-progress', `${formattedPercent}%`);
-        lastTimelineProgressSliderPercent = formattedPercent;
+    if (timelineProgressInput.getAttribute('aria-valuetext') !== `${ariaValue}%`) {
+        timelineProgressInput.setAttribute('aria-valuetext', `${ariaValue}%`);
+    }
+    if (timelineProgressInput.getAttribute('aria-valuenow') !== sliderValue) {
+        timelineProgressInput.setAttribute('aria-valuenow', sliderValue);
+    }
+
+    if (lastTimelineProgressSliderPercent !== sliderValue) {
+        timelineProgressInput.style.setProperty('--line-slider-progress', `${sliderValue}%`);
+        lastTimelineProgressSliderPercent = sliderValue;
     }
 }
 
@@ -559,6 +583,7 @@ function setTimelineProgressFraction(fraction, options = {}) {
     }
 
     if (!timelineProgressLine) {
+        lastTimelineProgressFraction = clamped;
         return clamped;
     }
 
@@ -567,8 +592,12 @@ function setTimelineProgressFraction(fraction, options = {}) {
     }
 
     const nextValue = String(clamped);
+    const numericDelta = lastTimelineProgressFraction === null
+        ? Number.POSITIVE_INFINITY
+        : Math.abs(clamped - lastTimelineProgressFraction);
     const needsUpdate = options.forceUpdate === true
-        || timelineProgressLine.dataset.progress !== nextValue;
+        || timelineProgressLine.dataset.progress !== nextValue
+        || numericDelta > TIMELINE_PROGRESS_EPSILON;
 
     timelineProgressLine.dataset.progress = nextValue;
 
@@ -581,6 +610,8 @@ function setTimelineProgressFraction(fraction, options = {}) {
     if (needsUpdate || !options.transitionDuration) {
         timelineProgressLine.style.transform = `scaleX(${clamped})`;
     }
+
+    lastTimelineProgressFraction = clamped;
 
     return clamped;
 }
