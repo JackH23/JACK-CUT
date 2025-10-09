@@ -2069,6 +2069,15 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     pointer-events: none;
 }
 
+.preview-overlay-layer--stabilized {
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+.preview-overlay-layer--stabilized img {
+    will-change: transform, opacity;
+}
+
 .preview-image-layer {
     position: absolute;
     inset: 0;

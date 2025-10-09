@@ -779,7 +779,9 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        entry.hasAnimationHint = false;
         if (entry.layer) {
+            entry.layer.classList.remove('preview-overlay-layer--stabilized');
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
@@ -798,6 +800,7 @@ function clearPreviewOverlayLayers() {
 
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
+    previewOverlayStack.removeAttribute('data-has-active-above-animation');
 
     lastOverlayRenderTimestamp = null;
 }
