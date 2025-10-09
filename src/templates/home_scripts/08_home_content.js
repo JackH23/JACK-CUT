@@ -1004,3 +1004,23 @@ previewVideo.addEventListener('ended', () => {
     playVideoButton.textContent = 'Play Back';
     previewVideo.currentTime = 0;
 });
+
+const pausePlaybackClockForVideo = () => {
+    if (!isTimelinePlaying) {
+        return;
+    }
+    pausePlaybackClock();
+};
+
+const resumePlaybackClockForVideo = () => {
+    if (!isTimelinePlaying) {
+        return;
+    }
+    resumePlaybackClock();
+};
+
+previewVideo.addEventListener('waiting', pausePlaybackClockForVideo);
+previewVideo.addEventListener('seeking', pausePlaybackClockForVideo);
+previewVideo.addEventListener('stalled', pausePlaybackClockForVideo);
+previewVideo.addEventListener('playing', resumePlaybackClockForVideo);
+previewVideo.addEventListener('timeupdate', resumePlaybackClockForVideo);

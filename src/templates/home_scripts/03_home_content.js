@@ -510,29 +510,49 @@ function isExportDialogOpen() {
     return Boolean(exportDialog && !exportDialog.hasAttribute('hidden'));
 }
 
-function startPlaybackClock(startElapsed, totalDuration) {
-    playbackClockBaseElapsed = Math.max(0, Number(startElapsed) || 0);
-    playbackClockTotalDuration = Math.max(0, Number(totalDuration) || 0);
-    playbackClockStartTimestamp = performance.now();
-
+function schedulePlaybackClockTick() {
     if (playbackClockAnimationFrame) {
         window.cancelAnimationFrame(playbackClockAnimationFrame);
+        playbackClockAnimationFrame = null;
     }
 
-    const tick = () => {
+    if (!isTimelinePlaying) {
+        return;
+    }
+
+    const step = () => {
         if (!isTimelinePlaying) {
+            playbackClockAnimationFrame = null;
             return;
         }
+
         const now = performance.now();
+
+        if (playbackClockPaused) {
+            playbackClockStartTimestamp = now;
+            playbackClockAnimationFrame = window.requestAnimationFrame(step);
+            return;
+        }
+
         const elapsed = Math.min(
             playbackClockTotalDuration,
             playbackClockBaseElapsed + Math.max(0, now - playbackClockStartTimestamp),
         );
+
         updatePlaybackTimeDisplay(elapsed, playbackClockTotalDuration);
-        playbackClockAnimationFrame = window.requestAnimationFrame(tick);
+        playbackClockAnimationFrame = window.requestAnimationFrame(step);
     };
 
-    tick();
+    playbackClockStartTimestamp = performance.now();
+    step();
+}
+
+function startPlaybackClock(startElapsed, totalDuration) {
+    playbackClockBaseElapsed = Math.max(0, Number(startElapsed) || 0);
+    playbackClockTotalDuration = Math.max(0, Number(totalDuration) || 0);
+    playbackClockPaused = false;
+
+    schedulePlaybackClockTick();
 }
 
 function stopPlaybackClock(resetDisplay = true) {
@@ -541,9 +561,41 @@ function stopPlaybackClock(resetDisplay = true) {
         playbackClockAnimationFrame = null;
     }
 
+    playbackClockPaused = false;
+
     if (resetDisplay) {
         updateActiveTimelineIndicators();
     }
+}
+
+function pausePlaybackClock() {
+    if (playbackClockPaused || !playbackClockAnimationFrame) {
+        return;
+    }
+
+    const now = performance.now();
+    playbackClockBaseElapsed = Math.min(
+        playbackClockTotalDuration,
+        playbackClockBaseElapsed + Math.max(0, now - playbackClockStartTimestamp),
+    );
+    playbackClockStartTimestamp = now;
+    playbackClockPaused = true;
+
+    updatePlaybackTimeDisplay(playbackClockBaseElapsed, playbackClockTotalDuration);
+}
+
+function resumePlaybackClock() {
+    if (!playbackClockPaused) {
+        return;
+    }
+
+    playbackClockPaused = false;
+
+    if (!isTimelinePlaying) {
+        return;
+    }
+
+    schedulePlaybackClockTick();
 }
 
 function clampTimelineDurationPerPixel(value) {
