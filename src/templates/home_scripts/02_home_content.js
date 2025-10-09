@@ -424,6 +424,7 @@ const MIN_ROTATION_DEGREES = -180;
 const MAX_ROTATION_DEGREES = 180;
 const DEFAULT_VIDEO_DURATION = 3000;
 const MIN_IMAGE_DURATION = 400;
+const MIN_AUDIO_DURATION = 400;
 const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
 const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
 const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';

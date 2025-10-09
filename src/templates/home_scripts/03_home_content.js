@@ -372,6 +372,9 @@ function describeFileType(fileType) {
     if (fileType.startsWith('image/')) {
         return 'Image frame';
     }
+    if (fileType.startsWith('audio/')) {
+        return 'Audio track';
+    }
     return 'Media clip';
 }
 
@@ -1001,11 +1004,24 @@ function getTimelinePlaybackSegments() {
                 return aIndex - bIndex;
             });
 
-        const activeEntry = orderedEntries
+        const isAudioEntry = (entry) => {
+            if (!entry?.item) {
+                return false;
+            }
+            const detector = (typeof isAudioTimelineItem === 'function')
+                ? isAudioTimelineItem
+                : ((item) => (item?.dataset?.fileType || '').startsWith('audio/'));
+            return detector(entry.item);
+        };
+
+        const visualEntries = orderedEntries.filter((entry) => !isAudioEntry(entry));
+
+        const activeEntrySource = visualEntries.length ? visualEntries : orderedEntries;
+        const activeEntry = activeEntrySource
             .slice()
             .reverse()
             .find((entry) => Number.isFinite(entry?.laneIndex))
-            || orderedEntries[orderedEntries.length - 1]
+            || activeEntrySource[activeEntrySource.length - 1]
             || null;
 
         segments.push({

@@ -624,6 +624,13 @@ function getTimelineItemPlaybackDuration(timelineItem) {
             return duration;
         }
     }
+    if (fileType.startsWith('audio/')) {
+        const duration = Number(timelineItem.dataset.audioDuration);
+        if (Number.isFinite(duration) && duration > 0) {
+            return duration;
+        }
+        return MIN_AUDIO_DURATION;
+    }
     return 0;
 }
 
@@ -650,6 +657,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
 
     cancelPreviewExitAnimation({ forceRestore: true });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
+    stopPreviewAudio({ resetTime: resetProgress });
     pausePreviewCanvasVideo();
 
     stopPlaybackClock(resetProgress);
@@ -681,6 +689,7 @@ function clearPreview() {
     previewVideo.removeAttribute('src');
     previewVideo.load();
     cancelPreviewAudioEnvelope({ restoreVolume: true });
+    stopPreviewAudio({ resetTime: true });
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
@@ -751,6 +760,9 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     previewPlaceholder.hidden = true;
+    if (previewPlaceholder) {
+        previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+    }
 
     if (isTimelinePlaying) {
         stopTimelinePlayback();
@@ -769,7 +781,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
             previewVideo.src = objectURL;
             previewVideo.load();
         }
-        applyMasterVolumeToPreview(audioSettings.volumePercent);
+        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
         playVideoButton.textContent = 'Play Back';
     } else if (fileType.startsWith('image/')) {
         cancelPreviewExitAnimation({ forceRestore: true });
@@ -782,6 +794,25 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
+    } else if (fileType.startsWith('audio/')) {
+        stopPreviewAudio({ resetTime: true });
+        setPreviewMode(null);
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = false;
+            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+        }
+        if (previewAudio && objectURL && previewAudio.src !== objectURL) {
+            previewAudio.src = objectURL;
+            try {
+                previewAudio.load();
+            } catch (error) {
+                // Ignore preload errors for audio preview.
+            }
+        }
+        playVideoButton.textContent = 'Play Back';
     }
 
     applyCanvasSettingsToPreview(timelineItem);
@@ -828,9 +859,10 @@ function setStagedUploadAddedState(objectURL, isAdded) {
 async function stageUpload(file) {
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
+    const isAudio = file.type.startsWith('audio/');
 
-    if (!isVideo && !isImage) {
-        alert('Unsupported file type. Please upload an image or video file.');
+    if (!isVideo && !isImage && !isAudio) {
+        alert('Unsupported file type. Please upload an image, video, or audio file.');
         return;
     }
 
@@ -865,6 +897,12 @@ async function stageUpload(file) {
         video.playsInline = true;
         video.autoplay = true;
         previewWrapper.appendChild(video);
+    } else if (isAudio) {
+        const icon = document.createElement('span');
+        icon.className = 'upload-gallery__audio-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '🎵';
+        previewWrapper.appendChild(icon);
     }
 
     const meta = document.createElement('div');
@@ -946,6 +984,285 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
     });
 }
 
+const AUDIO_WAVEFORM_WIDTH = 640;
+const AUDIO_WAVEFORM_HEIGHT = 80;
+const audioWaveformByObjectUrl = new Map();
+let audioDecodeContextLock = Promise.resolve();
+
+function ensureAudioTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--audio'));
+    if (existing) {
+        return existing;
+    }
+    const lane = document.createElement('div');
+    lane.className = 'timeline-lane timeline-lane--audio';
+    timelineLaneList.appendChild(lane);
+    refreshTimelineLaneIndices();
+    return lane;
+}
+
+async function decodeAudioBufferFromFile(file) {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor || !file) {
+        return null;
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+
+    return audioDecodeContextLock = audioDecodeContextLock.then(async () => {
+        let audioContext = null;
+        try {
+            audioContext = new AudioContextConstructor();
+            const audioBuffer = await new Promise((resolve, reject) => {
+                audioContext.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+            });
+            return audioBuffer;
+        } catch (error) {
+            console.warn('Unable to decode audio file for waveform rendering.', error);
+            return null;
+        } finally {
+            if (audioContext && typeof audioContext.close === 'function') {
+                audioContext.close().catch(() => {});
+            }
+        }
+    });
+}
+
+function drawAudioWaveform(canvas, audioBuffer) {
+    if (!canvas || !audioBuffer) {
+        return;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return;
+    }
+
+    const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+    const width = Math.max(1, Math.round(AUDIO_WAVEFORM_WIDTH * pixelRatio));
+    const height = Math.max(1, Math.round(AUDIO_WAVEFORM_HEIGHT * pixelRatio));
+
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${AUDIO_WAVEFORM_WIDTH}px`;
+    canvas.style.height = `${AUDIO_WAVEFORM_HEIGHT}px`;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(30, 64, 175, 0.18)';
+    ctx.fillRect(0, 0, width, height);
+
+    const channelData = audioBuffer.numberOfChannels > 1
+        ? audioBuffer.getChannelData(0)
+        : audioBuffer.getChannelData(0);
+    const samplesPerPixel = Math.max(1, Math.floor(channelData.length / width));
+    const centerY = height / 2;
+    const amplitudeScale = centerY * 0.9;
+
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.9)';
+    ctx.lineWidth = Math.max(1, Math.round(pixelRatio));
+    ctx.beginPath();
+
+    for (let x = 0; x < width; x += 1) {
+        const startIndex = x * samplesPerPixel;
+        let min = 1;
+        let max = -1;
+        for (let i = 0; i < samplesPerPixel; i += 1) {
+            const sample = channelData[startIndex + i] || 0;
+            if (sample < min) {
+                min = sample;
+            }
+            if (sample > max) {
+                max = sample;
+            }
+        }
+        const top = centerY - (max * amplitudeScale);
+        const bottom = centerY - (min * amplitudeScale);
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+    }
+
+    ctx.stroke();
+}
+
+function applyCachedWaveform(canvas, cacheEntry) {
+    if (!canvas || !cacheEntry?.imageDataUrl) {
+        return false;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return false;
+    }
+
+    const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+    const width = Math.max(1, Math.round(AUDIO_WAVEFORM_WIDTH * pixelRatio));
+    const height = Math.max(1, Math.round(AUDIO_WAVEFORM_HEIGHT * pixelRatio));
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${AUDIO_WAVEFORM_WIDTH}px`;
+    canvas.style.height = `${AUDIO_WAVEFORM_HEIGHT}px`;
+
+    const image = new Image();
+    image.onload = () => {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(image, 0, 0, width, height);
+    };
+    image.src = cacheEntry.imageDataUrl;
+    return true;
+}
+
+async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas) {
+    const existing = audioWaveformByObjectUrl.get(objectURL);
+    if (existing && existing.drawn && existing.durationMs) {
+        if (waveformCanvas) {
+            applyCachedWaveform(waveformCanvas, existing);
+        }
+        const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
+        setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
+        return;
+    }
+
+    const audioBuffer = await decodeAudioBufferFromFile(file);
+    if (audioBuffer) {
+        const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
+        if (waveformCanvas) {
+            drawAudioWaveform(waveformCanvas, audioBuffer);
+        }
+        let imageDataUrl = null;
+        if (waveformCanvas) {
+            try {
+                imageDataUrl = waveformCanvas.toDataURL('image/png');
+            } catch (error) {
+                imageDataUrl = null;
+            }
+        }
+        audioWaveformByObjectUrl.set(objectURL, {
+            imageDataUrl,
+            durationMs,
+            drawn: true,
+        });
+        setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
+        return;
+    }
+
+    await new Promise((resolve) => {
+        const audio = new Audio();
+        audio.preload = 'metadata';
+        audio.src = objectURL;
+        audio.addEventListener('loadedmetadata', () => {
+            if (Number.isFinite(audio.duration) && audio.duration > 0) {
+                const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audio.duration * 1000));
+                audioWaveformByObjectUrl.set(objectURL, {
+                    imageDataUrl: null,
+                    durationMs,
+                    drawn: false,
+                });
+                setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
+            }
+            resolve();
+        }, { once: true });
+        audio.addEventListener('error', () => resolve(), { once: true });
+    });
+}
+
+let activeAudioOverlayEntry = null;
+
+function stopPreviewAudio(options = {}) {
+    if (!previewAudio) {
+        return;
+    }
+    const { resetTime = true } = options;
+    try {
+        previewAudio.pause();
+    } catch (error) {
+        // Ignore pause errors.
+    }
+    if (resetTime) {
+        try {
+            previewAudio.currentTime = 0;
+        } catch (error) {
+            // Ignore reset errors.
+        }
+    }
+    cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+    activeAudioOverlayEntry = null;
+}
+
+function getAudioOverlayEntry(entries) {
+    if (!Array.isArray(entries)) {
+        return null;
+    }
+    return entries.find((entry) => isAudioTimelineItem(entry?.item));
+}
+
+function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
+    const audioEntry = getAudioOverlayEntry(entries);
+    if (!audioEntry || !previewAudio) {
+        stopPreviewAudio({ resetTime: false });
+        return;
+    }
+
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(audioEntry.item));
+    const offsetMs = Math.max(0, Math.min(Math.round(segmentStartTimeMs - audioEntry.start), clipDuration));
+    const objectURL = audioEntry.item?.dataset?.objectUrl || '';
+
+    const needsRestart = !activeAudioOverlayEntry
+        || activeAudioOverlayEntry.item !== audioEntry.item
+        || previewAudio.src !== objectURL;
+
+    if (needsRestart) {
+        if (objectURL && previewAudio.src !== objectURL) {
+            previewAudio.src = objectURL;
+            try {
+                previewAudio.load();
+            } catch (error) {
+                // Ignore load errors.
+            }
+        }
+
+        const audioSettings = getTimelineItemAudioSettings(audioEntry.item);
+        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewAudio });
+        const remainingDuration = Math.max(0, clipDuration - offsetMs);
+        if (remainingDuration > 0) {
+            applyPreviewAudioEnvelope(audioSettings, remainingDuration, { mediaElement: previewAudio });
+        } else {
+            cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+        }
+
+        try {
+            previewAudio.currentTime = offsetMs / 1000;
+        } catch (error) {
+            // Ignore seek errors.
+        }
+
+        previewAudio.play().catch((error) => {
+            console.warn('Unable to start audio clip playback.', error);
+        });
+
+        activeAudioOverlayEntry = {
+            item: audioEntry.item,
+            start: audioEntry.start,
+            end: audioEntry.end,
+        };
+        return;
+    }
+
+    try {
+        const desiredTime = offsetMs / 1000;
+        if (Math.abs((previewAudio.currentTime || 0) - desiredTime) > 0.2) {
+            previewAudio.currentTime = desiredTime;
+        }
+    } catch (error) {
+        // Ignore seek corrections.
+    }
+
+    if (previewAudio.paused) {
+        previewAudio.play().catch(() => {});
+    }
+}
+
 async function addToTimeline(file, objectURL) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
@@ -1020,12 +1337,32 @@ async function addToTimeline(file, objectURL) {
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
+    } else if (file.type.startsWith('audio/')) {
+        timelineItem.classList.add('timeline-item--audio');
+        const waveformContainer = document.createElement('div');
+        waveformContainer.className = 'timeline-waveform';
+        const waveformCanvas = document.createElement('canvas');
+        waveformContainer.appendChild(waveformCanvas);
+        timelineItem.appendChild(waveformContainer);
+        setTimelineItemDuration(
+            timelineItem,
+            'audioDuration',
+            MIN_AUDIO_DURATION,
+            { markCustom: false },
+        );
+        prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas).catch((error) => {
+            console.warn('Failed to render audio waveform.', error);
+        });
     }
 
     timelineItem.appendChild(label);
     timelineItem.appendChild(removeButton);
 
-    const targetLane = defaultLane || ensureTimelineLane(0);
+    let targetLane = defaultLane || ensureTimelineLane(0);
+    if (file.type.startsWith('audio/')) {
+        const audioLane = ensureAudioTimelineLane();
+        targetLane = audioLane || targetLane;
+    }
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
         targetLane.appendChild(timelineItem);
@@ -1107,6 +1444,9 @@ async function addToTimeline(file, objectURL) {
             if (!stagedUploadsByObjectUrl.has(url)) {
                 URL.revokeObjectURL(url);
             }
+        }
+        if (fileType.startsWith('audio/')) {
+            stopPreviewAudio({ resetTime: true });
         }
         if (wasActive) {
             setActiveTimelineItem(null);
@@ -1199,7 +1539,7 @@ async function playTimelineItem(
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
         previewPlaceholder.hidden = true;
-        applyMasterVolumeToPreview(audioSettings.volumePercent);
+        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
 
         await new Promise((resolve) => {
             let resolved = false;
