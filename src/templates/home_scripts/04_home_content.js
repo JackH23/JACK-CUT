@@ -25,25 +25,44 @@ function setActiveDropLane(nextLane) {
 }
 
 function hideTimelineSnapLine() {
-    if (!timelineSnapLine) {
-        return;
-    }
-    timelineSnapLine.removeAttribute('data-visible');
-    timelineSnapLine.style.removeProperty('left');
-    delete timelineSnapLine.dataset.align;
+    [timelineSnapLine, timelineOverviewSnapLine].forEach((line) => {
+        if (!line) {
+            return;
+        }
+        line.removeAttribute('data-visible');
+        line.style.removeProperty('left');
+        delete line.dataset.align;
+    });
 }
 
-function setTimelineSnapLinePosition(positionPx, alignType = '') {
-    if (!timelineSnapLine) {
+function setTimelineSnapLinePosition(positionPx, alignType = '', overviewPositionPx = null) {
+    if (timelineSnapLine) {
+        timelineSnapLine.style.left = `${Number(positionPx).toFixed(2)}px`;
+        if (alignType) {
+            timelineSnapLine.dataset.align = alignType;
+        } else {
+            delete timelineSnapLine.dataset.align;
+        }
+        timelineSnapLine.setAttribute('data-visible', 'true');
+    }
+
+    if (!timelineOverviewSnapLine) {
         return;
     }
-    timelineSnapLine.style.left = `${Number(positionPx).toFixed(2)}px`;
-    if (alignType) {
-        timelineSnapLine.dataset.align = alignType;
+
+    if (Number.isFinite(overviewPositionPx)) {
+        timelineOverviewSnapLine.style.left = `${Number(overviewPositionPx).toFixed(2)}px`;
+        if (alignType) {
+            timelineOverviewSnapLine.dataset.align = alignType;
+        } else {
+            delete timelineOverviewSnapLine.dataset.align;
+        }
+        timelineOverviewSnapLine.setAttribute('data-visible', 'true');
     } else {
-        delete timelineSnapLine.dataset.align;
+        timelineOverviewSnapLine.removeAttribute('data-visible');
+        timelineOverviewSnapLine.style.removeProperty('left');
+        delete timelineOverviewSnapLine.dataset.align;
     }
-    timelineSnapLine.setAttribute('data-visible', 'true');
 }
 
 function updateTimelineSnapLineForItem(timelineItem) {
@@ -160,13 +179,18 @@ function updateTimelineSnapLineForItem(timelineItem) {
     }
 
     const listRect = timelineLaneList.getBoundingClientRect();
+    const trackRect = timelineTrack ? timelineTrack.getBoundingClientRect() : null;
     const laneRect = lane.getBoundingClientRect();
     const laneStyles = window.getComputedStyle(lane);
     const paddingLeft = Number.parseFloat(laneStyles.paddingLeft) || 0;
     const laneOffsetLeft = laneRect.left - listRect.left;
     const relativeLeft = laneOffsetLeft + paddingLeft + (Math.max(0, bestMatch.timeMs) / perPixel);
 
-    setTimelineSnapLinePosition(relativeLeft, bestMatch.alignType);
+    const overviewLeft = trackRect
+        ? (listRect.left - trackRect.left) + relativeLeft
+        : null;
+
+    setTimelineSnapLinePosition(relativeLeft, bestMatch.alignType, overviewLeft);
 }
 
 function getTimelineLaneFromEvent(event) {

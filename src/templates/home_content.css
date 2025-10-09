@@ -2405,10 +2405,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 2;
 }
 
-.timeline-snap-line {
+.timeline-snap-line,
+.timeline-overview-snap-line {
     position: absolute;
-    top: 4px;
-    bottom: 4px;
     width: 2px;
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(56, 189, 248, 0.85), rgba(124, 58, 237, 0.85));
@@ -2417,14 +2416,27 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transform: translateX(-50%);
     pointer-events: none;
     transition: opacity 0.12s ease;
+}
+
+.timeline-snap-line {
+    top: 4px;
+    bottom: 4px;
     z-index: 5;
 }
 
-.timeline-snap-line[data-visible="true"] {
+.timeline-overview-snap-line {
+    top: 0;
+    bottom: 0;
+    z-index: 4;
+}
+
+.timeline-snap-line[data-visible="true"],
+.timeline-overview-snap-line[data-visible="true"] {
     opacity: 1;
 }
 
-.timeline-snap-line[data-align*="playhead"] {
+.timeline-snap-line[data-align*="playhead"],
+.timeline-overview-snap-line[data-align*="playhead"] {
     background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(96, 165, 250, 0.9));
     box-shadow: 0 0 18px rgba(191, 219, 254, 0.45);
 }
