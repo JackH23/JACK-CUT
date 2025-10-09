@@ -526,6 +526,7 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
 }
 
 let lastTimelineProgressSliderPercent = null;
+let lastTimelineProgressSliderValue = null;
 
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
@@ -534,13 +535,14 @@ function updateTimelineProgressInput(fraction) {
 
     const clamped = clampProgress(fraction);
     const percent = Math.min(100, Math.max(0, clamped * 100));
-    const roundedValue = String(Math.round(percent));
     const formattedPercent = Number.isInteger(percent)
         ? `${percent}`
         : percent.toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+    const sliderValue = formattedPercent;
 
-    if (timelineProgressInput.value !== roundedValue) {
-        timelineProgressInput.value = roundedValue;
+    if (lastTimelineProgressSliderValue !== sliderValue) {
+        timelineProgressInput.value = sliderValue;
+        lastTimelineProgressSliderValue = sliderValue;
     }
 
     if (lastTimelineProgressSliderPercent !== formattedPercent) {
