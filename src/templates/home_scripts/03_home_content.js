@@ -350,6 +350,17 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
         refreshActiveOverlayLayers();
     }
 
+    if (playbackDisplayTotalMs > 0) {
+        const playbackFraction = playbackDisplayCurrentMs / playbackDisplayTotalMs;
+        setTimelineProgressFraction(playbackFraction, {
+            forceUpdate: false,
+        });
+    } else if (!isTimelinePlaying) {
+        setTimelineProgressFraction(0, {
+            forceUpdate: false,
+        });
+    }
+
     syncTimelinePlaybackIndicator();
 }
 
