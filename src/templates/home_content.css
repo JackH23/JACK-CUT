@@ -2860,6 +2860,60 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 3;
 }
 
+.timeline-snap-line {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.95), rgba(59, 130, 246, 0.82));
+    box-shadow: 0 0 0 1px rgba(191, 219, 254, 0.55), 0 0 12px rgba(96, 165, 250, 0.45);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-9999px);
+    transition: opacity 0.16s ease, transform 0.08s ease;
+    z-index: 4;
+}
+
+.timeline-snap-line::before,
+.timeline-snap-line::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(191, 219, 254, 0.92);
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+    transform: translate(-50%, 0);
+    opacity: 0.95;
+}
+
+.timeline-snap-line::before {
+    top: -6px;
+}
+
+.timeline-snap-line::after {
+    bottom: -6px;
+}
+
+.timeline-snap-line[data-edge='start']::after {
+    opacity: 0;
+}
+
+.timeline-snap-line[data-edge='end']::before {
+    opacity: 0;
+}
+
+.timeline-snap-line.is-visible {
+    opacity: 1;
+}
+
+.timeline-snap-line[data-source='playhead'] {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(148, 163, 184, 0.75));
+    box-shadow: 0 0 0 1px rgba(226, 232, 240, 0.55), 0 0 14px rgba(148, 163, 184, 0.45);
+}
+
 .timeline-progress button:hover {
     transform: translateY(-2px);
 }
