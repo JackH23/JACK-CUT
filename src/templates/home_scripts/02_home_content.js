@@ -98,6 +98,7 @@ const timelineDragOverState = {
 };
 let activeTimelineDragItem = null;
 let activeTimelineResizeItem = null;
+let activeTimelineSnapState = null;
 const pendingTimelineLaneReflows = new Map();
 let isExportingTimeline = false;
 let isMainTrackMagnetEnabled = true;
@@ -147,10 +148,12 @@ function maybeAutoScrollTimelineTrack(clientX) {
 function runTimelineDragOverUpdate() {
     const { lane, item, clientX } = timelineDragOverState;
     if (!lane || !item) {
+        setTimelineSnapLineState(null);
         return;
     }
 
     if (!lane.isConnected || !item.isConnected) {
+        setTimelineSnapLineState(null);
         return;
     }
 
@@ -162,20 +165,29 @@ function runTimelineDragOverUpdate() {
     const relativeX = clientX - rect.left - paddingLeft;
     const perPixel = getTimelineDurationPerPixel();
     const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+    const snap = resolveTimelineSnapForMovement({
+        desiredStartMs,
+        clipDuration,
+        excludeItem: item,
+    });
+    const appliedStartMs = Math.max(0, snap ? snap.startMs : desiredStartMs);
     const laneIndex = lane.dataset.laneIndex || '0';
     const previousLaneIndex = item.dataset.laneIndex || '0';
     const previousOffsetMs = Number(item.dataset.startOffsetMs);
 
+    item.dataset.laneIndex = laneIndex;
+    setTimelineSnapLineState(snap ? { ...snap, lane } : null);
+
     if (
         previousLaneIndex === laneIndex
         && Number.isFinite(previousOffsetMs)
-        && previousOffsetMs === desiredStartMs
+        && previousOffsetMs === appliedStartMs
     ) {
         return;
     }
 
-    item.dataset.laneIndex = laneIndex;
-    item.dataset.startOffsetMs = String(desiredStartMs);
+    item.dataset.startOffsetMs = String(appliedStartMs);
     flushTimelineLaneReflow(lane);
 }
 
@@ -440,6 +452,7 @@ const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;
 const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
+const TIMELINE_SNAP_THRESHOLD_PX = 12;
 
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;

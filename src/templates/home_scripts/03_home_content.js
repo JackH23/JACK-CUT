@@ -709,6 +709,297 @@ function applyTimelineItemLeadingGapStyles(timelineItem, gapMs) {
     }
 }
 
+function getTimelineSnapThresholdMs() {
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        return 0;
+    }
+    const thresholdPx = Math.max(0, TIMELINE_SNAP_THRESHOLD_PX);
+    return perPixel * thresholdPx;
+}
+
+function getTimelineSnapTargets(excludeItem = null) {
+    const entries = getTimelineLaneEntries();
+    const targets = [];
+    const excludeSet = excludeItem ? new Set([excludeItem]) : null;
+
+    entries.forEach((entry) => {
+        if (excludeSet && excludeSet.has(entry.item)) {
+            return;
+        }
+        if (Number.isFinite(entry.start)) {
+            targets.push({
+                timeMs: entry.start,
+                type: 'clip-start',
+                laneIndex: entry.laneIndex,
+                item: entry.item,
+            });
+        }
+        if (Number.isFinite(entry.end)) {
+            targets.push({
+                timeMs: entry.end,
+                type: 'clip-end',
+                laneIndex: entry.laneIndex,
+                item: entry.item,
+            });
+        }
+    });
+
+    if (Number.isFinite(playbackDisplayCurrentMs)) {
+        targets.push({
+            timeMs: playbackDisplayCurrentMs,
+            type: 'playhead',
+            laneIndex: null,
+            item: null,
+        });
+    }
+
+    return targets;
+}
+
+function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeItem = null }) {
+    const safeStart = Number.isFinite(desiredStartMs) ? Math.max(0, desiredStartMs) : 0;
+    const safeDuration = Number.isFinite(clipDuration) ? Math.max(0, clipDuration) : 0;
+    const desiredEnd = safeStart + safeDuration;
+    const thresholdMs = getTimelineSnapThresholdMs();
+
+    if (thresholdMs <= 0) {
+        return null;
+    }
+
+    const targets = getTimelineSnapTargets(excludeItem);
+    let bestMatch = null;
+
+    targets.forEach((target) => {
+        if (!Number.isFinite(target.timeMs)) {
+            return;
+        }
+
+        const targetTime = Math.max(0, target.timeMs);
+        const startDelta = Math.abs(targetTime - safeStart);
+
+        if (startDelta <= thresholdMs && (!bestMatch || startDelta < bestMatch.delta)) {
+            bestMatch = {
+                delta: startDelta,
+                edge: 'start',
+                targetTimeMs: targetTime,
+                targetType: target.type,
+                laneIndex: target.laneIndex,
+            };
+        }
+
+        if (safeDuration > 0) {
+            const candidateStart = Math.round(targetTime - safeDuration);
+            if (candidateStart < 0) {
+                return;
+            }
+            const endDelta = Math.abs(targetTime - desiredEnd);
+            if (endDelta <= thresholdMs && (!bestMatch || endDelta < bestMatch.delta)) {
+                bestMatch = {
+                    delta: endDelta,
+                    edge: 'end',
+                    targetTimeMs: targetTime,
+                    targetType: target.type,
+                    laneIndex: target.laneIndex,
+                };
+            }
+        }
+    });
+
+    if (!bestMatch) {
+        return null;
+    }
+
+    const roundedTarget = Math.max(0, Math.round(bestMatch.targetTimeMs));
+    const appliedStart = bestMatch.edge === 'end'
+        ? Math.max(0, Math.round(roundedTarget - safeDuration))
+        : roundedTarget;
+    const appliedEnd = bestMatch.edge === 'end'
+        ? roundedTarget
+        : Math.max(appliedStart, Math.round(appliedStart + safeDuration));
+
+    return {
+        startMs: appliedStart,
+        endMs: appliedEnd,
+        targetTimeMs: roundedTarget,
+        targetType: bestMatch.targetType,
+        edge: bestMatch.edge,
+        laneIndex: bestMatch.laneIndex,
+    };
+}
+
+function resolveTimelineSnapForResize({
+    timelineItem,
+    startMs,
+    desiredDuration,
+    edge = 'end',
+    excludeItem = null,
+}) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const safeStart = Number.isFinite(startMs) ? Math.max(0, startMs) : 0;
+    const safeDuration = Number.isFinite(desiredDuration) ? Math.max(0, desiredDuration) : 0;
+    const thresholdMs = getTimelineSnapThresholdMs();
+
+    if (thresholdMs <= 0) {
+        return null;
+    }
+
+    const targets = getTimelineSnapTargets(excludeItem || timelineItem);
+    const minimumDuration = getTimelineItemMinimumDuration(timelineItem);
+
+    if (edge === 'end') {
+        const desiredEnd = safeStart + safeDuration;
+        let best = null;
+
+        targets.forEach((target) => {
+            if (!Number.isFinite(target.timeMs)) {
+                return;
+            }
+            const targetTime = Math.max(0, target.timeMs);
+            if (targetTime < safeStart + minimumDuration) {
+                return;
+            }
+            const delta = Math.abs(targetTime - desiredEnd);
+            if (delta <= thresholdMs && (!best || delta < best.delta)) {
+                const durationMs = Math.max(minimumDuration, Math.round(targetTime - safeStart));
+                best = {
+                    delta,
+                    durationMs,
+                    targetTimeMs: Math.round(targetTime),
+                    targetType: target.type,
+                    laneIndex: target.laneIndex,
+                };
+            }
+        });
+
+        if (best) {
+            return {
+                durationMs: best.durationMs,
+                targetTimeMs: best.targetTimeMs,
+                targetType: best.targetType,
+                edge: 'end',
+                laneIndex: best.laneIndex,
+            };
+        }
+    }
+
+    if (edge === 'start') {
+        const desiredStart = safeStart;
+        let best = null;
+
+        targets.forEach((target) => {
+            if (!Number.isFinite(target.timeMs)) {
+                return;
+            }
+            const targetTime = Math.max(0, target.timeMs);
+            const delta = Math.abs(targetTime - desiredStart);
+            if (delta <= thresholdMs && (!best || delta < best.delta)) {
+                const alignedStart = Math.max(0, Math.round(targetTime));
+                const alignedEnd = Math.max(alignedStart + minimumDuration, Math.round(alignedStart + safeDuration));
+                best = {
+                    delta,
+                    startMs: alignedStart,
+                    durationMs: Math.max(minimumDuration, alignedEnd - alignedStart),
+                    targetTimeMs: Math.round(targetTime),
+                    targetType: target.type,
+                    laneIndex: target.laneIndex,
+                };
+            }
+        });
+
+        if (best) {
+            return {
+                startMs: best.startMs,
+                durationMs: best.durationMs,
+                targetTimeMs: best.targetTimeMs,
+                targetType: best.targetType,
+                edge: 'start',
+                laneIndex: best.laneIndex,
+            };
+        }
+    }
+
+    return null;
+}
+
+function setTimelineSnapLineState(state) {
+    if (!timelineSnapLine || !timelineTrack) {
+        activeTimelineSnapState = null;
+        return;
+    }
+
+    if (!state) {
+        if (activeTimelineSnapState) {
+            activeTimelineSnapState = null;
+            timelineSnapLine.classList.remove('is-visible');
+            timelineSnapLine.style.transform = 'translateX(-9999px)';
+            timelineSnapLine.removeAttribute('data-edge');
+            timelineSnapLine.removeAttribute('data-source');
+        }
+        return;
+    }
+
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        setTimelineSnapLineState(null);
+        return;
+    }
+
+    const laneCandidates = getTimelineLanes();
+    const resolvedLane = state.lane && state.lane.isConnected
+        ? state.lane
+        : (Number.isFinite(state.laneIndex) ? laneCandidates[state.laneIndex] : null)
+            || laneCandidates[0]
+            || null;
+
+    if (!resolvedLane) {
+        setTimelineSnapLineState(null);
+        return;
+    }
+
+    const trackRect = timelineTrack.getBoundingClientRect();
+    const laneRect = resolvedLane.getBoundingClientRect();
+    const laneStyles = window.getComputedStyle(resolvedLane);
+    const paddingLeft = Number.parseFloat(laneStyles.paddingLeft) || 0;
+    const targetTime = Number.isFinite(state.targetTimeMs)
+        ? Math.max(0, state.targetTimeMs)
+        : 0;
+    const offset = (laneRect.left - trackRect.left) + paddingLeft + (targetTime / perPixel);
+    const appliedLeft = Math.round(offset);
+    const previousState = activeTimelineSnapState;
+
+    if (previousState
+        && previousState.targetTimeMs === targetTime
+        && previousState.edge === (state.edge || '')
+        && previousState.appliedLeft === appliedLeft) {
+        return;
+    }
+
+    timelineSnapLine.style.transform = `translateX(${appliedLeft}px)`;
+    timelineSnapLine.classList.add('is-visible');
+
+    if (state.edge) {
+        timelineSnapLine.dataset.edge = state.edge;
+    } else {
+        timelineSnapLine.removeAttribute('data-edge');
+    }
+
+    if (state.targetType) {
+        timelineSnapLine.dataset.source = state.targetType;
+    } else {
+        timelineSnapLine.removeAttribute('data-source');
+    }
+
+    activeTimelineSnapState = {
+        targetTimeMs: targetTime,
+        edge: state.edge || '',
+        appliedLeft,
+    };
+}
+
 function isMagnetEnabledForLaneIndex(laneIndex) {
     if (!Number.isFinite(laneIndex)) {
         return false;
