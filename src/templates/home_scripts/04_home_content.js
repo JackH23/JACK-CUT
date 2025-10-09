@@ -89,6 +89,15 @@ function updateTimelineSnapLineForItem(timelineItem) {
 
     let bestMatch = null;
 
+    const considerBestMatch = (match) => {
+        if (!match) {
+            return;
+        }
+        if (!bestMatch || match.deltaMs < bestMatch.deltaMs) {
+            bestMatch = match;
+        }
+    };
+
     lanes.forEach((candidateLane) => {
         const items = candidateLane.querySelectorAll('.timeline-item');
         items.forEach((candidate) => {
@@ -110,16 +119,34 @@ function updateTimelineSnapLineForItem(timelineItem) {
                 considerMatch(startMs, 'start-end', Math.abs(startMs - candidateEnd)),
                 considerMatch(endMs, 'end-start', Math.abs(endMs - candidateStart)),
                 considerMatch(endMs, 'end-end', Math.abs(endMs - candidateEnd)),
-            ].forEach((match) => {
-                if (!match) {
-                    return;
-                }
-                if (!bestMatch || match.deltaMs < bestMatch.deltaMs) {
-                    bestMatch = match;
-                }
-            });
+            ].forEach(considerBestMatch);
         });
     });
+
+    const totalDuration = getTotalTimelineDuration();
+    if (Number.isFinite(totalDuration) && totalDuration > 0) {
+        let playheadFraction = null;
+        if (timelineProgressLine) {
+            const progressValue = Number(timelineProgressLine.dataset.progress);
+            if (Number.isFinite(progressValue)) {
+                playheadFraction = Math.min(Math.max(progressValue, 0), 1);
+            }
+        }
+        if (playheadFraction === null && timelineProgressInput) {
+            const progressValue = Number(timelineProgressInput.value);
+            if (Number.isFinite(progressValue)) {
+                playheadFraction = Math.min(Math.max(progressValue / 100, 0), 1);
+            }
+        }
+
+        if (playheadFraction !== null) {
+            const playheadTimeMs = totalDuration * playheadFraction;
+            [
+                considerMatch(playheadTimeMs, 'start-playhead', Math.abs(startMs - playheadTimeMs)),
+                considerMatch(playheadTimeMs, 'end-playhead', Math.abs(endMs - playheadTimeMs)),
+            ].forEach(considerBestMatch);
+        }
+    }
 
     if (!bestMatch) {
         hideTimelineSnapLine();
