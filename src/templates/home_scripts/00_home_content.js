@@ -89,6 +89,15 @@ const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
 const playVideoButton = document.getElementById('play-video-button');
 const timelineProgressLine = document.getElementById('timeline-progress-line');
+const timelineSnapIndicator = timelineTrack
+    ? (() => {
+        const indicator = document.createElement('div');
+        indicator.className = 'timeline-snap-line';
+        indicator.setAttribute('aria-hidden', 'true');
+        timelineTrack.appendChild(indicator);
+        return indicator;
+    })()
+    : null;
 const timelineProgressInput = document.getElementById('timeline-progress');
 if (timelineProgressInput) {
     timelineProgressInput.addEventListener('input', () => {
