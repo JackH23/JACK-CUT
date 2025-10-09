@@ -1358,15 +1358,53 @@ function getAudioOverlayEntry(entries) {
     return entries.find((entry) => isAudioTimelineItem(entry?.item));
 }
 
+function normalizeAudioOverlayEntry(entry) {
+    if (!entry || !entry.item) {
+        return null;
+    }
+
+    const startTime = Number.isFinite(entry.start)
+        ? Math.max(0, Math.round(entry.start))
+        : Math.max(0, getTimelineItemStartTime(entry.item));
+    const rawEndTime = Number.isFinite(entry.end)
+        ? Math.round(entry.end)
+        : startTime + Math.max(0, getTimelineItemPlaybackDuration(entry.item));
+    const safeEndTime = Math.max(startTime, rawEndTime);
+
+    return {
+        item: entry.item,
+        start: startTime,
+        end: safeEndTime,
+    };
+}
+
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
-    const audioEntry = getAudioOverlayEntry(entries);
+    let audioEntry = normalizeAudioOverlayEntry(getAudioOverlayEntry(entries));
+
+    if ((!audioEntry || !audioEntry.item) && activeAudioOverlayEntry?.item) {
+        const fallbackEntry = normalizeAudioOverlayEntry(activeAudioOverlayEntry);
+        if (
+            fallbackEntry
+            && segmentStartTimeMs >= fallbackEntry.start
+            && segmentStartTimeMs < fallbackEntry.end
+        ) {
+            audioEntry = fallbackEntry;
+        }
+    }
+
     if (!audioEntry || !previewAudio) {
         stopPreviewAudio({ resetTime: false });
         return;
     }
 
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(audioEntry.item));
-    const offsetMs = Math.max(0, Math.min(Math.round(segmentStartTimeMs - audioEntry.start), clipDuration));
+    const offsetMs = Math.max(
+        0,
+        Math.min(
+            Math.round(segmentStartTimeMs - audioEntry.start),
+            clipDuration || Math.max(0, audioEntry.end - audioEntry.start),
+        ),
+    );
     const objectURL = audioEntry.item?.dataset?.objectUrl || '';
 
     const needsRestart = !activeAudioOverlayEntry
@@ -1422,6 +1460,12 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     if (previewAudio.paused) {
         previewAudio.play().catch(() => {});
     }
+
+    activeAudioOverlayEntry = {
+        item: audioEntry.item,
+        start: audioEntry.start,
+        end: audioEntry.end,
+    };
 }
 
 async function addToTimeline(file, objectURL) {
