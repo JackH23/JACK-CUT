@@ -458,6 +458,7 @@ let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;
 let playbackClockBaseElapsed = 0;
 let playbackClockTotalDuration = 0;
+let playbackClockPaused = false;
 let playbackDisplayCurrentMs = 0;
 let playbackDisplayTotalMs = 0;
 let timelineDurationPerPixel = TIMELINE_DURATION_PER_PIXEL_DEFAULT;
