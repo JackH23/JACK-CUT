@@ -787,13 +787,26 @@ function formatTimelineSnapLabel(state, laneIndex = null) {
     return `${edgeName} ↔ ${targetName}${laneSuffix}`;
 }
 
-function getTimelineSnapTargets(excludeItem = null) {
+function getTimelineSnapTargets(excludeItem = null, options = {}) {
     const entries = getTimelineLaneEntries();
     const targets = [];
     const excludeSet = excludeItem ? new Set([excludeItem]) : null;
+    const laneIndexOption = Number.isFinite(options?.laneIndex)
+        ? Number(options.laneIndex)
+        : null;
+    const allowCrossLaneSnap = Boolean(isMainTrackMagnetEnabled);
 
     entries.forEach((entry) => {
         if (excludeSet && excludeSet.has(entry.item)) {
+            return;
+        }
+        const entryLaneIndex = Number.isFinite(entry?.laneIndex)
+            ? entry.laneIndex
+            : null;
+        const isSameLane = laneIndexOption === null
+            || entryLaneIndex === null
+            || entryLaneIndex === laneIndexOption;
+        if (!isSameLane && !allowCrossLaneSnap) {
             return;
         }
         if (Number.isFinite(entry.start)) {
@@ -826,7 +839,12 @@ function getTimelineSnapTargets(excludeItem = null) {
     return targets;
 }
 
-function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeItem = null }) {
+function resolveTimelineSnapForMovement({
+    desiredStartMs,
+    clipDuration,
+    excludeItem = null,
+    laneIndex = null,
+}) {
     const safeStart = Number.isFinite(desiredStartMs) ? Math.max(0, desiredStartMs) : 0;
     const safeDuration = Number.isFinite(clipDuration) ? Math.max(0, clipDuration) : 0;
     const desiredEnd = safeStart + safeDuration;
@@ -836,7 +854,12 @@ function resolveTimelineSnapForMovement({ desiredStartMs, clipDuration, excludeI
         return null;
     }
 
-    const targets = getTimelineSnapTargets(excludeItem);
+    const laneIndexOption = Number.isFinite(laneIndex)
+        ? Number(laneIndex)
+        : (Number.isFinite(Number(excludeItem?.dataset?.laneIndex))
+            ? Number(excludeItem.dataset.laneIndex)
+            : null);
+    const targets = getTimelineSnapTargets(excludeItem, { laneIndex: laneIndexOption });
     let bestMatch = null;
 
     targets.forEach((target) => {
@@ -906,6 +929,7 @@ function resolveTimelineSnapForResize({
     desiredDuration,
     edge = 'end',
     excludeItem = null,
+    laneIndex = null,
 }) {
     if (!timelineItem) {
         return null;
@@ -919,7 +943,14 @@ function resolveTimelineSnapForResize({
         return null;
     }
 
-    const targets = getTimelineSnapTargets(excludeItem || timelineItem);
+    const laneIndexOption = Number.isFinite(laneIndex)
+        ? Number(laneIndex)
+        : (Number.isFinite(Number(timelineItem?.dataset?.laneIndex))
+            ? Number(timelineItem.dataset.laneIndex)
+            : null);
+    const targets = getTimelineSnapTargets(excludeItem || timelineItem, {
+        laneIndex: laneIndexOption,
+    });
     const minimumDuration = getTimelineItemMinimumDuration(timelineItem);
 
     if (edge === 'end') {

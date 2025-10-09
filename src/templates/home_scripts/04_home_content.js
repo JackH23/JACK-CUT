@@ -283,6 +283,9 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         const previousDuration = Number(timelineItem.dataset[durationKey]);
         const parentLane = timelineItem.closest('.timeline-lane');
         const startOffsetMs = Number(timelineItem.dataset.startOffsetMs);
+        const laneIndexValue = Number.isFinite(Number(parentLane?.dataset?.laneIndex))
+            ? Number(parentLane.dataset.laneIndex)
+            : null;
 
         let snap = null;
         if (!isLeftResize) {
@@ -292,6 +295,7 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
                 desiredDuration: nextDuration,
                 edge: 'end',
                 excludeItem: timelineItem,
+                laneIndex: laneIndexValue,
             });
         }
 

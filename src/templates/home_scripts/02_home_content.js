@@ -166,10 +166,15 @@ function runTimelineDragOverUpdate() {
     const perPixel = getTimelineDurationPerPixel();
     const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+    const laneIndexValue = Number.isFinite(Number(lane?.dataset?.laneIndex))
+        ? Number(lane.dataset.laneIndex)
+        : null;
+
     const snap = resolveTimelineSnapForMovement({
         desiredStartMs,
         clipDuration,
         excludeItem: item,
+        laneIndex: laneIndexValue,
     });
     const appliedStartMs = Math.max(0, snap ? snap.startMs : desiredStartMs);
     const laneIndex = lane.dataset.laneIndex || '0';
