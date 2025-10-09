@@ -1384,8 +1384,9 @@ function normalizeAudioTimelineEntry(entry) {
     };
 }
 
-function collectAudioTimelineEntries(entriesOverride = null) {
+function collectAudioTimelineMetadata(entriesOverride = null) {
     const mergedEntries = new Map();
+    const changePoints = new Set();
 
     const appendEntries = (sourceEntries) => {
         if (!Array.isArray(sourceEntries) || !sourceEntries.length) {
@@ -1399,19 +1400,19 @@ function collectAudioTimelineEntries(entriesOverride = null) {
             const key = normalized.item;
             const existing = mergedEntries.get(key);
             if (!existing) {
-                mergedEntries.set(key, normalized);
-                return;
+                mergedEntries.set(key, { ...normalized });
+            } else {
+                existing.start = Math.min(existing.start, normalized.start);
+                existing.end = Math.max(existing.end, normalized.end);
+                existing.laneIndex = Math.min(existing.laneIndex, normalized.laneIndex);
             }
 
-            const nextStart = Math.min(existing.start, normalized.start);
-            const nextEnd = Math.max(existing.end, normalized.end);
-            const nextLane = Math.min(existing.laneIndex, normalized.laneIndex);
-            mergedEntries.set(key, {
-                item: key,
-                start: nextStart,
-                end: nextEnd,
-                laneIndex: nextLane,
-            });
+            if (Number.isFinite(normalized.start)) {
+                changePoints.add(normalized.start);
+            }
+            if (Number.isFinite(normalized.end)) {
+                changePoints.add(normalized.end);
+            }
         });
     };
 
@@ -1421,20 +1422,67 @@ function collectAudioTimelineEntries(entriesOverride = null) {
         appendEntries(getTimelineLaneEntries());
     }
 
-    return Array.from(mergedEntries.values()).sort((a, b) => {
-        if (a.start !== b.start) {
-            return a.start - b.start;
+    const entries = Array.from(mergedEntries.values())
+        .filter((entry) => entry)
+        .sort((a, b) => {
+            if (a.start !== b.start) {
+                return a.start - b.start;
+            }
+            if (a.laneIndex !== b.laneIndex) {
+                return a.laneIndex - b.laneIndex;
+            }
+            return a.end - b.end;
+        });
+
+    const segments = [];
+
+    if (entries.length) {
+        const sortedPoints = Array.from(changePoints)
+            .filter((point) => Number.isFinite(point))
+            .sort((a, b) => a - b);
+
+        for (let index = 0; index < sortedPoints.length - 1; index += 1) {
+            const start = sortedPoints[index];
+            const end = sortedPoints[index + 1];
+            if (end <= start) {
+                continue;
+            }
+
+            const activeEntries = entries.filter(
+                (entry) => start >= entry.start && start < entry.end,
+            );
+
+            if (!activeEntries.length) {
+                continue;
+            }
+
+            const selected = activeEntries
+                .slice()
+                .sort((a, b) => {
+                    if (a.laneIndex !== b.laneIndex) {
+                        return a.laneIndex - b.laneIndex;
+                    }
+                    if (a.start !== b.start) {
+                        return a.start - b.start;
+                    }
+                    return a.end - b.end;
+                })[0];
+
+            segments.push({
+                start,
+                end,
+                duration: end - start,
+                entry: selected,
+            });
         }
-        if (a.laneIndex !== b.laneIndex) {
-            return a.laneIndex - b.laneIndex;
-        }
-        return a.end - b.end;
-    });
+    }
+
+    return { entries, segments };
 }
 
 function getAudioTimelineEntryAtTime(timeMs = null, entriesOverride = null) {
-    const audioEntries = collectAudioTimelineEntries(entriesOverride);
-    if (!audioEntries.length) {
+    const { entries, segments } = collectAudioTimelineMetadata(entriesOverride);
+    if (!entries.length) {
         return null;
     }
 
@@ -1443,17 +1491,34 @@ function getAudioTimelineEntryAtTime(timeMs = null, entriesOverride = null) {
         : null;
 
     if (targetTime === null) {
-        return audioEntries[audioEntries.length - 1] || null;
+        const lastSegment = segments[segments.length - 1];
+        if (lastSegment?.entry) {
+            return lastSegment.entry;
+        }
+        return entries[entries.length - 1] || null;
     }
 
-    const candidate = audioEntries.find((entry) => {
+    const segmentMatch = segments.find((segment) => {
+        if (!segment?.entry) {
+            return false;
+        }
+        const effectiveStart = Math.max(0, segment.start - AUDIO_ENTRY_TOLERANCE_MS);
+        const effectiveEnd = segment.end + AUDIO_ENTRY_TOLERANCE_MS;
+        return targetTime >= effectiveStart && targetTime < effectiveEnd;
+    });
+
+    if (segmentMatch?.entry) {
+        return segmentMatch.entry;
+    }
+
+    const fallbackEntry = entries.find((entry) => {
         const effectiveStart = Math.max(0, entry.start - AUDIO_ENTRY_TOLERANCE_MS);
         const effectiveEnd = entry.end + AUDIO_ENTRY_TOLERANCE_MS;
         return targetTime >= effectiveStart && targetTime < effectiveEnd;
     });
 
-    if (candidate) {
-        return candidate;
+    if (fallbackEntry) {
+        return fallbackEntry;
     }
 
     return null;
@@ -1463,17 +1528,25 @@ function getAudioOverlayEntry(entries, segmentStartTimeMs = null) {
     return getAudioTimelineEntryAtTime(segmentStartTimeMs, entries);
 }
 
+function resolveAudioTimelineTime(segmentStartTimeMs) {
+    if (Number.isFinite(segmentStartTimeMs)) {
+        return Math.max(0, Math.round(segmentStartTimeMs));
+    }
+    if (Number.isFinite(playbackDisplayCurrentMs)) {
+        return Math.max(0, Math.round(playbackDisplayCurrentMs));
+    }
+    return null;
+}
+
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
-    let audioEntry = getAudioOverlayEntry(entries, segmentStartTimeMs);
+    const targetTime = resolveAudioTimelineTime(segmentStartTimeMs);
+    let audioEntry = getAudioOverlayEntry(entries, targetTime);
 
     if (!audioEntry && activeAudioOverlayEntry) {
-        const targetTime = Number.isFinite(segmentStartTimeMs)
-            ? Math.max(0, Math.round(segmentStartTimeMs))
-            : null;
-        if (targetTime !== null
-            && targetTime >= activeAudioOverlayEntry.start
-            && targetTime < activeAudioOverlayEntry.end
-        ) {
+        const withinActiveRange = targetTime === null
+            || (targetTime >= activeAudioOverlayEntry.start
+                && targetTime < activeAudioOverlayEntry.end);
+        if (withinActiveRange) {
             audioEntry = activeAudioOverlayEntry;
         }
     }
@@ -1484,12 +1557,26 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     }
 
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(audioEntry.item));
-    const safeSegmentStart = Number.isFinite(segmentStartTimeMs)
-        ? Math.max(0, Math.round(segmentStartTimeMs))
-        : audioEntry.start;
+    const fallbackClockTime = (audioEntry === activeAudioOverlayEntry
+        && Number.isFinite(activeAudioOverlayEntry?.clockTime))
+        ? Math.max(0, Math.round(activeAudioOverlayEntry.clockTime))
+        : null;
+    let safeTimelineTime = Number.isFinite(targetTime) ? targetTime : fallbackClockTime;
+    if (!Number.isFinite(safeTimelineTime)) {
+        const fallbackOffset = (audioEntry === activeAudioOverlayEntry
+            && Number.isFinite(activeAudioOverlayEntry?.offsetMs))
+            ? Math.max(0, Math.round(activeAudioOverlayEntry.offsetMs))
+            : null;
+        if (fallbackOffset !== null) {
+            safeTimelineTime = audioEntry.start + fallbackOffset;
+        } else {
+            safeTimelineTime = audioEntry.start;
+        }
+    }
+    const normalizedTimelineTime = Math.max(0, Math.round(safeTimelineTime));
     const offsetMs = Math.max(
         0,
-        Math.min(Math.round(safeSegmentStart - audioEntry.start), clipDuration),
+        Math.min(Math.round(normalizedTimelineTime - audioEntry.start), clipDuration),
     );
     const objectURL = audioEntry.item?.dataset?.objectUrl || '';
 
@@ -1531,6 +1618,8 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             start: audioEntry.start,
             end: audioEntry.end,
             laneIndex: audioEntry.laneIndex,
+            offsetMs,
+            clockTime: normalizedTimelineTime,
         };
         return;
     }
@@ -1553,6 +1642,8 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         start: audioEntry.start,
         end: audioEntry.end,
         laneIndex: audioEntry.laneIndex,
+        offsetMs,
+        clockTime: normalizedTimelineTime,
     };
 }
 
