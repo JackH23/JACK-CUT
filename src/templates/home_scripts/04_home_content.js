@@ -109,6 +109,10 @@ function updateActiveTimelineIndicators() {
     if (!isTimelinePlaying) {
         refreshActiveOverlayLayers();
     }
+
+    if (typeof syncTimelinePlaybackIndicator === 'function') {
+        syncTimelinePlaybackIndicator();
+    }
 }
 
 function getTimelineItemDurationKey(timelineItem) {
