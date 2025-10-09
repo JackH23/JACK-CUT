@@ -103,6 +103,45 @@
 
     const { below, above } = previewOverlayGroups;
 
+    const descriptorHasActiveAnimation = (descriptor) => {
+        if (!descriptor || !descriptor.item || !descriptor.shouldRender) {
+            return false;
+        }
+
+        const progress = Number(descriptor.progress);
+        const hasAnimatedProgress = Number.isFinite(progress)
+            && progress > 0
+            && progress < 1;
+
+        const animationSettings = descriptor.animationSettings
+            || getTimelineItemAnimationSettings(descriptor.item);
+        const direction = sanitizeAnimationDirection(animationSettings?.direction);
+        const usesPresetAnimation = direction === 'combo'
+            || direction === 'in'
+            || direction === 'out';
+
+        if (hasAnimatedProgress && usesPresetAnimation) {
+            return true;
+        }
+
+        const keyframes = getTimelineItemImageKeyframes(descriptor.item);
+        if (Array.isArray(keyframes) && keyframes.length > 1 && hasAnimatedProgress) {
+            return true;
+        }
+
+        return false;
+    };
+
+    const hasAnimatedAboveLayers = overlayGroups.above.some(descriptorHasActiveAnimation);
+
+    if (previewOverlayStack) {
+        if (hasAnimatedAboveLayers) {
+            previewOverlayStack.dataset.hasActiveAboveAnimation = 'true';
+        } else {
+            delete previewOverlayStack.dataset.hasActiveAboveAnimation;
+        }
+    }
+
     if (!below && !above) {
         clearPreviewOverlayLayers();
         return;
@@ -145,13 +184,23 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                hasAnimationHint: false,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
 
         const { layer, image } = entry;
 
-        layer.className = 'preview-overlay-layer';
+        if (typeof entry.hasAnimationHint !== 'boolean') {
+            entry.hasAnimationHint = false;
+        }
+
+        layer.classList.add('preview-overlay-layer');
+        if (entry.hasAnimationHint) {
+            layer.classList.add('preview-overlay-layer--stabilized');
+        } else {
+            layer.classList.remove('preview-overlay-layer--stabilized');
+        }
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
         if (borderRadius > 0) {
@@ -185,8 +234,10 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.hasAnimationHint = false;
 
         if (entry.layer) {
+            entry.layer.classList.remove('preview-overlay-layer--stabilized');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -219,6 +270,19 @@
 
         const { layer, image } = entry;
 
+        const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
+        const shouldApplyAnimationHint = hasAnimatedAboveLayers && groupName === 'below';
+
+        if (shouldApplyAnimationHint) {
+            if (!entry.hasAnimationHint) {
+                entry.hasAnimationHint = true;
+                layer.classList.add('preview-overlay-layer--stabilized');
+            }
+        } else if (entry.hasAnimationHint) {
+            entry.hasAnimationHint = false;
+            layer.classList.remove('preview-overlay-layer--stabilized');
+        }
+
         layer.style.zIndex = String(zIndex);
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
@@ -248,8 +312,6 @@
                 height: viewportHeight,
                 rotation: 0,
             };
-
-        const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
 
         if (frame) {
             layer.style.left = `${frame.left}px`;
