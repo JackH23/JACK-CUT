@@ -108,34 +108,98 @@
             return false;
         }
 
+        const animationSettings = descriptor.animationSettings
+            || getTimelineItemAnimationSettings(descriptor.item);
+        const direction = sanitizeAnimationDirection(animationSettings?.direction);
+
         const progress = Number(descriptor.progress);
         const hasAnimatedProgress = Number.isFinite(progress)
             && progress > 0
             && progress < 1;
 
-        const animationSettings = descriptor.animationSettings
-            || getTimelineItemAnimationSettings(descriptor.item);
-        const direction = sanitizeAnimationDirection(animationSettings?.direction);
-        const usesPresetAnimation = direction === 'combo'
-            || direction === 'in'
-            || direction === 'out';
+        if (hasAnimatedProgress) {
+            const usesPresetAnimation = direction === 'combo'
+                || direction === 'in'
+                || direction === 'out';
 
-        if (hasAnimatedProgress && usesPresetAnimation) {
-            return true;
+            if (usesPresetAnimation) {
+                return true;
+            }
+
+            const keyframes = getTimelineItemImageKeyframes(descriptor.item);
+            if (Array.isArray(keyframes) && keyframes.length > 1) {
+                return true;
+            }
         }
 
-        const keyframes = getTimelineItemImageKeyframes(descriptor.item);
-        if (Array.isArray(keyframes) && keyframes.length > 1 && hasAnimatedProgress) {
-            return true;
+        const clipDuration = Math.max(
+            0,
+            Number.isFinite(descriptor.clipDuration)
+                ? Number(descriptor.clipDuration)
+                : (Number(descriptor.end) - Number(descriptor.start)),
+        );
+
+        if (clipDuration <= 0) {
+            return false;
+        }
+
+        const sampleTime = Number(descriptor.sampleTime);
+        if (!Number.isFinite(sampleTime)) {
+            return false;
+        }
+
+        const descriptorStart = Number(descriptor.start);
+        const descriptorEnd = Number(descriptor.end);
+
+        if ((direction === 'combo' || direction === 'in') && Number.isFinite(descriptorStart)) {
+            const entranceConfig = getPreviewImageEntranceConfig({
+                clipDurationMs: clipDuration,
+                settingsOverride: animationSettings,
+            });
+            const entranceWindow = Math.min(
+                clipDuration,
+                Math.max(0, Number(entranceConfig?.totalDuration) || 0),
+            );
+
+            if (entranceWindow > 0) {
+                const entranceWindowEnd = descriptorStart + entranceWindow;
+                if (sampleTime >= descriptorStart && sampleTime <= entranceWindowEnd) {
+                    return true;
+                }
+            }
+        }
+
+        if ((direction === 'combo' || direction === 'out') && Number.isFinite(descriptorEnd)) {
+            let exitConfig = descriptor.exitConfig;
+            if (exitConfig === undefined) {
+                exitConfig = getPreviewImageExitConfig({
+                    clipDurationMs: clipDuration,
+                    settingsOverride: animationSettings,
+                }) || null;
+                descriptor.exitConfig = exitConfig;
+            }
+
+            const totalExitWindow = Math.min(
+                clipDuration,
+                Math.max(0, Number(exitConfig?.totalDuration) || 0),
+            );
+
+            if (totalExitWindow > 0) {
+                const exitWindowStart = descriptorEnd - totalExitWindow;
+                const exitWindowEnd = descriptorEnd + OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS;
+                if (sampleTime >= exitWindowStart && sampleTime <= exitWindowEnd) {
+                    return true;
+                }
+            }
         }
 
         return false;
     };
 
-    const hasAnimatedAboveLayers = overlayGroups.above.some(descriptorHasActiveAnimation);
+    const shouldStabilizeLowerOverlays = overlayGroups.above.some(descriptorHasActiveAnimation);
 
     if (previewOverlayStack) {
-        if (hasAnimatedAboveLayers) {
+        if (shouldStabilizeLowerOverlays) {
             previewOverlayStack.dataset.hasActiveAboveAnimation = 'true';
         } else {
             delete previewOverlayStack.dataset.hasActiveAboveAnimation;
@@ -271,7 +335,7 @@
         const { layer, image } = entry;
 
         const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
-        const shouldApplyAnimationHint = hasAnimatedAboveLayers && groupName === 'below';
+        const shouldApplyAnimationHint = shouldStabilizeLowerOverlays && groupName === 'below';
 
         if (shouldApplyAnimationHint) {
             if (!entry.hasAnimationHint) {
