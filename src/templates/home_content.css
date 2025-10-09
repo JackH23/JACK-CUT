@@ -2424,6 +2424,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     opacity: 1;
 }
 
+.timeline-snap-line[data-align*="playhead"] {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), rgba(96, 165, 250, 0.9));
+    box-shadow: 0 0 18px rgba(191, 219, 254, 0.45);
+}
+
 .timeline-lane {
     position: relative;
     display: inline-flex;
