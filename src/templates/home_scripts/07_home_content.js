@@ -1378,17 +1378,82 @@ function normalizeAudioOverlayEntry(entry) {
     };
 }
 
+function getTimelineAudioEntryAtTime(timeMs) {
+    if (typeof getTimelineLaneEntries !== 'function') {
+        return null;
+    }
+
+    const rawTime = Number(timeMs);
+    if (!Number.isFinite(rawTime)) {
+        return null;
+    }
+
+    const targetTime = Math.max(0, Math.round(rawTime));
+    const candidateEntries = getTimelineLaneEntries();
+
+    if (!candidateEntries.length) {
+        return null;
+    }
+
+    const audioCandidates = candidateEntries
+        .filter((entry) => entry?.item && isAudioTimelineItem(entry.item))
+        .map((entry) => {
+            const start = Number.isFinite(entry.start)
+                ? Math.max(0, Math.round(entry.start))
+                : 0;
+            const end = Number.isFinite(entry.end)
+                ? Math.max(0, Math.round(entry.end))
+                : start;
+            const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);
+            return {
+                item: entry.item,
+                start,
+                end: Math.max(end, start),
+                laneIndex,
+            };
+        })
+        .filter((entry) => targetTime >= entry.start && targetTime < entry.end)
+        .sort((a, b) => {
+            if (a.start !== b.start) {
+                return a.start - b.start;
+            }
+            return a.laneIndex - b.laneIndex;
+        });
+
+    if (!audioCandidates.length) {
+        return null;
+    }
+
+    const primary = audioCandidates[0];
+    return {
+        item: primary.item,
+        start: primary.start,
+        end: primary.end,
+    };
+}
+
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
+    const normalizedSegmentTime = Number.isFinite(segmentStartTimeMs)
+        ? Math.max(0, Math.round(segmentStartTimeMs))
+        : null;
+
     let audioEntry = normalizeAudioOverlayEntry(getAudioOverlayEntry(entries));
 
-    if ((!audioEntry || !audioEntry.item) && activeAudioOverlayEntry?.item) {
+    if ((!audioEntry || !audioEntry.item) && activeAudioOverlayEntry?.item && normalizedSegmentTime !== null) {
         const fallbackEntry = normalizeAudioOverlayEntry(activeAudioOverlayEntry);
         if (
             fallbackEntry
-            && segmentStartTimeMs >= fallbackEntry.start
-            && segmentStartTimeMs < fallbackEntry.end
+            && normalizedSegmentTime >= fallbackEntry.start
+            && normalizedSegmentTime < fallbackEntry.end
         ) {
             audioEntry = fallbackEntry;
+        }
+    }
+
+    if ((!audioEntry || !audioEntry.item) && normalizedSegmentTime !== null) {
+        const timelineAudioEntry = getTimelineAudioEntryAtTime(normalizedSegmentTime);
+        if (timelineAudioEntry) {
+            audioEntry = normalizeAudioOverlayEntry(timelineAudioEntry);
         }
     }
 
@@ -1398,10 +1463,11 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     }
 
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(audioEntry.item));
+    const referenceTime = normalizedSegmentTime !== null ? normalizedSegmentTime : audioEntry.start;
     const offsetMs = Math.max(
         0,
         Math.min(
-            Math.round(segmentStartTimeMs - audioEntry.start),
+            Math.round(referenceTime - audioEntry.start),
             clipDuration || Math.max(0, audioEntry.end - audioEntry.start),
         ),
     );
