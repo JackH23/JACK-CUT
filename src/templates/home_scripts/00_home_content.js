@@ -96,6 +96,7 @@ if (timelineProgressInput) {
         stopTimelinePlayback(true, false);
         const rawValue = Number(timelineProgressInput.value);
         const fraction = Number.isFinite(rawValue) ? rawValue / 100 : 0;
+        updateTimelineProgressInput(fraction);
         seekTimelineToFraction(fraction);
     });
 }

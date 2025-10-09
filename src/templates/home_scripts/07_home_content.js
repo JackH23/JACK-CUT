@@ -525,11 +525,62 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
     return true;
 }
 
+let lastTimelineProgressSliderPercent = null;
+
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
         return;
     }
-    timelineProgressInput.value = String(Math.round(clampProgress(fraction) * 100));
+
+    const clamped = clampProgress(fraction);
+    const percent = Math.min(100, Math.max(0, clamped * 100));
+    const roundedValue = String(Math.round(percent));
+    const formattedPercent = Number.isInteger(percent)
+        ? `${percent}`
+        : percent.toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+
+    if (timelineProgressInput.value !== roundedValue) {
+        timelineProgressInput.value = roundedValue;
+    }
+
+    if (lastTimelineProgressSliderPercent !== formattedPercent) {
+        timelineProgressInput.style.setProperty('--line-slider-progress', `${formattedPercent}%`);
+        lastTimelineProgressSliderPercent = formattedPercent;
+    }
+}
+
+function setTimelineProgressFraction(fraction, options = {}) {
+    const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+
+    if (!options.skipInput) {
+        updateTimelineProgressInput(clamped);
+    }
+
+    if (!timelineProgressLine) {
+        return clamped;
+    }
+
+    if (options.applyGeometry) {
+        applyTimelineProgressGeometry();
+    }
+
+    const nextValue = String(clamped);
+    const needsUpdate = options.forceUpdate === true
+        || timelineProgressLine.dataset.progress !== nextValue;
+
+    timelineProgressLine.dataset.progress = nextValue;
+
+    if (options.transitionDuration && options.transitionDuration > 0) {
+        timelineProgressLine.style.transition = `transform ${options.transitionDuration}ms linear`;
+    } else if (timelineProgressLine.style.transition !== 'none') {
+        timelineProgressLine.style.transition = 'none';
+    }
+
+    if (needsUpdate || !options.transitionDuration) {
+        timelineProgressLine.style.transform = `scaleX(${clamped})`;
+    }
+
+    return clamped;
 }
 
 function getTimelineProgressGeometry() {
@@ -575,38 +626,37 @@ function scheduleTimelineIndicatorUpdate() {
 }
 
 function resetTimelineProgressLine(fraction = 0) {
-    if (!timelineProgressLine) {
-        updateTimelineProgressInput(0);
-        return;
-    }
-    const width = applyTimelineProgressGeometry();
-    const clamped = width > 0 ? clampProgress(fraction) : 0;
-    timelineProgressLine.dataset.progress = String(clamped);
-    timelineProgressLine.style.transition = 'none';
-    timelineProgressLine.style.transform = `scaleX(${clamped})`;
-    updateTimelineProgressInput(clamped);
+    setTimelineProgressFraction(fraction, {
+        applyGeometry: true,
+        forceUpdate: true,
+    });
 }
 
 function animateTimelineProgress(startFraction, endFraction, durationMs) {
     if (!timelineProgressLine) {
-        updateTimelineProgressInput(endFraction);
+        updateTimelineProgressInput(startFraction);
         return;
     }
+
     const width = applyTimelineProgressGeometry();
     const hasSpan = width > 0;
     const start = hasSpan ? clampProgress(startFraction) : 0;
     const end = hasSpan ? clampProgress(endFraction) : 0;
-    timelineProgressLine.dataset.progress = String(end);
-    timelineProgressLine.style.transition = 'none';
-    timelineProgressLine.style.transform = `scaleX(${start})`;
-    void timelineProgressLine.offsetWidth;
+
+    setTimelineProgressFraction(start, {
+        skipInput: false,
+        forceUpdate: true,
+    });
+
     if (durationMs > 0 && hasSpan) {
         timelineProgressLine.style.transition = `transform ${durationMs}ms linear`;
+        timelineProgressLine.style.transform = `scaleX(${end})`;
     } else {
-        timelineProgressLine.style.transition = 'none';
+        setTimelineProgressFraction(end, {
+            skipInput: false,
+            forceUpdate: true,
+        });
     }
-    timelineProgressLine.style.transform = `scaleX(${end})`;
-    updateTimelineProgressInput(end);
 }
 
 function getTimelineItemPlaybackDuration(timelineItem) {
