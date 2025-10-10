@@ -819,6 +819,8 @@ refreshImageDurationApplyAllAvailability();
 
 function stopTimelinePlayback(resetButton = true, resetProgress = true, options = {}) {
     const preservePauseState = options && options.preservePauseState === true;
+    const preserveCurrentFrame = options && options.preserveCurrentFrame === true;
+    const shouldResetProgress = resetProgress && !preserveCurrentFrame;
     const abort = timelinePlaybackAbort;
     timelinePlaybackAbort = null;
 
@@ -833,15 +835,15 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
         timelinePauseState = null;
     }
 
-    cancelPreviewExitAnimation({ forceRestore: true });
+    cancelPreviewExitAnimation({ forceRestore: !preserveCurrentFrame });
     cancelPreviewAudioEnvelope({ restoreVolume: true });
-    stopPreviewAudio({ resetTime: resetProgress });
+    stopPreviewAudio({ resetTime: shouldResetProgress });
     pausePreviewCanvasVideo();
 
-    stopPlaybackClock(resetProgress);
+    stopPlaybackClock(shouldResetProgress);
     updateKeyframeControlsState();
 
-    if (resetProgress) {
+    if (shouldResetProgress) {
         resetTimelineProgressLine();
     }
 
@@ -849,7 +851,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
         previewVideo.pause();
     }
 
-    if (resetProgress) {
+    if (shouldResetProgress) {
         previewVideo.currentTime = 0;
     }
 
