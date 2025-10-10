@@ -14,6 +14,64 @@
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => descriptor.intersectsWindow);
 
+        if (activeOverlayLayers.size) {
+        const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
+        activeOverlayLayers.forEach((entry, item) => {
+            if (!entry || !entry.isVisible || !item || knownOverlayItems.has(item)) {
+                return;
+            }
+
+            const fileType = item.dataset?.fileType || '';
+
+            if (!fileType.startsWith('image/')) {
+                return;
+            }
+
+            const laneIndex = resolveLaneIndex(item.dataset?.laneIndex);
+            const start = getTimelineItemStartTime(item);
+            const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+            const end = start + clipDuration;
+
+            const descriptor = {
+                item,
+                laneIndex,
+                start,
+                end,
+            };
+
+            descriptor.isActive = isClipActiveAtTime(descriptor, safeTimelineNow);
+            descriptor.intersectsWindow = doesClipIntersectWindow(
+                descriptor,
+                expandedWindowStart,
+                expandedWindowEnd,
+            );
+
+            if (!descriptor.isActive && !descriptor.intersectsWindow) {
+                const animationSettings = getTimelineItemAnimationSettings(item);
+                descriptor.animationSettings = animationSettings;
+                descriptor.clipDuration = clipDuration;
+                descriptor.exitConfig = clipDuration > 0
+                    ? getPreviewImageExitConfig({
+                        clipDurationMs: clipDuration,
+                        settingsOverride: animationSettings,
+                    })
+                    : null;
+
+                if (!shouldRenderOverlayDescriptor(descriptor, safeTimelineNow)) {
+                    return;
+                }
+            }
+
+            const clampedSample = Math.min(Math.max(safeTimelineNow, start), end);
+            descriptor.sampleTime = descriptor.isActive
+                ? safeTimelineNow
+                : (Number.isFinite(clampedSample) ? clampedSample : safeTimelineNow);
+
+            overlayEntries.push(descriptor);
+            knownOverlayItems.add(item);
+        });
+    }
+
         const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
