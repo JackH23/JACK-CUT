@@ -511,18 +511,38 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
                 }
             }
             let segmentStartTime = start;
-            let segmentStartOffset = 0;
+            
             if (pendingResumeTime !== null) {
                 if (pendingResumeTime <= start) {
                     segmentStartTime = start;
-                    segmentStartOffset = 0;
+                    
                 } else if (pendingResumeTime < end) {
                     segmentStartTime = pendingResumeTime;
-                    segmentStartOffset = pendingResumeTime - start;
+                    
                 } else {
                     continue;
                 }
             }
+
+            let segmentStartOffset = 0;
+            if (item) {
+                const clipStartTime = Math.max(
+                    0,
+                    Math.round(Number(getTimelineItemStartTime(item)) || 0),
+                );
+                const clipDuration = Math.max(
+                    0,
+                    Math.round(Number(getTimelineItemPlaybackDuration(item)) || 0),
+                );
+                const offsetFromClipStart = Number.isFinite(segmentStartTime)
+                    ? Math.round(segmentStartTime - clipStartTime)
+                    : 0;
+                segmentStartOffset = Math.max(0, offsetFromClipStart);
+                if (clipDuration > 0) {
+                    segmentStartOffset = Math.min(segmentStartOffset, clipDuration);
+                }
+            }
+            
             syncPreviewAudioOverlay(segment.items || [], segmentStartTime);
             const startFraction = getTimelineFractionForTime(segmentStartTime);
             const endFraction = getTimelineFractionForTime(end);
