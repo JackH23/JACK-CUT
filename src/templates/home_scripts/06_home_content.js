@@ -785,7 +785,17 @@ if (keyframeTrack) {
 }
 
 function clampProgress(value) {
-    return Math.min(Math.max(value, 0), 1);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+    if (numeric <= 0) {
+        return 0;
+    }
+    if (numeric >= 1) {
+        return 1;
+    }
+    return numeric;
 }
 
 function clampRotation(value) {
