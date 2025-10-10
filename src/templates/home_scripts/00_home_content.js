@@ -89,6 +89,7 @@ const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
 const playVideoButton = document.getElementById('play-video-button');
 const timelineProgressLine = document.getElementById('timeline-progress-line');
+const timelinePlayheadLine = document.getElementById('timeline-playhead-line');
 const timelineSnapLine = document.getElementById('timeline-snap-line');
 const timelineProgressInput = document.getElementById('timeline-progress');
 if (timelineProgressInput) {

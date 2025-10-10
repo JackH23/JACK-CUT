@@ -345,6 +345,16 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
     playbackTimeDisplay.dataset.current = String(clampedCurrent);
     playbackTimeDisplay.dataset.total = String(playbackDisplayTotalMs);
 
+    if (typeof updateTimelinePlayheadIndicator === 'function') {
+        const totalDuration = playbackDisplayTotalMs > 0 ? playbackDisplayTotalMs : 0;
+        const fraction = totalDuration > 0
+            ? Math.min(Math.max(clampedCurrent / totalDuration, 0), 1)
+            : 0;
+        updateTimelinePlayheadIndicator(fraction, {
+            visible: isTimelinePlaying || isTimelinePaused,
+        });
+    }
+
     if (shouldRefreshOverlay) {
         refreshActiveOverlayLayers();
     }
