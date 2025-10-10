@@ -700,6 +700,51 @@ if (cancelExportButton) {
     });
 }
 
+let sharedExportAudioContext = null;
+let sharedExportAudioSources = new WeakMap();
+
+function getOrCreateSharedExportAudioContext() {
+    if (sharedExportAudioContext && sharedExportAudioContext.state === 'closed') {
+        sharedExportAudioContext = null;
+        sharedExportAudioSources = new WeakMap();
+    }
+
+    if (!sharedExportAudioContext) {
+        const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextConstructor) {
+            return null;
+        }
+
+        try {
+            sharedExportAudioContext = new AudioContextConstructor();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    return sharedExportAudioContext;
+}
+
+function getOrCreateExportAudioSourceNode(element, audioContext) {
+    if (!element || !audioContext) {
+        return null;
+    }
+
+    let sourceNode = sharedExportAudioSources.get(element);
+    if (sourceNode) {
+        return sourceNode;
+    }
+
+    try {
+        sourceNode = audioContext.createMediaElementSource(element);
+        sourceNode.connect(audioContext.destination);
+        sharedExportAudioSources.set(element, sourceNode);
+        return sourceNode;
+    } catch (error) {
+        return null;
+    }
+}
+
 function attachPreviewAudioToStream(mediaElements, combinedStream) {
     const elements = Array.isArray(mediaElements)
         ? mediaElements.filter(Boolean)
@@ -709,6 +754,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             audioContext: null,
             success: false,
             error: new Error('Missing media elements or combined stream.'),
+            cleanup: () => {},
         };
     }
 
@@ -746,7 +792,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         pendingTracks.forEach((track) => {
             combinedStream.addTrack(track);
         });
-        return { audioContext: null, success: true, error: null };
+        return {
+            audioContext: null,
+            success: true,
+            error: null,
+            cleanup: () => {},
+        };
     }
 
     pendingTracks.forEach((track) => {
@@ -757,71 +808,84 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         }
     });
 
-    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextConstructor) {
+    const audioContext = getOrCreateSharedExportAudioContext();
+    if (!audioContext) {
         return {
             audioContext: null,
             success: false,
             error: lastError || new Error('AudioContext is not supported in this browser.'),
+            cleanup: () => {},
         };
     }
 
-    let audioContext = null;
-    try {
-        audioContext = new AudioContextConstructor();
-        const destination = audioContext.createMediaStreamDestination();
-        let hasSource = false;
-        elements.forEach((element) => {
+    if (audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => {});
+    }
+
+    const destination = audioContext.createMediaStreamDestination();
+    const connectedSourceNodes = [];
+    let hasSource = false;
+    elements.forEach((element) => {
+        try {
+            const sourceNode = getOrCreateExportAudioSourceNode(element, audioContext);
+            if (!sourceNode) {
+                return;
+            }
+            sourceNode.connect(destination);
+            connectedSourceNodes.push({ node: sourceNode, destination });
+            hasSource = true;
+        } catch (error) {
+            lastError = error;
+        }
+    });
+
+    const cleanupConnections = () => {
+        connectedSourceNodes.forEach(({ node, destination: dest }) => {
             try {
-                const sourceNode = audioContext.createMediaElementSource(element);
-                sourceNode.connect(destination);
-                sourceNode.connect(audioContext.destination);
-                hasSource = true;
-            } catch (error) {
-                lastError = error;
+                node.disconnect(dest);
+            } catch (disconnectError) {
+                // Ignore disconnection errors when cleaning up export routing.
             }
         });
-
-        if (!hasSource) {
-            const closeResult = audioContext.close();
-            if (closeResult && typeof closeResult.catch === 'function') {
-                closeResult.catch(() => {});
-            }
-            return {
-                audioContext: null,
-                success: false,
-                error: lastError || new Error('Unable to create audio sources for export.'),
-            };
+        try {
+            destination.stream.getAudioTracks().forEach((track) => {
+                if (typeof track.stop === 'function') {
+                    track.stop();
+                }
+            });
+        } catch (error) {
+            // Ignore destination cleanup errors.
         }
+    };
 
-        const audioTracks = destination.stream.getAudioTracks();
-        audioTracks.forEach((track) => combinedStream.addTrack(track));
-        if (!audioTracks.length) {
-            const closeResult = audioContext.close();
-            if (closeResult && typeof closeResult.catch === 'function') {
-                closeResult.catch(() => {});
-            }
-            return {
-                audioContext: null,
-                success: false,
-                error: lastError || new Error('No audio tracks available from preview video.'),
-            };
-        }
-
-        return { audioContext, success: true, error: null };
-    } catch (error) {
-        if (audioContext && typeof audioContext.close === 'function') {
-            const closeResult = audioContext.close();
-            if (closeResult && typeof closeResult.catch === 'function') {
-                closeResult.catch(() => {});
-            }
-        }
+    if (!hasSource) {
+        cleanupConnections();
         return {
             audioContext: null,
             success: false,
-            error: error || lastError || new Error('Failed to attach audio from preview video.'),
+            error: lastError || new Error('Unable to create audio sources for export.'),
+            cleanup: () => {},
         };
     }
+
+    const audioTracks = destination.stream.getAudioTracks();
+    audioTracks.forEach((track) => combinedStream.addTrack(track));
+    if (!audioTracks.length) {
+        cleanupConnections();
+        return {
+            audioContext: null,
+            success: false,
+            error: lastError || new Error('No audio tracks available from preview video.'),
+            cleanup: () => {},
+        };
+    }
+
+    return {
+        audioContext,
+        success: true,
+        error: null,
+        cleanup: cleanupConnections,
+    };
 }
 
 async function handleConfirmExport() {
@@ -882,6 +946,7 @@ async function handleConfirmExport() {
     let combinedStream = null;
     const recordedChunks = [];
     let exportAudioContext = null;
+    let audioAttachmentCleanup = null;
 
     try {
         stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
@@ -897,6 +962,9 @@ async function handleConfirmExport() {
 
         const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
         exportAudioContext = audioAttachment.audioContext;
+        if (typeof audioAttachment.cleanup === 'function') {
+            audioAttachmentCleanup = audioAttachment.cleanup;
+        }
         if (!audioAttachment.success) {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);
         }
@@ -955,6 +1023,13 @@ async function handleConfirmExport() {
             exportDialogStatus.dataset.state = 'warning';
         }
     } finally {
+        if (typeof audioAttachmentCleanup === 'function') {
+            try {
+                audioAttachmentCleanup();
+            } catch (error) {
+                // Ignore cleanup errors.
+            }
+        }
         if (recorder && recorder.state !== 'inactive') {
             try {
                 recorder.stop();
@@ -965,17 +1040,7 @@ async function handleConfirmExport() {
         if (combinedStream) {
             combinedStream.getTracks().forEach((track) => track.stop());
         }
-        if (exportAudioContext) {
-            try {
-                const closeResult = exportAudioContext.close();
-                if (closeResult && typeof closeResult.catch === 'function') {
-                    closeResult.catch(() => {});
-                }
-            } catch (error) {
-                // Ignore
-            }
-            exportAudioContext = null;
-        }
+        exportAudioContext = null;
         stopMirroring();
         confirmExportButton.disabled = false;
         confirmExportButton.textContent = originalLabel || 'Confirm export';
