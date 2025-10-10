@@ -730,22 +730,61 @@ function getOrCreateExportAudioSourceNode(element, audioContext) {
         return null;
     }
 
-    let sourceNode = sharedExportAudioSources.get(element);
-    if (sourceNode) {
-        return sourceNode;
+    let sourceEntry = sharedExportAudioSources.get(element);
+    if (sourceEntry && sourceEntry.audioContext !== audioContext) {
+        try {
+            sourceEntry.outputNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors while resetting cached audio sources.
+        }
+        sharedExportAudioSources.delete(element);
+        sourceEntry = null;
+    }
+
+    if (sourceEntry) {
+        return sourceEntry;
     }
 
     try {
-        sourceNode = audioContext.createMediaElementSource(element);
-        sourceNode.connect(audioContext.destination);
-        sharedExportAudioSources.set(element, sourceNode);
-        return sourceNode;
+        const sourceNode = audioContext.createMediaElementSource(element);
+        const outputNode = typeof audioContext.createGain === 'function'
+            ? audioContext.createGain()
+            : null;
+
+        if (!outputNode) {
+            sourceNode.connect(audioContext.destination);
+            const fallbackEntry = {
+                audioContext,
+                sourceNode,
+                outputNode: sourceNode,
+            };
+            sharedExportAudioSources.set(element, fallbackEntry);
+            return fallbackEntry;
+        }
+
+        const now = Number.isFinite(audioContext.currentTime) ? audioContext.currentTime : 0;
+        if (typeof outputNode.gain?.setValueAtTime === 'function') {
+            outputNode.gain.setValueAtTime(1, now);
+        } else {
+            outputNode.gain.value = 1;
+        }
+
+        sourceNode.connect(outputNode);
+        outputNode.connect(audioContext.destination);
+
+        const entry = {
+            audioContext,
+            sourceNode,
+            outputNode,
+        };
+        sharedExportAudioSources.set(element, entry);
+        return entry;
     } catch (error) {
         return null;
     }
 }
 
-function attachPreviewAudioToStream(mediaElements, combinedStream) {
+async function attachPreviewAudioToStream(mediaElements, combinedStream) {
     const elements = Array.isArray(mediaElements)
         ? mediaElements.filter(Boolean)
         : [mediaElements].filter(Boolean);
@@ -819,7 +858,11 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 
     if (audioContext.state === 'suspended') {
-        audioContext.resume().catch(() => {});
+        try {
+            await audioContext.resume();
+        } catch (error) {
+            // Ignore resume errors; we'll attempt to capture regardless.
+        }
     }
 
     const destination = audioContext.createMediaStreamDestination();
@@ -827,12 +870,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     let hasSource = false;
     elements.forEach((element) => {
         try {
-            const sourceNode = getOrCreateExportAudioSourceNode(element, audioContext);
-            if (!sourceNode) {
+            const sourceEntry = getOrCreateExportAudioSourceNode(element, audioContext);
+            if (!sourceEntry?.outputNode) {
                 return;
             }
-            sourceNode.connect(destination);
-            connectedSourceNodes.push({ node: sourceNode, destination });
+            sourceEntry.outputNode.connect(destination);
+            connectedSourceNodes.push({ node: sourceEntry.outputNode, destination });
             hasSource = true;
         } catch (error) {
             lastError = error;
@@ -960,7 +1003,7 @@ async function handleConfirmExport() {
         combinedStream = new MediaStream();
         canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        const audioAttachment = await attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
         exportAudioContext = audioAttachment.audioContext;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;

@@ -1439,6 +1439,12 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
+        if (timelineItem) {
+            const previousMax = Number(timelineItem.dataset.maxAudioDuration);
+            if (!Number.isFinite(previousMax) || duration > previousMax) {
+                timelineItem.dataset.maxAudioDuration = String(duration);
+            }
+        }
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
         if (waveformCanvas) {
             const widthOverride = timelineItem
@@ -1456,6 +1462,12 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const audioBuffer = await decodeAudioBufferFromFile(file);
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
+        if (timelineItem) {
+            const previousMax = Number(timelineItem.dataset.maxAudioDuration);
+            if (!Number.isFinite(previousMax) || durationMs > previousMax) {
+                timelineItem.dataset.maxAudioDuration = String(durationMs);
+            }
+        }
         const cacheEntry = {
             imageDataUrl: null,
             durationMs,
@@ -1489,6 +1501,12 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
         audio.addEventListener('loadedmetadata', () => {
             if (Number.isFinite(audio.duration) && audio.duration > 0) {
                 const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audio.duration * 1000));
+                if (timelineItem) {
+                    const previousMax = Number(timelineItem.dataset.maxAudioDuration);
+                    if (!Number.isFinite(previousMax) || durationMs > previousMax) {
+                        timelineItem.dataset.maxAudioDuration = String(durationMs);
+                    }
+                }
                 audioWaveformByObjectUrl.set(objectURL, {
                     imageDataUrl: null,
                     durationMs,

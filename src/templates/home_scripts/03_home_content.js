@@ -1395,8 +1395,12 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
 
     const { skipAnimationSync = false } = options;
     const minimum = getTimelineItemMinimumDuration(timelineItem);
+    const maximum = getTimelineItemMaximumDuration(timelineItem);
     const desired = Math.round(Number(durationMs) || 0);
-    const applied = Math.max(minimum, desired);
+    const upperBound = Number.isFinite(maximum) && maximum > 0
+        ? maximum
+        : Number.POSITIVE_INFINITY;
+    const applied = Math.min(upperBound, Math.max(minimum, desired));
 
     timelineItem.dataset[durationKey] = String(applied);
 

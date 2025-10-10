@@ -145,6 +145,22 @@ function getTimelineItemMinimumDuration(timelineItem) {
     return MIN_IMAGE_DURATION;
 }
 
+function getTimelineItemMaximumDuration(timelineItem) {
+    if (!timelineItem) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    const fileType = timelineItem.dataset.fileType || '';
+    if (fileType.startsWith('audio/')) {
+        const maximum = Number(timelineItem.dataset.maxAudioDuration);
+        if (Number.isFinite(maximum) && maximum > 0) {
+            return maximum;
+        }
+    }
+
+    return Number.POSITIVE_INFINITY;
+}
+
 function getTimelineItemResizeEdgeFromEvent(event, timelineItem) {
     if (!timelineItem) {
         return null;
@@ -283,16 +299,21 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         const previousDuration = Number(timelineItem.dataset[durationKey]);
         const parentLane = timelineItem.closest('.timeline-lane');
         const startOffsetMs = Number(timelineItem.dataset.startOffsetMs);
+        const maximumDuration = getTimelineItemMaximumDuration(timelineItem);
 
         let snap = null;
         if (!isLeftResize) {
             snap = resolveTimelineSnapForResize({
                 timelineItem,
                 startMs: Number.isFinite(startOffsetMs) ? startOffsetMs : 0,
-                desiredDuration: nextDuration,
+                desiredDuration: Math.min(nextDuration, maximumDuration),
                 edge: 'end',
                 excludeItem: timelineItem,
             });
+        }
+
+        if (Number.isFinite(maximumDuration)) {
+            nextDuration = Math.min(nextDuration, maximumDuration);
         }
 
         if (snap) {
