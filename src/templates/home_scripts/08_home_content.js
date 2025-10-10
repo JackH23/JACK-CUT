@@ -715,25 +715,47 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     let lastError = null;
 
     const directTracks = [];
+    let missingDirectCapture = false;
+    const pendingTracks = [];
     elements.forEach((element) => {
         if (typeof element?.captureStream === 'function') {
             try {
                 const audioStream = element.captureStream();
                 if (audioStream) {
                     const tracks = audioStream.getAudioTracks();
-                    tracks.forEach((track) => {
-                        combinedStream.addTrack(track);
-                        directTracks.push(track);
-                    });
+                    if (tracks.length) {
+                        tracks.forEach((track) => {
+                            pendingTracks.push(track);
+                            directTracks.push(track);
+                        });
+                    } else {
+                        missingDirectCapture = true;
+                    }
+                } else {
+                    missingDirectCapture = true;
                 }
             } catch (error) {
                 lastError = error;
+                missingDirectCapture = true;
             }
+            } else {
+            missingDirectCapture = true;
         }
     });
-    if (directTracks.length) {
+    if (directTracks.length && !missingDirectCapture) {
+        pendingTracks.forEach((track) => {
+            combinedStream.addTrack(track);
+        });
         return { audioContext: null, success: true, error: null };
     }
+
+    pendingTracks.forEach((track) => {
+        try {
+            track.stop();
+        } catch (error) {
+            // Ignore track stop errors when falling back to AudioContext.
+        }
+    });
 
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) {
