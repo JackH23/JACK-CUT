@@ -618,11 +618,10 @@ function recomputeTimelinePlayheadGeometry() {
         return lastTimelinePlayheadGeometry;
     }
 
-    const trackRect = timelineTrack.getBoundingClientRect();
-    const firstRect = items[0].getBoundingClientRect();
-    const lastRect = items[items.length - 1].getBoundingClientRect();
-    const offset = firstRect.left - trackRect.left;
-    const width = Math.max(0, lastRect.right - firstRect.left);
+    const firstItem = items[0];
+    const lastItem = items[items.length - 1];
+    const offset = firstItem.offsetLeft;
+    const width = Math.max(0, (lastItem.offsetLeft + lastItem.offsetWidth) - offset);
 
     lastTimelinePlayheadGeometry = { offset, width };
     return lastTimelinePlayheadGeometry;
