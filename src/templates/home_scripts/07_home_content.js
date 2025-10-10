@@ -525,6 +525,8 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
     return true;
 }
 
+let lastTimelinePlayheadGeometry = { offset: 0, width: 0 };
+
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
         return;
@@ -553,6 +555,82 @@ function getTimelineProgressGeometry() {
     return { offset, width: Math.max(0, width) };
 }
 
+function recomputeTimelinePlayheadGeometry() {
+    if (!timelineTrack) {
+        lastTimelinePlayheadGeometry = { offset: 0, width: 0 };
+        return lastTimelinePlayheadGeometry;
+    }
+
+    const items = getTimelineItems();
+
+    if (!items.length) {
+        const computedStyle = window.getComputedStyle(timelineTrack);
+        const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
+        const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
+        const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
+        lastTimelinePlayheadGeometry = { offset: paddingLeft, width };
+        return lastTimelinePlayheadGeometry;
+    }
+
+    const trackRect = timelineTrack.getBoundingClientRect();
+    const firstRect = items[0].getBoundingClientRect();
+    const lastRect = items[items.length - 1].getBoundingClientRect();
+    const offset = firstRect.left - trackRect.left;
+    const width = Math.max(0, lastRect.right - firstRect.left);
+
+    lastTimelinePlayheadGeometry = { offset, width };
+    return lastTimelinePlayheadGeometry;
+}
+
+function hideTimelinePlayheadIndicator() {
+    if (!timelinePlayheadLine) {
+        return;
+    }
+    timelinePlayheadLine.classList.remove('is-visible');
+    timelinePlayheadLine.style.transition = 'none';
+    timelinePlayheadLine.style.transform = 'translateX(-9999px)';
+    timelinePlayheadLine.removeAttribute('data-position');
+    timelinePlayheadLine.setAttribute('aria-hidden', 'true');
+}
+
+function updateTimelinePlayheadIndicator(fraction, options = {}) {
+    if (!timelinePlayheadLine || !timelineTrack) {
+        return;
+    }
+
+    const { visible = true, forceGeometryUpdate = false } = options;
+
+    if (!visible) {
+        hideTimelinePlayheadIndicator();
+        return;
+    }
+
+    if (forceGeometryUpdate) {
+        recomputeTimelinePlayheadGeometry();
+    }
+
+    const { offset, width } = lastTimelinePlayheadGeometry;
+    if (!Number.isFinite(width) || width <= 0) {
+        hideTimelinePlayheadIndicator();
+        return;
+    }
+
+    const numericFraction = Number(fraction);
+    if (!Number.isFinite(numericFraction)) {
+        hideTimelinePlayheadIndicator();
+        return;
+    }
+
+    const clamped = Math.min(Math.max(numericFraction, 0), 1);
+    const position = offset + (width * clamped);
+
+    timelinePlayheadLine.style.transition = 'none';
+    timelinePlayheadLine.style.transform = `translateX(${Math.round(position)}px)`;
+    timelinePlayheadLine.dataset.position = String(clamped);
+    timelinePlayheadLine.classList.add('is-visible');
+    timelinePlayheadLine.setAttribute('aria-hidden', 'false');
+}
+
 function applyTimelineProgressGeometry() {
     if (!timelineProgressLine || !timelineTrack) {
         return 0;
@@ -561,6 +639,7 @@ function applyTimelineProgressGeometry() {
     const { offset, width } = getTimelineProgressGeometry();
     timelineProgressLine.style.setProperty('--timeline-progress-offset', `${offset}px`);
     timelineProgressLine.style.setProperty('--timeline-progress-span', `${width}px`);
+    recomputeTimelinePlayheadGeometry();
     return width;
 }
 
@@ -577,6 +656,7 @@ function scheduleTimelineIndicatorUpdate() {
 function resetTimelineProgressLine(fraction = 0) {
     if (!timelineProgressLine) {
         updateTimelineProgressInput(0);
+        hideTimelinePlayheadIndicator();
         return;
     }
     const width = applyTimelineProgressGeometry();
@@ -585,11 +665,16 @@ function resetTimelineProgressLine(fraction = 0) {
     timelineProgressLine.style.transition = 'none';
     timelineProgressLine.style.transform = `scaleX(${clamped})`;
     updateTimelineProgressInput(clamped);
+    updateTimelinePlayheadIndicator(clamped, {
+        visible: isTimelinePlaying || isTimelinePaused,
+        forceGeometryUpdate: true,
+    });
 }
 
 function animateTimelineProgress(startFraction, endFraction, durationMs) {
     if (!timelineProgressLine) {
         updateTimelineProgressInput(endFraction);
+        hideTimelinePlayheadIndicator();
         return;
     }
     const width = applyTimelineProgressGeometry();
@@ -607,6 +692,23 @@ function animateTimelineProgress(startFraction, endFraction, durationMs) {
     }
     timelineProgressLine.style.transform = `scaleX(${end})`;
     updateTimelineProgressInput(end);
+    updateTimelinePlayheadIndicator(end, {
+        visible: hasSpan && (isTimelinePlaying || isTimelinePaused),
+        forceGeometryUpdate: true,
+    });
+}
+
+if (timelineTrack) {
+    timelineTrack.addEventListener('scroll', () => {
+        recomputeTimelinePlayheadGeometry();
+        if (!timelinePlayheadLine || !timelinePlayheadLine.classList.contains('is-visible')) {
+            return;
+        }
+        const stored = Number.parseFloat(timelinePlayheadLine.dataset && timelinePlayheadLine.dataset.position);
+        if (Number.isFinite(stored)) {
+            updateTimelinePlayheadIndicator(stored, { visible: true });
+        }
+    });
 }
 
 function getTimelineItemPlaybackDuration(timelineItem) {

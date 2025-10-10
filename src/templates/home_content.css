@@ -2860,6 +2860,28 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 3;
 }
 
+.timeline-playhead-line {
+    position: absolute;
+    top: 8px;
+    left: 0;
+    width: 3px;
+    height: calc(100% - 16px);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(236, 72, 153, 0.9), rgba(244, 114, 182, 0.75));
+    box-shadow:
+        0 0 0 1px rgba(244, 114, 182, 0.55),
+        0 0 14px rgba(236, 72, 153, 0.35);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-9999px);
+    transition: opacity 0.16s ease, transform 0.08s ease;
+    z-index: 4;
+}
+
+.timeline-playhead-line.is-visible {
+    opacity: 1;
+}
+
 
 .timeline-snap-line {
     position: absolute;
@@ -2881,7 +2903,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
         transform 0.08s ease,
         top 0.08s ease,
         height 0.12s ease;
-    z-index: 4;
+    z-index: 5;
 }
 
 .timeline-snap-line__cap {
