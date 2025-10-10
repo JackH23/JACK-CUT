@@ -527,6 +527,52 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
 
 let lastTimelinePlayheadGeometry = { offset: 0, width: 0 };
 
+let timelineProgressAnimationFrame = null;
+let timelineProgressAnimationStartTimestamp = 0;
+let timelineProgressAnimationDurationMs = 0;
+let timelineProgressAnimationStartFraction = 0;
+let timelineProgressAnimationEndFraction = 0;
+let timelineProgressCurrentFraction = 0;
+
+function cancelTimelineProgressAnimation() {
+    if (timelineProgressAnimationFrame !== null) {
+        window.cancelAnimationFrame(timelineProgressAnimationFrame);
+        timelineProgressAnimationFrame = null;
+    }
+    timelineProgressAnimationStartTimestamp = 0;
+    timelineProgressAnimationDurationMs = 0;
+    timelineProgressAnimationStartFraction = timelineProgressCurrentFraction;
+    timelineProgressAnimationEndFraction = timelineProgressCurrentFraction;
+}
+
+function setTimelineProgressVisuals(fraction, options = {}) {
+    const {
+        updateInput = true,
+        updatePlayhead = true,
+        forceGeometryUpdate = false,
+    } = options;
+
+    const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+    timelineProgressCurrentFraction = clamped;
+
+    if (timelineProgressLine) {
+        timelineProgressLine.dataset.progress = String(clamped);
+        timelineProgressLine.style.transition = 'none';
+        timelineProgressLine.style.transform = `scaleX(${clamped})`;
+    }
+
+    if (updateInput) {
+        updateTimelineProgressInput(clamped);
+    }
+
+    if (updatePlayhead) {
+        updateTimelinePlayheadIndicator(clamped, {
+            visible: isTimelinePlaying || isTimelinePaused,
+            forceGeometryUpdate,
+        });
+    }
+}
+
 function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
         return;
@@ -654,48 +700,77 @@ function scheduleTimelineIndicatorUpdate() {
 }
 
 function resetTimelineProgressLine(fraction = 0) {
+    cancelTimelineProgressAnimation();
     if (!timelineProgressLine) {
-        updateTimelineProgressInput(0);
+        const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+        timelineProgressCurrentFraction = clamped;
+        updateTimelineProgressInput(clamped);
         hideTimelinePlayheadIndicator();
         return;
     }
     const width = applyTimelineProgressGeometry();
     const clamped = width > 0 ? clampProgress(fraction) : 0;
-    timelineProgressLine.dataset.progress = String(clamped);
-    timelineProgressLine.style.transition = 'none';
-    timelineProgressLine.style.transform = `scaleX(${clamped})`;
-    updateTimelineProgressInput(clamped);
-    updateTimelinePlayheadIndicator(clamped, {
-        visible: isTimelinePlaying || isTimelinePaused,
-        forceGeometryUpdate: true,
-    });
+    setTimelineProgressVisuals(clamped, { forceGeometryUpdate: true });
 }
 
 function animateTimelineProgress(startFraction, endFraction, durationMs) {
+    cancelTimelineProgressAnimation();
     if (!timelineProgressLine) {
-        updateTimelineProgressInput(endFraction);
+        const end = clampProgress(endFraction);
+        timelineProgressCurrentFraction = end;
+        updateTimelineProgressInput(end);
         hideTimelinePlayheadIndicator();
         return;
     }
+
     const width = applyTimelineProgressGeometry();
     const hasSpan = width > 0;
     const start = hasSpan ? clampProgress(startFraction) : 0;
     const end = hasSpan ? clampProgress(endFraction) : 0;
-    timelineProgressLine.dataset.progress = String(end);
-    timelineProgressLine.style.transition = 'none';
-    timelineProgressLine.style.transform = `scaleX(${start})`;
-    void timelineProgressLine.offsetWidth;
-    if (durationMs > 0 && hasSpan) {
-        timelineProgressLine.style.transition = `transform ${durationMs}ms linear`;
-    } else {
-        timelineProgressLine.style.transition = 'none';
+    const duration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+
+    setTimelineProgressVisuals(start, { forceGeometryUpdate: true });
+
+    if (!hasSpan) {
+        setTimelineProgressVisuals(end);
+        return;
     }
-    timelineProgressLine.style.transform = `scaleX(${end})`;
-    updateTimelineProgressInput(end);
-    updateTimelinePlayheadIndicator(end, {
-        visible: hasSpan && (isTimelinePlaying || isTimelinePaused),
-        forceGeometryUpdate: true,
-    });
+
+    timelineProgressAnimationStartFraction = start;
+    timelineProgressAnimationEndFraction = end;
+    timelineProgressAnimationDurationMs = duration;
+    timelineProgressAnimationStartTimestamp = performance.now();
+
+    if (!isTimelinePlaying || duration <= 0) {
+        setTimelineProgressVisuals(end);
+        return;
+    }
+
+    const tick = () => {
+        if (!isTimelinePlaying) {
+            timelineProgressAnimationFrame = null;
+            return;
+        }
+
+        const now = performance.now();
+        const elapsed = Math.max(0, now - timelineProgressAnimationStartTimestamp);
+        const progress = timelineProgressAnimationDurationMs > 0
+            ? Math.min(elapsed / timelineProgressAnimationDurationMs, 1)
+            : 1;
+        const range = timelineProgressAnimationEndFraction - timelineProgressAnimationStartFraction;
+        const nextFraction = timelineProgressAnimationStartFraction + (range * progress);
+
+        setTimelineProgressVisuals(nextFraction);
+
+        if (progress < 1) {
+            timelineProgressAnimationFrame = window.requestAnimationFrame(tick);
+        } else {
+            timelineProgressAnimationFrame = null;
+            setTimelineProgressVisuals(timelineProgressAnimationEndFraction);
+        }
+    };
+
+    timelineProgressAnimationFrame = window.requestAnimationFrame(tick);
 }
 
 if (timelineTrack) {
@@ -752,6 +827,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
     }
 
     isTimelinePlaying = false;
+    cancelTimelineProgressAnimation();
     if (!preservePauseState) {
         isTimelinePaused = false;
         timelinePauseState = null;
