@@ -14,7 +14,126 @@
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => descriptor.intersectsWindow);
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    const overlayEntriesByItem = new Map();
+    overlayEntries.forEach((descriptor) => {
+        if (descriptor?.item) {
+            overlayEntriesByItem.set(descriptor.item, descriptor);
+        }
+    });
+
+    const fallbackOverlayDescriptors = [];
+
+    activeOverlayLayers.forEach((entry, item) => {
+        if (!entry || !entry.isVisible || !item || overlayEntriesByItem.has(item)) {
+            return;
+        }
+
+        const lastDescriptor = entry.lastDescriptor;
+        if (!lastDescriptor || typeof lastDescriptor !== 'object') {
+            return;
+        }
+
+        const fallbackDescriptor = {
+            item,
+            laneIndex: resolveLaneIndex(lastDescriptor.laneIndex ?? item.dataset?.laneIndex),
+        };
+
+        let start = Number(lastDescriptor.start);
+        let end = Number(lastDescriptor.end);
+        let clipDuration = Number(lastDescriptor.clipDuration);
+
+        if (!Number.isFinite(start)) {
+            start = getTimelineItemStartTime(item);
+        }
+
+        if (!Number.isFinite(end) && Number.isFinite(start)) {
+            if (!Number.isFinite(clipDuration)) {
+                clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+            }
+            end = Number.isFinite(clipDuration) ? start + clipDuration : start;
+        }
+
+        if (!Number.isFinite(clipDuration) && Number.isFinite(start) && Number.isFinite(end)) {
+            clipDuration = Math.max(0, end - start);
+        }
+
+        if (!Number.isFinite(clipDuration)) {
+            clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
+        }
+
+        if (!Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(clipDuration)) {
+            start = end - clipDuration;
+        }
+
+        if (!Number.isFinite(end) && Number.isFinite(start) && Number.isFinite(clipDuration)) {
+            end = start + clipDuration;
+        }
+
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+            return;
+        }
+
+        fallbackDescriptor.start = start;
+        fallbackDescriptor.end = end;
+        fallbackDescriptor.clipDuration = Number.isFinite(clipDuration)
+            ? Math.max(0, clipDuration)
+            : Math.max(0, end - start);
+
+        fallbackDescriptor.animationSettings = lastDescriptor.animationSettings
+            || getTimelineItemAnimationSettings(item);
+
+        if (lastDescriptor.exitConfig !== undefined) {
+            fallbackDescriptor.exitConfig = lastDescriptor.exitConfig;
+        }
+
+        fallbackDescriptor.isActive = isClipActiveAtTime(fallbackDescriptor, safeTimelineNow);
+        fallbackDescriptor.intersectsWindow = doesClipIntersectWindow(
+            fallbackDescriptor,
+            expandedWindowStart,
+            expandedWindowEnd,
+        );
+
+        if (!fallbackDescriptor.intersectsWindow) {
+            return;
+        }
+
+        const duration = Math.max(0, fallbackDescriptor.clipDuration || 0);
+        if (duration === 0) {
+            fallbackDescriptor.progress = 0;
+        } else {
+            const relativeTime = (safeTimelineNow - start) / duration;
+            fallbackDescriptor.progress = Number.isFinite(relativeTime)
+                ? clampProgress(relativeTime)
+                : 0;
+        }
+
+        fallbackDescriptor.sampleTime = safeTimelineNow;
+
+        if (fallbackDescriptor.exitConfig === undefined && duration > 0) {
+            fallbackDescriptor.exitConfig = getPreviewImageExitConfig({
+                clipDurationMs: duration,
+                settingsOverride: fallbackDescriptor.animationSettings,
+            }) || null;
+        }
+
+        fallbackDescriptor.shouldRender = fallbackDescriptor.isActive
+            || shouldRenderOverlayDescriptor(fallbackDescriptor, safeTimelineNow);
+
+        if (!fallbackDescriptor.shouldRender) {
+            return;
+        }
+
+        fallbackOverlayDescriptors.push(fallbackDescriptor);
+    });
+
+    if (fallbackOverlayDescriptors.length) {
+        fallbackOverlayDescriptors.forEach((descriptor) => {
+            overlayEntriesByItem.set(descriptor.item, descriptor);
+        });
+        overlayEntries.push(...fallbackOverlayDescriptors);
+    }
+
+    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -139,6 +258,7 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                lastDescriptor: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -167,6 +287,29 @@
         return entry;
     };
 
+    const storeDescriptorForEntry = (entry, descriptor) => {
+        if (!entry || !descriptor) {
+            return;
+        }
+
+        entry.lastDescriptor = {
+            item: descriptor.item,
+            laneIndex: descriptor.laneIndex,
+            start: descriptor.start,
+            end: descriptor.end,
+            clipDuration: descriptor.clipDuration,
+            progress: descriptor.progress,
+            isActive: descriptor.isActive,
+            intersectsWindow: descriptor.intersectsWindow,
+            shouldRender: descriptor.shouldRender,
+            animationSettings: descriptor.animationSettings,
+            exitConfig: descriptor.exitConfig,
+            sampleTime: descriptor.sampleTime,
+        };
+
+        entry.lastTimelineTime = safeTimelineNow;
+    };
+
     const hideOverlayLayerEntry = (entry) => {
         if (!entry) {
             return;
@@ -179,6 +322,7 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.lastDescriptor = null;
 
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -283,7 +427,8 @@
         entry.zIndex = zIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
-        entry.lastTimelineTime = safeTimelineNow;
+
+        storeDescriptorForEntry(entry, descriptor);
 
         return true;
     };
@@ -303,7 +448,7 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                storeDescriptorForEntry(fallbackEntry, descriptor);
             }
         });
     }
@@ -323,7 +468,7 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                storeDescriptorForEntry(fallbackEntry, descriptor);
             }
         });
     }
