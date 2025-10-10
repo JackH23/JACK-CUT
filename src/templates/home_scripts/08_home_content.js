@@ -431,12 +431,15 @@ function waitForGapDuration(durationMs) {
     });
 }
 
-async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
+async function playTimelineSequence(startIndex = 0, resumeOptions = null, options = null) {
     const timelineItems = getTimelineItems();
     if (!timelineItems.length) {
         alert('Upload an image or video to build your timeline.');
         return false;
     }
+
+    const playbackOptions = options || {};
+    const preservePlaybackState = playbackOptions.preservePlaybackState === true;
 
     const { segments, totalDuration } = getTimelinePlaybackSegments();
     if (!segments.length || totalDuration <= 0) {
@@ -563,7 +566,10 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
         }
     } finally {
         const preservePause = isTimelinePaused;
-        stopTimelinePlayback(!preservePause, !preservePause, { preservePauseState: preservePause });
+        stopTimelinePlayback(!preservePause, !preservePause, {
+            preservePauseState: preservePause,
+            preserveCurrentFrame: preservePlaybackState,
+        });
         if (completedNaturally && !isTimelinePaused) {
             resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
             updatePlaybackTimeDisplay(totalDuration, totalDuration);
@@ -899,7 +905,9 @@ async function handleConfirmExport() {
         });
 
         recorder.start(250);
-        const playbackCompleted = await playTimelineSequence(0);
+        const playbackCompleted = await playTimelineSequence(0, null, {
+            preservePlaybackState: true,
+        });
         if (recorder.state !== 'inactive') {
             recorder.stop();
         }
