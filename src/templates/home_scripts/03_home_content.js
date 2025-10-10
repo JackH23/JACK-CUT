@@ -165,7 +165,7 @@ function drawPreviewImageToExportCanvas() {
     );
     exportMirrorContext.clip();
 
-    const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
+    const scale = Math.min(transform.width / naturalWidth, transform.height / naturalHeight);
     if (!Number.isFinite(scale) || scale <= 0) {
         exportMirrorContext.restore();
         exportMirrorContext.restore();
