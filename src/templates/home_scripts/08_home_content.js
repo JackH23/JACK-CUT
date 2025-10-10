@@ -709,10 +709,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             audioContext: null,
             success: false,
             error: new Error('Missing media elements or combined stream.'),
+            cleanup: null,
         };
     }
 
     let lastError = null;
+    const cleanupCallbacks = [];
 
     const directTracks = [];
     elements.forEach((element) => {
@@ -732,7 +734,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         }
     });
     if (directTracks.length) {
-        return { audioContext: null, success: true, error: null };
+        return {
+            audioContext: null,
+            success: true,
+            error: null,
+            cleanup: () => {},
+        };
     }
 
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
@@ -741,6 +748,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             audioContext: null,
             success: false,
             error: lastError || new Error('AudioContext is not supported in this browser.'),
+            cleanup: null,
         };
     }
 
@@ -752,8 +760,38 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         elements.forEach((element) => {
             try {
                 const sourceNode = audioContext.createMediaElementSource(element);
-                sourceNode.connect(destination);
-                sourceNode.connect(audioContext.destination);
+                const gainNode = audioContext.createGain();
+                const applyElementVolumeToGain = () => {
+                    const volume = clampVolume(element.volume);
+                    if (Number.isFinite(volume)) {
+                        gainNode.gain.value = volume;
+                    }
+                };
+
+                applyElementVolumeToGain();
+
+                sourceNode.connect(gainNode);
+                gainNode.connect(destination);
+                gainNode.connect(audioContext.destination);
+
+                const handleVolumeChange = () => {
+                    applyElementVolumeToGain();
+                };
+                element.addEventListener('volumechange', handleVolumeChange);
+
+                cleanupCallbacks.push(() => {
+                    element.removeEventListener('volumechange', handleVolumeChange);
+                    try {
+                        gainNode.disconnect();
+                    } catch (disconnectError) {
+                        // Ignore disconnection errors.
+                    }
+                    try {
+                        sourceNode.disconnect();
+                    } catch (disconnectError) {
+                        // Ignore disconnection errors.
+                    }
+                });
                 hasSource = true;
             } catch (error) {
                 lastError = error;
@@ -761,6 +799,14 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         });
 
         if (!hasSource) {
+            while (cleanupCallbacks.length) {
+                const callback = cleanupCallbacks.pop();
+                try {
+                    callback();
+                } catch (callbackError) {
+                    // Ignore cleanup errors.
+                }
+            }
             const closeResult = audioContext.close();
             if (closeResult && typeof closeResult.catch === 'function') {
                 closeResult.catch(() => {});
@@ -769,12 +815,21 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                 audioContext: null,
                 success: false,
                 error: lastError || new Error('Unable to create audio sources for export.'),
+                cleanup: null,
             };
         }
 
         const audioTracks = destination.stream.getAudioTracks();
         audioTracks.forEach((track) => combinedStream.addTrack(track));
         if (!audioTracks.length) {
+            while (cleanupCallbacks.length) {
+                const callback = cleanupCallbacks.pop();
+                try {
+                    callback();
+                } catch (callbackError) {
+                    // Ignore cleanup errors.
+                }
+            }
             const closeResult = audioContext.close();
             if (closeResult && typeof closeResult.catch === 'function') {
                 closeResult.catch(() => {});
@@ -783,11 +838,40 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                 audioContext: null,
                 success: false,
                 error: lastError || new Error('No audio tracks available from preview video.'),
+                cleanup: null,
             };
         }
 
-        return { audioContext, success: true, error: null };
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+        }
+
+        const cleanup = () => {
+            while (cleanupCallbacks.length) {
+                const callback = cleanupCallbacks.pop();
+                try {
+                    callback();
+                } catch (callbackError) {
+                    // Ignore cleanup errors.
+                }
+            }
+        };
+
+        return {
+            audioContext,
+            success: true,
+            error: null,
+            cleanup,
+        };
     } catch (error) {
+        while (cleanupCallbacks.length) {
+            const callback = cleanupCallbacks.pop();
+            try {
+                callback();
+            } catch (callbackError) {
+                // Ignore cleanup errors.
+            }
+        }
         if (audioContext && typeof audioContext.close === 'function') {
             const closeResult = audioContext.close();
             if (closeResult && typeof closeResult.catch === 'function') {
@@ -798,6 +882,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             audioContext: null,
             success: false,
             error: error || lastError || new Error('Failed to attach audio from preview video.'),
+            cleanup: null,
         };
     }
 }
@@ -860,6 +945,7 @@ async function handleConfirmExport() {
     let combinedStream = null;
     const recordedChunks = [];
     let exportAudioContext = null;
+    let audioAttachmentCleanup = null;
 
     try {
         stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
@@ -875,6 +961,7 @@ async function handleConfirmExport() {
 
         const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
         exportAudioContext = audioAttachment.audioContext;
+        audioAttachmentCleanup = audioAttachment.cleanup;
         if (!audioAttachment.success) {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);
         }
@@ -942,6 +1029,14 @@ async function handleConfirmExport() {
         }
         if (combinedStream) {
             combinedStream.getTracks().forEach((track) => track.stop());
+        }
+        if (typeof audioAttachmentCleanup === 'function') {
+            try {
+                audioAttachmentCleanup();
+            } catch (error) {
+                // Ignore cleanup errors.
+            }
+            audioAttachmentCleanup = null;
         }
         if (exportAudioContext) {
             try {
