@@ -615,12 +615,8 @@ function pauseTimelinePlayback() {
     const pausedFraction = totalDuration > 0
         ? clampProgress(clampedTime / totalDuration)
         : 0;
-    if (timelineProgressLine) {
-        timelineProgressLine.style.transition = 'none';
-        timelineProgressLine.style.transform = `scaleX(${pausedFraction})`;
-        timelineProgressLine.dataset.progress = String(pausedFraction);
-    }
-    updateTimelineProgressInput(pausedFraction);
+    applyTimelineProgressGeometry();
+    setTimelineProgressVisuals(pausedFraction, { forceGeometryUpdate: true });
     updatePlaybackTimeDisplay(clampedTime, totalDuration);
     playVideoButton.textContent = 'Resume playback';
 }
