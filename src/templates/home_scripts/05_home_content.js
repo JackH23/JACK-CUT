@@ -779,6 +779,11 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        entry.timelineStart = null;
+        entry.timelineEnd = null;
+        entry.clipDuration = null;
+        entry.animationSettings = null;
+        entry.exitConfig = null;
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();

@@ -33,17 +33,142 @@
     if (!overlayEntries.length) {
 
         if (hasRecentOverlayLayers) {
-            activeOverlayLayers.forEach((entry) => {
-                if (!entry || !entry.isVisible) {
+            activeOverlayLayers.forEach((entry, item) => {
+                if (!entry || !entry.isVisible || !item) {
                     return;
                 }
-                entry.lastTimelineTime = safeTimelineNow;
+
+                const groupContainer = entry.layerGroup === 'below'
+                    ? previewOverlayGroups?.below
+                    : previewOverlayGroups?.above;
+                if (!groupContainer || !entry.layer || !entry.image) {
+                    return;
+                }
+
+                const laneIndex = resolveLaneIndex(item?.dataset?.laneIndex);
+                const storedStart = Number(entry.timelineStart);
+                const storedEnd = Number(entry.timelineEnd);
+                const fallbackStart = Number.isFinite(storedStart)
+                    ? storedStart
+                    : getTimelineItemStartTime(item);
+                let fallbackEnd = Number.isFinite(storedEnd)
+                    ? storedEnd
+                    : null;
+                if (!Number.isFinite(fallbackEnd)) {
+                    const fallbackDuration = Math.max(
+                        0,
+                        getTimelineItemPlaybackDuration(item),
+                    );
+                    fallbackEnd = Number.isFinite(fallbackStart)
+                        ? fallbackStart + fallbackDuration
+                        : null;
+                }
+
+                const clipDuration = Number.isFinite(entry.clipDuration)
+                    ? Math.max(0, Number(entry.clipDuration))
+                    : (Number.isFinite(fallbackEnd) && Number.isFinite(fallbackStart)
+                        ? Math.max(0, fallbackEnd - fallbackStart)
+                        : 0);
+
+                const startTime = Number.isFinite(fallbackStart) ? fallbackStart : 0;
+                const endTime = Number.isFinite(fallbackEnd) ? fallbackEnd : startTime;
+                const sampleTime = clipDuration > 0
+                    ? Math.min(Math.max(safeTimelineNow, startTime), endTime)
+                    : safeTimelineNow;
+                const progress = clipDuration > 0
+                    ? clampProgress((safeTimelineNow - startTime) / clipDuration)
+                    : 0;
+
+                const animationSettings = entry.animationSettings
+                    || getTimelineItemAnimationSettings(item);
+
+                let exitConfig = entry.exitConfig;
+                if (exitConfig === undefined) {
+                    exitConfig = clipDuration > 0
+                        ? getPreviewImageExitConfig({
+                            clipDurationMs: clipDuration,
+                            settingsOverride: animationSettings,
+                        }) || null
+                        : null;
+                }
+
+                const fallbackDescriptor = {
+                    item,
+                    laneIndex,
+                    start: startTime,
+                    end: endTime,
+                    clipDuration,
+                    sampleTime,
+                    progress,
+                    animationSettings,
+                    exitConfig,
+                };
+
+                const normalizedTransform = Number.isFinite(progress)
+                    ? getTimelineItemKeyframeTransformAtProgress(item, progress)
+                    : null;
+                const frame = resolveOverlayFramePixels(
+                    item,
+                    viewportWidth,
+                    viewportHeight,
+                    { normalizedTransform },
+                );
+
+                const resolvedFrame = frame
+                    ? {
+                        left: frame.left,
+                        top: frame.top,
+                        width: frame.width,
+                        height: frame.height,
+                        rotation: Number.isFinite(frame.rotation) ? frame.rotation : 0,
+                    }
+                    : {
+                        left: 0,
+                        top: 0,
+                        width: viewportWidth,
+                        height: viewportHeight,
+                        rotation: 0,
+                    };
+
+                entry.layer.style.zIndex = String(Number.isFinite(entry.zIndex) ? entry.zIndex : 0);
+
+                if (frame) {
+                    entry.layer.style.left = `${frame.left}px`;
+                    entry.layer.style.top = `${frame.top}px`;
+                    entry.layer.style.width = `${frame.width}px`;
+                    entry.layer.style.height = `${frame.height}px`;
+                    const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+                    entry.image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+                } else {
+                    entry.layer.style.left = '0px';
+                    entry.layer.style.top = '0px';
+                    entry.layer.style.width = '100%';
+                    entry.layer.style.height = '100%';
+                    entry.image.style.setProperty('--preview-overlay-rotation', '0deg');
+                }
+
+                if (entry.layer.parentElement !== groupContainer) {
+                    groupContainer.appendChild(entry.layer);
+                }
+
+                const descriptorOpacity = computeOverlayDescriptorOpacity(fallbackDescriptor);
+                const clampedOpacity = clamp(descriptorOpacity, 0, 1);
+                entry.layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+                entry.image.style.opacity = '1';
+
+                entry.frame = resolvedFrame;
                 entry.opacity = computeOverlayEntryOpacity(entry);
+                entry.lastTimelineTime = safeTimelineNow;
+                entry.timelineStart = startTime;
+                entry.timelineEnd = endTime;
+                entry.clipDuration = clipDuration;
+                entry.animationSettings = animationSettings || null;
+                entry.exitConfig = exitConfig || null;
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
             return;
         }
-        
+
         clearPreviewOverlayLayers();
         return;
     }
@@ -139,6 +264,11 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                timelineStart: null,
+                timelineEnd: null,
+                clipDuration: null,
+                animationSettings: null,
+                exitConfig: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -179,6 +309,11 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.timelineStart = null;
+        entry.timelineEnd = null;
+        entry.clipDuration = null;
+        entry.animationSettings = null;
+        entry.exitConfig = null;
 
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -284,6 +419,13 @@
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
+        entry.timelineStart = Number.isFinite(descriptor.start) ? descriptor.start : entry.timelineStart;
+        entry.timelineEnd = Number.isFinite(descriptor.end) ? descriptor.end : entry.timelineEnd;
+        entry.clipDuration = Number.isFinite(descriptor.clipDuration) ? descriptor.clipDuration : entry.clipDuration;
+        entry.animationSettings = descriptor.animationSettings || null;
+        if (descriptor.exitConfig !== undefined) {
+            entry.exitConfig = descriptor.exitConfig || null;
+        }
 
         return true;
     };
