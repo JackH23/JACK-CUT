@@ -808,6 +808,81 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 }
 
+function createExportedFileFromBlob(blob, exportFormat) {
+    if (!blob) {
+        return null;
+    }
+
+    const extension = exportFormat?.fileExtension || 'mp4';
+    const mimeType = exportFormat?.mimeType || blob.type || 'video/mp4';
+    const filename = `timeline-export.${extension}`;
+
+    if (typeof File === 'function') {
+        try {
+            return new File([blob], filename, {
+                type: mimeType,
+                lastModified: Date.now(),
+            });
+        } catch (error) {
+            // Fall through to the null return below if File construction fails.
+        }
+    }
+
+    try {
+        const fallbackFile = blob;
+        if (typeof fallbackFile === 'object') {
+            if (!('name' in fallbackFile)) {
+                Object.defineProperty(fallbackFile, 'name', {
+                    value: filename,
+                    configurable: true,
+                });
+            }
+            if (!('lastModified' in fallbackFile)) {
+                Object.defineProperty(fallbackFile, 'lastModified', {
+                    value: Date.now(),
+                    configurable: true,
+                });
+            }
+        }
+        return fallbackFile;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function stageExportedFile(blob, exportFormat) {
+    if (!blob || typeof stageUpload !== 'function') {
+        return;
+    }
+
+    const exportedFile = createExportedFileFromBlob(blob, exportFormat);
+    if (!exportedFile) {
+        return;
+    }
+
+    try {
+        await stageUpload(exportedFile);
+    } catch (error) {
+        console.warn('Unable to stage exported file.', error);
+        return;
+    }
+
+    if (uploadMetaStatus) {
+        const totalItems = uploadGalleryList
+            ? uploadGalleryList.querySelectorAll('.upload-gallery__item').length
+            : 1;
+        const clipLabel = totalItems === 1 ? 'clip' : 'clips';
+        uploadMetaStatus.textContent = `${totalItems} ${clipLabel} staged`;
+    }
+
+    if (uploadMetaHint && exportedFile.name) {
+        const truncatedName = exportedFile.name.length > 42
+            ? `${exportedFile.name.slice(0, 39)}…`
+            : exportedFile.name;
+        uploadMetaHint.textContent = `Tap + to add ${truncatedName} to the timeline.`;
+    }
+}
+
 async function handleConfirmExport() {
     if (isExportingTimeline) {
         return;
@@ -931,6 +1006,8 @@ async function handleConfirmExport() {
             exportDialogStatus.textContent = `Export complete! Your ${exportFormat.fileExtension.toUpperCase()} download should begin shortly.`;
             exportDialogStatus.dataset.state = 'ready';
         }
+
+        await stageExportedFile(exportBlob, exportFormat);
 
         closeExportDialog();
     } catch (error) {
