@@ -243,87 +243,118 @@ function startPreviewMirroring(width, height) {
 
     let stopped = false;
     let rafId = 0;
+    let resolveReady = null;
+    let readyResolved = false;
+
+    const readyPromise = new Promise((resolve) => {
+        resolveReady = () => {
+            if (readyResolved) {
+                return;
+            }
+            readyResolved = true;
+            resolve();
+        };
+    });
+
+    const resolveReadyOnce = () => {
+        if (typeof resolveReady === 'function') {
+            resolveReady();
+        }
+    };
 
     const drawFrame = () => {
         if (stopped) {
+            resolveReadyOnce();
             return;
         }
 
-        exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
-        exportMirrorContext.fillStyle = '#000000';
-        exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
+        try {
+            exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+            exportMirrorContext.fillStyle = '#000000';
+            exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
 
-        const viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
-        const viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
-        const overlaySnapshots = (viewportWidth > 0 && viewportHeight > 0)
-            ? getActiveOverlayLayerSnapshots()
-            : [];
+            const viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
+            const viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
+            const overlaySnapshots = (viewportWidth > 0 && viewportHeight > 0)
+                ? getActiveOverlayLayerSnapshots()
+                : [];
 
-        if (overlaySnapshots.length) {
-            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
-        }
+            if (overlaySnapshots.length) {
+                drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
+            }
 
-        if (!previewVideo.hidden && previewVideo.readyState >= 2) {
-            const dimensions = computeContainDimensions(
-                previewVideo.videoWidth,
-                previewVideo.videoHeight,
-                exportMirrorCanvas.width,
-                exportMirrorCanvas.height,
-            );
-            exportMirrorContext.drawImage(
-                previewVideo,
-                dimensions.x,
-                dimensions.y,
-                dimensions.width,
-                dimensions.height,
-            );
-        } else if (!previewImage.hidden && previewImage.complete) {
-            const drewImage = drawPreviewImageToExportCanvas();
-            if (!drewImage) {
-                const fallbackDimensions = computeContainDimensions(
-                    previewImage.naturalWidth,
-                    previewImage.naturalHeight,
+            if (!previewVideo.hidden && previewVideo.readyState >= 2) {
+                const dimensions = computeContainDimensions(
+                    previewVideo.videoWidth,
+                    previewVideo.videoHeight,
                     exportMirrorCanvas.width,
                     exportMirrorCanvas.height,
                 );
                 exportMirrorContext.drawImage(
-                    previewImage,
-                    fallbackDimensions.x,
-                    fallbackDimensions.y,
-                    fallbackDimensions.width,
-                    fallbackDimensions.height,
+                    previewVideo,
+                    dimensions.x,
+                    dimensions.y,
+                    dimensions.width,
+                    dimensions.height,
+                );
+            } else if (!previewImage.hidden && previewImage.complete) {
+                const drewImage = drawPreviewImageToExportCanvas();
+                if (!drewImage) {
+                    const fallbackDimensions = computeContainDimensions(
+                        previewImage.naturalWidth,
+                        previewImage.naturalHeight,
+                        exportMirrorCanvas.width,
+                        exportMirrorCanvas.height,
+                    );
+                    exportMirrorContext.drawImage(
+                        previewImage,
+                        fallbackDimensions.x,
+                        fallbackDimensions.y,
+                        fallbackDimensions.width,
+                        fallbackDimensions.height,
+                    );
+                }
+            } else {
+                exportMirrorContext.fillStyle = '#1f2937';
+                exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
+                exportMirrorContext.fillStyle = '#e2e8f0';
+                exportMirrorContext.textAlign = 'center';
+                exportMirrorContext.textBaseline = 'middle';
+                const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
+                exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
+                exportMirrorContext.fillText(
+                    'Preparing preview…',
+                    exportMirrorCanvas.width / 2,
+                    exportMirrorCanvas.height / 2,
                 );
             }
-        } else {
-            exportMirrorContext.fillStyle = '#1f2937';
-            exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
-            exportMirrorContext.fillStyle = '#e2e8f0';
-            exportMirrorContext.textAlign = 'center';
-            exportMirrorContext.textBaseline = 'middle';
-            const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
-            exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
-            exportMirrorContext.fillText(
-                'Preparing preview…',
-                exportMirrorCanvas.width / 2,
-                exportMirrorCanvas.height / 2,
-            );
+
+            if (overlaySnapshots.length) {
+                drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
+            }
+        } catch (error) {
+            console.error('Failed to mirror preview frame for export.', error);
         }
 
-        if (overlaySnapshots.length) {
-            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
-        }
-
+        resolveReadyOnce();
         rafId = window.requestAnimationFrame(drawFrame);
     };
 
     drawFrame();
 
-    return () => {
-        stopped = true;
-        if (rafId) {
-            window.cancelAnimationFrame(rafId);
-            rafId = 0;
-        }
+    return {
+        stop() {
+            if (stopped) {
+                return;
+            }
+            stopped = true;
+            if (rafId) {
+                window.cancelAnimationFrame(rafId);
+                rafId = 0;
+            }
+            resolveReadyOnce();
+        },
+        ready: readyPromise,
     };
 }
 

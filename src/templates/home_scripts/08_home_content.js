@@ -989,6 +989,7 @@ async function handleConfirmExport() {
     stopTimelinePlayback();
 
     let stopMirroring = () => {};
+    let mirroringReady = Promise.resolve();
     let recorder = null;
     let combinedStream = null;
     const recordedChunks = [];
@@ -996,7 +997,18 @@ async function handleConfirmExport() {
     let audioAttachmentCleanup = null;
 
     try {
-        stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
+        const mirroringControl = startPreviewMirroring(resolution.width, resolution.height);
+        if (mirroringControl && typeof mirroringControl === 'object') {
+            stopMirroring = typeof mirroringControl.stop === 'function'
+                ? () => mirroringControl.stop()
+                : stopMirroring;
+            if (mirroringControl.ready && typeof mirroringControl.ready.then === 'function') {
+                mirroringReady = mirroringControl.ready;
+            }
+        } else if (typeof mirroringControl === 'function') {
+            stopMirroring = mirroringControl;
+        }
+        await mirroringReady;
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
