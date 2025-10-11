@@ -1,5 +1,8 @@
                 expandedWindowEnd,
             );
+            descriptor.clipDuration = Number.isFinite(end) && Number.isFinite(start)
+                ? Math.max(0, end - start)
+                : 0;
             if (descriptor.isActive) {
                 descriptor.sampleTime = safeTimelineNow;
             } else {
@@ -12,7 +15,27 @@
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
-        .filter((descriptor) => descriptor.intersectsWindow);
+        .filter((descriptor) => {
+            if (descriptor.intersectsWindow || descriptor.isActive) {
+                return true;
+            }
+
+            const clipDuration = Number.isFinite(descriptor.clipDuration)
+                ? descriptor.clipDuration
+                : Math.max(0, Number(descriptor.end) - Number(descriptor.start));
+
+            if (clipDuration <= 0) {
+                return false;
+            }
+
+            descriptor.clipDuration = clipDuration;
+
+            if (!descriptor.animationSettings) {
+                descriptor.animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+            }
+
+            return shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+        });
 
         if (activeOverlayLayers.size) {
         const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
@@ -142,14 +165,19 @@
 
         descriptor.clipDuration = duration;
 
-        const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+        const animationSettings = descriptor.animationSettings
+            || getTimelineItemAnimationSettings(descriptor.item);
         descriptor.animationSettings = animationSettings;
-        descriptor.exitConfig = duration > 0
-            ? getPreviewImageExitConfig({
-                clipDurationMs: duration,
-                settingsOverride: animationSettings,
-            })
-            : null;
+        if (duration > 0) {
+            if (descriptor.exitConfig === undefined) {
+                descriptor.exitConfig = getPreviewImageExitConfig({
+                    clipDurationMs: duration,
+                    settingsOverride: animationSettings,
+                });
+            }
+        } else {
+            descriptor.exitConfig = null;
+        }
 
         if (duration === 0) {
             descriptor.progress = 0;
