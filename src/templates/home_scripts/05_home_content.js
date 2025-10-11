@@ -937,8 +937,12 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
-    const effectiveTimelineNow = Number.isFinite(timelineNow)
-        ? timelineNow
+    const providedTimeline = Number(timelineNow);
+    const timelineSample = Number.isFinite(Number(descriptor.sampleTime))
+        ? Number(descriptor.sampleTime)
+        : providedTimeline;
+    const effectiveTimelineNow = Number.isFinite(timelineSample)
+        ? timelineSample
         : descriptorEnd;
     if (!Number.isFinite(effectiveTimelineNow)) {
         return false;

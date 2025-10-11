@@ -34,7 +34,11 @@
                 descriptor.animationSettings = getTimelineItemAnimationSettings(descriptor.item);
             }
 
-            return shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+            const timelineReference = Number.isFinite(Number(descriptor.sampleTime))
+                ? Number(descriptor.sampleTime)
+                : safeTimelineNow;
+
+            return shouldRenderOverlayDescriptor(descriptor, timelineReference);
         });
 
         if (activeOverlayLayers.size) {
@@ -69,30 +73,17 @@
                 expandedWindowEnd,
             );
 
-            if (!descriptor.isActive && !descriptor.intersectsWindow) {
-                const animationSettings = getTimelineItemAnimationSettings(item);
-                descriptor.animationSettings = animationSettings;
-                descriptor.exitConfig = clipDuration > 0
-                    ? getPreviewImageExitConfig({
-                        clipDurationMs: clipDuration,
-                        settingsOverride: animationSettings,
-                    })
-                    : null;
-
-                if (!shouldRenderOverlayDescriptor(descriptor, safeTimelineNow)) {
-                    return;
-                }
-            }
-
             let animationSettings = descriptor.animationSettings;
             if (!animationSettings && clipDuration > 0) {
                 animationSettings = getTimelineItemAnimationSettings(item);
                 descriptor.animationSettings = animationSettings;
             }
 
+            let exitConfig = descriptor.exitConfig;
             let sampleEnd = end;
+            let totalExitWindow = 0;
+
             if (!descriptor.isActive && clipDuration > 0) {
-                let exitConfig = descriptor.exitConfig;
                 if (exitConfig === undefined) {
                     exitConfig = getPreviewImageExitConfig({
                         clipDurationMs: clipDuration,
@@ -101,7 +92,7 @@
                     descriptor.exitConfig = exitConfig;
                 }
 
-                const totalExitWindow = Math.min(
+                totalExitWindow = Math.min(
                     clipDuration,
                     Math.max(0, Number(exitConfig?.totalDuration) || 0),
                 );
@@ -109,6 +100,8 @@
                 if (totalExitWindow > 0 && Number.isFinite(end)) {
                     sampleEnd = end + totalExitWindow;
                 }
+            } else if (clipDuration <= 0) {
+                descriptor.exitConfig = null;
             }
 
             const clampedSample = Number.isFinite(sampleEnd)
@@ -117,6 +110,16 @@
             descriptor.sampleTime = descriptor.isActive
                 ? safeTimelineNow
                 : (Number.isFinite(clampedSample) ? clampedSample : safeTimelineNow);
+
+            if (!descriptor.isActive && !descriptor.intersectsWindow) {
+                const timelineReference = Number.isFinite(Number(descriptor.sampleTime))
+                    ? Number(descriptor.sampleTime)
+                    : safeTimelineNow;
+
+                if (!shouldRenderOverlayDescriptor(descriptor, timelineReference)) {
+                    return;
+                }
+            }
 
             overlayEntries.push(descriptor);
             knownOverlayItems.add(item);
@@ -185,12 +188,18 @@
             return;
         }
 
-        const relativeTime = (safeTimelineNow - start) / duration;
+        const sampleTime = Number(descriptor.sampleTime);
+        const relativeTime = Number.isFinite(sampleTime)
+            ? (sampleTime - start) / duration
+            : (safeTimelineNow - start) / duration;
         descriptor.progress = Number.isFinite(relativeTime)
             ? clampProgress(relativeTime)
             : 0;
+        const timelineReference = Number.isFinite(sampleTime)
+            ? sampleTime
+            : safeTimelineNow;
         descriptor.shouldRender = descriptor.isActive
-            || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+            || shouldRenderOverlayDescriptor(descriptor, timelineReference);
     });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
