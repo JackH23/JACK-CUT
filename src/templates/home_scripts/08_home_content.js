@@ -766,7 +766,32 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 
     if (previewDestination?.stream) {
-        const previewTracks = previewDestination.stream.getAudioTracks();
+        const primePreviewAudioGraph = () => {
+            if (typeof ensureMediaElementGainNode !== 'function') {
+                return;
+            }
+            elements.forEach((element) => {
+                try {
+                    ensureMediaElementGainNode(element);
+                } catch (error) {
+                    // Ignore failures when priming the preview audio graph.
+                }
+            });
+        };
+
+        primePreviewAudioGraph();
+
+        let previewTracks = previewDestination.stream
+            .getAudioTracks()
+            .filter((track) => track && track.readyState !== 'ended');
+
+        if (!previewTracks.length) {
+            primePreviewAudioGraph();
+            previewTracks = previewDestination.stream
+                .getAudioTracks()
+                .filter((track) => track && track.readyState !== 'ended');
+        }
+        
         const attachments = previewTracks
             .map((track) => {
                 if (!track) {
