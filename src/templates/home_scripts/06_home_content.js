@@ -224,6 +224,7 @@
                 zIndex: 0,
                 borderRadius: 0,
                 opacity: 1,
+                cachedOpacity: null,
                 lastTimelineTime: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
@@ -263,6 +264,7 @@
         entry.zIndex = 0;
         entry.borderRadius = 0;
         entry.opacity = 1;
+        entry.cachedOpacity = null;
         entry.frame = null;
         entry.lastTimelineTime = null;
 
@@ -288,6 +290,7 @@
                 if (liveOpacity > 0 && liveOpacity < 0.999) {
                     descriptor.shouldRender = true;
                     entry.opacity = liveOpacity;
+                    entry.cachedOpacity = liveOpacity;
                     entry.lastTimelineTime = safeTimelineNow;
                     entry.layerGroup = descriptor.laneIndex < primaryLaneIndex
                         ? 'above'
@@ -374,6 +377,7 @@
             image.style.opacity = '1';
         }
 
+        entry.cachedOpacity = clampedOpacity;
         const layerOpacity = computeOverlayEntryOpacity(entry);
 
         entry.frame = resolvedFrame;
@@ -401,6 +405,7 @@
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.cachedOpacity = fallbackEntry.opacity;
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -421,6 +426,7 @@
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.cachedOpacity = fallbackEntry.opacity;
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
             }
@@ -482,6 +488,7 @@ function getActiveOverlayLayerSnapshots() {
 
         const liveOpacity = computeOverlayEntryOpacity(entry);
         entry.opacity = liveOpacity;
+        entry.cachedOpacity = liveOpacity;
         if (liveOpacity <= 0) {
             return;
         }

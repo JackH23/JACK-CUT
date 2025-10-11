@@ -1083,6 +1083,11 @@ function computeOverlayEntryOpacity(entry) {
         return 0;
     }
 
+    const cachedOpacity = Number(entry.cachedOpacity);
+    if (Number.isFinite(cachedOpacity)) {
+        return clamp(cachedOpacity, 0, 1);
+    }
+
     if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
         return 1;
     }
@@ -1111,7 +1116,9 @@ function computeOverlayEntryOpacity(entry) {
         }
     }
 
-    return clamp(opacity, 0, 1);
+    const resolvedOpacity = clamp(opacity, 0, 1);
+    entry.cachedOpacity = resolvedOpacity;
+    return resolvedOpacity;
 }
 
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
