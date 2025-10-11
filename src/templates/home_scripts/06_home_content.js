@@ -283,6 +283,19 @@
         nextKnownItems.add(descriptor.item);
 
         if (!descriptor.shouldRender) {
+            if (entry.isVisible) {
+                const liveOpacity = computeOverlayEntryOpacity(entry);
+                if (liveOpacity > 0 && liveOpacity < 0.999) {
+                    descriptor.shouldRender = true;
+                    entry.opacity = liveOpacity;
+                    entry.lastTimelineTime = safeTimelineNow;
+                    entry.layerGroup = descriptor.laneIndex < primaryLaneIndex
+                        ? 'above'
+                        : (descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above');
+                    return;
+                }
+            }
+
             hideOverlayLayerEntry(entry);
         }
     });
