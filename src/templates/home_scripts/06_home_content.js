@@ -49,6 +49,50 @@
             return false;
         });
 
+    const OVERLAY_BELOW_Z_BASE = 10;
+    const OVERLAY_BELOW_Z_MAX = 59;
+    const OVERLAY_ABOVE_Z_BASE = 60;
+    const OVERLAY_ABOVE_Z_MAX = 140;
+
+    const computeOverlayLayerGroup = (descriptor) => {
+        if (!descriptor) {
+            return 'above';
+        }
+        return descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above';
+    };
+
+    const computeOverlayLayerZIndex = (descriptor) => {
+        if (!descriptor) {
+            return OVERLAY_ABOVE_Z_BASE + 1;
+        }
+
+        const laneDelta = descriptor.laneIndex - primaryLaneIndex;
+        if (laneDelta > 0) {
+            const laneOffset = Math.max(1, laneDelta);
+            const clampedOffset = Math.min(laneOffset, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
+            return OVERLAY_BELOW_Z_MAX - clampedOffset + 1;
+        }
+
+        const laneOffset = Math.max(0, Math.abs(laneDelta));
+        const clampedOffset = Math.min(laneOffset, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
+        return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
+    };
+
+    const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
+        ? 'below'
+        : 'above');
+    const getDescriptorZIndex = (descriptor) => {
+        if (!descriptor) {
+            return OVERLAY_ABOVE_Z_BASE + 1;
+        }
+        if (Number.isFinite(descriptor.zIndex)) {
+            return descriptor.zIndex;
+        }
+        const computed = computeOverlayLayerZIndex(descriptor);
+        descriptor.zIndex = computed;
+        return computed;
+    };
+
         if (activeOverlayLayers.size) {
         const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
         activeOverlayLayers.forEach((entry, item) => {
@@ -80,6 +124,9 @@
                 expandedWindowStart,
                 expandedWindowEnd,
             );
+
+            descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
+            descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
 
             if (!descriptor.isActive && !descriptor.intersectsWindow) {
                 const animationSettings = getTimelineItemAnimationSettings(item);
@@ -228,12 +275,13 @@
     });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
+
     const overlayGroups = { below: [], above: [] };
 
     overlayEntries.forEach((descriptor) => {
-        if (descriptor.laneIndex < primaryLaneIndex) {
-            overlayGroups.above.push(descriptor);
-        } else if (descriptor.laneIndex > primaryLaneIndex) {
+        descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
+        descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
+        if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
         } else {
             overlayGroups.above.push(descriptor);
@@ -351,9 +399,7 @@
                     descriptor.shouldRender = true;
                     entry.opacity = liveOpacity;
                     entry.lastTimelineTime = safeTimelineNow;
-                    entry.layerGroup = descriptor.laneIndex < primaryLaneIndex
-                        ? 'above'
-                        : (descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above');
+                    entry.layerGroup = getDescriptorLayerGroup(descriptor);
                     return;
                 }
             }
@@ -374,7 +420,8 @@
 
         const { layer, image } = entry;
 
-        layer.style.zIndex = String(zIndex);
+        const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
+        layer.style.zIndex = String(targetZIndex);
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -404,7 +451,7 @@
                 rotation: 0,
             };
 
-        const groupName = container?.dataset?.layerGroup === 'below' ? 'below' : 'above';
+        const groupName = getDescriptorLayerGroup(descriptor);
 
         if (frame) {
             layer.style.left = `${frame.left}px`;
@@ -441,7 +488,7 @@
         entry.frame = resolvedFrame;
         entry.isVisible = true;
         entry.layerGroup = groupName;
-        entry.zIndex = zIndex;
+        entry.zIndex = targetZIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
@@ -450,11 +497,11 @@
     };
 
     if (overlayGroups.below.length && below) {
-        overlayGroups.below.forEach((descriptor, index) => {
+        overlayGroups.below.forEach((descriptor) => {
             if (!descriptor.shouldRender) {
                 return;
             }
-            const zIndex = 10 + overlayGroups.below.length - index;
+            const zIndex = getDescriptorZIndex(descriptor);
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
             if (rendered) {
                 nextActiveItems.add(descriptor.item);
@@ -465,16 +512,18 @@
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                fallbackEntry.zIndex = zIndex;
             }
         });
     }
 
     if (overlayGroups.above.length && above) {
-        overlayGroups.above.forEach((descriptor, index) => {
+        overlayGroups.above.forEach((descriptor) => {
             if (!descriptor.shouldRender) {
                 return;
             }
-            const zIndex = 60 + (overlayGroups.above.length - index);
+            const zIndex = getDescriptorZIndex(descriptor);
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
             if (rendered) {
                 nextActiveItems.add(descriptor.item);
@@ -485,6 +534,8 @@
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                fallbackEntry.zIndex = zIndex;
             }
         });
     }
