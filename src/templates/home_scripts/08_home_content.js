@@ -760,6 +760,62 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
 
     let lastError = null;
 
+    let previewDestination = null;
+    if (typeof getOrCreatePreviewAudioDestination === 'function') {
+        previewDestination = getOrCreatePreviewAudioDestination();
+    }
+
+    if (previewDestination?.stream) {
+        const previewTracks = previewDestination.stream.getAudioTracks();
+        const attachments = previewTracks
+            .map((track) => {
+                if (!track) {
+                    return null;
+                }
+                const cloned = typeof track.clone === 'function' ? track.clone() : track;
+                return cloned
+                    ? {
+                        original: track,
+                        attached: cloned,
+                        isClone: cloned !== track,
+                    }
+                    : null;
+            })
+            .filter(Boolean);
+
+        if (attachments.length) {
+            const previewContext = previewDestination.context
+                || (typeof getOrCreatePreviewAudioContext === 'function'
+                    ? getOrCreatePreviewAudioContext()
+                    : null);
+            if (previewContext && previewContext.state === 'suspended') {
+                previewContext.resume().catch(() => {});
+            }
+            attachments.forEach(({ attached }) => {
+                combinedStream.addTrack(attached);
+            });
+            return {
+                audioContext: previewContext,
+                success: true,
+                error: null,
+                cleanup: () => {
+                    attachments.forEach(({ attached, isClone }) => {
+                        try {
+                            if (typeof combinedStream.removeTrack === 'function') {
+                                combinedStream.removeTrack(attached);
+                            }
+                        } catch (removeError) {
+                            // Ignore removal errors during cleanup.
+                        }
+                        if (isClone && typeof attached.stop === 'function') {
+                            attached.stop();
+                        }
+                    });
+                },
+            };
+        }
+    }
+
     const directTracks = [];
     let missingDirectCapture = false;
     const pendingTracks = [];
@@ -784,7 +840,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                 lastError = error;
                 missingDirectCapture = true;
             }
-            } else {
+        } else {
             missingDirectCapture = true;
         }
     });

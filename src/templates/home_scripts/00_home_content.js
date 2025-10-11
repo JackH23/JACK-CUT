@@ -737,6 +737,85 @@ function clampVolume(value) {
 }
 
 const mediaEnvelopeStates = new WeakMap();
+let sharedPreviewAudioContext = null;
+let sharedPreviewAudioDestination = null;
+
+function getOrCreatePreviewAudioContext() {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+        return null;
+    }
+
+    if (sharedPreviewAudioContext && sharedPreviewAudioContext.state === 'closed') {
+        sharedPreviewAudioContext = null;
+        sharedPreviewAudioDestination = null;
+    }
+
+    if (!sharedPreviewAudioContext) {
+        try {
+            sharedPreviewAudioContext = new AudioContextConstructor();
+        } catch (error) {
+            sharedPreviewAudioContext = null;
+            return null;
+        }
+    }
+
+    return sharedPreviewAudioContext;
+}
+
+function getOrCreatePreviewAudioDestination() {
+    const audioContext = getOrCreatePreviewAudioContext();
+    if (!audioContext) {
+        sharedPreviewAudioDestination = null;
+        return null;
+    }
+
+    if (sharedPreviewAudioDestination && sharedPreviewAudioDestination.context !== audioContext) {
+        sharedPreviewAudioDestination = null;
+    }
+
+    if (!sharedPreviewAudioDestination) {
+        try {
+            sharedPreviewAudioDestination = audioContext.createMediaStreamDestination();
+        } catch (error) {
+            sharedPreviewAudioDestination = null;
+            return null;
+        }
+    }
+
+    return sharedPreviewAudioDestination;
+}
+
+function disconnectMediaEnvelopeAudio(state) {
+    if (!state) {
+        return;
+    }
+    if (state.gainNode) {
+        try {
+            state.gainNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors when cleaning up audio routing.
+        }
+    }
+    if (state.sourceNode) {
+        try {
+            state.sourceNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors when cleaning up audio routing.
+        }
+    }
+    if (state.previewDestination && state.gainNode) {
+        try {
+            state.gainNode.disconnect(state.previewDestination);
+        } catch (error) {
+            // Ignore disconnect errors when cleaning up audio routing.
+        }
+    }
+    state.gainNode = null;
+    state.sourceNode = null;
+    state.audioContext = null;
+    state.previewDestination = null;
+}
 
 function getMediaEnvelopeState(mediaElement) {
     if (!mediaElement) {
@@ -748,9 +827,79 @@ function getMediaEnvelopeState(mediaElement) {
             fadeOutFrameId: 0,
             fadeOutTimeoutId: 0,
             baseVolume: clampVolume(DEFAULT_AUDIO_VOLUME_PERCENT / 100),
+            audioContext: null,
+            sourceNode: null,
+            gainNode: null,
+            previewDestination: null,
         });
     }
-    return mediaEnvelopeStates.get(mediaElement);
+    const state = mediaEnvelopeStates.get(mediaElement);
+    if (state?.audioContext && state.audioContext.state === 'closed') {
+        disconnectMediaEnvelopeAudio(state);
+    }
+    return state;
+}
+
+function ensureMediaElementGainNode(mediaElement) {
+    if (!mediaElement) {
+        return null;
+    }
+
+    const state = getMediaEnvelopeState(mediaElement);
+    if (!state) {
+        return null;
+    }
+
+    const audioContext = getOrCreatePreviewAudioContext();
+    if (!audioContext) {
+        disconnectMediaEnvelopeAudio(state);
+        return null;
+    }
+
+    if (state.audioContext && state.audioContext !== audioContext) {
+        disconnectMediaEnvelopeAudio(state);
+    }
+
+    if (!state.sourceNode || !state.gainNode) {
+        try {
+            const sourceNode = audioContext.createMediaElementSource(mediaElement);
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = clampVolume(state.baseVolume);
+            sourceNode.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            const previewDestination = getOrCreatePreviewAudioDestination();
+            if (previewDestination) {
+                try {
+                    gainNode.connect(previewDestination);
+                    state.previewDestination = previewDestination;
+                } catch (error) {
+                    // Ignore connection errors to preview export destination.
+                }
+            }
+            state.audioContext = audioContext;
+            state.sourceNode = sourceNode;
+            state.gainNode = gainNode;
+        } catch (error) {
+            disconnectMediaEnvelopeAudio(state);
+            return null;
+        }
+    }
+
+    const previewDestination = getOrCreatePreviewAudioDestination();
+    if (previewDestination && state.previewDestination !== previewDestination && state.gainNode) {
+        try {
+            state.gainNode.connect(previewDestination);
+            state.previewDestination = previewDestination;
+        } catch (error) {
+            // Ignore connection errors when reusing preview export destination.
+        }
+    }
+
+    if (state.audioContext && state.audioContext.state === 'suspended') {
+        state.audioContext.resume().catch(() => {});
+    }
+
+    return state.gainNode;
 }
 
 function clampVolumePercent(value) {
@@ -896,11 +1045,27 @@ function applyMasterVolumeToPreview(volumePercent, options = {}) {
     const percent = clampVolumePercent(volumePercent);
     const normalized = clampVolume(percent / 100);
     const state = getMediaEnvelopeState(target);
-    target.muted = false;
-    target.volume = normalized;
     if (state) {
         state.baseVolume = normalized;
     }
+    target.muted = false;
+
+    const gainNode = ensureMediaElementGainNode(target);
+    if (gainNode && (state?.audioContext || gainNode.context)) {
+        try {
+            const audioContext = state?.audioContext || gainNode.context;
+            const now = audioContext.currentTime;
+            const gainParam = gainNode.gain;
+            gainParam.cancelScheduledValues(now);
+            gainParam.setValueAtTime(normalized, now);
+            target.volume = 1;
+            return;
+        } catch (error) {
+            disconnectMediaEnvelopeAudio(state);
+        }
+    }
+
+    target.volume = normalized;
 }
 
 function cancelPreviewAudioEnvelope(options = {}) {
@@ -922,6 +1087,24 @@ function cancelPreviewAudioEnvelope(options = {}) {
         window.clearTimeout(state.fadeOutTimeoutId);
         state.fadeOutTimeoutId = 0;
     }
+    const gainNode = state.gainNode;
+    if (gainNode && (state.audioContext || gainNode.context)) {
+        try {
+            const audioContext = state.audioContext || gainNode.context;
+            const now = audioContext.currentTime;
+            gainNode.gain.cancelScheduledValues(now);
+            if (restoreVolume) {
+                gainNode.gain.setValueAtTime(clampVolume(state.baseVolume), now);
+                if (target) {
+                    target.volume = 1;
+                }
+            }
+            return;
+        } catch (error) {
+            disconnectMediaEnvelopeAudio(state);
+        }
+    }
+
     if (restoreVolume && target) {
         target.volume = clampVolume(state.baseVolume);
     }
@@ -948,9 +1131,53 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     }
     target.muted = false;
 
+    const gainNode = ensureMediaElementGainNode(target);
+    if (gainNode && (state?.audioContext || gainNode.context)) {
+        try {
+            const audioContext = state?.audioContext || gainNode.context;
+            const now = audioContext.currentTime;
+            const gainParam = gainNode.gain;
+            const fadeInSeconds = fadeInMs > 0 ? fadeInMs / 1000 : 0;
+            const fadeOutSeconds = fadeOutMs > 0 ? fadeOutMs / 1000 : 0;
+            const clipSeconds = clipMs > 0 ? clipMs / 1000 : 0;
+            const fadeInEndTime = fadeInSeconds > 0 ? now + fadeInSeconds : now;
+
+            gainParam.cancelScheduledValues(now);
+
+            if (baseVolume <= 0) {
+                gainParam.setValueAtTime(0, now);
+                target.volume = 1;
+                return;
+            }
+
+            if (fadeInSeconds > 0) {
+                gainParam.setValueAtTime(0, now);
+                gainParam.linearRampToValueAtTime(baseVolume, fadeInEndTime);
+            } else {
+                gainParam.setValueAtTime(baseVolume, now);
+            }
+
+            if (fadeOutSeconds > 0 && clipSeconds > 0) {
+                const fadeOutStartTime = now + Math.max(0, clipSeconds - fadeOutSeconds);
+                const safeFadeOutStart = Math.max(fadeOutStartTime, fadeInEndTime, now);
+                const fadeOutEndTime = safeFadeOutStart + fadeOutSeconds;
+                gainParam.setValueAtTime(baseVolume, safeFadeOutStart);
+                gainParam.linearRampToValueAtTime(0, fadeOutEndTime);
+            }
+
+            target.volume = 1;
+            return;
+        } catch (error) {
+            disconnectMediaEnvelopeAudio(state);
+        }
+    }
+
     if (baseVolume <= 0) {
         target.volume = 0;
-    } else if (fadeInMs > 0) {
+        return;
+    }
+
+    if (fadeInMs > 0) {
         target.volume = 0;
         const fadeInStart = performance.now();
         const stepFadeIn = () => {
