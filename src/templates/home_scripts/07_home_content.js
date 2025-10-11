@@ -1439,6 +1439,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
+        timelineItem.dataset.maxAudioDuration = String(duration);
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
         if (waveformCanvas) {
             const widthOverride = timelineItem
@@ -1463,6 +1464,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
             audioBuffer,
         };
         audioWaveformByObjectUrl.set(objectURL, cacheEntry);
+        timelineItem.dataset.maxAudioDuration = String(durationMs);
         setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
         if (waveformCanvas) {
             const widthOverride = timelineItem
@@ -1494,6 +1496,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
                     durationMs,
                     drawn: false,
                 });
+                timelineItem.dataset.maxAudioDuration = String(durationMs);
                 setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
                 if (waveformCanvas) {
                     attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL);
@@ -1792,12 +1795,13 @@ async function addToTimeline(file, objectURL) {
         const waveformCanvas = document.createElement('canvas');
         waveformContainer.appendChild(waveformCanvas);
         timelineItem.appendChild(waveformContainer);
-        setTimelineItemDuration(
+        const appliedDuration = setTimelineItemDuration(
             timelineItem,
             'audioDuration',
             MIN_AUDIO_DURATION,
             { markCustom: false },
         );
+        timelineItem.dataset.maxAudioDuration = String(appliedDuration);
         prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas).catch((error) => {
             console.warn('Failed to render audio waveform.', error);
         });

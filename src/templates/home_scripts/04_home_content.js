@@ -145,6 +145,24 @@ function getTimelineItemMinimumDuration(timelineItem) {
     return MIN_IMAGE_DURATION;
 }
 
+function getTimelineItemMaximumDuration(timelineItem) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const fileType = timelineItem.dataset.fileType || '';
+    if (!fileType.startsWith('audio/')) {
+        return null;
+    }
+
+    const maximum = Number(timelineItem.dataset.maxAudioDuration);
+    if (Number.isFinite(maximum) && maximum > 0) {
+        return maximum;
+    }
+
+    return null;
+}
+
 function getTimelineItemResizeEdgeFromEvent(event, timelineItem) {
     if (!timelineItem) {
         return null;
@@ -300,6 +318,19 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
             setTimelineSnapLineState({ ...snap, lane: parentLane });
         } else {
             setTimelineSnapLineState(null);
+        }
+
+        const maximumDuration = getTimelineItemMaximumDuration(timelineItem);
+        const clampedByMaximum = Number.isFinite(maximumDuration)
+            && maximumDuration > 0
+            && nextDuration > maximumDuration;
+
+        if (clampedByMaximum) {
+            nextDuration = maximumDuration;
+            if (snap) {
+                setTimelineSnapLineState(null);
+                snap = null;
+            }
         }
 
         if (Number.isFinite(previousDuration) && previousDuration === nextDuration) {
