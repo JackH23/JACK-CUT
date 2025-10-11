@@ -1197,7 +1197,31 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 start,
                 end,
             };
-            descriptor.isActive = isClipActiveAtTime(descriptor, safeTimelineNow);
-            descriptor.intersectsWindow = doesClipIntersectWindow(
-                descriptor,
+            
+            const explicitClipDuration = Number.isFinite(entry.clipDuration)
+                ? Math.max(0, Number(entry.clipDuration) || 0)
+                : null;
+            const explicitSampleTime = Number.isFinite(entry.sampleTime)
+                ? Number(entry.sampleTime)
+                : null;
+            const explicitProgress = Number.isFinite(entry.progress)
+                ? clampProgress(entry.progress)
+                : null;
+            const explicitShouldRender = typeof entry.shouldRender === 'boolean'
+                ? entry.shouldRender
+                : null;
+            const explicitIsActive = typeof entry.isActive === 'boolean'
+                ? entry.isActive
+                : null;
+            const explicitIntersects = typeof entry.intersectsWindow === 'boolean'
+                ? entry.intersectsWindow
+                : null;
+
+            descriptor.isActive = explicitIsActive !== null
+                ? explicitIsActive
+                : isClipActiveAtTime(descriptor, safeTimelineNow);
+            descriptor.intersectsWindow = explicitIntersects !== null
+                ? explicitIntersects
+                : doesClipIntersectWindow(
+                    descriptor,
                 expandedWindowStart,

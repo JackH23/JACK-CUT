@@ -1,18 +1,53 @@
                 expandedWindowEnd,
             );
-            if (descriptor.isActive) {
-                descriptor.sampleTime = safeTimelineNow;
-            } else {
-                const clamped = Math.min(Math.max(safeTimelineNow, start), end);
-                descriptor.sampleTime = Number.isFinite(clamped)
-                    ? clamped
-                    : safeTimelineNow;
+            if (explicitClipDuration !== null) {
+                descriptor.clipDuration = explicitClipDuration;
+            }
+            if (explicitSampleTime !== null) {
+                descriptor.sampleTime = explicitSampleTime;
+            }
+            if (explicitProgress !== null) {
+                descriptor.progress = explicitProgress;
+            }
+            if (explicitShouldRender !== null) {
+                descriptor.shouldRender = explicitShouldRender;
+            }
+            if (entry.animationSettings !== undefined) {
+                descriptor.animationSettings = entry.animationSettings;
+            }
+            if ('exitConfig' in entry) {
+                descriptor.exitConfig = entry.exitConfig;
+            }
+
+            if (!Number.isFinite(descriptor.sampleTime)) {
+                if (descriptor.isActive) {
+                    descriptor.sampleTime = safeTimelineNow;
+                } else {
+                    const clamped = Math.min(Math.max(safeTimelineNow, start), end);
+                    descriptor.sampleTime = Number.isFinite(clamped)
+                        ? clamped
+                        : safeTimelineNow;
+                }
             }
             return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
-        .filter((descriptor) => descriptor.intersectsWindow);
+        .filter((descriptor) => {
+            if (descriptor.intersectsWindow || descriptor.isActive) {
+                return true;
+            }
+            if (Number.isFinite(descriptor.sampleTime)) {
+                const { start, end } = descriptor;
+                if (Number.isFinite(start) && Number.isFinite(end)) {
+                    const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0);
+                    return descriptor.sampleTime >= (start - tolerance)
+                        && descriptor.sampleTime <= (end + tolerance);
+                }
+                return true;
+            }
+            return false;
+        });
 
         if (activeOverlayLayers.size) {
         const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
@@ -62,7 +97,7 @@
             }
 
             let animationSettings = descriptor.animationSettings;
-            if (!animationSettings && clipDuration > 0) {
+            if (animationSettings === undefined && clipDuration > 0) {
                 animationSettings = getTimelineItemAnimationSettings(item);
                 descriptor.animationSettings = animationSettings;
             }
@@ -88,12 +123,14 @@
                 }
             }
 
-            const clampedSample = Number.isFinite(sampleEnd)
-                ? Math.min(Math.max(safeTimelineNow, start), sampleEnd)
-                : safeTimelineNow;
-            descriptor.sampleTime = descriptor.isActive
-                ? safeTimelineNow
-                : (Number.isFinite(clampedSample) ? clampedSample : safeTimelineNow);
+            if (!Number.isFinite(descriptor.sampleTime)) {
+                const clampedSample = Number.isFinite(sampleEnd)
+                    ? Math.min(Math.max(safeTimelineNow, start), sampleEnd)
+                    : safeTimelineNow;
+                descriptor.sampleTime = descriptor.isActive
+                    ? safeTimelineNow
+                    : (Number.isFinite(clampedSample) ? clampedSample : safeTimelineNow);
+            }
 
             overlayEntries.push(descriptor);
             knownOverlayItems.add(item);
@@ -140,29 +177,54 @@
             ? Math.max(0, end - start)
             : 0;
 
-        descriptor.clipDuration = duration;
+        if (!Number.isFinite(descriptor.clipDuration)) {
+            descriptor.clipDuration = duration;
+        } else {
+            descriptor.clipDuration = Math.max(0, Number(descriptor.clipDuration) || 0);
+        }
 
-        const animationSettings = getTimelineItemAnimationSettings(descriptor.item);
-        descriptor.animationSettings = animationSettings;
-        descriptor.exitConfig = duration > 0
-            ? getPreviewImageExitConfig({
-                clipDurationMs: duration,
-                settingsOverride: animationSettings,
-            })
-            : null;
+        let animationSettings = descriptor.animationSettings;
+        if (animationSettings === undefined) {
+            animationSettings = getTimelineItemAnimationSettings(descriptor.item);
+            descriptor.animationSettings = animationSettings;
+        }
 
-        if (duration === 0) {
-            descriptor.progress = 0;
-            descriptor.shouldRender = descriptor.isActive;
+        if (descriptor.clipDuration > 0) {
+            if (descriptor.exitConfig === undefined) {
+                descriptor.exitConfig = getPreviewImageExitConfig({
+                    clipDurationMs: descriptor.clipDuration,
+                    settingsOverride: animationSettings,
+                }) || null;
+            }
+        } else if (descriptor.exitConfig === undefined) {
+            descriptor.exitConfig = null;
+        }
+
+        if (descriptor.clipDuration === 0) {
+            if (!Number.isFinite(descriptor.progress)) {
+                descriptor.progress = 0;
+            } else {
+                descriptor.progress = clampProgress(descriptor.progress);
+            }
+            if (typeof descriptor.shouldRender !== 'boolean') {
+                descriptor.shouldRender = descriptor.isActive;
+            }
             return;
         }
 
-        const relativeTime = (safeTimelineNow - start) / duration;
-        descriptor.progress = Number.isFinite(relativeTime)
-            ? clampProgress(relativeTime)
-            : 0;
-        descriptor.shouldRender = descriptor.isActive
-            || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+        if (!Number.isFinite(descriptor.progress)) {
+            const relativeTime = (safeTimelineNow - start) / descriptor.clipDuration;
+            descriptor.progress = Number.isFinite(relativeTime)
+                ? clampProgress(relativeTime)
+                : 0;
+        } else {
+            descriptor.progress = clampProgress(descriptor.progress);
+        }
+
+        if (typeof descriptor.shouldRender !== 'boolean') {
+            descriptor.shouldRender = descriptor.isActive
+                || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+        }
     });
 
     const borderRadius = getPreviewImageFrameBorderRadius();
