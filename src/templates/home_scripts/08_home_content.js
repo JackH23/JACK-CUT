@@ -737,7 +737,6 @@ function getOrCreateExportAudioSourceNode(element, audioContext) {
 
     try {
         sourceNode = audioContext.createMediaElementSource(element);
-        sourceNode.connect(audioContext.destination);
         sharedExportAudioSources.set(element, sourceNode);
         return sourceNode;
     } catch (error) {
@@ -887,8 +886,14 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             if (!sourceNode) {
                 return;
             }
-            sourceNode.connect(destination);
-            connectedSourceNodes.push({ node: sourceNode, destination });
+            const routingGain = audioContext.createGain();
+            routingGain.gain.value = 1;
+            sourceNode.connect(routingGain);
+            routingGain.connect(destination);
+            if (audioContext.destination) {
+                routingGain.connect(audioContext.destination);
+            }
+            connectedSourceNodes.push({ node: sourceNode, gain: routingGain, destination, audioContext });
             hasSource = true;
         } catch (error) {
             lastError = error;
@@ -896,11 +901,29 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     });
 
     const cleanupConnections = () => {
-        connectedSourceNodes.forEach(({ node, destination: dest }) => {
+        connectedSourceNodes.forEach(({ node, gain, destination: dest, audioContext: context }) => {
             try {
-                node.disconnect(dest);
+                if (node && gain) {
+                    node.disconnect(gain);
+                }
             } catch (disconnectError) {
                 // Ignore disconnection errors when cleaning up export routing.
+            }
+            if (gain) {
+                try {
+                    if (dest) {
+                        gain.disconnect(dest);
+                    }
+                } catch (disconnectError) {
+                    // Ignore disconnection errors when cleaning up export routing.
+                }
+                try {
+                    if (context?.destination) {
+                        gain.disconnect(context.destination);
+                    }
+                } catch (disconnectError) {
+                    // Ignore disconnection errors when cleaning up export routing.
+                }
             }
         });
         try {

@@ -91,16 +91,17 @@
             const clampedSample = Number.isFinite(sampleEnd)
                 ? Math.min(Math.max(safeTimelineNow, start), sampleEnd)
                 : safeTimelineNow;
-            descriptor.sampleTime = descriptor.isActive
+            const resolvedSampleTime = descriptor.isActive
                 ? safeTimelineNow
                 : (Number.isFinite(clampedSample) ? clampedSample : safeTimelineNow);
+            descriptor.sampleTime = resolvedSampleTime;
 
             overlayEntries.push(descriptor);
             knownOverlayItems.add(item);
         });
     }
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -157,7 +158,10 @@
             return;
         }
 
-        const relativeTime = (safeTimelineNow - start) / duration;
+        const effectiveSampleTime = Number.isFinite(descriptor.sampleTime)
+            ? descriptor.sampleTime
+            : safeTimelineNow;
+        const relativeTime = (effectiveSampleTime - start) / duration;
         descriptor.progress = Number.isFinite(relativeTime)
             ? clampProgress(relativeTime)
             : 0;
@@ -314,7 +318,12 @@
 
         layer.style.zIndex = String(zIndex);
 
-        const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
+        const overlayProgress = Number.isFinite(descriptor.progress)
+            ? descriptor.progress
+            : null;
+        const descriptorSampleTime = Number.isFinite(descriptor.sampleTime)
+            ? descriptor.sampleTime
+            : safeTimelineNow;
         const normalizedTransform = overlayProgress !== null
             ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
             : null;
@@ -382,7 +391,7 @@
         entry.zIndex = zIndex;
         entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
-        entry.lastTimelineTime = safeTimelineNow;
+        entry.lastTimelineTime = descriptorSampleTime;
 
         return true;
     };
@@ -402,7 +411,9 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.lastTimelineTime = Number.isFinite(descriptor.sampleTime)
+                    ? descriptor.sampleTime
+                    : safeTimelineNow;
             }
         });
     }
@@ -422,7 +433,9 @@
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.lastTimelineTime = Number.isFinite(descriptor.sampleTime)
+                    ? descriptor.sampleTime
+                    : safeTimelineNow;
             }
         });
     }
