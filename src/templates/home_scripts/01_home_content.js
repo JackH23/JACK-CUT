@@ -584,12 +584,12 @@ function setTimelineItemAnimationDataset(timelineItem, key, value, defaultValue)
 }
 
 function synchronizeImageAnimationDurations(timelineItem, context = {}) {
-    if (!timelineItem || !isImageTimelineItem(timelineItem)) {
+    if (!timelineItem || !isOverlayTimelineItem(timelineItem)) {
         return;
     }
 
     const { durationKey = null } = context;
-    if (durationKey && durationKey !== 'imageDuration') {
+    if (durationKey && durationKey !== 'imageDuration' && durationKey !== 'textDuration') {
         return;
     }
 

@@ -248,8 +248,9 @@
         syncPreviewAudioOverlay(overlayEntries, segmentStartTime);
         playVideoButton.textContent = 'Play Back';
         await waitForGapDuration(effectiveDuration);
-    } else if (fileType.startsWith('image/')) {
-        const rawClipDuration = Number(timelineItem.dataset.imageDuration);
+    } else if (fileType.startsWith('image/') || timelineItem.dataset.layerType === 'text' || fileType.startsWith('text/')) {
+        const durationKey = getTimelineItemDurationKey(timelineItem);
+        const rawClipDuration = Number(durationKey ? timelineItem.dataset[durationKey] : timelineItem.dataset.imageDuration);
         const clipDuration = Number.isFinite(rawClipDuration) && rawClipDuration > 0
             ? Math.round(rawClipDuration)
             : IMAGE_FRAME_DURATION;
