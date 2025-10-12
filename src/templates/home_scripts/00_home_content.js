@@ -25,6 +25,7 @@ const previewOverlayGroups = previewOverlayStack
     ? {
         below: previewOverlayStack.querySelector('[data-layer-group="below"]'),
         above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
+        text: previewOverlayStack.querySelector('[data-layer-group="text"]'),
     }
     : null;
 const activeOverlayLayers = new Map();
@@ -162,6 +163,7 @@ const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
 const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
+const defaultTextTemplateCard = document.querySelector('.text-template-card');
 
 const optionSliderConfigs = [
     {

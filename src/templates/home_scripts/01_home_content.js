@@ -124,7 +124,10 @@ function applyCanvasSettingsToPreview(timelineItem) {
         return;
     }
 
-    const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+    const fileType = timelineItem?.dataset?.fileType || '';
+    const isTextOverlay = fileType === 'text/overlay'
+        || timelineItem?.dataset?.overlayType === 'text';
+    const isClip = !isTextOverlay && (isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem));
     if (!isClip) {
         clearPreviewCanvasBackdrop();
         return;

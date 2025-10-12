@@ -38,6 +38,10 @@ When you are ready to test against a real database, configure `MONGO_URL` (and o
 
 > **Note:** When running `python src/main.py`, the application generates a temporary random secret key if `FLASK_SECRET_KEY` is not set. This is convenient for local debugging only—always set an explicit, strong secret in any shared or production environment.
 
+## Default text overlay template
+
+The Home preview experience now includes a `(Default Text)` template card that automatically layers a styled caption block above the currently active visual clip. Selecting the blue `＋` button inserts a dedicated text timeline item into its own overlay lane, guaranteeing that the rendered caption appears above all image and video content inside the preview stack. The text overlay uses the same duration controls as image clips, so you can trim or keyframe it alongside other media without additional setup.
+
 ## Deployment
 
 1. Provision a MongoDB instance and obtain a connection string.
