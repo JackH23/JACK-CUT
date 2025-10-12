@@ -265,6 +265,335 @@
         context.restore();
     };
 
+    const textEditorState = {
+        timelineItem: null,
+        entry: null,
+        editorContainer: null,
+        editorContent: null,
+        originalText: '',
+        pendingValue: '',
+        isEditing: false,
+    };
+
+    const resolveDefaultTextLayerContent = () => {
+        if (typeof DEFAULT_TEXT_LAYER_CONTENT === 'string' && DEFAULT_TEXT_LAYER_CONTENT.length) {
+            return DEFAULT_TEXT_LAYER_CONTENT;
+        }
+        return 'Default Text';
+    };
+
+    const sanitizeEditorValue = (value) => {
+        if (typeof value !== 'string') {
+            return '';
+        }
+
+        const normalized = value
+            .replace(/\r\n?/g, '\n')
+            .replace(/[\u00a0\t]/g, ' ');
+
+        const collapsed = normalized
+            .split('\n')
+            .map((line) => line.replace(/\s+$/g, ''))
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n');
+
+        return collapsed.trimEnd();
+    };
+
+    const formatTextLayerDisplayName = (value) => {
+        const fallback = resolveDefaultTextLayerContent();
+        if (typeof value !== 'string' || !value.trim()) {
+            return fallback;
+        }
+        const normalized = sanitizeEditorValue(value);
+        const primaryLine = normalized
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.length > 0)
+            || normalized.trim()
+            || fallback;
+        if (primaryLine.length <= 42) {
+            return primaryLine;
+        }
+        return `${primaryLine.slice(0, 39)}…`;
+    };
+
+    const applyEditorStylesFromMeasure = (entry) => {
+        const { textEditorContent, textElement } = entry;
+        if (!textEditorContent || !textElement || typeof window.getComputedStyle !== 'function') {
+            return;
+        }
+
+        const style = window.getComputedStyle(textElement);
+        if (!style) {
+            return;
+        }
+
+        textEditorContent.style.font = style.font || '';
+        textEditorContent.style.fontSize = style.fontSize || '';
+        textEditorContent.style.fontWeight = style.fontWeight || '';
+        textEditorContent.style.fontStyle = style.fontStyle || '';
+        textEditorContent.style.fontFamily = style.fontFamily || '';
+        textEditorContent.style.lineHeight = style.lineHeight || '';
+        textEditorContent.style.letterSpacing = style.letterSpacing || '';
+        textEditorContent.style.textAlign = style.textAlign || 'center';
+        textEditorContent.style.color = style.color || '';
+        textEditorContent.style.textTransform = style.textTransform || '';
+        textEditorContent.style.textDecoration = style.textDecoration || '';
+        textEditorContent.style.textShadow = style.textShadow || '';
+        textEditorContent.style.paddingTop = style.paddingTop || '';
+        textEditorContent.style.paddingRight = style.paddingRight || '';
+        textEditorContent.style.paddingBottom = style.paddingBottom || '';
+        textEditorContent.style.paddingLeft = style.paddingLeft || '';
+        textEditorContent.dataset.placeholder = resolveDefaultTextLayerContent();
+    };
+
+    const extractEditorValue = (editorContent) => {
+        if (!editorContent) {
+            return '';
+        }
+        const innerText = typeof editorContent.innerText === 'string'
+            ? editorContent.innerText
+            : editorContent.textContent;
+        return sanitizeEditorValue(innerText || '');
+    };
+
+    const applyEditorValueToTimeline = (timelineItem, entry, rawValue, options = {}) => {
+        if (!timelineItem || !entry) {
+            return;
+        }
+
+        const { updateMeasurement = true } = options;
+        const fallback = resolveDefaultTextLayerContent();
+        const normalized = sanitizeEditorValue(rawValue);
+        const hasContent = normalized.trim().length > 0;
+        const finalValue = hasContent ? normalized : fallback;
+        const displayName = formatTextLayerDisplayName(finalValue);
+
+        timelineItem.dataset.textContent = finalValue;
+        timelineItem.dataset.displayName = displayName;
+
+        const label = timelineItem.querySelector('span');
+        if (label) {
+            label.textContent = displayName;
+        }
+
+        if (updateMeasurement && entry.textElement) {
+            entry.textElement.textContent = finalValue;
+        }
+
+        entry.textCanvasSignature = null;
+        const viewportSize = getPreviewViewportSize();
+        renderTextOverlayCanvas(entry, viewportSize.width, viewportSize.height);
+
+        textEditorState.pendingValue = finalValue;
+    };
+
+    const finishActiveTextEditor = ({ commit }) => {
+        if (!textEditorState.isEditing) {
+            return;
+        }
+
+        const {
+            timelineItem,
+            entry,
+            editorContent,
+            originalText,
+        } = textEditorState;
+
+        const nextValue = commit ? extractEditorValue(editorContent) : originalText;
+        applyEditorValueToTimeline(timelineItem, entry, nextValue);
+
+        if (editorContent) {
+            editorContent.setAttribute('contenteditable', 'false');
+            editorContent.tabIndex = -1;
+            editorContent.textContent = textEditorState.pendingValue;
+            editorContent.classList.toggle(
+                'is-empty',
+                !sanitizeEditorValue(textEditorState.pendingValue).trim().length,
+            );
+        }
+
+        if (entry && entry.textEditorContainer) {
+            entry.textEditorContainer.hidden = true;
+            entry.textEditorContainer.classList.remove('is-editing');
+        }
+
+        renderExportSummary(getTimelineItems(), null);
+
+        textEditorState.timelineItem = null;
+        textEditorState.entry = null;
+        textEditorState.editorContainer = null;
+        textEditorState.editorContent = null;
+        textEditorState.originalText = '';
+        textEditorState.pendingValue = '';
+        textEditorState.isEditing = false;
+    };
+
+    const cancelActiveTextEditor = (options = {}) => {
+        if (!textEditorState.isEditing) {
+            return;
+        }
+
+        const { commit = true, preserveFor = null, targetItem = null } = options;
+
+        if (preserveFor && textEditorState.timelineItem === preserveFor) {
+            return;
+        }
+
+        if (targetItem && textEditorState.timelineItem !== targetItem) {
+            return;
+        }
+
+        finishActiveTextEditor({ commit });
+    };
+
+    const refreshTextEditorVisibilityForEntry = (entry, descriptorItem) => {
+        if (!entry || !entry.textEditorContainer || !entry.textEditorContent) {
+            return;
+        }
+
+        const isEditingActive = textEditorState.isEditing && textEditorState.entry === entry;
+
+        entry.textEditorContainer.hidden = !isEditingActive;
+        entry.textEditorContainer.classList.toggle('is-editing', Boolean(isEditingActive));
+
+        if (!isEditingActive) {
+            entry.textEditorContent.setAttribute('contenteditable', 'false');
+            entry.textEditorContent.tabIndex = -1;
+        }
+
+        applyEditorStylesFromMeasure(entry);
+
+        if (!isEditingActive) {
+            const timelineItem = descriptorItem || null;
+            if (timelineItem) {
+                const stored = timelineItem.dataset?.textContent
+                    || timelineItem.dataset?.displayName
+                    || resolveDefaultTextLayerContent();
+                entry.textEditorContent.textContent = stored;
+                entry.textEditorContent.classList.toggle(
+                    'is-empty',
+                    !sanitizeEditorValue(stored).trim().length,
+                );
+            }
+        }
+    };
+
+    const beginTextEditorForTimelineItem = (timelineItem) => {
+        if (!timelineItem || !isTextTimelineItem(timelineItem)) {
+            return;
+        }
+
+        const entry = activeOverlayLayers.get(timelineItem) || null;
+        if (!entry || !entry.textEditorContent || !entry.textEditorContainer) {
+            refreshActiveOverlayLayers();
+            return;
+        }
+
+        if (textEditorState.isEditing) {
+            if (textEditorState.timelineItem === timelineItem) {
+                if (textEditorState.editorContent) {
+                    window.requestAnimationFrame(() => {
+                        try {
+                            textEditorState.editorContent.focus({ preventScroll: true });
+                        } catch (error) {
+                            // Ignore focus errors.
+                        }
+                    });
+                }
+                return;
+            }
+            cancelActiveTextEditor({ commit: true });
+        }
+
+        const defaultText = resolveDefaultTextLayerContent();
+        const stored = timelineItem.dataset?.textContent
+            || timelineItem.dataset?.displayName
+            || defaultText;
+
+        applyEditorStylesFromMeasure(entry);
+
+        entry.textEditorContainer.hidden = false;
+        entry.textEditorContainer.classList.add('is-editing');
+        entry.textEditorContent.setAttribute('contenteditable', 'true');
+        entry.textEditorContent.tabIndex = 0;
+        entry.textEditorContent.textContent = stored;
+        entry.textEditorContent.classList.toggle('is-empty', !sanitizeEditorValue(stored).trim().length);
+
+        textEditorState.timelineItem = timelineItem;
+        textEditorState.entry = entry;
+        textEditorState.editorContainer = entry.textEditorContainer;
+        textEditorState.editorContent = entry.textEditorContent;
+        textEditorState.originalText = stored;
+        textEditorState.pendingValue = stored;
+        textEditorState.isEditing = true;
+
+        window.requestAnimationFrame(() => {
+            try {
+                entry.textEditorContent.focus({ preventScroll: true });
+                if (window.getSelection && document.createRange) {
+                    const selection = window.getSelection();
+                    if (selection) {
+                        const range = document.createRange();
+                        range.selectNodeContents(entry.textEditorContent);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+                }
+            } catch (error) {
+                // Ignore focus errors when activating the editor.
+            }
+        });
+    };
+
+    const onTextEditorInput = (event) => {
+        const editorContent = event.currentTarget;
+        if (!editorContent || textEditorState.editorContent !== editorContent) {
+            return;
+        }
+
+        const entry = textEditorState.entry;
+        const timelineItem = textEditorState.timelineItem;
+        if (!entry || !timelineItem) {
+            return;
+        }
+
+        const nextValue = extractEditorValue(editorContent);
+        applyEditorValueToTimeline(timelineItem, entry, nextValue);
+
+        editorContent.classList.toggle('is-empty', !nextValue.trim().length);
+    };
+
+    const onTextEditorBlur = (event) => {
+        if (!textEditorState.isEditing || textEditorState.editorContent !== event.currentTarget) {
+            return;
+        }
+        finishActiveTextEditor({ commit: true });
+    };
+
+    const onTextEditorKeyDown = (event) => {
+        if (!textEditorState.isEditing || textEditorState.editorContent !== event.currentTarget) {
+            return;
+        }
+
+        const { key, metaKey, ctrlKey } = event;
+        if (key === 'Escape') {
+            event.preventDefault();
+            cancelActiveTextEditor({ commit: false });
+            return;
+        }
+
+        if (key === 'Enter' && (metaKey || ctrlKey)) {
+            event.preventDefault();
+            finishActiveTextEditor({ commit: true });
+        }
+    };
+
+    const onTextEditorPointerDown = (event) => {
+        event.stopPropagation();
+    };
+
     const getDescriptorLayerGroup = (descriptor) => {
         if (!descriptor) {
             return 'above';
@@ -524,8 +853,22 @@
                 textElement.style.pointerEvents = 'none';
                 textElement.style.userSelect = 'none';
                 textElement.style.whiteSpace = 'pre-wrap';
+                const editorContainer = document.createElement('div');
+                editorContainer.className = 'preview-overlay-text-editor';
+                editorContainer.hidden = true;
+                const editorWrap = document.createElement('div');
+                editorWrap.className = 'preview-overlay-text-editor__wrap';
+                const editorContent = document.createElement('div');
+                editorContent.className = 'preview-overlay-text-editor__content';
+                editorContent.setAttribute('role', 'textbox');
+                editorContent.setAttribute('aria-multiline', 'true');
+                editorContent.tabIndex = -1;
+                editorContent.spellcheck = true;
+                editorWrap.appendChild(editorContent);
+                editorContainer.appendChild(editorWrap);
                 layer.appendChild(textCanvas);
                 layer.appendChild(textElement);
+                layer.appendChild(editorContainer);
                 let textCanvasContext = null;
                 try {
                     textCanvasContext = textCanvas.getContext('2d', { alpha: true, desynchronized: true });
@@ -539,6 +882,8 @@
                     textElement,
                     textCanvas,
                     textCanvasContext,
+                    textEditorContainer: editorContainer,
+                    textEditorContent: editorContent,
                     textCanvasSignature: null,
                     objectURL: '',
                     frame: null,
@@ -549,6 +894,28 @@
                     opacity: 1,
                     lastTimelineTime: null,
                 };
+                editorContent.addEventListener('input', onTextEditorInput);
+                editorContent.addEventListener('blur', onTextEditorBlur);
+                editorContent.addEventListener('keydown', onTextEditorKeyDown);
+                editorContent.addEventListener('pointerdown', onTextEditorPointerDown);
+                if (!layer.dataset.textEditorBound) {
+                    layer.addEventListener('dblclick', (event) => {
+                        const timelineItemRef = overlayLayerToTimelineItem.get(layer);
+                        if (!timelineItemRef || !isTextTimelineItem(timelineItemRef)) {
+                            return;
+                        }
+                        const target = event.target;
+                        if (target && target.closest('.preview-overlay-text-editor__content')) {
+                            return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        stopTimelinePlayback();
+                        setActiveTimelineItem(timelineItemRef);
+                        beginTextEditorForTimelineItem(timelineItemRef);
+                    });
+                    layer.dataset.textEditorBound = 'true';
+                }
                 activeOverlayLayers.set(timelineItem, entry);
             }
 
@@ -631,6 +998,10 @@
             return;
         }
 
+        if (textEditorState.isEditing && textEditorState.entry === entry) {
+            cancelActiveTextEditor({ commit: true });
+        }
+
         entry.isVisible = false;
         entry.layerGroup = null;
         entry.zIndex = 0;
@@ -711,6 +1082,8 @@
                     || 'Default Text';
                 entry.textElement.textContent = textContent;
             }
+
+            refreshTextEditorVisibilityForEntry(entry, descriptor.item);
 
             if (layer.parentElement !== container) {
                 container.appendChild(layer);
@@ -1059,6 +1432,10 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
 function onPreviewOverlayPointerDown(event) {
     const target = event.target;
     if (!target || typeof target.closest !== 'function') {
+        return;
+    }
+
+    if (target.closest('.preview-overlay-text-editor__content')) {
         return;
     }
 

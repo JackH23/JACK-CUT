@@ -2172,6 +2172,71 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     white-space: pre-wrap;
 }
 
+.preview-overlay-text-editor {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 180;
+}
+
+.preview-overlay-text-editor__wrap {
+    display: inline-flex;
+    max-width: 90%;
+    pointer-events: none;
+}
+
+.preview-overlay-text-editor.is-editing {
+    pointer-events: auto;
+}
+
+.preview-overlay-text-editor.is-editing .preview-overlay-text-editor__wrap {
+    pointer-events: auto;
+}
+
+.preview-overlay-text-editor__content {
+    display: inline-block;
+    min-width: 3rem;
+    min-height: 1.75em;
+    padding: 0.5rem 0.75rem;
+    border-radius: 12px;
+    border: 2px solid rgba(148, 163, 184, 0.55);
+    background: rgba(15, 23, 42, 0.6);
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    line-height: inherit;
+    text-shadow: inherit;
+    white-space: pre-wrap;
+    outline: none;
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.45);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.preview-overlay-text-editor__content[contenteditable='false'] {
+    cursor: default;
+}
+
+.preview-overlay-text-editor__content[contenteditable='true'] {
+    cursor: text;
+}
+
+.preview-overlay-text-editor__content.is-empty::before {
+    content: attr(data-placeholder);
+    color: rgba(148, 163, 184, 0.72);
+}
+
+.preview-overlay-text-editor__content:focus-visible {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.85);
+    box-shadow:
+        0 0 0 2px rgba(56, 189, 248, 0.32),
+        0 22px 44px rgba(8, 16, 32, 0.55);
+}
+
 .preview-image-layer {
     position: absolute;
     inset: 0;

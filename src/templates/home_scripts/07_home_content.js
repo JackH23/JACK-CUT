@@ -896,6 +896,8 @@ function setActiveTimelineItem(item, options = {}) {
         : null;
     const isSameItem = item === activeTimelineItem;
 
+    cancelActiveTextEditor({ commit: true, preserveFor: item || null });
+
     if (!isSameItem) {
         persistPreviewImageTransformForActiveTimelineItem();
     }
@@ -1853,6 +1855,8 @@ function createDefaultTextTimelineItem() {
         if (!targetItem) {
             return;
         }
+
+        cancelActiveTextEditor({ commit: false, targetItem });
 
         const wasActive = targetItem === activeTimelineItem;
         targetItem.remove();
