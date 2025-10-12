@@ -1714,22 +1714,41 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
-async function addToTimeline(file, objectURL) {
+async function addToTimeline(file, objectURL, options = {}) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
     }
 
+    const safeType = typeof file?.type === 'string' ? file.type : '';
+    const fallbackName = typeof file?.name === 'string' && file.name.trim().length
+        ? file.name.trim()
+        : 'Layer';
+    const {
+        laneIndex: preferredLaneIndex = null,
+        displayName: displayNameOverride = null,
+        layerType = null,
+        textContent = null,
+        textVariant = null,
+    } = options || {};
+    const displayName = typeof displayNameOverride === 'string' && displayNameOverride.trim().length
+        ? displayNameOverride.trim()
+        : fallbackName;
+
     const timelineItem = document.createElement('div');
     timelineItem.className = 'timeline-item';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
-    timelineItem.dataset.fileType = file.type;
-    timelineItem.dataset.objectUrl = objectURL;
-    timelineItem.dataset.displayName = file.name;
+    timelineItem.dataset.fileType = safeType;
+    if (objectURL) {
+        timelineItem.dataset.objectUrl = objectURL;
+    } else {
+        delete timelineItem.dataset.objectUrl;
+    }
+    timelineItem.dataset.displayName = displayName;
 
     const label = document.createElement('span');
-    label.textContent = file.name;
+    label.textContent = displayName;
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
@@ -1737,9 +1756,9 @@ async function addToTimeline(file, objectURL) {
     removeButton.setAttribute('aria-label', 'Remove clip');
     removeButton.textContent = '✕';
 
-    if (file.type.startsWith('video/')) {
+    if (safeType.startsWith('video/')) {
         const videoThumb = document.createElement('video');
-        videoThumb.src = objectURL;
+        videoThumb.src = objectURL || '';
         videoThumb.muted = true;
         videoThumb.loop = true;
         videoThumb.playsInline = true;
@@ -1773,11 +1792,13 @@ async function addToTimeline(file, objectURL) {
             }
         });
         timelineItem.appendChild(videoThumb);
-    } else if (file.type.startsWith('image/')) {
+    } else if (safeType.startsWith('image/')) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
-        imageThumb.src = await generateImageThumbnail(objectURL);
-        imageThumb.alt = file.name;
+        if (objectURL) {
+            imageThumb.src = await generateImageThumbnail(objectURL);
+        }
+        imageThumb.alt = displayName;
         timelineItem.appendChild(imageThumb);
         setTimelineItemDuration(
             timelineItem,
@@ -1785,10 +1806,12 @@ async function addToTimeline(file, objectURL) {
             IMAGE_FRAME_DURATION,
             { markCustom: false },
         );
-        preloadTimelineImage(objectURL).catch((error) => {
-            console.warn('Failed to warm timeline image for playback.', error);
-        });
-    } else if (file.type.startsWith('audio/')) {
+        if (objectURL) {
+            preloadTimelineImage(objectURL).catch((error) => {
+                console.warn('Failed to warm timeline image for playback.', error);
+            });
+        }
+    } else if (safeType.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
         const waveformContainer = document.createElement('div');
         waveformContainer.className = 'timeline-waveform';
@@ -1811,10 +1834,16 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
-    if (file.type.startsWith('audio/')) {
+    if (Number.isFinite(preferredLaneIndex)) {
+        const desiredLane = ensureTimelineLane(Math.max(0, preferredLaneIndex));
+        if (desiredLane) {
+            targetLane = desiredLane;
+        }
+    } else if (safeType.startsWith('audio/')) {
         const audioLane = ensureAudioTimelineLane();
         targetLane = audioLane || targetLane;
     }
+
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
         targetLane.appendChild(timelineItem);
@@ -1822,6 +1851,18 @@ async function addToTimeline(file, objectURL) {
         timelineItem.dataset.laneIndex = '0';
         timelineTrack.appendChild(timelineItem);
     }
+
+    if (layerType === 'text') {
+        timelineItem.classList.add('timeline-item--text');
+        timelineItem.dataset.layerType = 'text';
+        if (typeof textVariant === 'string' && textVariant.trim().length) {
+            timelineItem.dataset.textLayerTemplate = textVariant.trim();
+        }
+        if (typeof textContent === 'string' && textContent.trim().length) {
+            timelineItem.dataset.textLayerContent = textContent.trim();
+        }
+    }
+
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
 
@@ -1914,6 +1955,117 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+    return timelineItem;
+}
+
+const DEFAULT_TEXT_LAYER_NAME = 'Default Text';
+const DEFAULT_TEXT_LAYER_CONTENT = 'Add your caption';
+const DEFAULT_TEXT_LAYER_FONT_STACK = "Inter, 'Segoe UI', 'Helvetica Neue', sans-serif";
+const DEFAULT_TEXT_LAYER_VIEWBOX_WIDTH = 1600;
+const DEFAULT_TEXT_LAYER_VIEWBOX_HEIGHT = 900;
+
+function escapeSvgTextContent(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function buildDefaultTextLayerSvg(textContent) {
+    const sanitized = escapeSvgTextContent(textContent);
+    const width = DEFAULT_TEXT_LAYER_VIEWBOX_WIDTH;
+    const height = DEFAULT_TEXT_LAYER_VIEWBOX_HEIGHT;
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">\n`
+        + '  <defs>\n'
+        + '    <linearGradient id="textLayerBackdrop" x1="0%" y1="0%" x2="0%" y2="100%">\n'
+        + '      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.68" />\n'
+        + '      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.18" />\n'
+        + '    </linearGradient>\n'
+        + '    <filter id="textLayerShadow" x="-20%" y="-20%" width="140%" height="140%">\n'
+        + '      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#0f172a" flood-opacity="0.45" />\n'
+        + '    </filter>\n'
+        + '  </defs>\n'
+        + '  <rect width="100%" height="100%" fill="url(#textLayerBackdrop)" rx="48" ry="48"/>\n'
+        + `  <text x="50%" y="50%" fill="#f8fafc" font-family="${DEFAULT_TEXT_LAYER_FONT_STACK}" font-size="144" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="0.8" filter="url(#textLayerShadow)">\n`
+        + `    ${sanitized}\n`
+        + '  </text>\n'
+        + '</svg>'
+    );
+}
+
+async function createDefaultTextLayer() {
+    const textContent = DEFAULT_TEXT_LAYER_CONTENT;
+    const svgMarkup = buildDefaultTextLayerSvg(textContent);
+    const blob = new Blob([svgMarkup], { type: 'image/svg+xml' });
+    const objectURL = URL.createObjectURL(blob);
+    const laneIndex = activeTimelineItem && !isAudioTimelineItem(activeTimelineItem)
+        ? resolveLaneIndex(activeTimelineItem.dataset.laneIndex)
+        : 0;
+
+    let timelineItem = null;
+    try {
+        timelineItem = await addToTimeline(
+            { name: DEFAULT_TEXT_LAYER_NAME, type: 'image/svg+xml' },
+            objectURL,
+            {
+                displayName: DEFAULT_TEXT_LAYER_NAME,
+                layerType: 'text',
+                textContent,
+                textVariant: 'default',
+                laneIndex,
+            },
+        );
+    } catch (error) {
+        console.error('Failed to add Default Text layer to the timeline.', error);
+    } finally {
+        if (!timelineItem) {
+            URL.revokeObjectURL(objectURL);
+        }
+    }
+
+    return timelineItem;
+}
+
+async function handleDefaultTextTemplateActivation(event) {
+    if (!defaultTextTemplateCard) {
+        return;
+    }
+
+    if (event) {
+        if (event.type === 'keydown') {
+            const { key } = event;
+            if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') {
+                return;
+            }
+        }
+        event.preventDefault();
+    }
+
+    if (defaultTextTemplateCard.dataset.busy === '1') {
+        return;
+    }
+
+    defaultTextTemplateCard.dataset.busy = '1';
+    defaultTextTemplateCard.setAttribute('aria-pressed', 'true');
+
+    stopTimelinePlayback();
+
+    try {
+        const timelineItem = await createDefaultTextLayer();
+        if (timelineItem) {
+            scrollTimelineItemIntoView(timelineItem);
+        }
+    } finally {
+        defaultTextTemplateCard.setAttribute('aria-pressed', 'false');
+        delete defaultTextTemplateCard.dataset.busy;
+    }
+}
+
+if (defaultTextTemplateCard) {
+    defaultTextTemplateCard.addEventListener('click', handleDefaultTextTemplateActivation);
+    defaultTextTemplateCard.addEventListener('keydown', handleDefaultTextTemplateActivation);
 }
 
 uploadInput.addEventListener('change', async (event) => {
