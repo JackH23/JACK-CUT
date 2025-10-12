@@ -356,6 +356,8 @@
             layer.className = overlayType === 'text'
                 ? 'preview-overlay-layer preview-overlay-layer--text'
                 : 'preview-overlay-layer';
+            layer.dataset.overlayType = overlayType;
+            layer.dataset.overlayRole = overlayType === 'text' ? 'text-overlay' : 'media-overlay';
 
             entry = {
                 layer,
@@ -401,6 +403,8 @@
             entry.layer.className = overlayType === 'text'
                 ? 'preview-overlay-layer preview-overlay-layer--text'
                 : 'preview-overlay-layer';
+            entry.layer.dataset.overlayType = overlayType;
+            entry.layer.dataset.overlayRole = overlayType === 'text' ? 'text-overlay' : 'media-overlay';
         }
 
         const { layer } = entry;
