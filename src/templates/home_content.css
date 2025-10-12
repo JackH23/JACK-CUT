@@ -2120,14 +2120,17 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .preview-overlay-stack__group--text {
-    z-index: 120;
+    z-index: 180;
     pointer-events: none;
 }
 
 .preview-text-overlay {
     isolation: isolate;
-    contain: paint;
+    contain: layout paint style;
     mix-blend-mode: normal;
+    transform: translateZ(0);
+    will-change: contents;
+    filter: none;
 }
 
 .preview-text-overlay[hidden] {
@@ -2144,6 +2147,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .preview-overlay-layer--text {
     mix-blend-mode: normal;
+    filter: none;
+    isolation: isolate;
+    contain: layout paint;
+    transform: translateZ(0);
 }
 
 .preview-overlay-layer img {
@@ -2178,6 +2185,12 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     box-shadow:
         0 0 0 1px rgba(148, 163, 184, 0.25),
         0 14px 38px rgba(15, 23, 42, 0.45);
+    filter: none;
+    isolation: isolate;
+    contain: layout paint;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    backface-visibility: hidden;
 }
 
 .preview-image-layer {

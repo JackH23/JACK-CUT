@@ -386,6 +386,18 @@
             : 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
+        if (isText) {
+            layer.style.setProperty('mix-blend-mode', 'normal');
+            layer.style.setProperty('filter', 'none');
+            layer.style.setProperty('isolation', 'isolate');
+            layer.style.setProperty('contain', 'layout paint style');
+        } else {
+            layer.style.removeProperty('contain');
+            layer.style.removeProperty('isolation');
+            layer.style.removeProperty('mix-blend-mode');
+            layer.style.removeProperty('filter');
+        }
+
         if (borderRadius > 0 && !isText) {
             layer.style.borderRadius = `${borderRadius}px`;
         } else if (!isText) {
@@ -395,6 +407,15 @@
         if (isText) {
             const options = getTimelineItemTextOverlayOptions(overlayItem);
             applyTextOverlayOptionsToElement(entry.textElement, options);
+            if (entry.textElement) {
+                entry.textElement.style.filter = 'none';
+                entry.textElement.style.mixBlendMode = 'normal';
+                entry.textElement.style.setProperty('text-rendering', 'optimizeLegibility');
+                entry.textElement.style.setProperty('-webkit-font-smoothing', 'antialiased');
+                entry.textElement.style.setProperty('contain', 'layout paint');
+                entry.textElement.style.setProperty('will-change', 'transform');
+                entry.textElement.style.setProperty('isolation', 'isolate');
+            }
             entry.textContent = options?.content || '';
             layer.title = entry.textContent || 'Text overlay';
             entry.objectURL = '';
@@ -458,6 +479,22 @@
         }
     });
 
+    const snapTextOverlayFrame = (frame) => {
+        if (!frame) {
+            return null;
+        }
+
+        const snapped = {
+            left: Math.round(frame.left),
+            top: Math.round(frame.top),
+            width: Math.max(1, Math.round(frame.width)),
+            height: Math.max(1, Math.round(frame.height)),
+            rotation: Number.isFinite(frame.rotation) ? frame.rotation : 0,
+        };
+
+        return snapped;
+    };
+
     const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
         if (!container || !descriptor || !descriptor.item || !descriptor.shouldRender) {
             return false;
@@ -502,14 +539,20 @@
                 rotation: 0,
             };
 
+        const isTextOverlay = entry.contentKind === 'text';
+        const layoutFrame = isTextOverlay ? snapTextOverlayFrame(resolvedFrame) : resolvedFrame;
+        const activeFrame = layoutFrame || resolvedFrame;
+
         const groupName = getDescriptorLayerGroup(descriptor);
 
         if (frame) {
-            layer.style.left = `${frame.left}px`;
-            layer.style.top = `${frame.top}px`;
-            layer.style.width = `${frame.width}px`;
-            layer.style.height = `${frame.height}px`;
-            const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+            layer.style.left = `${activeFrame.left}px`;
+            layer.style.top = `${activeFrame.top}px`;
+            layer.style.width = `${activeFrame.width}px`;
+            layer.style.height = `${activeFrame.height}px`;
+            const rotationValue = Number.isFinite(activeFrame.rotation)
+                ? activeFrame.rotation
+                : 0;
             if (contentElement) {
                 contentElement.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
             }
@@ -540,11 +583,15 @@
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
 
-        entry.frame = resolvedFrame;
+        entry.frame = activeFrame;
         entry.isVisible = true;
         entry.layerGroup = groupName;
         entry.zIndex = targetZIndex;
-        entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
+        entry.borderRadius = entry.contentKind === 'text'
+            ? 0
+            : borderRadius > 0
+                ? borderRadius
+                : 0;
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
