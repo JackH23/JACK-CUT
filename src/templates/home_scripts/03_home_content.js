@@ -1505,9 +1505,25 @@ function getTimelinePlaybackSegments() {
             return detector(entry.item);
         };
 
-        const visualEntries = orderedEntries.filter((entry) => !isAudioEntry(entry));
+        const isTextEntry = (entry) => {
+            if (!entry?.item) {
+                return false;
+            }
+            const detector = (typeof isTextTimelineItem === 'function')
+                ? isTextTimelineItem
+                : ((item) => (item?.dataset?.fileType || '').startsWith('text/'));
+            return detector(entry.item);
+        };
 
-        const activeEntrySource = visualEntries.length ? visualEntries : orderedEntries;
+        const visualEntries = orderedEntries.filter(
+            (entry) => !isAudioEntry(entry) && !isTextEntry(entry),
+        );
+
+        const fallbackEntries = visualEntries.length
+            ? visualEntries
+            : orderedEntries.filter((entry) => !isAudioEntry(entry));
+
+        const activeEntrySource = fallbackEntries.length ? fallbackEntries : orderedEntries;
         const activeEntry = activeEntrySource
             .slice()
             .reverse()

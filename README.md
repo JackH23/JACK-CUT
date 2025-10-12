@@ -45,6 +45,17 @@ When you are ready to test against a real database, configure `MONGO_URL` (and o
 3. Install the project dependencies using `pip install -r requirements.txt`.
 4. Start the Flask application with `python src/main.py`.
 
+## Timeline text overlays
+
+The home timeline now supports lightweight text overlays that are composited above photo and video layers.
+
+- Click the blue **＋** icon in the template tray to create a default text layer. The layer inherits the active clip's start time and duration so it appears directly above the currently selected media track.
+- Text overlays are rendered only when their clip overlaps the current playhead position, keeping playback synchronized with underlying media.
+- Selecting a text overlay enables inline editing right on the preview canvas—double-click the text to update its contents while preserving the existing style, size, and position.
+- The export pipeline includes text overlays in generated frames so the rendered output matches the in-app preview.
+
+Future enhancements—such as richer typography controls or advanced line wrapping—can build on the helpers in `src/templates/home_scripts/06_home_content.js`.
+
 ## Password storage and migration
 
 User passwords are now stored using Werkzeug's PBKDF2 hashing. Any new sign-ups automatically persist hashes instead of plain-text credentials. Operators upgrading an existing deployment **must** migrate existing users before enabling the new release; otherwise, users with legacy plain-text passwords will no longer be able to authenticate.

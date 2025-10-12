@@ -454,6 +454,17 @@ const TIMELINE_AUTO_SCROLL_MIN_STEP = 4;
 const TIMELINE_AUTO_SCROLL_MAX_STEP = 24;
 const TIMELINE_SNAP_THRESHOLD_PX = 12;
 
+const DEFAULT_TEXT_LAYER_CONTENT = 'Add your caption';
+const DEFAULT_TEXT_LAYER_DURATION = 3000;
+const DEFAULT_TEXT_LAYER_TRANSFORM = {
+    left: 0.18,
+    top: 0.32,
+    width: 0.64,
+    height: 0.22,
+    rotation: 0,
+    aspectRatio: 0.64 / 0.22,
+};
+
 let playbackClockAnimationFrame = null;
 let playbackClockStartTimestamp = 0;
 let playbackClockBaseElapsed = 0;

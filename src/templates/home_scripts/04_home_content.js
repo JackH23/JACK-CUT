@@ -119,6 +119,9 @@ function getTimelineItemDurationKey(timelineItem) {
     if (fileType.startsWith('image/')) {
         return 'imageDuration';
     }
+    if (fileType.startsWith('text/')) {
+        return 'textDuration';
+    }
     if (fileType.startsWith('video/')) {
         return 'videoDuration';
     }

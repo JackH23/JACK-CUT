@@ -768,6 +768,10 @@ function clearPreviewOverlayLayers() {
         return;
     }
 
+    if (typeof finishActiveOverlayTextEditing === 'function') {
+        finishActiveOverlayTextEditing({ commit: true });
+    }
+
     activeOverlayLayers.forEach((entry) => {
         if (!entry) {
             return;
@@ -1075,11 +1079,13 @@ function computeOverlayDescriptorOpacity(descriptor) {
 }
 
 function computeOverlayEntryOpacity(entry) {
-    if (!entry || !entry.layer || !entry.image) {
+    if (!entry || !entry.layer) {
         return 1;
     }
 
-    if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
+    const contentElement = entry.image || entry.textElement || entry.layer;
+
+    if (entry.layer.hasAttribute('hidden') || contentElement.hidden) {
         return 0;
     }
 
@@ -1100,14 +1106,14 @@ function computeOverlayEntryOpacity(entry) {
         }
     }
 
-    const imageStyle = window.getComputedStyle(entry.image);
-    if (imageStyle) {
-        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
+    const contentStyle = window.getComputedStyle(contentElement);
+    if (contentStyle) {
+        if (contentStyle.display === 'none' || contentStyle.visibility === 'hidden') {
             return 0;
         }
-        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
-        if (Number.isFinite(parsedImageOpacity)) {
-            opacity *= clamp(parsedImageOpacity, 0, 1);
+        const parsedContentOpacity = Number.parseFloat(contentStyle.opacity);
+        if (Number.isFinite(parsedContentOpacity)) {
+            opacity *= clamp(parsedContentOpacity, 0, 1);
         }
     }
 
