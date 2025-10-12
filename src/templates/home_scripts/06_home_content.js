@@ -642,12 +642,14 @@
     );
     const hasTextLayers = Boolean(text && text.childElementCount);
 
-    if (hasStackLayers) {
-        previewOverlayStack.removeAttribute('hidden');
-        previewOverlayStack.setAttribute('aria-hidden', 'false');
-    } else {
-        previewOverlayStack.setAttribute('hidden', '');
-        previewOverlayStack.setAttribute('aria-hidden', 'true');
+    if (previewOverlayStack) {
+        if (hasStackLayers) {
+            previewOverlayStack.removeAttribute('hidden');
+            previewOverlayStack.setAttribute('aria-hidden', 'false');
+        } else {
+            previewOverlayStack.setAttribute('hidden', '');
+            previewOverlayStack.setAttribute('aria-hidden', 'true');
+        }
     }
 
     if (text) {
