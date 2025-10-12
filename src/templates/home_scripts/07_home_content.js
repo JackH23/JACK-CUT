@@ -2,11 +2,22 @@ const TEXT_OVERLAY_FILE_TYPE = 'text/overlay';
 const DEFAULT_TEXT_LAYER_NAME = 'Default Text';
 const DEFAULT_TEXT_LAYER_DURATION = 4000;
 const DEFAULT_TEXT_NORMALIZED_TRANSFORM = {
-    left: 0.18,
-    top: 0.72,
-    width: 0.64,
-    height: 0.18,
+    left: 0.2,
+    top: 0.375,
+    width: 0.6,
+    height: 0.25,
     rotation: 0,
+};
+
+const DEFAULT_TEXT_LAYER_STYLE = {
+    color: '#ffffff',
+    fontFamily: 'Inter, "Segoe UI", sans-serif',
+    fontSize: 48,
+    fontWeight: 600,
+    letterSpacing: 0,
+    lineHeight: 1.2,
+    textAlign: 'center',
+    textShadow: '0 2px 12px rgba(15, 23, 42, 0.35)',
 };
 
 function markLaneAsTextOverlay(lane) {
@@ -1839,6 +1850,7 @@ function createDefaultTextTimelineItem() {
     timelineItem.dataset.overlayText = DEFAULT_TEXT_LAYER_NAME;
     timelineItem.dataset.objectUrl = '';
     timelineItem.dataset.previewImageTransform = JSON.stringify(DEFAULT_TEXT_NORMALIZED_TRANSFORM);
+    timelineItem.dataset.overlayStyle = JSON.stringify(DEFAULT_TEXT_LAYER_STYLE);
 
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';

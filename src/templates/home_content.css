@@ -2141,7 +2141,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12px;
+    padding: 0;
     pointer-events: auto;
     isolation: isolate;
     contain: layout paint;
@@ -2152,23 +2152,24 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 14px 24px;
-    border-radius: 18px;
-    background: rgba(15, 23, 42, 0.78);
-    color: rgba(248, 250, 252, 0.98);
-    font-size: clamp(1.05rem, 1.6vw, 1.5rem);
+    padding: 0;
+    background: transparent;
+    color: #ffffff;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-size: 48px;
     font-weight: 600;
     letter-spacing: 0.015em;
+    line-height: 1.2;
     text-align: center;
-    text-shadow: 0 6px 20px rgba(15, 23, 42, 0.55);
+    text-shadow: 0 2px 12px rgba(15, 23, 42, 0.35);
     pointer-events: none;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.45);
     transform: rotate(var(--preview-overlay-rotation, 0deg));
+    white-space: pre-wrap;
 }
 
 .preview-overlay-text__content {
     pointer-events: none;
-    white-space: pre-wrap;
+    white-space: inherit;
 }
 
 .preview-image-layer {
