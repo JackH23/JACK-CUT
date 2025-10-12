@@ -140,6 +140,7 @@
                 </div>
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
                     <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
+                    <button type="button" class="settings-tab" id="settings-tab-text" role="tab" aria-selected="false" aria-controls="settings-text" data-section="text">Text</button>
                     <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
@@ -186,6 +187,15 @@
                                     <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
                                     <div class="slider-readout" id="image-rotation-value">0°</div>
                                 </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-text" data-section="text" role="tabpanel" aria-labelledby="settings-tab-text" hidden>
+                        <div class="text-template-card" role="button" tabindex="0" aria-pressed="false">
+                            <span class="text-template-card__icon" aria-hidden="true">＋</span>
+                            <div class="text-template-card__body">
+                                <h3 class="text-template-card__title">(Default Text)</h3>
+                                <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
                             </div>
                         </div>
                     </section>
