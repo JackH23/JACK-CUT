@@ -764,10 +764,6 @@ function setPreviewImageVisibility(isVisible) {
 }
 
 function clearPreviewOverlayLayers() {
-    if (!previewOverlayStack) {
-        return;
-    }
-
     activeOverlayLayers.forEach((entry) => {
         if (!entry) {
             return;
@@ -796,15 +792,14 @@ function clearPreviewOverlayLayers() {
         }
         if (text) {
             text.textContent = '';
+            text.setAttribute('hidden', '');
+            text.setAttribute('aria-hidden', 'true');
         }
     }
 
-    previewOverlayStack.setAttribute('hidden', '');
-    previewOverlayStack.setAttribute('aria-hidden', 'true');
-
-    if (previewOverlayGroups?.text) {
-        previewOverlayGroups.text.setAttribute('hidden', '');
-        previewOverlayGroups.text.setAttribute('aria-hidden', 'true');
+    if (previewOverlayStack) {
+        previewOverlayStack.setAttribute('hidden', '');
+        previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
 
     lastOverlayRenderTimestamp = null;
@@ -1132,7 +1127,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
 
-    if (!previewOverlayStack || !previewOverlayGroups) {
+    if (!previewOverlayGroups) {
         return;
     }
 
