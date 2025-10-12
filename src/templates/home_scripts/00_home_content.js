@@ -21,11 +21,14 @@ const timelineImagePreloadCache = new Map();
 const stagedUploadsByObjectUrl = new Map();
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');
-const previewOverlayGroups = previewOverlayStack
+const previewTextOverlay = document.getElementById('preview-text-overlay');
+const previewOverlayGroups = (previewOverlayStack || previewTextOverlay)
     ? {
-        below: previewOverlayStack.querySelector('[data-layer-group="below"]'),
-        above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
-        text: previewOverlayStack.querySelector('[data-layer-group="text"]'),
+        below: previewOverlayStack?.querySelector('[data-layer-group="below"]') ?? null,
+        above: previewOverlayStack?.querySelector('[data-layer-group="above"]') ?? null,
+        text: previewTextOverlay
+            || previewOverlayStack?.querySelector('[data-layer-group="text"]')
+            || null,
     }
     : null;
 const activeOverlayLayers = new Map();

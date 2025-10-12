@@ -636,18 +636,28 @@
         activeOverlayLayers.delete(item);
     });
 
-    const hasLayers = Boolean(
+    const hasStackLayers = Boolean(
         (below && below.childElementCount)
-        || (above && above.childElementCount)
-        || (text && text.childElementCount),
+        || (above && above.childElementCount),
     );
+    const hasTextLayers = Boolean(text && text.childElementCount);
 
-    if (hasLayers) {
+    if (hasStackLayers) {
         previewOverlayStack.removeAttribute('hidden');
         previewOverlayStack.setAttribute('aria-hidden', 'false');
     } else {
         previewOverlayStack.setAttribute('hidden', '');
         previewOverlayStack.setAttribute('aria-hidden', 'true');
+    }
+
+    if (text) {
+        if (hasTextLayers) {
+            text.removeAttribute('hidden');
+            text.setAttribute('aria-hidden', 'false');
+        } else {
+            text.setAttribute('hidden', '');
+            text.setAttribute('aria-hidden', 'true');
+        }
     }
 
     lastOverlayRenderTimestamp = safeTimelineNow;
@@ -947,6 +957,10 @@ if (previewImageFrame) {
 
 if (previewOverlayStack) {
     previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
+}
+
+if (previewOverlayGroups?.text && previewOverlayGroups.text !== previewOverlayStack) {
+    previewOverlayGroups.text.addEventListener('pointerdown', onPreviewOverlayPointerDown);
 }
 
 if (window && typeof window.addEventListener === 'function') {
