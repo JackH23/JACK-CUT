@@ -2114,12 +2114,24 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 60;
 }
 
+.preview-overlay-stack__group--text {
+    z-index: 120;
+}
+
 .preview-overlay-layer {
     position: absolute;
     display: block;
     overflow: hidden;
     pointer-events: auto;
     cursor: pointer;
+}
+
+.preview-overlay-layer--text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inset: 0;
+    pointer-events: auto;
 }
 
 .preview-overlay-layer img {
@@ -2130,6 +2142,18 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: block;
     transform: rotate(var(--preview-overlay-rotation, 0deg));
     pointer-events: none;
+}
+
+.preview-overlay-text {
+    pointer-events: none;
+    color: #f8fafc;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-align: center;
+    padding: 0.5rem 0.75rem;
+    font-size: clamp(1.5rem, 4vw, 3.25rem);
+    text-shadow: 0 8px 24px rgba(15, 23, 42, 0.55);
+    line-height: 1.2;
 }
 
 .preview-image-layer {
@@ -2484,6 +2508,22 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     padding-bottom: 28px;
 }
 
+.timeline-lane--text {
+    background: rgba(30, 64, 175, 0.18);
+    border-color: rgba(129, 140, 248, 0.4);
+}
+
+.timeline-lane--text::before {
+    content: 'Text';
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(191, 219, 254, 0.7);
+}
+
 .timeline-lane--audio::before {
     content: 'Audio';
     position: absolute;
@@ -2669,6 +2709,18 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     padding: 14px 12px 16px;
     background: linear-gradient(180deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.92) 100%);
     border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.timeline-item--text {
+    background: linear-gradient(180deg, rgba(30, 64, 175, 0.75) 0%, rgba(14, 116, 144, 0.78) 100%);
+    border: 1px solid rgba(129, 140, 248, 0.45);
+    color: #e0f2fe;
+}
+
+.timeline-item--text span {
+    font-size: 0.85rem;
+    text-align: center;
+    color: inherit;
 }
 
 .timeline-item--audio .timeline-item-remove {

@@ -1180,7 +1180,8 @@ function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
         ? lane
         : getTimelineLanes()[resolvedIndex] || null;
 
-    if (laneElement?.classList?.contains('timeline-lane--audio')) {
+    if (laneElement?.classList?.contains('timeline-lane--audio')
+        || laneElement?.classList?.contains('timeline-lane--text')) {
         return false;
     }
 
@@ -1411,7 +1412,7 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     applyTimelineItemDurationStyles(timelineItem, applied);
     updateTimelineItemDurationBadge(timelineItem, applied);
 
-    if (!skipAnimationSync) {
+    if (!skipAnimationSync && isImageTimelineItem(timelineItem)) {
         synchronizeImageAnimationDurations(timelineItem, {
             source: 'clip',
             durationKey,
