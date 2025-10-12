@@ -533,6 +533,7 @@ let timelineProgressAnimationDurationMs = 0;
 let timelineProgressAnimationStartFraction = 0;
 let timelineProgressAnimationEndFraction = 0;
 let timelineProgressCurrentFraction = 0;
+let textClipCount = 0;
 
 function cancelTimelineProgressAnimation() {
     if (timelineProgressAnimationFrame !== null) {
@@ -1714,7 +1715,30 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
-async function addToTimeline(file, objectURL) {
+function escapeSvgTextContent(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function buildTextLayerSvg(text) {
+    const safeText = escapeSvgTextContent(text || 'Text Layer');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <defs>
+        <linearGradient id="textLayerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.6" />
+            <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.65" />
+        </linearGradient>
+    </defs>
+    <rect width="1920" height="1080" fill="#0f172a" fill-opacity="0.82" />
+    <rect x="96" y="96" width="1728" height="888" rx="64" fill="url(#textLayerGradient)" fill-opacity="0.22" />
+    <text x="50%" y="50%" fill="#f8fafc" font-size="200" font-weight="600" text-anchor="middle" dominant-baseline="middle" font-family="Inter, 'Segoe UI', sans-serif">${safeText}</text>
+</svg>`;
+}
+
+async function addToTimeline(file, objectURL, options = {}) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
@@ -1724,12 +1748,23 @@ async function addToTimeline(file, objectURL) {
     timelineItem.className = 'timeline-item';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
-    timelineItem.dataset.fileType = file.type;
+    const clipKind = options.clipKind || options.kind || 'media';
+    const displayName = options.displayName || file.name || 'Untitled clip';
+    const fileType = options.fileType || file?.type || '';
+    timelineItem.dataset.fileType = fileType;
     timelineItem.dataset.objectUrl = objectURL;
-    timelineItem.dataset.displayName = file.name;
+    timelineItem.dataset.displayName = displayName;
+    timelineItem.dataset.clipKind = clipKind;
+    if (clipKind === 'text') {
+        timelineItem.dataset.textContent = options.textContent || displayName;
+        timelineItem.classList.add('timeline-item--text');
+    }
 
     const label = document.createElement('span');
-    label.textContent = file.name;
+    label.textContent = displayName;
+    if (clipKind === 'text') {
+        label.classList.add('timeline-text-label');
+    }
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
@@ -1737,7 +1772,7 @@ async function addToTimeline(file, objectURL) {
     removeButton.setAttribute('aria-label', 'Remove clip');
     removeButton.textContent = '✕';
 
-    if (file.type.startsWith('video/')) {
+    if (fileType.startsWith('video/')) {
         const videoThumb = document.createElement('video');
         videoThumb.src = objectURL;
         videoThumb.muted = true;
@@ -1773,22 +1808,28 @@ async function addToTimeline(file, objectURL) {
             }
         });
         timelineItem.appendChild(videoThumb);
-    } else if (file.type.startsWith('image/')) {
+    } else if (fileType.startsWith('image/')) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
+        if (clipKind === 'text') {
+            imageThumb.classList.add('timeline-thumbnail--text');
+        }
         imageThumb.src = await generateImageThumbnail(objectURL);
-        imageThumb.alt = file.name;
+        imageThumb.alt = displayName;
         timelineItem.appendChild(imageThumb);
+        const baseImageDuration = clipKind === 'text'
+            ? TEXT_CLIP_DEFAULT_DURATION
+            : IMAGE_FRAME_DURATION;
         setTimelineItemDuration(
             timelineItem,
             'imageDuration',
-            IMAGE_FRAME_DURATION,
+            baseImageDuration,
             { markCustom: false },
         );
         preloadTimelineImage(objectURL).catch((error) => {
             console.warn('Failed to warm timeline image for playback.', error);
         });
-    } else if (file.type.startsWith('audio/')) {
+    } else if (fileType.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
         const waveformContainer = document.createElement('div');
         waveformContainer.className = 'timeline-waveform';
@@ -1811,7 +1852,7 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
-    if (file.type.startsWith('audio/')) {
+    if (fileType.startsWith('audio/')) {
         const audioLane = ensureAudioTimelineLane();
         targetLane = audioLane || targetLane;
     }
@@ -1955,6 +1996,37 @@ uploadInput.addEventListener('change', async (event) => {
 
 if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
+}
+
+if (addTextButton) {
+    addTextButton.addEventListener('click', async () => {
+        const nextIndex = textClipCount + 1;
+        const defaultText = `Text Layer ${nextIndex}`;
+        const svgMarkup = buildTextLayerSvg(defaultText);
+        const fileName = `text-layer-${String(nextIndex).padStart(2, '0')}.svg`;
+
+        let textFile;
+        try {
+            textFile = new File([svgMarkup], fileName, { type: 'image/svg+xml' });
+        } catch (error) {
+            const fallbackBlob = new Blob([svgMarkup], { type: 'image/svg+xml' });
+            fallbackBlob.name = fileName;
+            textFile = fallbackBlob;
+        }
+
+        const objectURL = URL.createObjectURL(textFile);
+        try {
+            await addToTimeline(textFile, objectURL, {
+                clipKind: 'text',
+                displayName: defaultText,
+                textContent: defaultText,
+            });
+            textClipCount += 1;
+        } catch (error) {
+            console.error('Unable to add text layer to the timeline.', error);
+            URL.revokeObjectURL(objectURL);
+        }
+    });
 }
 
 async function playTimelineItem(

@@ -125,6 +125,7 @@ const cancelExportButton = document.getElementById('cancel-export-button');
 const addKeyframeButton = document.getElementById('add-keyframe-button');
 const keyframeTrack = document.getElementById('keyframe-track');
 const keyframeStatus = document.getElementById('keyframe-status');
+const addTextButton = document.getElementById('add-text-button');
 const animationDirectionSelect = document.getElementById('animation-direction');
 const animationModeContainers = animationDirectionSelect
     ? Array.from(document.querySelectorAll('[data-animation-mode]'))
@@ -188,6 +189,7 @@ const optionSliderConfigs = [
 ];
 
 const IMAGE_FRAME_DURATION = 1000;
+const TEXT_CLIP_DEFAULT_DURATION = 3000;
 
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
 const DEFAULT_CANVAS_BLUR = 18;

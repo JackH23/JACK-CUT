@@ -372,7 +372,10 @@ function formatSecondsLabel(durationMs) {
     return `${seconds.toFixed(1)}s`;
 }
 
-function describeFileType(fileType) {
+function describeFileType(fileType, clipKind = '') {
+    if (clipKind === 'text') {
+        return 'Text layer';
+    }
     if (typeof fileType !== 'string' || !fileType.length) {
         return 'Media clip';
     }
@@ -380,10 +383,13 @@ function describeFileType(fileType) {
         return 'Video clip';
     }
     if (fileType.startsWith('image/')) {
-        return 'Image frame';
+        return clipKind === 'text' ? 'Text layer' : 'Image frame';
     }
     if (fileType.startsWith('audio/')) {
         return 'Audio track';
+    }
+    if (fileType.startsWith('text/')) {
+        return 'Text layer';
     }
     return 'Media clip';
 }
@@ -473,7 +479,7 @@ function renderExportSummary(timelineItems, playbackCompleted = null) {
                 const clipMeta = document.createElement('span');
                 clipMeta.className = 'export-timeline-clip-meta';
                 const duration = getTimelineItemPlaybackDuration(timelineItem);
-                clipMeta.textContent = `${describeFileType(timelineItem.dataset.fileType || '')} • ${formatTime(duration)} (${formatSecondsLabel(duration)})`;
+                clipMeta.textContent = `${describeFileType(timelineItem.dataset.fileType || '', timelineItem.dataset.clipKind || '')} • ${formatTime(duration)} (${formatSecondsLabel(duration)})`;
 
                 listItem.appendChild(clipName);
                 listItem.appendChild(clipMeta);

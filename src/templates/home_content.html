@@ -140,6 +140,7 @@
                 </div>
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
                     <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
+                    <button type="button" class="settings-tab" id="settings-tab-text" role="tab" aria-selected="false" aria-controls="settings-text" data-section="text">Text</button>
                     <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
@@ -185,6 +186,21 @@
                                     <label for="image-rotation">Image rotation</label>
                                     <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
                                     <div class="slider-readout" id="image-rotation-value">0°</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-text" data-section="text" role="tabpanel" aria-labelledby="settings-tab-text" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🔤</div>
+                                <div class="info-item__body">
+                                    <div class="info-item__header">
+                                        <span class="info-item__title">Add text overlay</span>
+                                    </div>
+                                    <p class="info-item__description">Drop a ready-to-edit text clip onto the main timeline for quick titles or captions.</p>
+                                    <button type="button" class="text-add-button" id="add-text-button">Start Text</button>
+                                    <p class="info-item__description text-add-hint">A default text layer appears at the playhead — customize it in the preview.</p>
                                 </div>
                             </div>
                         </div>
