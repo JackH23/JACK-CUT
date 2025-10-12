@@ -2121,6 +2121,17 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .preview-overlay-stack__group--text {
     z-index: 120;
+    pointer-events: none;
+}
+
+.preview-text-overlay {
+    isolation: isolate;
+    contain: paint;
+    mix-blend-mode: normal;
+}
+
+.preview-text-overlay[hidden] {
+    display: none;
 }
 
 .preview-overlay-layer {

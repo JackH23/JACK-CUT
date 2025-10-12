@@ -802,6 +802,11 @@ function clearPreviewOverlayLayers() {
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
 
+    if (previewOverlayGroups?.text) {
+        previewOverlayGroups.text.setAttribute('hidden', '');
+        previewOverlayGroups.text.setAttribute('aria-hidden', 'true');
+    }
+
     lastOverlayRenderTimestamp = null;
 }
 
