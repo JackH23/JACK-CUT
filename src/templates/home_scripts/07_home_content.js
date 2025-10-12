@@ -9,6 +9,95 @@ const DEFAULT_TEXT_NORMALIZED_TRANSFORM = {
     rotation: 0,
 };
 
+function markLaneAsTextOverlay(lane) {
+    if (!lane) {
+        return;
+    }
+
+    lane.dataset.overlayLane = 'text';
+    lane.classList.add('timeline-lane--text');
+    lane.setAttribute('data-stack-role', 'text-overlays');
+    if (!lane.hasAttribute('role')) {
+        lane.setAttribute('role', 'list');
+    }
+    if (!lane.hasAttribute('aria-label')) {
+        lane.setAttribute('aria-label', 'Text overlays lane');
+    }
+}
+
+function clearLaneOverlayMetadata(lane) {
+    if (!lane) {
+        return;
+    }
+
+    lane.removeAttribute('data-overlay-lane');
+    lane.classList.remove('timeline-lane--text');
+    if (lane.getAttribute('data-stack-role') === 'text-overlays') {
+        lane.removeAttribute('data-stack-role');
+    }
+    if (lane.getAttribute('aria-label') === 'Text overlays lane') {
+        lane.removeAttribute('aria-label');
+    }
+}
+
+function syncLaneOverlayMetadata(lane) {
+    if (!lane) {
+        return false;
+    }
+
+    const hasForeignItems = lane.querySelector('.timeline-item:not([data-file-type="text/overlay"])');
+    if (hasForeignItems) {
+        clearLaneOverlayMetadata(lane);
+        return false;
+    }
+
+    const hasTextItems = lane.querySelector('.timeline-item[data-file-type="text/overlay"]');
+    if (hasTextItems || lane.dataset.overlayLane === 'text') {
+        markLaneAsTextOverlay(lane);
+        return true;
+    }
+
+    clearLaneOverlayMetadata(lane);
+    return false;
+}
+
+function ensureTextOverlayLane(activeVisualItem) {
+    const lanes = getTimelineLanes();
+
+    if (!lanes.length) {
+        const lane = ensureTimelineLane(0);
+        if (lane) {
+            markLaneAsTextOverlay(lane);
+        }
+        return lane;
+    }
+
+    lanes.forEach((lane) => {
+        syncLaneOverlayMetadata(lane);
+    });
+
+    const activeLaneIndex = activeVisualItem
+        ? resolveLaneIndex(activeVisualItem.dataset.laneIndex)
+        : 0;
+
+    for (let index = Math.max(0, activeLaneIndex - 1); index >= 0; index -= 1) {
+        const lane = lanes[index];
+        if (!lane) {
+            continue;
+        }
+        if (syncLaneOverlayMetadata(lane)) {
+            return lane;
+        }
+    }
+
+    const insertionIndex = Math.max(0, activeLaneIndex);
+    const insertedLane = insertTimelineLaneAt(insertionIndex) || ensureTimelineLane(insertionIndex);
+    if (insertedLane) {
+        markLaneAsTextOverlay(insertedLane);
+    }
+    return insertedLane || null;
+}
+
 function updateKeyframeControlsState() {
     if (addKeyframeButton) {
         addKeyframeButton.disabled = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
@@ -1727,47 +1816,17 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
 function createDefaultTextTimelineItem() {
     stopTimelinePlayback();
 
-    const lanes = getTimelineLanes();
     const activeVisualItem = (isVideoTimelineItem(activeTimelineItem) || isImageTimelineItem(activeTimelineItem))
         ? activeTimelineItem
         : null;
 
-    let targetLane = null;
-    if (activeVisualItem) {
-        const activeLaneIndex = resolveLaneIndex(activeVisualItem.dataset.laneIndex);
-        if (activeLaneIndex > 0 && lanes.length) {
-            const candidateIndex = Math.max(0, activeLaneIndex - 1);
-            const candidateLane = lanes[candidateIndex] || null;
-            if (candidateLane) {
-                const candidateLaneIndex = resolveLaneIndex(candidateLane.dataset.laneIndex);
-                const candidateHasForeignItems = candidateLane.querySelector(
-                    '.timeline-item:not([data-file-type="text/overlay"])',
-                );
-                if (candidateLaneIndex < activeLaneIndex && !candidateHasForeignItems) {
-                    targetLane = candidateLane;
-                }
-            }
-        }
-        if (!targetLane) {
-            targetLane = insertTimelineLaneAt(Math.max(0, activeLaneIndex));
-        }
-    } else if (lanes.length) {
-        const firstLane = lanes[0] || null;
-        if (firstLane) {
-            const firstHasForeignItems = firstLane.querySelector(
-                '.timeline-item:not([data-file-type="text/overlay"])',
-            );
-            if (!firstHasForeignItems) {
-                targetLane = firstLane;
-            }
-        }
-        if (!targetLane) {
-            targetLane = insertTimelineLaneAt(0);
-        }
-    }
+    let targetLane = ensureTextOverlayLane(activeVisualItem);
 
     if (!targetLane) {
         targetLane = ensureTimelineLane(0);
+        if (targetLane) {
+            markLaneAsTextOverlay(targetLane);
+        }
     }
 
     const timelineItem = document.createElement('div');
@@ -1784,10 +1843,21 @@ function createDefaultTextTimelineItem() {
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
         targetLane.appendChild(timelineItem);
+        markLaneAsTextOverlay(targetLane);
     } else {
-        timelineItem.dataset.laneIndex = '0';
-        timelineTrack.appendChild(timelineItem);
+        const fallbackLane = ensureTimelineLane(0);
+        if (fallbackLane) {
+            timelineItem.dataset.laneIndex = fallbackLane.dataset.laneIndex || '0';
+            fallbackLane.appendChild(timelineItem);
+            markLaneAsTextOverlay(fallbackLane);
+            syncLaneOverlayMetadata(fallbackLane);
+        } else {
+            timelineItem.dataset.laneIndex = '0';
+            timelineTrack.appendChild(timelineItem);
+        }
     }
+
+    syncLaneOverlayMetadata(targetLane);
 
     setTimelineItemDuration(timelineItem, 'imageDuration', DEFAULT_TEXT_LAYER_DURATION, { markCustom: false });
 
