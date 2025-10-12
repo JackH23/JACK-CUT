@@ -85,6 +85,186 @@
         return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
     };
 
+    const parseTextShadow = (shadowValue) => {
+        if (typeof shadowValue !== 'string' || !shadowValue.length || shadowValue === 'none') {
+            return null;
+        }
+
+        const numericMatches = shadowValue.match(/-?\d+(?:\.\d+)?px/g) || [];
+        const [offsetXRaw, offsetYRaw, blurRaw] = numericMatches;
+
+        const offsetX = Number.parseFloat(offsetXRaw || '0');
+        const offsetY = Number.parseFloat(offsetYRaw || '0');
+        const blur = Number.parseFloat(blurRaw || '0');
+
+        const color = shadowValue.replace(/-?\d+(?:\.\d+)?px/g, '').trim() || 'rgba(0, 0, 0, 0.35)';
+
+        return {
+            offsetX: Number.isFinite(offsetX) ? offsetX : 0,
+            offsetY: Number.isFinite(offsetY) ? offsetY : 0,
+            blur: Number.isFinite(blur) ? blur : 0,
+            color,
+        };
+    };
+
+    const renderTextOverlayCanvas = (entry, viewportWidth, viewportHeight) => {
+        if (!entry || !entry.textCanvas || viewportWidth <= 0 || viewportHeight <= 0) {
+            return;
+        }
+
+        const canvas = entry.textCanvas;
+        const context = entry.textCanvasContext || canvas.getContext('2d');
+        if (!context) {
+            return;
+        }
+
+        const devicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+        const cssWidth = Math.max(1, Math.round(viewportWidth));
+        const cssHeight = Math.max(1, Math.round(viewportHeight));
+        const targetWidth = Math.max(1, Math.round(cssWidth * devicePixelRatio));
+        const targetHeight = Math.max(1, Math.round(cssHeight * devicePixelRatio));
+
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            entry.textCanvasSignature = null;
+        }
+
+        if (canvas.style.width !== `${cssWidth}px`) {
+            canvas.style.width = `${cssWidth}px`;
+        }
+        if (canvas.style.height !== `${cssHeight}px`) {
+            canvas.style.height = `${cssHeight}px`;
+        }
+
+        const textElement = entry.textElement;
+        const rawContent = textElement ? (textElement.textContent || '') : '';
+        const normalizedContent = rawContent.replace(/\r\n?/g, '\n');
+        const trimmedContent = normalizedContent.trim();
+        const hasContent = trimmedContent.length > 0;
+
+        const style = (textElement && window.getComputedStyle)
+            ? window.getComputedStyle(textElement)
+            : null;
+
+        const fallbackFontFamily = 'Inter, "Segoe UI", sans-serif';
+        const fallbackFontSize = Math.max(24, cssHeight / 6);
+        const computedFont = style && style.font && style.font !== 'normal'
+            ? style.font
+            : null;
+        const fontWeight = style?.fontWeight || '600';
+        const fontStyle = style?.fontStyle && style.fontStyle !== 'normal'
+            ? `${style.fontStyle} `
+            : '';
+        const fontSize = Number.parseFloat(style?.fontSize || '');
+        const resolvedFontSize = Number.isFinite(fontSize) ? fontSize : fallbackFontSize;
+        const fontFamily = style?.fontFamily || fallbackFontFamily;
+        const font = computedFont
+            || `${fontStyle}${fontWeight} ${resolvedFontSize}px ${fontFamily}`;
+
+        const textAlign = style?.textAlign || 'center';
+        const fillStyle = style?.color || '#f8fafc';
+        const letterSpacing = style?.letterSpacing || '';
+        const lineHeightRaw = style?.lineHeight || '';
+        let lineHeight = Number.parseFloat(lineHeightRaw);
+        if (!Number.isFinite(lineHeight)) {
+            lineHeight = resolvedFontSize * 1.2;
+        }
+
+        const paddingLeft = Number.parseFloat(style?.paddingLeft || '0') || 0;
+        const paddingRight = Number.parseFloat(style?.paddingRight || '0') || 0;
+        const paddingTop = Number.parseFloat(style?.paddingTop || '0') || 0;
+        const paddingBottom = Number.parseFloat(style?.paddingBottom || '0') || 0;
+        const availableWidth = Math.max(cssWidth - (paddingLeft + paddingRight), 0);
+        const availableHeight = Math.max(cssHeight - (paddingTop + paddingBottom), 0);
+        const textShadow = style?.textShadow || 'none';
+
+        const signature = [
+            normalizedContent,
+            cssWidth,
+            cssHeight,
+            font,
+            fillStyle,
+            textAlign,
+            lineHeight,
+            paddingLeft,
+            paddingRight,
+            paddingTop,
+            paddingBottom,
+            letterSpacing,
+            textShadow,
+            devicePixelRatio,
+        ].join('|');
+
+        if (entry.textCanvasSignature === signature) {
+            return;
+        }
+
+        entry.textCanvasSignature = signature;
+
+        context.save();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!hasContent) {
+            context.restore();
+            return;
+        }
+
+        context.scale(devicePixelRatio, devicePixelRatio);
+        context.imageSmoothingEnabled = true;
+        if (typeof context.imageSmoothingQuality === 'string') {
+            context.imageSmoothingQuality = 'high';
+        }
+        if (typeof context.fontKerning === 'string') {
+            context.fontKerning = 'normal';
+        }
+
+        context.font = font;
+        context.fillStyle = fillStyle;
+        context.textAlign = textAlign;
+        context.textBaseline = 'middle';
+
+        if (typeof context.letterSpacing === 'string' && letterSpacing) {
+            context.letterSpacing = letterSpacing;
+        }
+
+        const parsedShadow = parseTextShadow(textShadow);
+        if (parsedShadow) {
+            context.shadowColor = parsedShadow.color;
+            context.shadowBlur = parsedShadow.blur;
+            context.shadowOffsetX = parsedShadow.offsetX;
+            context.shadowOffsetY = parsedShadow.offsetY;
+        } else {
+            context.shadowColor = 'transparent';
+            context.shadowBlur = 0;
+            context.shadowOffsetX = 0;
+            context.shadowOffsetY = 0;
+        }
+
+        const lines = normalizedContent.split('\n');
+        const effectiveLineCount = lines.length || 1;
+        const totalHeight = lineHeight * Math.max(effectiveLineCount - 1, 0);
+        const centerX = (() => {
+            if (textAlign === 'left' || textAlign === 'start') {
+                return paddingLeft;
+            }
+            if (textAlign === 'right' || textAlign === 'end') {
+                return cssWidth - paddingRight;
+            }
+            return paddingLeft + (availableWidth / 2);
+        })();
+
+        const baseY = paddingTop + (availableHeight / 2) - (totalHeight / 2);
+
+        lines.forEach((line, index) => {
+            const drawY = baseY + (index * lineHeight);
+            context.fillText(line, centerX, drawY);
+        });
+
+        context.restore();
+    };
+
     const getDescriptorLayerGroup = (descriptor) => {
         if (!descriptor) {
             return 'above';
@@ -331,14 +511,35 @@
             if (!entry || !entry.layer || entry.type !== 'text') {
                 const layer = document.createElement('div');
                 layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+                const textCanvas = document.createElement('canvas');
+                textCanvas.className = 'preview-overlay-text-canvas';
+                textCanvas.setAttribute('aria-hidden', 'true');
+                textCanvas.style.pointerEvents = 'none';
                 const textElement = document.createElement('div');
-                textElement.className = 'preview-overlay-text';
+                textElement.className = 'preview-overlay-text preview-overlay-text--measure';
+                textElement.setAttribute('aria-hidden', 'true');
+                textElement.style.position = 'absolute';
+                textElement.style.left = '-9999px';
+                textElement.style.top = '-9999px';
+                textElement.style.pointerEvents = 'none';
+                textElement.style.userSelect = 'none';
+                textElement.style.whiteSpace = 'pre-wrap';
+                layer.appendChild(textCanvas);
                 layer.appendChild(textElement);
+                let textCanvasContext = null;
+                try {
+                    textCanvasContext = textCanvas.getContext('2d', { alpha: true, desynchronized: true });
+                } catch (error) {
+                    textCanvasContext = textCanvas.getContext('2d');
+                }
                 entry = {
                     type: 'text',
                     layer,
-                    image: textElement,
+                    image: textCanvas,
                     textElement,
+                    textCanvas,
+                    textCanvasContext,
+                    textCanvasSignature: null,
                     objectURL: '',
                     frame: null,
                     isVisible: false,
@@ -351,7 +552,7 @@
                 activeOverlayLayers.set(timelineItem, entry);
             }
 
-            const { layer, textElement } = entry;
+            const { layer, textElement, textCanvas } = entry;
             layer.className = 'preview-overlay-layer preview-overlay-layer--text';
             layer.dataset.laneIndex = String(descriptor.laneIndex);
             if (textElement) {
@@ -360,6 +561,9 @@
                     || timelineItem.querySelector('span')?.textContent
                     || 'Default Text';
                 textElement.textContent = content;
+            }
+            if (textCanvas) {
+                textCanvas.hidden = false;
             }
             layer.title = timelineItem.dataset.displayName || 'Text overlay';
             return entry;
@@ -435,6 +639,15 @@
         entry.frame = null;
         entry.lastTimelineTime = null;
 
+        if (entry.textCanvas) {
+            const context = entry.textCanvasContext || entry.textCanvas.getContext('2d');
+            if (context) {
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.clearRect(0, 0, entry.textCanvas.width, entry.textCanvas.height);
+            }
+            entry.textCanvasSignature = null;
+        }
+
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
@@ -490,12 +703,13 @@
             layer.style.height = `${viewportHeight}px`;
             layer.style.removeProperty('--preview-overlay-rotation');
             layer.style.removeProperty('border-radius');
+            let textContent = 'Default Text';
             if (entry.textElement) {
-                const content = descriptor.item.dataset.textContent
+                textContent = descriptor.item.dataset.textContent
                     || descriptor.item.dataset.displayName
                     || descriptor.item.querySelector('span')?.textContent
                     || 'Default Text';
-                entry.textElement.textContent = content;
+                entry.textElement.textContent = textContent;
             }
 
             if (layer.parentElement !== container) {
@@ -509,6 +723,8 @@
             const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
             const clampedOpacity = clamp(descriptorOpacity, 0, 1);
             layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+
+            renderTextOverlayCanvas(entry, viewportWidth, viewportHeight);
 
             entry.frame = {
                 left: 0,
