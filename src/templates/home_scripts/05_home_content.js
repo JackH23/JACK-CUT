@@ -779,6 +779,14 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        if (entry.textCanvas) {
+            const context = entry.textCanvasContext || entry.textCanvas.getContext('2d');
+            if (context) {
+                context.setTransform(1, 0, 0, 1, 0, 0);
+                context.clearRect(0, 0, entry.textCanvas.width, entry.textCanvas.height);
+            }
+            entry.textCanvasSignature = null;
+        }
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
