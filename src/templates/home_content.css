@@ -836,6 +836,98 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     gap: 14px;
 }
 
+.text-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.text-preset {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 16px;
+    background: rgba(17, 24, 39, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+    cursor: grab;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.text-preset:hover {
+    border-color: rgba(124, 58, 237, 0.55);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.45);
+    transform: translateY(-2px);
+}
+
+.text-preset:active {
+    cursor: grabbing;
+    transform: scale(0.98);
+}
+
+.text-preset:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.6);
+    outline-offset: 3px;
+}
+
+.text-preset.is-dragging {
+    opacity: 0.75;
+    transform: scale(0.97);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.5);
+}
+
+.text-preset--drag-preview {
+    opacity: 0.85;
+    pointer-events: none;
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+    transform: none !important;
+    z-index: 9999;
+}
+
+.text-preset__preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 18px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(124, 58, 237, 0.16));
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.14);
+}
+
+.text-preset__preview--template {
+    background: linear-gradient(135deg, rgba(244, 114, 182, 0.22), rgba(96, 165, 250, 0.12));
+}
+
+.text-preset__heading {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.text-preset__subheading {
+    font-size: 0.85rem;
+    color: rgba(226, 232, 240, 0.88);
+}
+
+.text-preset__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.text-preset__name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.text-preset__description {
+    font-size: 0.78rem;
+    color: rgba(203, 213, 225, 0.85);
+}
+
 .info-item {
     display: flex;
     gap: 12px;
@@ -2438,6 +2530,23 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     color: rgba(148, 163, 184, 0.72);
 }
 
+.timeline-lane--overlay {
+    padding-top: 26px;
+    padding-bottom: 26px;
+    background: rgba(26, 20, 44, 0.75);
+}
+
+.timeline-lane--overlay::before {
+    content: 'Text';
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(244, 114, 182, 0.72);
+}
+
 .timeline-lane.is-drop-target {
     border-color: rgba(124, 58, 237, 0.55);
     background: rgba(30, 41, 59, 0.6);
@@ -2614,6 +2723,14 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
+.timeline-item--text {
+    gap: 10px;
+    padding: 14px 12px 16px;
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0.88) 0%, rgba(17, 24, 39, 0.94) 100%);
+    border: 1px solid rgba(124, 58, 237, 0.38);
+    box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.15);
+}
+
 .timeline-item--audio .timeline-item-remove {
     background: rgba(15, 23, 42, 0.85);
 }
@@ -2621,6 +2738,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .timeline-item--audio span {
     font-size: 0.78rem;
     color: rgba(226, 232, 240, 0.96);
+    text-align: center;
+}
+
+.timeline-item--text .timeline-item-remove {
+    background: rgba(15, 23, 42, 0.82);
+}
+
+.timeline-item--text span {
+    font-size: 0.82rem;
+    color: rgba(236, 240, 253, 0.95);
     text-align: center;
 }
 
@@ -2715,6 +2842,14 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     width: 100%;
     height: 40px;
     border-radius: 8px;
+    object-fit: cover;
+}
+
+.timeline-thumbnail--text {
+    height: 48px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(15, 23, 42, 0.7);
     object-fit: cover;
 }
 

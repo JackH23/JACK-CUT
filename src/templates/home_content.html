@@ -140,6 +140,7 @@
                 </div>
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
                     <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
+                    <button type="button" class="settings-tab" id="settings-tab-text" role="tab" aria-selected="false" aria-controls="settings-text" data-section="text">Text</button>
                     <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
@@ -185,6 +186,50 @@
                                     <label for="image-rotation">Image rotation</label>
                                     <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
                                     <div class="slider-readout" id="image-rotation-value">0°</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-text" data-section="text" role="tabpanel" aria-labelledby="settings-tab-text" hidden>
+                        <div class="text-preset-grid" id="text-overlay-presets">
+                            <div
+                                class="text-preset"
+                                data-text-preset="default"
+                                data-text-title="(Default Text)"
+                                data-text-body="Simple title overlay"
+                                data-text-accent="#38bdf8"
+                                draggable="true"
+                                role="button"
+                                tabindex="0"
+                                aria-label="Add (Default Text) overlay"
+                            >
+                                <div class="text-preset__preview">
+                                    <span class="text-preset__heading">(Default Text)</span>
+                                    <span class="text-preset__subheading">Simple title overlay</span>
+                                </div>
+                                <div class="text-preset__meta">
+                                    <span class="text-preset__name">(Default Text)</span>
+                                    <span class="text-preset__description">Drag to timeline or press Enter to add.</span>
+                                </div>
+                            </div>
+                            <div
+                                class="text-preset"
+                                data-text-preset="template"
+                                data-text-title="(Text Template)"
+                                data-text-body="Add supporting details here"
+                                data-text-accent="#f472b6"
+                                draggable="true"
+                                role="button"
+                                tabindex="0"
+                                aria-label="Add Text Template overlay"
+                            >
+                                <div class="text-preset__preview text-preset__preview--template">
+                                    <span class="text-preset__heading">(Text Template)</span>
+                                    <span class="text-preset__subheading">Add supporting details here</span>
+                                </div>
+                                <div class="text-preset__meta">
+                                    <span class="text-preset__name">Text Template</span>
+                                    <span class="text-preset__description">Drag to timeline or press Enter to add.</span>
                                 </div>
                             </div>
                         </div>

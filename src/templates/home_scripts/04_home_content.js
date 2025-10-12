@@ -637,8 +637,18 @@ function initializeTimelineItem(timelineItem) {
 
 if (timelineTrack) {
     timelineTrack.addEventListener('dragenter', (event) => {
-        if (activeTimelineDragItem && activeTimelineDragItem.isConnected) {
+        const draggingItem = (activeTimelineDragItem && activeTimelineDragItem.isConnected)
+            ? activeTimelineDragItem
+            : null;
+        const isTextOverlayDrag = Boolean(activeTextOverlayDragPreset?.preset);
+        if (draggingItem || isTextOverlayDrag) {
             event.preventDefault();
+        }
+        if (isTextOverlayDrag && typeof ensureOverlayTimelineLane === 'function') {
+            const lane = ensureOverlayTimelineLane();
+            if (lane) {
+                setActiveDropLane(lane);
+            }
         }
     });
 
@@ -647,6 +657,22 @@ if (timelineTrack) {
             ? activeTimelineDragItem
             : null;
         if (!draggingItem) {
+            if (activeTextOverlayDragPreset?.preset) {
+                event.preventDefault();
+                if (typeof ensureOverlayTimelineLane === 'function') {
+                    const lane = ensureOverlayTimelineLane();
+                    if (lane) {
+                        setActiveDropLane(lane);
+                        if (Number.isFinite(event.clientX)) {
+                            activeTextOverlayDragPreset.clientX = event.clientX;
+                        }
+                        if (event.dataTransfer) {
+                            event.dataTransfer.dropEffect = 'copy';
+                        }
+                    }
+                }
+                return;
+            }
             timelineDragOverState.lane = null;
             timelineDragOverState.item = null;
             setTimelineSnapLineState(null);
@@ -672,11 +698,40 @@ if (timelineTrack) {
 
     timelineTrack.addEventListener('drop', (event) => {
         event.preventDefault();
+        const isTextOverlayDrag = Boolean(activeTextOverlayDragPreset?.preset);
         flushTimelineDragOverUpdate();
         timelineDragOverState.lane = null;
         timelineDragOverState.item = null;
         timelineDragOverState.clientX = 0;
         setTimelineSnapLineState(null);
+        if (isTextOverlayDrag) {
+            const presetState = activeTextOverlayDragPreset;
+            if (presetState?.previewElement?.parentElement) {
+                presetState.previewElement.remove();
+            }
+            if (presetState?.element) {
+                presetState.element.classList.remove('is-dragging');
+            }
+            const lane = (typeof ensureOverlayTimelineLane === 'function')
+                ? ensureOverlayTimelineLane()
+                : null;
+            const dropClientX = Number.isFinite(presetState?.clientX)
+                ? presetState.clientX
+                : event.clientX;
+            if (lane && typeof createTextOverlayTimelineItem === 'function' && presetState?.preset) {
+                createTextOverlayTimelineItem(presetState.preset, {
+                    laneOverride: lane,
+                    clientX: dropClientX,
+                });
+            }
+            activeTextOverlayDragPreset = null;
+            setActiveDropLane(null);
+            cleanupEmptyTimelineLanes();
+            reflowAllTimelineLanes();
+            updateTimelineEmptyState();
+            updateActiveTimelineIndicators();
+            return;
+        }
         const draggingItem = (activeTimelineDragItem && activeTimelineDragItem.isConnected)
             ? activeTimelineDragItem
             : null;

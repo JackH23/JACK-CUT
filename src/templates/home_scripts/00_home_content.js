@@ -143,6 +143,11 @@ const imageDurationApplyAllButton = document.getElementById('image-duration-appl
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const textOverlayPalette = document.getElementById('text-overlay-presets');
+const textOverlayPresetElements = textOverlayPalette
+    ? Array.from(textOverlayPalette.querySelectorAll('[data-text-preset]'))
+    : [];
+let activeTextOverlayDragPreset = null;
 const masterVolumeInput = document.getElementById('video-volume');
 const masterVolumeValue = document.getElementById('video-volume-value');
 const audioFadeInInput = document.getElementById('audio-fade-in');

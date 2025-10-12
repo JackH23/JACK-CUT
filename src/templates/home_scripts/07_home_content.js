@@ -1198,6 +1198,374 @@ function getWaveformCssHeight(canvas, heightOverride) {
     return AUDIO_WAVEFORM_HEIGHT;
 }
 
+const textOverlayPreviewCache = new Map();
+
+function hexToRgba(hex, alpha = 1) {
+    const fallback = `rgba(124, 58, 237, ${Math.max(0, Math.min(alpha, 1))})`;
+    if (!hex) {
+        return fallback;
+    }
+    const sanitized = String(hex).trim().replace(/^#/, '');
+    if (sanitized.length !== 3 && sanitized.length !== 6) {
+        return fallback;
+    }
+    const normalized = sanitized.length === 3
+        ? sanitized.split('').map((char) => `${char}${char}`).join('')
+        : sanitized;
+    const value = Number.parseInt(normalized, 16);
+    if (!Number.isFinite(value)) {
+        return fallback;
+    }
+    const r = (value >> 16) & 255;
+    const g = (value >> 8) & 255;
+    const b = value & 255;
+    const clampedAlpha = Math.max(0, Math.min(alpha, 1));
+    return `rgba(${r}, ${g}, ${b}, ${clampedAlpha})`;
+}
+
+function getTextOverlayPresetFromElement(element) {
+    if (!element) {
+        return null;
+    }
+    const id = element.dataset.textPreset || '';
+    if (!id) {
+        return null;
+    }
+    const title = element.dataset.textTitle?.trim() || 'Text Overlay';
+    const body = element.dataset.textBody?.trim() || '';
+    const accent = element.dataset.textAccent || '#7c3aed';
+    return { id, title, body, accent };
+}
+
+function getTextOverlayPreviewData(preset) {
+    if (!preset) {
+        return null;
+    }
+    const cacheKey = `${preset.id}|${preset.title}|${preset.body}|${preset.accent}`;
+    if (textOverlayPreviewCache.has(cacheKey)) {
+        return textOverlayPreviewCache.get(cacheKey);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return null;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const accentSoft = hexToRgba(preset.accent, 0.2);
+    const accentBold = hexToRgba(preset.accent, 0.65);
+    ctx.fillStyle = accentSoft;
+    ctx.fillRect(0, canvas.height - 170, canvas.width, 170);
+    ctx.fillStyle = accentBold;
+    ctx.fillRect(48, canvas.height - 172, canvas.width - 96, 3);
+
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 56px Inter, "Segoe UI", sans-serif';
+    const headingY = preset.body ? canvas.height / 2 - 30 : canvas.height / 2;
+    ctx.fillText(preset.title, 48, headingY, canvas.width - 96);
+
+    if (preset.body) {
+        ctx.font = '400 30px Inter, "Segoe UI", sans-serif';
+        ctx.fillStyle = 'rgba(226, 232, 240, 0.92)';
+        ctx.fillText(preset.body, 48, headingY + 70, canvas.width - 96);
+    }
+
+    const dataUrl = canvas.toDataURL('image/png');
+    textOverlayPreviewCache.set(cacheKey, dataUrl);
+    return dataUrl;
+}
+
+function ensureOverlayTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--overlay'));
+    if (existing) {
+        return existing;
+    }
+    const lane = document.createElement('div');
+    lane.className = 'timeline-lane timeline-lane--overlay';
+    if (lanes.length) {
+        timelineLaneList.insertBefore(lane, lanes[0]);
+    } else {
+        timelineLaneList.appendChild(lane);
+    }
+    refreshTimelineLaneIndices();
+    return lane;
+}
+
+function positionTimelineItemAtClientX(timelineItem, lane, clientX) {
+    if (!timelineItem || !lane || !Number.isFinite(clientX)) {
+        if (lane) {
+            flushTimelineLaneReflow(lane);
+        }
+        return;
+    }
+    const styles = window.getComputedStyle(lane);
+    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+    const rect = lane.getBoundingClientRect();
+    if (!rect) {
+        flushTimelineLaneReflow(lane);
+        return;
+    }
+    const relativeX = clientX - rect.left - paddingLeft;
+    const perPixel = getTimelineDurationPerPixel();
+    const desiredStartMs = Number.isFinite(perPixel)
+        ? Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel))
+        : 0;
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+    const snap = resolveTimelineSnapForMovement({
+        desiredStartMs,
+        clipDuration,
+        excludeItem: timelineItem,
+    });
+    const appliedStartMs = Math.max(0, snap ? snap.startMs : desiredStartMs);
+    timelineItem.dataset.startOffsetMs = String(appliedStartMs);
+    flushTimelineLaneReflow(lane);
+}
+
+function createTextOverlayTimelineItem(preset, options = {}) {
+    const normalizedPreset = preset || {};
+    const title = normalizedPreset.title?.trim() || '(Default Text)';
+    const body = normalizedPreset.body?.trim() || '';
+    const accent = normalizedPreset.accent || '#38bdf8';
+
+    let targetLane = options?.laneOverride || ensureOverlayTimelineLane();
+    if (!targetLane) {
+        targetLane = ensureTimelineLane(0);
+    }
+    if (!targetLane) {
+        return null;
+    }
+
+    const timelineItem = document.createElement('div');
+    timelineItem.className = 'timeline-item timeline-item--text';
+    timelineItem.setAttribute('role', 'listitem');
+    timelineItem.tabIndex = 0;
+
+    const preview = getTextOverlayPreviewData({
+        id: normalizedPreset.id || 'text-overlay',
+        title,
+        body,
+        accent,
+    }) || '';
+
+    if (preview) {
+        timelineItem.dataset.objectUrl = preview;
+    }
+    timelineItem.dataset.fileType = 'image/text-overlay';
+    timelineItem.dataset.displayName = title;
+    timelineItem.dataset.syntheticObjectUrl = '1';
+    timelineItem.dataset.textPresetId = normalizedPreset.id || 'text-overlay';
+    timelineItem.dataset.textTitle = title;
+    timelineItem.dataset.textBody = body;
+    timelineItem.dataset.textAccent = accent;
+
+    const thumbnail = document.createElement('img');
+    thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
+    if (preview) {
+        thumbnail.src = preview;
+    }
+    thumbnail.alt = `${title} overlay preview`;
+    timelineItem.appendChild(thumbnail);
+
+    const label = document.createElement('span');
+    label.textContent = title;
+    timelineItem.appendChild(label);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'timeline-item-remove';
+    removeButton.setAttribute('aria-label', `Remove ${title} overlay`);
+    removeButton.textContent = '✕';
+    timelineItem.appendChild(removeButton);
+
+    targetLane.appendChild(timelineItem);
+    timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
+    timelineItem.dataset.startOffsetMs = timelineItem.dataset.startOffsetMs || '0';
+
+    setTimelineItemDuration(timelineItem, 'imageDuration', IMAGE_FRAME_DURATION, { markCustom: false });
+    if (preview) {
+        preloadTimelineImage(preview).catch(() => {});
+    }
+
+    initializeTimelineItem(timelineItem);
+
+    if (Number.isFinite(options?.clientX)) {
+        positionTimelineItemAtClientX(timelineItem, targetLane, options.clientX);
+    } else {
+        flushTimelineLaneReflow(targetLane);
+    }
+
+    timelineItem.addEventListener('click', () => {
+        stopTimelinePlayback();
+        setActiveTimelineItem(timelineItem);
+        loadPreviewFromTimeline(timelineItem);
+    });
+
+    timelineItem.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            stopTimelinePlayback();
+            setActiveTimelineItem(timelineItem, { focus: true });
+            loadPreviewFromTimeline(timelineItem);
+            return;
+        }
+
+        if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') {
+            return;
+        }
+
+        event.preventDefault();
+        const items = getTimelineItems();
+        const currentIndex = items.indexOf(timelineItem);
+        if (currentIndex === -1) {
+            return;
+        }
+
+        let nextIndex = currentIndex;
+        if (key === 'ArrowLeft' || key === 'ArrowUp') {
+            nextIndex = Math.max(0, currentIndex - 1);
+        } else if (key === 'ArrowRight' || key === 'ArrowDown') {
+            nextIndex = Math.min(items.length - 1, currentIndex + 1);
+        }
+
+        if (nextIndex === currentIndex) {
+            return;
+        }
+
+        const nextItem = items[nextIndex];
+        if (!nextItem) {
+            return;
+        }
+
+        stopTimelinePlayback();
+        setActiveTimelineItem(nextItem, { focus: true });
+        loadPreviewFromTimeline(nextItem);
+    });
+
+    removeButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const targetItem = removeButton.closest('.timeline-item');
+        if (!targetItem) {
+            return;
+        }
+        const parentLane = targetItem.closest('.timeline-lane');
+        const wasActive = targetItem === activeTimelineItem;
+        detachAudioWaveformResizeObserver(targetItem);
+        releaseTimelineCanvasCustomImage(targetItem);
+        targetItem.remove();
+        if (parentLane) {
+            flushTimelineLaneReflow(parentLane);
+        }
+        if (wasActive) {
+            setActiveTimelineItem(null);
+            clearPreview();
+        }
+        cleanupEmptyTimelineLanes();
+        updateTimelineEmptyState();
+        updateActiveTimelineIndicators();
+        renderExportSummary(getTimelineItems(), null);
+        refreshImageDurationApplyAllAvailability();
+    });
+
+    refreshImageDurationApplyAllAvailability();
+    renderExportSummary(getTimelineItems(), null);
+    updateTimelineEmptyState();
+    updateActiveTimelineIndicators();
+    stopTimelinePlayback();
+    setActiveTimelineItem(timelineItem);
+    loadPreviewFromTimeline(timelineItem);
+
+    return timelineItem;
+}
+
+function attachTextOverlayPresetInteractions(element) {
+    if (!element || element.dataset.textPresetInitialized === '1') {
+        return;
+    }
+    element.dataset.textPresetInitialized = '1';
+
+    element.addEventListener('dragstart', (event) => {
+        const preset = getTextOverlayPresetFromElement(element);
+        if (!preset) {
+            event.preventDefault();
+            return;
+        }
+
+        const initialClientX = Number.isFinite(event.clientX) ? event.clientX : null;
+        activeTextOverlayDragPreset = {
+            preset,
+            element,
+            clientX: initialClientX,
+            previewElement: null,
+        };
+
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.setData('text/plain', preset.title);
+            event.dataTransfer.setData('application/x-text-overlay', preset.id);
+            const preview = element.cloneNode(true);
+            preview.classList.add('text-preset--drag-preview');
+            preview.style.width = `${Math.max(1, element.offsetWidth)}px`;
+            document.body.appendChild(preview);
+            const rect = preview.getBoundingClientRect();
+            event.dataTransfer.setDragImage(preview, rect.width / 2, rect.height / 2);
+            activeTextOverlayDragPreset.previewElement = preview;
+        }
+
+        element.classList.add('is-dragging');
+    });
+
+    element.addEventListener('dragend', () => {
+        if (activeTextOverlayDragPreset?.previewElement?.parentElement) {
+            activeTextOverlayDragPreset.previewElement.remove();
+        }
+        if (activeTextOverlayDragPreset?.element === element) {
+            activeTextOverlayDragPreset = null;
+        }
+        element.classList.remove('is-dragging');
+        if (typeof setActiveDropLane === 'function') {
+            setActiveDropLane(null);
+        }
+    });
+
+    element.addEventListener('click', () => {
+        const preset = getTextOverlayPresetFromElement(element);
+        if (!preset) {
+            return;
+        }
+        createTextOverlayTimelineItem(preset, {});
+    });
+
+    element.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') {
+            return;
+        }
+        event.preventDefault();
+        const preset = getTextOverlayPresetFromElement(element);
+        if (!preset) {
+            return;
+        }
+        createTextOverlayTimelineItem(preset, {});
+    });
+}
+
+if (textOverlayPresetElements.length) {
+    textOverlayPresetElements.forEach((element) => {
+        attachTextOverlayPresetInteractions(element);
+    });
+}
+
 function ensureAudioTimelineLane() {
     if (!timelineLaneList) {
         return null;
