@@ -382,6 +382,9 @@ function describeFileType(fileType) {
     if (fileType.startsWith('image/')) {
         return 'Image frame';
     }
+    if (fileType === 'text/overlay') {
+        return 'Text overlay';
+    }
     if (fileType.startsWith('audio/')) {
         return 'Audio track';
     }

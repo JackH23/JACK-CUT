@@ -787,12 +787,15 @@ function clearPreviewOverlayLayers() {
     activeOverlayLayers.clear();
 
     if (previewOverlayGroups) {
-        const { below, above } = previewOverlayGroups;
+        const { below, above, text } = previewOverlayGroups;
         if (below) {
             below.textContent = '';
         }
         if (above) {
             above.textContent = '';
+        }
+        if (text) {
+            text.textContent = '';
         }
     }
 
@@ -1074,12 +1077,27 @@ function computeOverlayDescriptorOpacity(descriptor) {
     return clamp(opacity, 0, 1);
 }
 
+function getOverlayEntryContentElement(entry) {
+    if (!entry) {
+        return null;
+    }
+    if (entry.image) {
+        return entry.image;
+    }
+    if (entry.textElement) {
+        return entry.textElement;
+    }
+    return null;
+}
+
 function computeOverlayEntryOpacity(entry) {
-    if (!entry || !entry.layer || !entry.image) {
+    if (!entry || !entry.layer) {
         return 1;
     }
 
-    if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
+    const contentElement = getOverlayEntryContentElement(entry);
+
+    if (entry.layer.hasAttribute('hidden') || (contentElement && contentElement.hidden)) {
         return 0;
     }
 
@@ -1100,14 +1118,16 @@ function computeOverlayEntryOpacity(entry) {
         }
     }
 
-    const imageStyle = window.getComputedStyle(entry.image);
-    if (imageStyle) {
-        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
-            return 0;
-        }
-        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
-        if (Number.isFinite(parsedImageOpacity)) {
-            opacity *= clamp(parsedImageOpacity, 0, 1);
+    if (contentElement) {
+        const contentStyle = window.getComputedStyle(contentElement);
+        if (contentStyle) {
+            if (contentStyle.display === 'none' || contentStyle.visibility === 'hidden') {
+                return 0;
+            }
+            const parsedOpacity = Number.parseFloat(contentStyle.opacity);
+            if (Number.isFinite(parsedOpacity)) {
+                opacity *= clamp(parsedOpacity, 0, 1);
+            }
         }
     }
 
@@ -1197,6 +1217,8 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 start,
                 end,
             };
+
+            descriptor.overlayType = getOverlayTypeForTimelineItem(descriptor.item);
             
             const explicitClipDuration = Number.isFinite(entry.clipDuration)
                 ? Math.max(0, Number(entry.clipDuration) || 0)

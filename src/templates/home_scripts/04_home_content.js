@@ -119,6 +119,9 @@ function getTimelineItemDurationKey(timelineItem) {
     if (fileType.startsWith('image/')) {
         return 'imageDuration';
     }
+    if (fileType === 'text/overlay') {
+        return 'imageDuration';
+    }
     if (fileType.startsWith('video/')) {
         return 'videoDuration';
     }
@@ -133,6 +136,9 @@ function getTimelineItemMinimumDuration(timelineItem) {
         return MIN_IMAGE_DURATION;
     }
     const fileType = timelineItem.dataset.fileType || '';
+    if (fileType === 'text/overlay') {
+        return MIN_IMAGE_DURATION;
+    }
     if (fileType.startsWith('video/')) {
         const minimum = Number(timelineItem.dataset.minVideoDuration);
         if (Number.isFinite(minimum) && minimum > 0) {
@@ -624,7 +630,11 @@ function initializeTimelineItem(timelineItem) {
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
-    if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
+    if (fileType.startsWith('image/')
+        || fileType.startsWith('video/')
+        || fileType.startsWith('audio/')
+        || fileType === 'text/overlay'
+    ) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }
