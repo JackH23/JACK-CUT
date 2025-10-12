@@ -787,12 +787,15 @@ function clearPreviewOverlayLayers() {
     activeOverlayLayers.clear();
 
     if (previewOverlayGroups) {
-        const { below, above } = previewOverlayGroups;
+        const { below, above, text } = previewOverlayGroups;
         if (below) {
             below.textContent = '';
         }
         if (above) {
             above.textContent = '';
+        }
+        if (text) {
+            text.textContent = '';
         }
     }
 
@@ -918,6 +921,10 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
+    if (isTextTimelineItem && isTextTimelineItem(descriptor.item)) {
+        return descriptor.isActive || descriptor.intersectsWindow;
+    }
+
     if (descriptor.isActive) {
         return true;
     }
@@ -989,6 +996,10 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
 
 function computeOverlayDescriptorOpacity(descriptor) {
     if (!descriptor || !descriptor.item) {
+        return 1;
+    }
+
+    if (isTextTimelineItem && isTextTimelineItem(descriptor.item)) {
         return 1;
     }
 

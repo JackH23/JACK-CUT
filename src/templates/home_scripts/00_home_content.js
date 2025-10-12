@@ -25,6 +25,7 @@ const previewOverlayGroups = previewOverlayStack
     ? {
         below: previewOverlayStack.querySelector('[data-layer-group="below"]'),
         above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
+        text: previewOverlayStack.querySelector('[data-layer-group="text"]'),
     }
     : null;
 const activeOverlayLayers = new Map();
@@ -76,6 +77,7 @@ const previewRulerElements = previewGuidesLayer
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
 const defaultPreviewPlaceholderText = previewPlaceholder ? previewPlaceholder.textContent : '';
+const textTemplateCard = document.querySelector('.text-template-card');
 
 if (previewImage) {
     try {

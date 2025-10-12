@@ -807,6 +807,13 @@ function getTimelineItemPlaybackDuration(timelineItem) {
         }
         return MIN_AUDIO_DURATION;
     }
+    if (fileType.startsWith('text/')) {
+        const duration = Number(timelineItem.dataset.textDuration);
+        if (Number.isFinite(duration) && duration > 0) {
+            return duration;
+        }
+        return IMAGE_FRAME_DURATION;
+    }
     return 0;
 }
 
@@ -1714,6 +1721,168 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
+function registerTimelineItemFocusInteractions(timelineItem) {
+    if (!timelineItem || timelineItem.dataset.focusHandlersAttached === '1') {
+        return;
+    }
+
+    timelineItem.dataset.focusHandlersAttached = '1';
+
+    timelineItem.addEventListener('click', () => {
+        stopTimelinePlayback();
+        setActiveTimelineItem(timelineItem);
+        loadPreviewFromTimeline(timelineItem);
+    });
+
+    timelineItem.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            stopTimelinePlayback();
+            setActiveTimelineItem(timelineItem, { focus: true });
+            loadPreviewFromTimeline(timelineItem);
+            return;
+        }
+
+        if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') {
+            return;
+        }
+
+        event.preventDefault();
+        const items = getTimelineItems();
+        const currentIndex = items.indexOf(timelineItem);
+        if (currentIndex === -1) {
+            return;
+        }
+
+        let nextIndex = currentIndex;
+        if (key === 'ArrowLeft' || key === 'ArrowUp') {
+            nextIndex = Math.max(0, currentIndex - 1);
+        } else if (key === 'ArrowRight' || key === 'ArrowDown') {
+            nextIndex = Math.min(items.length - 1, currentIndex + 1);
+        }
+
+        if (nextIndex === currentIndex) {
+            return;
+        }
+
+        const nextItem = items[nextIndex];
+        if (!nextItem) {
+            return;
+        }
+
+        stopTimelinePlayback();
+        setActiveTimelineItem(nextItem, { focus: true });
+        loadPreviewFromTimeline(nextItem);
+    });
+}
+
+const DEFAULT_TEXT_LAYER_CONTENT = 'Default Text';
+const DEFAULT_TEXT_LAYER_DURATION = 4000;
+
+function createDefaultTextTimelineItem() {
+    const baseItem = (activeTimelineItem && (isImageTimelineItem(activeTimelineItem)
+        || isVideoTimelineItem(activeTimelineItem)))
+        ? activeTimelineItem
+        : null;
+
+    const baseLaneIndex = baseItem
+        ? resolveLaneIndex(baseItem.dataset.laneIndex)
+        : 0;
+
+    const targetLane = baseItem
+        ? insertTimelineLaneAt(Math.max(baseLaneIndex, 0))
+        : ensureTimelineLane(0);
+
+    const lane = targetLane || ensureTimelineLane(0);
+    if (!lane) {
+        return null;
+    }
+
+    lane.classList.add('timeline-lane--text');
+
+    const timelineItem = document.createElement('div');
+    timelineItem.className = 'timeline-item timeline-item--text';
+    timelineItem.setAttribute('role', 'listitem');
+    timelineItem.tabIndex = 0;
+    timelineItem.dataset.fileType = 'text/overlay';
+    timelineItem.dataset.displayName = DEFAULT_TEXT_LAYER_CONTENT;
+    timelineItem.dataset.textContent = DEFAULT_TEXT_LAYER_CONTENT;
+
+    const label = document.createElement('span');
+    label.textContent = DEFAULT_TEXT_LAYER_CONTENT;
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'timeline-item-remove';
+    removeButton.setAttribute('aria-label', 'Remove text layer');
+    removeButton.textContent = '✕';
+
+    timelineItem.appendChild(label);
+    timelineItem.appendChild(removeButton);
+
+    const baseStart = baseItem ? getTimelineItemStartTime(baseItem) : 0;
+    if (Number.isFinite(baseStart)) {
+        timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(baseStart)));
+    }
+
+    let desiredDuration = DEFAULT_TEXT_LAYER_DURATION;
+    if (baseItem) {
+        const baseDuration = Math.round(getTimelineItemPlaybackDuration(baseItem));
+        if (Number.isFinite(baseDuration) && baseDuration > 0) {
+            desiredDuration = Math.max(baseDuration, MIN_IMAGE_DURATION);
+        }
+    }
+
+    const appliedDuration = setTimelineItemDuration(
+        timelineItem,
+        'textDuration',
+        desiredDuration,
+        { markCustom: false },
+    );
+    updateTimelineItemDurationBadge(timelineItem, appliedDuration);
+
+    lane.appendChild(timelineItem);
+    timelineItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+
+    initializeTimelineItem(timelineItem);
+    registerTimelineItemFocusInteractions(timelineItem);
+
+    removeButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const targetItem = removeButton.closest('.timeline-item');
+        if (!targetItem) {
+            return;
+        }
+
+        const wasActive = targetItem === activeTimelineItem;
+        targetItem.remove();
+        if (lane) {
+            flushTimelineLaneReflow(lane);
+        }
+        cleanupEmptyTimelineLanes();
+        updateTimelineEmptyState();
+        updateActiveTimelineIndicators();
+        renderExportSummary(getTimelineItems(), null);
+        refreshImageDurationApplyAllAvailability();
+
+        if (wasActive) {
+            if (baseItem && baseItem.isConnected) {
+                setActiveTimelineItem(baseItem, { focus: true });
+                loadPreviewFromTimeline(baseItem);
+            } else {
+                setActiveTimelineItem(null);
+                clearPreview();
+            }
+        }
+    });
+
+    updateTimelineEmptyState();
+    updateActiveTimelineIndicators();
+    renderExportSummary(getTimelineItems(), null);
+    refreshImageDurationApplyAllAvailability();
+    return timelineItem;
+}
+
 async function addToTimeline(file, objectURL) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
@@ -1824,54 +1993,7 @@ async function addToTimeline(file, objectURL) {
     }
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
-
-    timelineItem.addEventListener('click', () => {
-        stopTimelinePlayback();
-        setActiveTimelineItem(timelineItem);
-        loadPreviewFromTimeline(timelineItem);
-    });
-
-    timelineItem.addEventListener('keydown', (event) => {
-        const { key } = event;
-        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
-            event.preventDefault();
-            stopTimelinePlayback();
-            setActiveTimelineItem(timelineItem, { focus: true });
-            loadPreviewFromTimeline(timelineItem);
-            return;
-        }
-
-        if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') {
-            return;
-        }
-
-        event.preventDefault();
-        const items = getTimelineItems();
-        const currentIndex = items.indexOf(timelineItem);
-        if (currentIndex === -1) {
-            return;
-        }
-
-        let nextIndex = currentIndex;
-        if (key === 'ArrowLeft' || key === 'ArrowUp') {
-            nextIndex = Math.max(0, currentIndex - 1);
-        } else if (key === 'ArrowRight' || key === 'ArrowDown') {
-            nextIndex = Math.min(items.length - 1, currentIndex + 1);
-        }
-
-        if (nextIndex === currentIndex) {
-            return;
-        }
-
-        const nextItem = items[nextIndex];
-        if (!nextItem) {
-            return;
-        }
-
-        stopTimelinePlayback();
-        setActiveTimelineItem(nextItem, { focus: true });
-        loadPreviewFromTimeline(nextItem);
-    });
+    registerTimelineItemFocusInteractions(timelineItem);
 
     removeButton.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -1914,6 +2036,31 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+}
+
+if (textTemplateCard) {
+    const triggerTextLayerCreation = () => {
+        const newLayer = createDefaultTextTimelineItem();
+        if (newLayer) {
+            textTemplateCard.setAttribute('aria-pressed', 'true');
+            window.setTimeout(() => {
+                textTemplateCard.setAttribute('aria-pressed', 'false');
+            }, 220);
+        }
+    };
+
+    textTemplateCard.addEventListener('click', (event) => {
+        event.preventDefault();
+        triggerTextLayerCreation();
+    });
+
+    textTemplateCard.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            triggerTextLayerCreation();
+        }
+    });
 }
 
 uploadInput.addEventListener('change', async (event) => {

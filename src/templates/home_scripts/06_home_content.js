@@ -58,12 +58,19 @@
         if (!descriptor) {
             return 'above';
         }
+        if (descriptor?.item && isTextTimelineItem(descriptor.item)) {
+            return 'text';
+        }
         return descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above';
     };
 
     const computeOverlayLayerZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
+        }
+
+        if (descriptor?.item && isTextTimelineItem(descriptor.item)) {
+            return OVERLAY_ABOVE_Z_MAX + 20;
         }
 
         const laneDelta = descriptor.laneIndex - primaryLaneIndex;
@@ -78,9 +85,15 @@
         return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
     };
 
-    const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
-        ? 'below'
-        : 'above');
+    const getDescriptorLayerGroup = (descriptor) => {
+        if (!descriptor) {
+            return 'above';
+        }
+        if (descriptor.layerGroup === 'text') {
+            return 'text';
+        }
+        return descriptor.layerGroup === 'below' ? 'below' : 'above';
+    };
     const getDescriptorZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
@@ -276,12 +289,14 @@
 
     const borderRadius = getPreviewImageFrameBorderRadius();
 
-    const overlayGroups = { below: [], above: [] };
+    const overlayGroups = { below: [], above: [], text: [] };
 
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
-        if (descriptor.layerGroup === 'below') {
+        if (descriptor.layerGroup === 'text') {
+            overlayGroups.text.push(descriptor);
+        } else if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
         } else {
             overlayGroups.above.push(descriptor);
@@ -290,10 +305,11 @@
 
     overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
     overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+    overlayGroups.text.sort((a, b) => a.laneIndex - b.laneIndex);
 
-    const { below, above } = previewOverlayGroups;
+    const { below, above, text } = previewOverlayGroups;
 
-    if (!below && !above) {
+    if (!below && !above && !text) {
         clearPreviewOverlayLayers();
         return;
     }
@@ -306,13 +322,55 @@
             return null;
         }
 
-        const objectURL = descriptor.item.dataset.objectUrl || '';
+        const timelineItem = descriptor.item;
+        const isTextOverlay = isTextTimelineItem(timelineItem);
+
+        let entry = activeOverlayLayers.get(timelineItem);
+
+        if (isTextOverlay) {
+            if (!entry || !entry.layer || entry.type !== 'text') {
+                const layer = document.createElement('div');
+                layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+                const textElement = document.createElement('div');
+                textElement.className = 'preview-overlay-text';
+                layer.appendChild(textElement);
+                entry = {
+                    type: 'text',
+                    layer,
+                    image: textElement,
+                    textElement,
+                    objectURL: '',
+                    frame: null,
+                    isVisible: false,
+                    layerGroup: null,
+                    zIndex: 0,
+                    borderRadius: 0,
+                    opacity: 1,
+                    lastTimelineTime: null,
+                };
+                activeOverlayLayers.set(timelineItem, entry);
+            }
+
+            const { layer, textElement } = entry;
+            layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+            layer.dataset.laneIndex = String(descriptor.laneIndex);
+            if (textElement) {
+                const content = timelineItem.dataset.textContent
+                    || timelineItem.dataset.displayName
+                    || timelineItem.querySelector('span')?.textContent
+                    || 'Default Text';
+                textElement.textContent = content;
+            }
+            layer.title = timelineItem.dataset.displayName || 'Text overlay';
+            return entry;
+        }
+
+        const objectURL = timelineItem.dataset.objectUrl || '';
         if (!objectURL) {
             return null;
         }
 
-        let entry = activeOverlayLayers.get(descriptor.item);
-        if (!entry || !entry.layer || !entry.image) {
+        if (!entry || !entry.layer || !entry.image || entry.type !== 'image') {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
             const image = document.createElement('img');
@@ -325,6 +383,7 @@
             image.draggable = false;
             layer.appendChild(image);
             entry = {
+                type: 'image',
                 layer,
                 image,
                 objectURL: '',
@@ -336,7 +395,7 @@
                 opacity: 1,
                 lastTimelineTime: null,
             };
-            activeOverlayLayers.set(descriptor.item, entry);
+            activeOverlayLayers.set(timelineItem, entry);
         }
 
         const { layer, image } = entry;
@@ -355,8 +414,8 @@
             entry.objectURL = objectURL;
         }
 
-        image.alt = descriptor.item.dataset.displayName
-            || descriptor.item.querySelector('span')?.textContent
+        image.alt = timelineItem.dataset.displayName
+            || timelineItem.querySelector('span')?.textContent
             || 'Overlay layer';
         layer.title = image.alt;
 
@@ -422,6 +481,50 @@
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
+
+        if (isTextTimelineItem(descriptor.item)) {
+            layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = `${viewportWidth}px`;
+            layer.style.height = `${viewportHeight}px`;
+            layer.style.removeProperty('--preview-overlay-rotation');
+            layer.style.removeProperty('border-radius');
+            if (entry.textElement) {
+                const content = descriptor.item.dataset.textContent
+                    || descriptor.item.dataset.displayName
+                    || descriptor.item.querySelector('span')?.textContent
+                    || 'Default Text';
+                entry.textElement.textContent = content;
+            }
+
+            if (layer.parentElement !== container) {
+                container.appendChild(layer);
+            } else {
+                container.appendChild(layer);
+            }
+
+            overlayLayerToTimelineItem.set(layer, descriptor.item);
+
+            const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
+            const clampedOpacity = clamp(descriptorOpacity, 0, 1);
+            layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+
+            entry.frame = {
+                left: 0,
+                top: 0,
+                width: viewportWidth,
+                height: viewportHeight,
+                rotation: 0,
+            };
+            entry.isVisible = true;
+            entry.layerGroup = 'text';
+            entry.zIndex = targetZIndex;
+            entry.borderRadius = 0;
+            entry.opacity = computeOverlayEntryOpacity(entry);
+            entry.lastTimelineTime = safeTimelineNow;
+            return true;
+        }
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -540,6 +643,28 @@
         });
     }
 
+    if (overlayGroups.text.length && text) {
+        overlayGroups.text.forEach((descriptor) => {
+            if (!descriptor.shouldRender) {
+                return;
+            }
+            const zIndex = getDescriptorZIndex(descriptor);
+            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, text);
+            if (rendered) {
+                nextActiveItems.add(descriptor.item);
+                return;
+            }
+            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            if (fallbackEntry?.isVisible) {
+                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                nextActiveItems.add(descriptor.item);
+                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                fallbackEntry.zIndex = zIndex;
+            }
+        });
+    }
+
     const staleItems = [];
     activeOverlayLayers.forEach((entry, item) => {
         if (!nextKnownItems.has(item)) {
@@ -559,7 +684,11 @@
         activeOverlayLayers.delete(item);
     });
 
-    const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
+    const hasLayers = Boolean(
+        (below && below.childElementCount)
+        || (above && above.childElementCount)
+        || (text && text.childElementCount),
+    );
 
     if (hasLayers) {
         previewOverlayStack.removeAttribute('hidden');
@@ -578,6 +707,10 @@ function getActiveOverlayLayerSnapshots() {
 
     activeOverlayLayers.forEach((entry) => {
         if (!entry || !entry.isVisible || !entry.frame) {
+            return;
+        }
+
+        if (entry.type === 'text') {
             return;
         }
 
@@ -1213,6 +1346,14 @@ function isAudioTimelineItem(timelineItem) {
     }
     const fileType = timelineItem.dataset.fileType || '';
     return fileType.startsWith('audio/');
+}
+
+function isTextTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('text/');
 }
 
 function getTimelineItemImageKeyframes(timelineItem) {
