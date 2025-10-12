@@ -32,7 +32,7 @@
             return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
-        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
+        .filter((descriptor) => isOverlayTimelineItem(descriptor.item))
         .filter((descriptor) => {
             if (descriptor.intersectsWindow || descriptor.isActive) {
                 return true;
@@ -53,10 +53,15 @@
     const OVERLAY_BELOW_Z_MAX = 59;
     const OVERLAY_ABOVE_Z_BASE = 60;
     const OVERLAY_ABOVE_Z_MAX = 140;
+    const OVERLAY_TEXT_Z_BASE = 150;
+    const OVERLAY_TEXT_Z_MAX = 220;
 
     const computeOverlayLayerGroup = (descriptor) => {
         if (!descriptor) {
             return 'above';
+        }
+        if (descriptor.layerGroup === 'text' || isTextTimelineItem(descriptor.item)) {
+            return 'text';
         }
         return descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above';
     };
@@ -64,6 +69,13 @@
     const computeOverlayLayerZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
+        }
+
+        if (descriptor.layerGroup === 'text' || isTextTimelineItem(descriptor.item)) {
+            const laneDelta = primaryLaneIndex - descriptor.laneIndex;
+            const laneOffset = Math.max(0, laneDelta);
+            const clampedOffset = Math.min(laneOffset, OVERLAY_TEXT_Z_MAX - OVERLAY_TEXT_Z_BASE);
+            return OVERLAY_TEXT_Z_BASE + clampedOffset + 1;
         }
 
         const laneDelta = descriptor.laneIndex - primaryLaneIndex;
@@ -78,9 +90,15 @@
         return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
     };
 
-    const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
-        ? 'below'
-        : 'above');
+    const getDescriptorLayerGroup = (descriptor) => {
+        if (!descriptor) {
+            return 'above';
+        }
+        if (descriptor.layerGroup === 'text' || isTextTimelineItem(descriptor.item)) {
+            return 'text';
+        }
+        return descriptor.layerGroup === 'below' ? 'below' : 'above';
+    };
     const getDescriptorZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
@@ -100,8 +118,7 @@
                 return;
             }
 
-            const fileType = item.dataset?.fileType || '';
-            if (!fileType.startsWith('image/')) {
+            if (!isOverlayTimelineItem(item)) {
                 return;
             }
 
@@ -276,12 +293,14 @@
 
     const borderRadius = getPreviewImageFrameBorderRadius();
 
-    const overlayGroups = { below: [], above: [] };
+    const overlayGroups = { below: [], above: [], text: [] };
 
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
-        if (descriptor.layerGroup === 'below') {
+        if (descriptor.layerGroup === 'text') {
+            overlayGroups.text.push(descriptor);
+        } else if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
         } else {
             overlayGroups.above.push(descriptor);
@@ -290,10 +309,11 @@
 
     overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
     overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+    overlayGroups.text.sort((a, b) => a.laneIndex - b.laneIndex);
 
-    const { below, above } = previewOverlayGroups;
+    const { below, above, text } = previewOverlayGroups || {};
 
-    if (!below && !above) {
+    if (!below && !above && !text) {
         clearPreviewOverlayLayers();
         return;
     }
@@ -306,28 +326,48 @@
             return null;
         }
 
-        const objectURL = descriptor.item.dataset.objectUrl || '';
-        if (!objectURL) {
+        const overlayItem = descriptor.item;
+        const isText = isTextTimelineItem(overlayItem);
+        const objectURL = isText ? '' : overlayItem.dataset.objectUrl || '';
+
+        if (!isText && !objectURL) {
             return null;
         }
 
-        let entry = activeOverlayLayers.get(descriptor.item);
-        if (!entry || !entry.layer || !entry.image) {
+        let entry = activeOverlayLayers.get(overlayItem);
+        const needsNewEntry = !entry
+            || !entry.layer
+            || (isText ? !entry.textElement : !entry.image);
+
+        if (needsNewEntry) {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
-            const image = document.createElement('img');
-            try {
-                image.decoding = 'async';
-            } catch (error) {
-                // Ignore unsupported decoding hint.
+            let image = null;
+            let textElement = null;
+
+            if (isText) {
+                textElement = document.createElement('div');
+                textElement.className = 'preview-overlay-text';
+                layer.appendChild(textElement);
+            } else {
+                image = document.createElement('img');
+                try {
+                    image.decoding = 'async';
+                } catch (error) {
+                    // Ignore unsupported decoding hint.
+                }
+                image.loading = 'eager';
+                image.draggable = false;
+                layer.appendChild(image);
             }
-            image.loading = 'eager';
-            image.draggable = false;
-            layer.appendChild(image);
+
             entry = {
                 layer,
                 image,
+                textElement,
+                contentKind: isText ? 'text' : 'image',
                 objectURL: '',
+                textContent: '',
                 frame: null,
                 isVisible: false,
                 layerGroup: null,
@@ -336,29 +376,39 @@
                 opacity: 1,
                 lastTimelineTime: null,
             };
-            activeOverlayLayers.set(descriptor.item, entry);
+            activeOverlayLayers.set(overlayItem, entry);
         }
 
-        const { layer, image } = entry;
+        const { layer } = entry;
 
-        layer.className = 'preview-overlay-layer';
+        layer.className = isText
+            ? 'preview-overlay-layer preview-overlay-layer--text'
+            : 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
-        if (borderRadius > 0) {
+        if (borderRadius > 0 && !isText) {
             layer.style.borderRadius = `${borderRadius}px`;
-        } else {
+        } else if (!isText) {
             layer.style.removeProperty('border-radius');
         }
 
-        if (entry.objectURL !== objectURL || !image.src) {
-            image.src = objectURL;
-            entry.objectURL = objectURL;
-        }
+        if (isText) {
+            const options = getTimelineItemTextOverlayOptions(overlayItem);
+            applyTextOverlayOptionsToElement(entry.textElement, options);
+            entry.textContent = options?.content || '';
+            layer.title = entry.textContent || 'Text overlay';
+            entry.objectURL = '';
+        } else if (entry.image) {
+            if (entry.objectURL !== objectURL || !entry.image.src) {
+                entry.image.src = objectURL;
+                entry.objectURL = objectURL;
+            }
 
-        image.alt = descriptor.item.dataset.displayName
-            || descriptor.item.querySelector('span')?.textContent
-            || 'Overlay layer';
-        layer.title = image.alt;
+            entry.image.alt = overlayItem.dataset.displayName
+                || overlayItem.querySelector('span')?.textContent
+                || 'Overlay layer';
+            layer.title = entry.image.alt;
+        }
 
         return entry;
     };
@@ -418,7 +468,8 @@
             return false;
         }
 
-        const { layer, image } = entry;
+        const { layer } = entry;
+        const contentElement = entry.textElement || entry.image;
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
@@ -459,13 +510,17 @@
             layer.style.width = `${frame.width}px`;
             layer.style.height = `${frame.height}px`;
             const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            if (contentElement) {
+                contentElement.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            }
         } else {
             layer.style.left = '0px';
             layer.style.top = '0px';
             layer.style.width = '100%';
             layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            if (contentElement) {
+                contentElement.style.setProperty('--preview-overlay-rotation', '0deg');
+            }
         }
 
         if (layer.parentElement !== container) {
@@ -479,8 +534,8 @@
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
         layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
-        if (image) {
-            image.style.opacity = '1';
+        if (contentElement && entry.contentKind === 'image') {
+            contentElement.style.opacity = '1';
         }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
@@ -540,6 +595,28 @@
         });
     }
 
+    if (overlayGroups.text.length && text) {
+        overlayGroups.text.forEach((descriptor) => {
+            if (!descriptor.shouldRender) {
+                return;
+            }
+            const zIndex = getDescriptorZIndex(descriptor);
+            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, text);
+            if (rendered) {
+                nextActiveItems.add(descriptor.item);
+                return;
+            }
+            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            if (fallbackEntry?.isVisible) {
+                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                nextActiveItems.add(descriptor.item);
+                fallbackEntry.lastTimelineTime = safeTimelineNow;
+                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                fallbackEntry.zIndex = zIndex;
+            }
+        });
+    }
+
     const staleItems = [];
     activeOverlayLayers.forEach((entry, item) => {
         if (!nextKnownItems.has(item)) {
@@ -559,7 +636,11 @@
         activeOverlayLayers.delete(item);
     });
 
-    const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
+    const hasLayers = Boolean(
+        (below && below.childElementCount)
+        || (above && above.childElementCount)
+        || (text && text.childElementCount),
+    );
 
     if (hasLayers) {
         previewOverlayStack.removeAttribute('hidden');
@@ -574,9 +655,9 @@
 
 function getActiveOverlayLayerSnapshots() {
     const snapshots = [];
-    const groupPriority = { below: 0, above: 1 };
+    const groupPriority = { below: 0, above: 1, text: 2 };
 
-    activeOverlayLayers.forEach((entry) => {
+    activeOverlayLayers.forEach((entry, item) => {
         if (!entry || !entry.isVisible || !entry.frame) {
             return;
         }
@@ -588,14 +669,47 @@ function getActiveOverlayLayerSnapshots() {
             }
         }
 
-        const { image } = entry;
-        if (!image || !image.complete) {
-            return;
-        }
-
         const liveOpacity = computeOverlayEntryOpacity(entry);
         entry.opacity = liveOpacity;
         if (liveOpacity <= 0) {
+            return;
+        }
+        const frameWidth = Math.max(0, entry.frame.width || 0);
+        const frameHeight = Math.max(0, entry.frame.height || 0);
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            return;
+        }
+
+        const group = entry.layerGroup === 'below'
+            ? 'below'
+            : entry.layerGroup === 'text'
+                ? 'text'
+                : 'above';
+
+        if (entry.contentKind === 'text') {
+            const options = getTimelineItemTextOverlayOptions(item);
+            snapshots.push({
+                kind: 'text',
+                text: entry.textContent || options?.content || '',
+                textOptions: options,
+                frame: {
+                    left: entry.frame.left,
+                    top: entry.frame.top,
+                    width: frameWidth,
+                    height: frameHeight,
+                    rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+                },
+                group,
+                zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
+                borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
+                opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+                priority: groupPriority[group] ?? 2,
+            });
+            return;
+        }
+
+        const { image } = entry;
+        if (!image || !image.complete) {
             return;
         }
 
@@ -605,15 +719,8 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        const frameWidth = Math.max(0, entry.frame.width || 0);
-        const frameHeight = Math.max(0, entry.frame.height || 0);
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            return;
-        }
-
-        const group = entry.layerGroup === 'below' ? 'below' : 'above';
-
         snapshots.push({
+            kind: 'image',
             image,
             frame: {
                 left: entry.frame.left,
@@ -660,19 +767,8 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
     snapshots
         .filter((snapshot) => snapshot.group === group)
         .forEach((snapshot) => {
-            const { image, frame } = snapshot;
+            const { frame } = snapshot;
             if (!frame || frame.width <= 0 || frame.height <= 0) {
-                return;
-            }
-
-            const naturalWidth = Math.max(1, image.naturalWidth || 0);
-            const naturalHeight = Math.max(1, image.naturalHeight || 0);
-            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
-                return;
-            }
-
-            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
-            if (!Number.isFinite(drawScale) || drawScale <= 0) {
                 return;
             }
 
@@ -696,6 +792,63 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
 
             const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
             exportMirrorContext.globalAlpha *= clampedOpacity;
+
+            if (snapshot.kind === 'text') {
+                const options = snapshot.textOptions || {};
+                const background = options.background || 'rgba(15, 23, 42, 0.55)';
+                const color = options.color || '#f8fafc';
+                const padding = Math.max(0, Number.parseFloat(options.padding) || 0);
+                const fontSize = Math.max(1, Number.parseFloat(options.fontSize) || 40);
+                const lineHeightRatio = Math.max(0.5, Number.parseFloat(options.lineHeight) || 1.3);
+                const fontWeight = options.fontWeight || '600';
+                const fontFamily = options.fontFamily || 'Inter, "Segoe UI", sans-serif';
+                const contentWidth = Math.max(0, frame.width - (padding * 2));
+                const contentHeight = Math.max(0, frame.height - (padding * 2));
+
+                exportMirrorContext.fillStyle = background;
+                exportMirrorContext.fillRect(0, 0, frame.width, frame.height);
+
+                exportMirrorContext.fillStyle = color;
+                exportMirrorContext.textAlign = 'center';
+                exportMirrorContext.textBaseline = 'middle';
+                exportMirrorContext.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                exportMirrorContext.shadowColor = 'rgba(15, 23, 42, 0.35)';
+                exportMirrorContext.shadowBlur = 18;
+
+                const lines = (snapshot.text || '').split(/\r?\n/);
+                const computedLineHeight = fontSize * lineHeightRatio;
+                const totalHeight = Math.max(computedLineHeight, lines.length * computedLineHeight);
+                let cursorY = padding + (contentHeight / 2) - (totalHeight / 2) + (computedLineHeight / 2);
+                const centerX = padding + (contentWidth / 2);
+
+                lines.forEach((line) => {
+                    const text = line || '';
+                    exportMirrorContext.fillText(text, centerX, cursorY);
+                    cursorY += computedLineHeight;
+                });
+
+                exportMirrorContext.restore();
+                return;
+            }
+
+            const image = snapshot.image;
+            if (!image) {
+                exportMirrorContext.restore();
+                return;
+            }
+
+            const naturalWidth = Math.max(1, image.naturalWidth || 0);
+            const naturalHeight = Math.max(1, image.naturalHeight || 0);
+            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
+                exportMirrorContext.restore();
+                return;
+            }
+
+            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
+            if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                exportMirrorContext.restore();
+                return;
+            }
 
             const drawWidth = naturalWidth * drawScale;
             const drawHeight = naturalHeight * drawScale;
@@ -1207,6 +1360,21 @@ function isImageTimelineItem(timelineItem) {
     return fileType.startsWith('image/');
 }
 
+function isTextTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    if (timelineItem.dataset.layerType === 'text') {
+        return true;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('text/');
+}
+
+function isOverlayTimelineItem(timelineItem) {
+    return isImageTimelineItem(timelineItem) || isTextTimelineItem(timelineItem);
+}
+
 function isAudioTimelineItem(timelineItem) {
     if (!timelineItem || !timelineItem.dataset) {
         return false;
@@ -1215,8 +1383,46 @@ function isAudioTimelineItem(timelineItem) {
     return fileType.startsWith('audio/');
 }
 
+function getTimelineItemTextOverlayOptions(timelineItem) {
+    if (!isTextTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const content = timelineItem.dataset.textContent
+        || timelineItem.querySelector('span')?.textContent
+        || 'Text';
+
+    return {
+        content,
+        color: timelineItem.dataset.textColor || '#f8fafc',
+        background: timelineItem.dataset.textBackground || 'rgba(15, 23, 42, 0.55)',
+        fontFamily: timelineItem.dataset.textFontFamily || '"Inter", "Segoe UI", sans-serif',
+        fontWeight: timelineItem.dataset.textFontWeight || '600',
+        fontSize: timelineItem.dataset.textFontSize || '40px',
+        lineHeight: timelineItem.dataset.textLineHeight || '1.3',
+        padding: timelineItem.dataset.textPadding || '24px',
+        radius: timelineItem.dataset.textRadius || '18px',
+        letterSpacing: timelineItem.dataset.textLetterSpacing || '0.01em',
+    };
+}
+
+function applyTextOverlayOptionsToElement(element, options) {
+    if (!element || !options) {
+        return;
+    }
+
+    element.textContent = options.content || '';
+    element.style.setProperty('--preview-text-color', options.color || '#f8fafc');
+    element.style.setProperty('--preview-text-background', options.background || 'rgba(15, 23, 42, 0.55)');
+    const fontValue = `${options.fontWeight || '600'} ${options.fontSize || '40px'}/${options.lineHeight || '1.3'} ${options.fontFamily || '"Inter", "Segoe UI", sans-serif'}`;
+    element.style.setProperty('--preview-text-font', fontValue);
+    element.style.setProperty('--preview-text-padding', options.padding || '24px');
+    element.style.setProperty('--preview-text-radius', options.radius || '18px');
+    element.style.setProperty('--preview-text-letter-spacing', options.letterSpacing || '0.01em');
+}
+
 function getTimelineItemImageKeyframes(timelineItem) {
-    if (!isImageTimelineItem(timelineItem)) {
+    if (!isOverlayTimelineItem(timelineItem)) {
         return [];
     }
 
@@ -1242,7 +1448,7 @@ function getTimelineItemImageKeyframes(timelineItem) {
 }
 
 function storeTimelineImageKeyframes(timelineItem, keyframes) {
-    if (!isImageTimelineItem(timelineItem)) {
+    if (!isOverlayTimelineItem(timelineItem)) {
         return;
     }
 

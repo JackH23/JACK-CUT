@@ -1194,11 +1194,14 @@ function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
         ? isVideoTimelineItem
         : ((item) => (item?.dataset?.fileType || '').startsWith('video/'));
 
-    const detectImage = typeof isImageTimelineItem === 'function'
-        ? isImageTimelineItem
-        : ((item) => (item?.dataset?.fileType || '').startsWith('image/'));
+    const detectOverlay = typeof isOverlayTimelineItem === 'function'
+        ? isOverlayTimelineItem
+        : ((item) => {
+            const fileType = item?.dataset?.fileType || '';
+            return fileType.startsWith('image/') || fileType.startsWith('text/');
+        });
 
-    const hasVisualItems = items.some((item) => detectVideo(item) || detectImage(item));
+    const hasVisualItems = items.some((item) => detectVideo(item) || detectOverlay(item));
 
     if (hasVisualItems) {
         return true;

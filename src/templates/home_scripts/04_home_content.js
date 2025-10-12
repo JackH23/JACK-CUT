@@ -116,6 +116,10 @@ function getTimelineItemDurationKey(timelineItem) {
         return null;
     }
     const fileType = timelineItem.dataset.fileType || '';
+    const layerType = timelineItem.dataset.layerType || '';
+    if (layerType === 'text' || fileType.startsWith('text/')) {
+        return 'textDuration';
+    }
     if (fileType.startsWith('image/')) {
         return 'imageDuration';
     }
@@ -621,10 +625,11 @@ function initializeTimelineItem(timelineItem) {
     }
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
+    const isTextOverlay = timelineItem.dataset.layerType === 'text' || fileType.startsWith('text/');
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
-    if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
+    if (isTextOverlay || fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }

@@ -25,6 +25,7 @@ const previewOverlayGroups = previewOverlayStack
     ? {
         below: previewOverlayStack.querySelector('[data-layer-group="below"]'),
         above: previewOverlayStack.querySelector('[data-layer-group="above"]'),
+        text: previewOverlayStack.querySelector('[data-layer-group="text"]'),
     }
     : null;
 const activeOverlayLayers = new Map();
@@ -143,6 +144,7 @@ const imageDurationApplyAllButton = document.getElementById('image-duration-appl
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const textTemplateCard = document.querySelector('.text-template-card');
 const masterVolumeInput = document.getElementById('video-volume');
 const masterVolumeValue = document.getElementById('video-volume-value');
 const audioFadeInInput = document.getElementById('audio-fade-in');
@@ -361,12 +363,12 @@ function getActiveImageClipDurationMs() {
         return null;
     }
 
-    const fileType = activeTimelineItem.dataset.fileType || '';
-    if (!fileType.startsWith('image/')) {
+    if (!isOverlayTimelineItem(activeTimelineItem)) {
         return null;
     }
 
-    const duration = Number(activeTimelineItem.dataset.imageDuration);
+    const durationKey = getTimelineItemDurationKey(activeTimelineItem);
+    const duration = durationKey ? Number(activeTimelineItem.dataset[durationKey]) : NaN;
     if (Number.isFinite(duration) && duration > 0) {
         return duration;
     }
