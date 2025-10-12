@@ -125,6 +125,9 @@ function getTimelineItemDurationKey(timelineItem) {
     if (fileType.startsWith('audio/')) {
         return 'audioDuration';
     }
+    if (fileType.startsWith('text/')) {
+        return 'textDuration';
+    }
     return null;
 }
 
@@ -624,7 +627,10 @@ function initializeTimelineItem(timelineItem) {
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
-    if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
+    if (fileType.startsWith('image/')
+        || fileType.startsWith('video/')
+        || fileType.startsWith('audio/')
+        || fileType.startsWith('text/')) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }

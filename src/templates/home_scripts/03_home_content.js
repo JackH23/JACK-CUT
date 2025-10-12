@@ -385,6 +385,9 @@ function describeFileType(fileType) {
     if (fileType.startsWith('audio/')) {
         return 'Audio track';
     }
+    if (fileType.startsWith('text/')) {
+        return 'Text overlay';
+    }
     return 'Media clip';
 }
 
@@ -1197,8 +1200,11 @@ function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
     const detectImage = typeof isImageTimelineItem === 'function'
         ? isImageTimelineItem
         : ((item) => (item?.dataset?.fileType || '').startsWith('image/'));
+    const detectText = typeof isTextTimelineItem === 'function'
+        ? isTextTimelineItem
+        : ((item) => (item?.dataset?.fileType || '').startsWith('text/'));
 
-    const hasVisualItems = items.some((item) => detectVideo(item) || detectImage(item));
+    const hasVisualItems = items.some((item) => detectVideo(item) || detectImage(item) || detectText(item));
 
     if (hasVisualItems) {
         return true;
@@ -1411,7 +1417,11 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     applyTimelineItemDurationStyles(timelineItem, applied);
     updateTimelineItemDurationBadge(timelineItem, applied);
 
-    if (!skipAnimationSync) {
+    const shouldSyncImageAnimation = !skipAnimationSync
+        && durationKey === 'imageDuration'
+        && typeof synchronizeImageAnimationDurations === 'function';
+
+    if (shouldSyncImageAnimation) {
         synchronizeImageAnimationDurations(timelineItem, {
             source: 'clip',
             durationKey,

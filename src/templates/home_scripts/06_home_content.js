@@ -32,7 +32,7 @@
             return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
-        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
+        .filter((descriptor) => isOverlayTimelineItem(descriptor.item))
         .filter((descriptor) => {
             if (descriptor.intersectsWindow || descriptor.isActive) {
                 return true;
@@ -100,8 +100,7 @@
                 return;
             }
 
-            const fileType = item.dataset?.fileType || '';
-            if (!fileType.startsWith('image/')) {
+            if (!isOverlayTimelineItem(item)) {
                 return;
             }
 
@@ -306,27 +305,58 @@
             return null;
         }
 
-        const objectURL = descriptor.item.dataset.objectUrl || '';
-        if (!objectURL) {
+        const timelineItem = descriptor.item;
+        const isTextOverlay = typeof isTextTimelineItem === 'function'
+            ? isTextTimelineItem(timelineItem)
+            : ((timelineItem.dataset?.fileType || '').startsWith('text/'));
+        const overlayKind = isTextOverlay ? 'text' : 'image';
+        const objectURL = isTextOverlay ? '' : (timelineItem.dataset.objectUrl || '');
+
+        if (!isTextOverlay && !objectURL) {
             return null;
         }
 
-        let entry = activeOverlayLayers.get(descriptor.item);
-        if (!entry || !entry.layer || !entry.image) {
+        let entry = activeOverlayLayers.get(timelineItem);
+        const needsNewLayer = !entry
+            || !entry.layer
+            || (overlayKind === 'image' && !entry.image)
+            || (overlayKind === 'text' && !entry.textContentElement);
+
+        if (needsNewLayer) {
             const layer = document.createElement('div');
-            layer.className = 'preview-overlay-layer';
-            const image = document.createElement('img');
-            try {
-                image.decoding = 'async';
-            } catch (error) {
-                // Ignore unsupported decoding hint.
+            let image = null;
+            let textElement = null;
+            let textContentElement = null;
+
+            if (overlayKind === 'image') {
+                layer.className = 'preview-overlay-layer';
+                image = document.createElement('img');
+                try {
+                    image.decoding = 'async';
+                } catch (error) {
+                    // Ignore unsupported decoding hint.
+                }
+                image.loading = 'eager';
+                image.draggable = false;
+                layer.appendChild(image);
+            } else {
+                layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+                textElement = document.createElement('div');
+                textElement.className = 'preview-overlay-text';
+                textElement.setAttribute('aria-hidden', 'true');
+                textElement.style.pointerEvents = 'none';
+                const textContent = document.createElement('span');
+                textContent.className = 'preview-overlay-text__content';
+                textElement.appendChild(textContent);
+                textContentElement = textContent;
+                layer.appendChild(textElement);
             }
-            image.loading = 'eager';
-            image.draggable = false;
-            layer.appendChild(image);
+
             entry = {
                 layer,
                 image,
+                textElement,
+                textContentElement,
                 objectURL: '',
                 frame: null,
                 isVisible: false,
@@ -335,13 +365,21 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                kind: overlayKind,
             };
-            activeOverlayLayers.set(descriptor.item, entry);
+            activeOverlayLayers.set(timelineItem, entry);
         }
 
-        const { layer, image } = entry;
+        const {
+            layer,
+            image,
+            textElement,
+        } = entry;
 
-        layer.className = 'preview-overlay-layer';
+        entry.kind = overlayKind;
+        layer.className = overlayKind === 'text'
+            ? 'preview-overlay-layer preview-overlay-layer--text'
+            : 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
         if (borderRadius > 0) {
@@ -350,15 +388,28 @@
             layer.style.removeProperty('border-radius');
         }
 
-        if (entry.objectURL !== objectURL || !image.src) {
-            image.src = objectURL;
-            entry.objectURL = objectURL;
-        }
+        if (overlayKind === 'image') {
+            if (entry.objectURL !== objectURL || !image.src) {
+                image.src = objectURL;
+                entry.objectURL = objectURL;
+            }
 
-        image.alt = descriptor.item.dataset.displayName
-            || descriptor.item.querySelector('span')?.textContent
-            || 'Overlay layer';
-        layer.title = image.alt;
+            image.alt = timelineItem.dataset.displayName
+                || timelineItem.querySelector('span')?.textContent
+                || 'Overlay layer';
+            layer.title = image.alt;
+            layer.removeAttribute('role');
+            layer.removeAttribute('aria-label');
+        } else if (textContentElement) {
+            const textValue = timelineItem.dataset.textContent
+                || timelineItem.dataset.displayName
+                || 'Text overlay';
+            textContentElement.textContent = textValue;
+            layer.title = textValue;
+            layer.setAttribute('role', 'img');
+            layer.setAttribute('aria-label', textValue);
+            entry.objectURL = '';
+        }
 
         return entry;
     };
@@ -377,6 +428,7 @@
         entry.lastTimelineTime = null;
 
         if (entry.layer) {
+            entry.layer.removeAttribute('aria-label');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -418,7 +470,12 @@
             return false;
         }
 
-        const { layer, image } = entry;
+        const {
+            layer,
+            image,
+            textElement,
+            textContentElement,
+        } = entry;
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
@@ -459,13 +516,22 @@
             layer.style.width = `${frame.width}px`;
             layer.style.height = `${frame.height}px`;
             const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            if (image) {
+                image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+                layer.style.removeProperty('transform');
+            } else if (textElement) {
+                layer.style.transform = rotationValue !== 0 ? `rotate(${rotationValue}deg)` : '';
+            }
         } else {
             layer.style.left = '0px';
             layer.style.top = '0px';
             layer.style.width = '100%';
             layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            if (image) {
+                image.style.setProperty('--preview-overlay-rotation', '0deg');
+            } else if (textElement) {
+                layer.style.transform = '';
+            }
         }
 
         if (layer.parentElement !== container) {
@@ -481,6 +547,9 @@
         layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
         if (image) {
             image.style.opacity = '1';
+        }
+        if (textElement) {
+            textElement.style.opacity = '1';
         }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
@@ -1207,12 +1276,24 @@ function isImageTimelineItem(timelineItem) {
     return fileType.startsWith('image/');
 }
 
+function isTextTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('text/');
+}
+
 function isAudioTimelineItem(timelineItem) {
     if (!timelineItem || !timelineItem.dataset) {
         return false;
     }
     const fileType = timelineItem.dataset.fileType || '';
     return fileType.startsWith('audio/');
+}
+
+function isOverlayTimelineItem(timelineItem) {
+    return isImageTimelineItem(timelineItem) || isTextTimelineItem(timelineItem);
 }
 
 function getTimelineItemImageKeyframes(timelineItem) {

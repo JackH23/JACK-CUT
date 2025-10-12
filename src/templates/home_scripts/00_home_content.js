@@ -158,6 +158,7 @@ const canvasBlurInput = document.getElementById('canvas-background-blur');
 const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const defaultTextTemplateCard = document.querySelector('.text-template-card');
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -188,6 +189,7 @@ const optionSliderConfigs = [
 ];
 
 const IMAGE_FRAME_DURATION = 1000;
+const DEFAULT_TEXT_DURATION = 3000;
 
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
 const DEFAULT_CANVAS_BLUR = 18;

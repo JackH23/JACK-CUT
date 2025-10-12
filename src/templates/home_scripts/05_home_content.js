@@ -1075,11 +1075,11 @@ function computeOverlayDescriptorOpacity(descriptor) {
 }
 
 function computeOverlayEntryOpacity(entry) {
-    if (!entry || !entry.layer || !entry.image) {
+    if (!entry || !entry.layer) {
         return 1;
     }
 
-    if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
+    if (entry.layer.hasAttribute('hidden')) {
         return 0;
     }
 
@@ -1087,28 +1087,33 @@ function computeOverlayEntryOpacity(entry) {
         return 1;
     }
 
-    let opacity = 1;
-
-    const layerStyle = window.getComputedStyle(entry.layer);
-    if (layerStyle) {
-        if (layerStyle.display === 'none' || layerStyle.visibility === 'hidden') {
+    const accumulateOpacity = (element, currentOpacity) => {
+        if (!element) {
+            return currentOpacity;
+        }
+        const style = window.getComputedStyle(element);
+        if (!style) {
+            return currentOpacity;
+        }
+        if (style.display === 'none' || style.visibility === 'hidden') {
             return 0;
         }
-        const parsedLayerOpacity = Number.parseFloat(layerStyle.opacity);
-        if (Number.isFinite(parsedLayerOpacity)) {
-            opacity *= clamp(parsedLayerOpacity, 0, 1);
+        const parsedOpacity = Number.parseFloat(style.opacity);
+        if (Number.isFinite(parsedOpacity)) {
+            return clamp(currentOpacity * clamp(parsedOpacity, 0, 1), 0, 1);
         }
+        return currentOpacity;
+    };
+
+    let opacity = accumulateOpacity(entry.layer, 1);
+    if (opacity <= 0) {
+        return 0;
     }
 
-    const imageStyle = window.getComputedStyle(entry.image);
-    if (imageStyle) {
-        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
-            return 0;
-        }
-        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
-        if (Number.isFinite(parsedImageOpacity)) {
-            opacity *= clamp(parsedImageOpacity, 0, 1);
-        }
+    if (entry.image) {
+        opacity = accumulateOpacity(entry.image, opacity);
+    } else if (entry.textElement) {
+        opacity = accumulateOpacity(entry.textElement, opacity);
     }
 
     return clamp(opacity, 0, 1);
