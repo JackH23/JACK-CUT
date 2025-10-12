@@ -53,10 +53,20 @@
     const OVERLAY_BELOW_Z_MAX = 59;
     const OVERLAY_ABOVE_Z_BASE = 60;
     const OVERLAY_ABOVE_Z_MAX = 140;
+    const OVERLAY_TEXT_Z_BASE = OVERLAY_ABOVE_Z_MAX + 1;
+    const OVERLAY_TEXT_Z_MAX = 240;
+
+    const getDescriptorLayerType = (descriptor) => (descriptor?.layerType
+        || descriptor?.item?.dataset?.layerType
+        || null);
 
     const computeOverlayLayerGroup = (descriptor) => {
         if (!descriptor) {
             return 'above';
+        }
+        const layerType = getDescriptorLayerType(descriptor);
+        if (layerType === 'text') {
+            return 'text';
         }
         return descriptor.laneIndex > primaryLaneIndex ? 'below' : 'above';
     };
@@ -64,6 +74,13 @@
     const computeOverlayLayerZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
+        }
+
+        const layerType = getDescriptorLayerType(descriptor);
+        if (layerType === 'text') {
+            const laneDelta = Math.abs(descriptor.laneIndex - primaryLaneIndex);
+            const clampedOffset = Math.min(laneDelta, OVERLAY_TEXT_Z_MAX - OVERLAY_TEXT_Z_BASE);
+            return OVERLAY_TEXT_Z_BASE + clampedOffset + 1;
         }
 
         const laneDelta = descriptor.laneIndex - primaryLaneIndex;
@@ -78,9 +95,15 @@
         return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
     };
 
-    const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
-        ? 'below'
-        : 'above');
+    const getDescriptorLayerGroup = (descriptor) => {
+        if (!descriptor) {
+            return 'above';
+        }
+        if (descriptor.layerGroup === 'text' || getDescriptorLayerType(descriptor) === 'text') {
+            return 'text';
+        }
+        return descriptor.layerGroup === 'below' ? 'below' : 'above';
+    };
     const getDescriptorZIndex = (descriptor) => {
         if (!descriptor) {
             return OVERLAY_ABOVE_Z_BASE + 1;
@@ -117,6 +140,8 @@
                 end,
                 clipDuration,
             };
+
+            descriptor.layerType = item.dataset?.layerType || null;
 
             descriptor.isActive = isClipActiveAtTime(descriptor, safeTimelineNow);
             descriptor.intersectsWindow = doesClipIntersectWindow(
@@ -276,13 +301,15 @@
 
     const borderRadius = getPreviewImageFrameBorderRadius();
 
-    const overlayGroups = { below: [], above: [] };
+    const overlayGroups = { below: [], above: [], text: [] };
 
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
         if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
+        } else if (descriptor.layerGroup === 'text') {
+            overlayGroups.text.push(descriptor);
         } else {
             overlayGroups.above.push(descriptor);
         }
@@ -290,10 +317,21 @@
 
     overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
     overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+    overlayGroups.text.sort((a, b) => {
+        if (a.zIndex !== b.zIndex) {
+            return a.zIndex - b.zIndex;
+        }
+        return a.laneIndex - b.laneIndex;
+    });
 
     const { below, above } = previewOverlayGroups;
+    const groupContainers = {
+        below: below || null,
+        above: above || null,
+        text: above || null,
+    };
 
-    if (!below && !above) {
+    if (!groupContainers.below && !groupContainers.above) {
         clearPreviewOverlayLayers();
         return;
     }
@@ -335,13 +373,24 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                layerType: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
 
         const { layer, image } = entry;
 
-        layer.className = 'preview-overlay-layer';
+        const layerType = getDescriptorLayerType(descriptor);
+        if (layerType === 'text') {
+            layer.className = 'preview-overlay-layer preview-overlay-layer--text';
+            layer.dataset.layerType = 'text';
+            layer.style.mixBlendMode = 'normal';
+        } else {
+            layer.className = 'preview-overlay-layer';
+            delete layer.dataset.layerType;
+            layer.style.removeProperty('mix-blend-mode');
+        }
+        entry.layerType = layerType || null;
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
         if (borderRadius > 0) {
@@ -375,6 +424,7 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.layerType = null;
 
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -496,39 +546,25 @@
         return true;
     };
 
-    if (overlayGroups.below.length && below) {
-        overlayGroups.below.forEach((descriptor) => {
-            if (!descriptor.shouldRender) {
-                return;
-            }
-            const zIndex = getDescriptorZIndex(descriptor);
-            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
-            if (rendered) {
-                nextActiveItems.add(descriptor.item);
-                return;
-            }
-            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
-            if (fallbackEntry?.isVisible) {
-                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
-                nextActiveItems.add(descriptor.item);
-                fallbackEntry.lastTimelineTime = safeTimelineNow;
-                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
-                fallbackEntry.zIndex = zIndex;
-            }
-        });
-    }
+    const renderGroupDescriptors = (groupName) => {
+        const container = groupContainers[groupName];
+        const descriptors = overlayGroups[groupName];
+        if (!container || !Array.isArray(descriptors) || !descriptors.length) {
+            return;
+        }
 
-    if (overlayGroups.above.length && above) {
-        overlayGroups.above.forEach((descriptor) => {
+        descriptors.forEach((descriptor) => {
             if (!descriptor.shouldRender) {
                 return;
             }
+
             const zIndex = getDescriptorZIndex(descriptor);
-            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
+            const rendered = renderDescriptorIntoContainer(descriptor, zIndex, container);
             if (rendered) {
                 nextActiveItems.add(descriptor.item);
                 return;
             }
+
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
@@ -538,7 +574,11 @@
                 fallbackEntry.zIndex = zIndex;
             }
         });
-    }
+    };
+
+    renderGroupDescriptors('below');
+    renderGroupDescriptors('above');
+    renderGroupDescriptors('text');
 
     const staleItems = [];
     activeOverlayLayers.forEach((entry, item) => {
@@ -559,7 +599,10 @@
         activeOverlayLayers.delete(item);
     });
 
-    const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
+    const hasLayers = Boolean(
+        (groupContainers.below && groupContainers.below.childElementCount)
+        || (groupContainers.above && groupContainers.above.childElementCount),
+    );
 
     if (hasLayers) {
         previewOverlayStack.removeAttribute('hidden');
@@ -574,7 +617,7 @@
 
 function getActiveOverlayLayerSnapshots() {
     const snapshots = [];
-    const groupPriority = { below: 0, above: 1 };
+    const groupPriority = { below: 0, above: 1, text: 2 };
 
     activeOverlayLayers.forEach((entry) => {
         if (!entry || !entry.isVisible || !entry.frame) {
@@ -611,7 +654,9 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        const group = entry.layerGroup === 'below' ? 'below' : 'above';
+        const group = entry.layerGroup === 'below'
+            ? 'below'
+            : (entry.layerGroup === 'text' ? 'text' : 'above');
 
         snapshots.push({
             image,
@@ -627,6 +672,7 @@ function getActiveOverlayLayerSnapshots() {
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
             priority: groupPriority[group] ?? 1,
+            layerType: entry.layerType || null,
         });
     });
 
@@ -671,7 +717,10 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
                 return;
             }
 
-            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
+            const usesContain = snapshot.layerType === 'text';
+            const drawScale = usesContain
+                ? Math.min(frame.width / naturalWidth, frame.height / naturalHeight)
+                : Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
             if (!Number.isFinite(drawScale) || drawScale <= 0) {
                 return;
             }

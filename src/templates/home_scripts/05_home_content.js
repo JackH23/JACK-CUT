@@ -1197,6 +1197,12 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 start,
                 end,
             };
+
+            const explicitLayerType = typeof entry.layerType === 'string' && entry.layerType.trim().length
+                ? entry.layerType.trim()
+                : null;
+            const itemLayerType = entry.item?.dataset?.layerType || null;
+            descriptor.layerType = explicitLayerType || itemLayerType;
             
             const explicitClipDuration = Number.isFinite(entry.clipDuration)
                 ? Math.max(0, Number(entry.clipDuration) || 0)

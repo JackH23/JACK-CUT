@@ -311,6 +311,7 @@ function startPreviewMirroring(width, height) {
 
         if (overlaySnapshots.length) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
+            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'text', viewportWidth, viewportHeight);
         }
 
         rafId = window.requestAnimationFrame(drawFrame);

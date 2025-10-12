@@ -2122,6 +2122,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     cursor: pointer;
 }
 
+.preview-overlay-layer--text {
+    mix-blend-mode: normal;
+}
+
 .preview-overlay-layer img {
     --preview-overlay-rotation: 0deg;
     width: 100%;
@@ -2130,6 +2134,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: block;
     transform: rotate(var(--preview-overlay-rotation, 0deg));
     pointer-events: none;
+}
+
+.preview-overlay-layer--text img {
+    object-fit: contain;
 }
 
 .preview-image-layer {
