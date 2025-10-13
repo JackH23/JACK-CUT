@@ -2479,6 +2479,22 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transition: border-color 0.2s ease, background 0.2s ease;
 }
 
+.timeline-lane--text {
+    padding-top: 26px;
+    padding-bottom: 24px;
+}
+
+.timeline-lane--text::before {
+    content: 'Text';
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.72);
+}
+
 .timeline-lane--audio {
     padding-top: 28px;
     padding-bottom: 28px;
@@ -2681,6 +2697,27 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     text-align: center;
 }
 
+.timeline-item--text {
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 12px 18px;
+    background: linear-gradient(180deg, rgba(76, 29, 149, 0.65) 0%, rgba(124, 58, 237, 0.48) 100%);
+    border: 1px solid rgba(196, 181, 253, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(165, 180, 252, 0.25);
+}
+
+.timeline-item--text .timeline-item-remove {
+    background: rgba(49, 28, 96, 0.82);
+    color: rgba(250, 245, 255, 0.92);
+}
+
+.timeline-item--text span {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: center;
+    color: rgba(248, 250, 252, 0.95);
+}
+
 .timeline-waveform {
     width: 100%;
     height: 60px;
@@ -2780,6 +2817,34 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     line-height: 1.3;
     word-break: break-word;
     pointer-events: none;
+}
+
+.timeline-text-preview {
+    width: 100%;
+    min-height: 52px;
+    border-radius: 10px;
+    background: rgba(76, 29, 149, 0.25);
+    border: 1px dashed rgba(196, 181, 253, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(241, 245, 249, 0.92);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, border 0.2s ease;
+}
+
+.timeline-item--text:hover .timeline-text-preview,
+.timeline-item--text:focus-within .timeline-text-preview {
+    background: rgba(99, 102, 241, 0.32);
+    border-color: rgba(196, 181, 253, 0.58);
+}
+
+.timeline-text-preview__icon {
+    font-size: 1.6rem;
+    line-height: 1;
 }
 
 .timeline-item video {

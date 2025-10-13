@@ -1714,8 +1714,25 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
-async function addToTimeline(file, objectURL) {
-    const defaultLane = ensureTimelineLane(0);
+async function addToTimeline(file, objectURL, options = {}) {
+    if (!file || !objectURL) {
+        return null;
+    }
+
+    let defaultLane = ensureTimelineLane(0);
+    const targetLaneOption = options && options.targetLane instanceof HTMLElement
+        ? options.targetLane
+        : null;
+
+    if (targetLaneOption) {
+        defaultLane = targetLaneOption;
+    }
+
+    if (!targetLaneOption
+        && defaultLane?.dataset?.laneRole === 'text-overlay'
+        && !file.type.startsWith('audio/')) {
+        defaultLane = ensureTimelineLane(1);
+    }
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
     }
@@ -1811,7 +1828,7 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
-    if (file.type.startsWith('audio/')) {
+    if (!targetLaneOption && file.type.startsWith('audio/')) {
         const audioLane = ensureAudioTimelineLane();
         targetLane = audioLane || targetLane;
     }
@@ -1914,6 +1931,221 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem);
+
+    return timelineItem;
+}
+
+const DEFAULT_TEXT_TEMPLATE_DISPLAY_NAME = 'Default Text';
+const DEFAULT_TEXT_TEMPLATE_LINES = [
+    'Add your story title',
+    'Write a supporting subtitle',
+];
+const DEFAULT_TEXT_OVERLAY_DURATION = 4000;
+let isAddingDefaultTextLayer = false;
+
+function escapeSvgText(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function createDefaultTextTemplateSvg(lines) {
+    const width = 1600;
+    const height = 400;
+    const [headline, subtitle] = Array.isArray(lines) && lines.length
+        ? lines
+        : DEFAULT_TEXT_TEMPLATE_LINES;
+    const safeHeadline = escapeSvgText(headline || '');
+    const safeSubtitle = escapeSvgText(subtitle || '');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <defs>
+        <linearGradient id="textAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="rgba(192, 132, 252, 0.85)" />
+            <stop offset="100%" stop-color="rgba(59, 130, 246, 0.85)" />
+        </linearGradient>
+        <style type="text/css">
+            .headline {
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                font-weight: 700;
+                font-size: 96px;
+                letter-spacing: 3px;
+                fill: #f8fafc;
+                text-anchor: middle;
+                dominant-baseline: middle;
+            }
+            .subtitle {
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                font-weight: 500;
+                font-size: 42px;
+                letter-spacing: 1.4px;
+                fill: rgba(226, 232, 240, 0.92);
+                text-anchor: middle;
+                dominant-baseline: middle;
+            }
+            .accent-bar {
+                fill: url(#textAccent);
+                opacity: 0.18;
+            }
+        </style>
+    </defs>
+    <rect fill="none" width="100%" height="100%" rx="32" />
+    <rect class="accent-bar" x="180" y="60" width="${width - 360}" height="${height - 120}" rx="28" />
+    <text class="headline" x="50%" y="46%">${safeHeadline}</text>
+    <text class="subtitle" x="50%" y="73%">${safeSubtitle}</text>
+</svg>`;
+}
+
+function ensureTextOverlayLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane?.dataset?.laneRole === 'text-overlay');
+    if (existing) {
+        existing.dataset.laneRole = 'text-overlay';
+        existing.classList.add('timeline-lane--text');
+        return existing;
+    }
+
+    const lane = insertTimelineLaneAt(0);
+    if (lane) {
+        lane.dataset.laneRole = 'text-overlay';
+        lane.classList.add('timeline-lane--text');
+        lane.setAttribute('aria-label', 'Text overlays lane');
+    }
+    return lane;
+}
+
+async function createDefaultTextTimelineItem() {
+    if (!timelineTrack) {
+        return;
+    }
+
+    const overlayLane = ensureTextOverlayLane();
+    if (!overlayLane) {
+        return;
+    }
+
+    const lines = DEFAULT_TEXT_TEMPLATE_LINES.slice();
+    const svgMarkup = createDefaultTextTemplateSvg(lines);
+    const mimeType = 'image/svg+xml';
+    const fileName = `${DEFAULT_TEXT_TEMPLATE_DISPLAY_NAME}.svg`;
+
+    let fileBlob;
+    if (typeof File === 'function') {
+        try {
+            fileBlob = new File([svgMarkup], fileName, { type: mimeType });
+        } catch (error) {
+            fileBlob = new Blob([svgMarkup], { type: mimeType });
+        }
+    } else {
+        fileBlob = new Blob([svgMarkup], { type: mimeType });
+    }
+
+    if (!fileBlob.name) {
+        fileBlob.name = fileName;
+    }
+    if (!fileBlob.type) {
+        fileBlob.type = mimeType;
+    }
+
+    const objectURL = URL.createObjectURL(fileBlob);
+
+    let timelineItem = null;
+    try {
+        timelineItem = await addToTimeline(fileBlob, objectURL, { targetLane: overlayLane });
+    } catch (error) {
+        console.error('Failed to add default text layer to timeline.', error);
+        URL.revokeObjectURL(objectURL);
+        return;
+    }
+
+    if (!timelineItem) {
+        URL.revokeObjectURL(objectURL);
+        return;
+    }
+
+    timelineItem.classList.add('timeline-item--text');
+    timelineItem.dataset.overlayKind = 'text';
+    timelineItem.dataset.textTemplate = 'default';
+    timelineItem.dataset.textLines = JSON.stringify(lines);
+    timelineItem.dataset.textContent = lines[0] || DEFAULT_TEXT_TEMPLATE_DISPLAY_NAME;
+    timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_DISPLAY_NAME;
+
+    const thumbnail = timelineItem.querySelector('.timeline-thumbnail');
+    if (thumbnail) {
+        thumbnail.remove();
+    }
+
+    const previewBadge = document.createElement('div');
+    previewBadge.className = 'timeline-text-preview';
+    previewBadge.setAttribute('aria-hidden', 'true');
+    previewBadge.innerHTML = '<span class="timeline-text-preview__icon">Aa</span>';
+    const label = timelineItem.querySelector('span');
+    if (label && label.parentElement) {
+        timelineItem.insertBefore(previewBadge, label);
+        label.textContent = DEFAULT_TEXT_TEMPLATE_DISPLAY_NAME;
+    } else {
+        timelineItem.appendChild(previewBadge);
+    }
+
+    const referenceClip = (isImageTimelineItem(activeTimelineItem) || isVideoTimelineItem(activeTimelineItem))
+        ? activeTimelineItem
+        : (getTimelineItems().find((item) => isImageTimelineItem(item) || isVideoTimelineItem(item)) || null);
+
+    const referenceStart = referenceClip
+        ? Math.max(0, getTimelineItemStartTime(referenceClip))
+        : 0;
+    timelineItem.dataset.startOffsetMs = String(referenceStart);
+
+    const referenceDuration = referenceClip
+        ? Math.max(0, getTimelineItemPlaybackDuration(referenceClip))
+        : 0;
+    const appliedDuration = referenceDuration > 0
+        ? referenceDuration
+        : DEFAULT_TEXT_OVERLAY_DURATION;
+    setTimelineItemDuration(timelineItem, 'imageDuration', appliedDuration, { markCustom: false });
+
+    const defaultTransform = {
+        left: 0.2,
+        top: 0.36,
+        width: 0.6,
+        height: 0.28,
+        rotation: 0,
+    };
+    timelineItem.dataset.previewImageTransform = JSON.stringify(defaultTransform);
+
+    timelineItem.dataset.laneIndex = overlayLane.dataset.laneIndex || '0';
+    scheduleTimelineLaneReflow(overlayLane);
+
+    setActiveTimelineItem(timelineItem);
+    loadPreviewFromTimeline(timelineItem);
+    renderExportSummary(getTimelineItems(), null);
+    refreshImageDurationApplyAllAvailability();
+}
+
+async function handleDefaultTextTemplateActivate(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    if (isAddingDefaultTextLayer) {
+        return;
+    }
+
+    isAddingDefaultTextLayer = true;
+    try {
+        await createDefaultTextTimelineItem();
+    } catch (error) {
+        console.error('Unable to create default text layer.', error);
+    } finally {
+        isAddingDefaultTextLayer = false;
+    }
 }
 
 uploadInput.addEventListener('change', async (event) => {
@@ -1955,6 +2187,18 @@ uploadInput.addEventListener('change', async (event) => {
 
 if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
+}
+
+if (defaultTextTemplateCard) {
+    defaultTextTemplateCard.addEventListener('click', (event) => {
+        handleDefaultTextTemplateActivate(event);
+    });
+    defaultTextTemplateCard.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            handleDefaultTextTemplateActivate(event);
+        }
+    });
 }
 
 async function playTimelineItem(
