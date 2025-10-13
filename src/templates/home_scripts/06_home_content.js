@@ -323,6 +323,9 @@
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
+            layer.style.transform = 'translate3d(0px, 0px, 0)';
+            layer.style.transformOrigin = 'top left';
+            layer.style.willChange = 'transform, width, height, opacity';
             const image = document.createElement('img');
             try {
                 image.decoding = 'async';
@@ -331,6 +334,7 @@
             }
             image.loading = 'eager';
             image.draggable = false;
+            image.style.willChange = 'transform';
             layer.appendChild(image);
             entry = {
                 layer,
@@ -385,6 +389,9 @@
         entry.lastTimelineTime = null;
 
         if (entry.layer) {
+            entry.layer.classList.remove('is-active');
+            entry.layer.style.removeProperty('pointer-events');
+            entry.layer.style.removeProperty('transform');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -459,22 +466,47 @@
                 rotation: 0,
             };
 
-        const groupName = getDescriptorLayerGroup(descriptor);
+        const pixelRatio = (typeof window !== 'undefined'
+            && Number.isFinite(window.devicePixelRatio)
+            && window.devicePixelRatio > 0)
+            ? window.devicePixelRatio
+            : 1;
+        const alignToDevicePixels = (value) => {
+            if (!Number.isFinite(value)) {
+                return 0;
+            }
+            if (pixelRatio <= 1) {
+                return Math.round(value);
+            }
+            return Math.round(value * pixelRatio) / pixelRatio;
+        };
+        const minimumSize = 1 / pixelRatio;
+        const alignedFrame = {
+            left: alignToDevicePixels(resolvedFrame.left),
+            top: alignToDevicePixels(resolvedFrame.top),
+            width: Math.max(minimumSize, alignToDevicePixels(resolvedFrame.width)),
+            height: Math.max(minimumSize, alignToDevicePixels(resolvedFrame.height)),
+            rotation: resolvedFrame.rotation,
+        };
 
-        if (frame) {
-            layer.style.left = `${frame.left}px`;
-            layer.style.top = `${frame.top}px`;
-            layer.style.width = `${frame.width}px`;
-            layer.style.height = `${frame.height}px`;
-            const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+        const groupName = getDescriptorLayerGroup(descriptor);
+        const isActiveOverlay = Boolean(activeTimelineItem)
+            && descriptor.item === activeTimelineItem;
+        layer.classList.toggle('is-active', isActiveOverlay);
+        if (isActiveOverlay) {
+            layer.style.pointerEvents = 'none';
         } else {
-            layer.style.left = '0px';
-            layer.style.top = '0px';
-            layer.style.width = '100%';
-            layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            layer.style.pointerEvents = 'auto';
         }
+
+        layer.style.left = '0px';
+        layer.style.top = '0px';
+        layer.style.width = `${alignedFrame.width}px`;
+        layer.style.height = `${alignedFrame.height}px`;
+        layer.style.transform = `translate3d(${alignedFrame.left}px, ${alignedFrame.top}px, 0)`;
+
+        const rotationValue = Number.isFinite(alignedFrame.rotation) ? alignedFrame.rotation : 0;
+        image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
 
         if (layer.parentElement !== container) {
             container.appendChild(layer);
@@ -493,7 +525,7 @@
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
 
-        entry.frame = resolvedFrame;
+        entry.frame = alignedFrame;
         entry.isVisible = true;
         entry.layerGroup = groupName;
         entry.zIndex = targetZIndex;
