@@ -309,6 +309,72 @@
     const nextActiveItems = new Set();
     const nextKnownItems = new Set();
 
+    const getSafeDevicePixelRatio = () => {
+        if (typeof window === 'undefined') {
+            return 1;
+        }
+        const ratio = Number(window.devicePixelRatio);
+        return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+    };
+
+    const alignToSubpixel = (value, pixelRatio) => {
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
+        const safeRatio = Math.max(1, Number(pixelRatio) || 1);
+        const scale = Math.max(2, safeRatio * 2);
+        return Math.round(value * scale) / scale;
+    };
+
+    const setCanvasSmoothing = (context, options = {}) => {
+        if (!context) {
+            return () => {};
+        }
+
+        const previous = {
+            enabled: context.imageSmoothingEnabled,
+            quality: 'imageSmoothingQuality' in context
+                ? context.imageSmoothingQuality
+                : null,
+        };
+
+        if (typeof options.enabled === 'boolean') {
+            context.imageSmoothingEnabled = options.enabled;
+        }
+
+        if (options.quality && 'imageSmoothingQuality' in context) {
+            try {
+                context.imageSmoothingQuality = options.quality;
+            } catch (error) {
+                // Some browsers may not support assigning imageSmoothingQuality.
+            }
+        }
+
+        return () => {
+            context.imageSmoothingEnabled = previous.enabled;
+            if (previous.quality !== null && 'imageSmoothingQuality' in context) {
+                try {
+                    context.imageSmoothingQuality = previous.quality;
+                } catch (error) {
+                    // Ignore if the browser rejects restoring the quality setting.
+                }
+            }
+        };
+    };
+
+    const setCanvasFilter = (context, filterValue) => {
+        if (!context || typeof context.filter !== 'string') {
+            return () => {};
+        }
+
+        const previous = context.filter;
+        context.filter = filterValue;
+
+        return () => {
+            context.filter = previous;
+        };
+    };
+
     const ensureOverlayLayerEntry = (descriptor) => {
         if (!descriptor || !descriptor.item) {
             return null;
@@ -320,6 +386,8 @@
         }
 
         let entry = activeOverlayLayers.get(descriptor.item);
+        const overlayKind = descriptor.item.dataset?.overlayKind || '';
+
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
@@ -335,6 +403,11 @@
             image.loading = 'eager';
             image.draggable = false;
             image.style.willChange = 'transform';
+            if (overlayKind) {
+                image.dataset.overlayKind = overlayKind;
+            } else {
+                delete image.dataset.overlayKind;
+            }
             layer.appendChild(image);
             entry = {
                 layer,
@@ -347,11 +420,20 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                overlayKind: overlayKind || null,
+                lastDecodePromise: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
 
         const { layer, image } = entry;
+
+        if (overlayKind) {
+            image.dataset.overlayKind = overlayKind;
+        } else {
+            delete image.dataset.overlayKind;
+        }
+        entry.overlayKind = overlayKind || null;
 
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
@@ -365,6 +447,16 @@
         if (entry.objectURL !== objectURL || !image.src) {
             image.src = objectURL;
             entry.objectURL = objectURL;
+            if (typeof image.decode === 'function') {
+                try {
+                    entry.lastDecodePromise = image.decode();
+                    entry.lastDecodePromise.catch(() => {
+                        entry.lastDecodePromise = null;
+                    });
+                } catch (error) {
+                    entry.lastDecodePromise = null;
+                }
+            }
         }
 
         image.alt = descriptor.item.dataset.displayName
@@ -387,6 +479,8 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.overlayKind = null;
+        entry.lastDecodePromise = null;
 
         if (entry.layer) {
             entry.layer.classList.remove('is-active');
@@ -666,6 +760,7 @@ function getActiveOverlayLayerSnapshots() {
             zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+            kind: entry.overlayKind || image.dataset?.overlayKind || null,
             priority: groupPriority[group] ?? 1,
         });
     });
@@ -697,54 +792,81 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
         return;
     }
 
-    snapshots
-        .filter((snapshot) => snapshot.group === group)
-        .forEach((snapshot) => {
-            const { image, frame } = snapshot;
-            if (!frame || frame.width <= 0 || frame.height <= 0) {
-                return;
-            }
+    const groupSnapshots = snapshots.filter((snapshot) => snapshot.group === group);
+    if (!groupSnapshots.length) {
+        return;
+    }
 
-            const naturalWidth = Math.max(1, image.naturalWidth || 0);
-            const naturalHeight = Math.max(1, image.naturalHeight || 0);
-            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
-                return;
-            }
+    const pixelRatio = getSafeDevicePixelRatio();
+    const hasTextSnapshots = groupSnapshots.some((snapshot) => (snapshot.kind || '').toLowerCase() === 'text');
+    const smoothingRestore = setCanvasSmoothing(exportMirrorContext, {
+        enabled: true,
+        quality: hasTextSnapshots && pixelRatio > 1 ? 'high' : null,
+    });
+    const filterRestore = setCanvasFilter(exportMirrorContext, 'none');
 
-            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
-            if (!Number.isFinite(drawScale) || drawScale <= 0) {
-                return;
-            }
+    groupSnapshots.forEach((snapshot) => {
+        const { image, frame } = snapshot;
+        if (!frame || frame.width <= 0 || frame.height <= 0) {
+            return;
+        }
 
-            const rotationRadians = Number.isFinite(frame.rotation)
-                ? (frame.rotation * Math.PI) / 180
-                : 0;
+        const naturalWidth = Math.max(1, image.naturalWidth || 0);
+        const naturalHeight = Math.max(1, image.naturalHeight || 0);
+        if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
+            return;
+        }
 
-            exportMirrorContext.save();
-            exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-            exportMirrorContext.translate(frame.left + (frame.width / 2), frame.top + (frame.height / 2));
-            if (rotationRadians !== 0) {
-                exportMirrorContext.rotate(rotationRadians);
-            }
-            exportMirrorContext.translate(-(frame.width / 2), -(frame.height / 2));
+        const isTextOverlay = (snapshot.kind || '').toLowerCase() === 'text';
+        const widthScale = frame.width / naturalWidth;
+        const heightScale = frame.height / naturalHeight;
+        const drawScale = isTextOverlay
+            ? Math.min(widthScale, heightScale)
+            : Math.max(widthScale, heightScale);
 
-            const radius = Math.max(0, snapshot.borderRadius || 0);
-            if (radius > 0) {
-                clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
-                exportMirrorContext.clip();
-            }
+        if (!Number.isFinite(drawScale) || drawScale <= 0) {
+            return;
+        }
 
-            const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
-            exportMirrorContext.globalAlpha *= clampedOpacity;
+        const rotationRadians = Number.isFinite(frame.rotation)
+            ? (frame.rotation * Math.PI) / 180
+            : 0;
 
-            const drawWidth = naturalWidth * drawScale;
-            const drawHeight = naturalHeight * drawScale;
-            const offsetX = (frame.width - drawWidth) / 2;
-            const offsetY = (frame.height - drawHeight) / 2;
+        exportMirrorContext.save();
+        exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        exportMirrorContext.translate(frame.left + (frame.width / 2), frame.top + (frame.height / 2));
+        if (rotationRadians !== 0) {
+            exportMirrorContext.rotate(rotationRadians);
+        }
+        exportMirrorContext.translate(-(frame.width / 2), -(frame.height / 2));
 
-            exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-            exportMirrorContext.restore();
-        });
+        const radius = Math.max(0, snapshot.borderRadius || 0);
+        if (radius > 0) {
+            clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
+            exportMirrorContext.clip();
+        }
+
+        const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
+        exportMirrorContext.globalAlpha *= clampedOpacity;
+
+        let drawWidth = naturalWidth * drawScale;
+        let drawHeight = naturalHeight * drawScale;
+        let offsetX = (frame.width - drawWidth) / 2;
+        let offsetY = (frame.height - drawHeight) / 2;
+
+        if (isTextOverlay) {
+            drawWidth = Math.max(1 / pixelRatio, alignToSubpixel(drawWidth, pixelRatio));
+            drawHeight = Math.max(1 / pixelRatio, alignToSubpixel(drawHeight, pixelRatio));
+            offsetX = alignToSubpixel(offsetX, pixelRatio);
+            offsetY = alignToSubpixel(offsetY, pixelRatio);
+        }
+
+        exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+        exportMirrorContext.restore();
+    });
+
+    filterRestore();
+    smoothingRestore();
 }
 
 function onPreviewOverlayPointerDown(event) {
