@@ -1177,6 +1177,8 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const expandedWindowStart = timelineWindowStart - OVERLAY_TIMELINE_WINDOW_SLACK_MS;
     const expandedWindowEnd = timelineWindowEnd + OVERLAY_TIMELINE_WINDOW_SLACK_MS;
 
+    const allowPrimaryDescriptor = isTextOverlayTimelineItem(primaryTimelineItem);
+
     const overlayEntries = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {

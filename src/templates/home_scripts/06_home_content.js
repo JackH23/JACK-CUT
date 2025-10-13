@@ -31,7 +31,15 @@
             }
             return descriptor;
         })
-        .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
+        .filter((descriptor) => {
+            if (!descriptor || !descriptor.item) {
+                return false;
+            }
+            if (descriptor.item === primaryTimelineItem) {
+                return allowPrimaryDescriptor;
+            }
+            return true;
+        })
         .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
         .filter((descriptor) => {
             if (descriptor.intersectsWindow || descriptor.isActive) {
@@ -1205,6 +1213,29 @@ function isImageTimelineItem(timelineItem) {
     }
     const fileType = timelineItem.dataset.fileType || '';
     return fileType.startsWith('image/');
+}
+
+function isTextOverlayTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return false;
+    }
+
+    if (timelineItem.dataset?.overlayKind === 'text') {
+        return true;
+    }
+
+    if (timelineItem.classList?.contains('timeline-item--text')) {
+        return true;
+    }
+
+    if (typeof timelineItem.closest === 'function') {
+        const lane = timelineItem.closest('.timeline-lane');
+        if (lane?.dataset?.laneRole === 'text-overlay') {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function isAudioTimelineItem(timelineItem) {
