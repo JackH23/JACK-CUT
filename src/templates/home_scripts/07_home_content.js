@@ -1,3 +1,151 @@
+const textTemplateCard = document.querySelector('.text-template-card');
+let defaultTextOverlayIdCounter = 0;
+
+function escapeDefaultOverlaySvgText(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function createDefaultTextOverlaySvg(options = {}) {
+    const width = Math.max(1, Math.round(options.width || 1920));
+    const height = Math.max(1, Math.round(options.height || 1080));
+    const baseText = typeof options.text === 'string' && options.text.trim()
+        ? options.text.trim()
+        : 'Your caption here';
+    const safeText = escapeDefaultOverlaySvgText(baseText);
+    const fontSize = Math.max(28, Math.round(height * 0.08));
+    const dropShadowOffset = Math.round(height * 0.01) || 4;
+    const dropShadowBlur = Math.max(Math.round(height * 0.04), 12);
+    const floodOpacity = 0.6;
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <filter id="default-text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="${dropShadowOffset}" stdDeviation="${dropShadowBlur}" flood-color="#0f172a" flood-opacity="${floodOpacity}" />
+    </filter>
+    <style>
+      .default-text-overlay{font:${fontSize}px \"Inter\",\"Segoe UI\",sans-serif;font-weight:700;fill:#f8fafc;text-anchor:middle;letter-spacing:0.02em;}
+    </style>
+  </defs>
+  <rect width="100%" height="100%" fill="none" />
+  <text x="${width / 2}" y="${height / 2}" class="default-text-overlay" filter="url(#default-text-shadow)" dominant-baseline="middle">${safeText}</text>
+</svg>`;
+}
+
+function createDefaultTextOverlayEntry(timelineItem, options = {}) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const clipStart = getTimelineItemStartTime(timelineItem);
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+    const effectiveDuration = clipDuration > 0 ? clipDuration : IMAGE_FRAME_DURATION;
+    const laneIndex = resolveLaneIndex(timelineItem.dataset?.laneIndex);
+    const overlayText = typeof options.text === 'string' && options.text.trim()
+        ? options.text.trim()
+        : 'Your caption here';
+    const overlayId = options.id || `text-overlay-${Date.now()}-${defaultTextOverlayIdCounter += 1}`;
+    const svgMarkup = createDefaultTextOverlaySvg({ text: overlayText });
+    const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml' });
+    const objectURL = URL.createObjectURL(svgBlob);
+
+    const overlayElement = document.createElement('div');
+    overlayElement.dataset.fileType = 'image/svg+xml';
+    overlayElement.dataset.objectUrl = objectURL;
+    overlayElement.dataset.displayName = overlayText;
+    overlayElement.dataset.imageDuration = String(effectiveDuration);
+    overlayElement.dataset.startOffsetMs = String(clipStart);
+    overlayElement.dataset.laneIndex = String(laneIndex);
+    overlayElement.dataset.overlayLayerGroup = 'above';
+    overlayElement.dataset.overlayType = 'default-text';
+    overlayElement.dataset.overlayId = overlayId;
+
+    return {
+        id: overlayId,
+        item: overlayElement,
+        laneIndex,
+        start: clipStart,
+        end: clipStart + effectiveDuration,
+        clipDuration: effectiveDuration,
+        layerGroup: 'above',
+        shouldRender: true,
+        isActive: true,
+        intersectsWindow: true,
+        sampleTime: clipStart,
+        progress: 0,
+        objectURL,
+        overlayType: 'default-text',
+    };
+}
+
+function canApplyDefaultTextOverlay(timelineItem) {
+    if (!timelineItem) {
+        return false;
+    }
+    const fileType = timelineItem.dataset?.fileType || '';
+    return fileType.startsWith('image/') || fileType.startsWith('video/');
+}
+
+function hasDefaultTextOverlay(timelineItem) {
+    if (!timelineItem) {
+        return false;
+    }
+    return hasCustomOverlayEntriesForTimelineItem(timelineItem, (entry) => entry?.overlayType === 'default-text');
+}
+
+function syncTextTemplateCardState() {
+    if (!textTemplateCard) {
+        return;
+    }
+
+    const canApply = canApplyDefaultTextOverlay(activeTimelineItem);
+    if (!canApply) {
+        textTemplateCard.setAttribute('aria-pressed', 'false');
+        textTemplateCard.setAttribute('aria-disabled', 'true');
+        textTemplateCard.classList.remove('is-active');
+        textTemplateCard.tabIndex = -1;
+        return;
+    }
+
+    textTemplateCard.removeAttribute('aria-disabled');
+    textTemplateCard.tabIndex = 0;
+    const hasOverlay = hasDefaultTextOverlay(activeTimelineItem);
+    textTemplateCard.setAttribute('aria-pressed', String(hasOverlay));
+    textTemplateCard.classList.toggle('is-active', hasOverlay);
+}
+
+function handleDefaultTextTemplateSelection(event) {
+    if (event) {
+        event.preventDefault();
+    }
+    if (!canApplyDefaultTextOverlay(activeTimelineItem)) {
+        return;
+    }
+
+    const existingEntries = getCustomOverlayEntriesForTimelineItem(activeTimelineItem);
+    const existing = existingEntries.find((entry) => entry?.overlayType === 'default-text');
+
+    const overlayEntry = createDefaultTextOverlayEntry(activeTimelineItem, {
+        id: existing?.id,
+        text: existing?.item?.dataset?.displayName || 'Your caption here',
+    });
+
+    if (!overlayEntry) {
+        return;
+    }
+
+    upsertCustomOverlayEntryForTimelineItem(activeTimelineItem, overlayEntry);
+    refreshActiveOverlayLayers();
+    syncTextTemplateCardState();
+}
 
 function updateKeyframeControlsState() {
     if (addKeyframeButton) {
@@ -918,6 +1066,7 @@ function setActiveTimelineItem(item, options = {}) {
     updateImageRotationControlState();
     updateActiveTimelineIndicators();
     applyCanvasSettingsToPreview(activeTimelineItem);
+    syncTextTemplateCardState();
 }
 
 function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
@@ -1883,6 +2032,7 @@ async function addToTimeline(file, objectURL) {
         const wasActive = targetItem === activeTimelineItem;
         const fileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
+        clearCustomOverlayEntriesForTimelineItem(targetItem);
         detachAudioWaveformResizeObserver(targetItem);
         releaseTimelineCanvasCustomImage(targetItem);
         targetItem.remove();
@@ -1955,6 +2105,18 @@ uploadInput.addEventListener('change', async (event) => {
 
 if (uploadButton) {
     uploadButton.addEventListener('click', () => uploadInput.click());
+}
+
+if (textTemplateCard) {
+    textTemplateCard.addEventListener('click', handleDefaultTextTemplateSelection);
+    textTemplateCard.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            handleDefaultTextTemplateSelection(event);
+        }
+    });
+    syncTextTemplateCardState();
 }
 
 async function playTimelineItem(

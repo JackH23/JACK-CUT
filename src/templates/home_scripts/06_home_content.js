@@ -19,6 +19,16 @@
                 descriptor.exitConfig = entry.exitConfig;
             }
 
+            if (typeof entry.layerGroup === 'string') {
+                const forcedGroup = entry.layerGroup.toLowerCase();
+                if (forcedGroup === 'above' || forcedGroup === 'below') {
+                    descriptor.layerGroup = forcedGroup;
+                }
+            }
+            if (Number.isFinite(entry.zIndex)) {
+                descriptor.zIndex = entry.zIndex;
+            }
+
             if (!Number.isFinite(descriptor.sampleTime)) {
                 if (descriptor.isActive) {
                     descriptor.sampleTime = safeTimelineNow;
@@ -279,8 +289,25 @@
     const overlayGroups = { below: [], above: [] };
 
     overlayEntries.forEach((descriptor) => {
-        descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
-        descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
+        const explicitGroup = (descriptor.layerGroup || '').toLowerCase();
+        const datasetGroup = (descriptor.item?.dataset?.overlayLayerGroup || '').toLowerCase();
+        if (explicitGroup === 'above' || explicitGroup === 'below') {
+            descriptor.layerGroup = explicitGroup;
+        } else if (datasetGroup === 'above' || datasetGroup === 'below') {
+            descriptor.layerGroup = datasetGroup;
+        } else {
+            descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
+        }
+
+        if (!Number.isFinite(descriptor.zIndex)) {
+            const datasetZIndex = Number(descriptor.item?.dataset?.overlayZIndex);
+            if (Number.isFinite(datasetZIndex)) {
+                descriptor.zIndex = datasetZIndex;
+            } else {
+                descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
+            }
+        }
+
         if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
         } else {
@@ -748,9 +775,14 @@ function getOverlayEntriesForTimelineItem(timelineItem, entriesOverride = null) 
         return [];
     }
 
-    const candidateEntries = Array.isArray(entriesOverride) && entriesOverride.length
+    const baseEntries = Array.isArray(entriesOverride) && entriesOverride.length
         ? entriesOverride
         : getTimelineLaneEntries();
+    const customEntries = getCustomOverlayEntriesForTimelineItem(timelineItem);
+
+    const candidateEntries = []
+        .concat(Array.isArray(baseEntries) ? baseEntries : [])
+        .concat(customEntries);
 
     if (!candidateEntries.length) {
         return [];
@@ -1428,3 +1460,76 @@ function showKeyframeStatus(message) {
         }, KEYFRAME_STATUS_TIMEOUT_MS);
     }
 }
+const customOverlayEntriesByTimelineItem = new WeakMap();
+
+function getCustomOverlayEntriesForTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return [];
+    }
+    const entries = customOverlayEntriesByTimelineItem.get(timelineItem);
+    return Array.isArray(entries) ? entries : [];
+}
+
+function upsertCustomOverlayEntryForTimelineItem(timelineItem, entry) {
+    if (!timelineItem || !entry || !entry.item) {
+        return null;
+    }
+
+    const existingEntries = getCustomOverlayEntriesForTimelineItem(timelineItem).slice();
+    const nextEntry = { ...entry };
+    let replacedEntry = null;
+
+    if (nextEntry.id) {
+        const matchIndex = existingEntries.findIndex((candidate) => candidate && candidate.id === nextEntry.id);
+        if (matchIndex >= 0) {
+            replacedEntry = existingEntries[matchIndex];
+            existingEntries[matchIndex] = nextEntry;
+        } else {
+            existingEntries.push(nextEntry);
+        }
+    } else {
+        existingEntries.push(nextEntry);
+    }
+
+    customOverlayEntriesByTimelineItem.set(timelineItem, existingEntries);
+
+    if (replacedEntry && replacedEntry.objectURL && replacedEntry.objectURL !== nextEntry.objectURL) {
+        try {
+            URL.revokeObjectURL(replacedEntry.objectURL);
+        } catch (error) {
+            console.warn('Unable to release previous overlay resource.', error);
+        }
+    }
+
+    return nextEntry;
+}
+
+function clearCustomOverlayEntriesForTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const entries = customOverlayEntriesByTimelineItem.get(timelineItem);
+    if (Array.isArray(entries)) {
+        entries.forEach((entry) => {
+            if (entry && entry.objectURL) {
+                try {
+                    URL.revokeObjectURL(entry.objectURL);
+                } catch (error) {
+                    console.warn('Unable to release overlay resource.', error);
+                }
+            }
+        });
+    }
+
+    customOverlayEntriesByTimelineItem.delete(timelineItem);
+}
+
+function hasCustomOverlayEntriesForTimelineItem(timelineItem, predicate = null) {
+    const entries = getCustomOverlayEntriesForTimelineItem(timelineItem);
+    if (typeof predicate === 'function') {
+        return entries.some((entry) => predicate(entry));
+    }
+    return entries.length > 0;
+}
+
