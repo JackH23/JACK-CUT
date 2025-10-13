@@ -1632,6 +1632,32 @@ function createTimelineLaneElement() {
     return lane;
 }
 
+function ensureTextTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--text'));
+    if (existing) {
+        return existing;
+    }
+
+    const lane = createTimelineLaneElement();
+    lane.classList.add('timeline-lane--text');
+    lane.dataset.laneRole = 'text';
+
+    const firstLane = timelineLaneList.firstElementChild;
+    if (firstLane) {
+        timelineLaneList.insertBefore(lane, firstLane);
+    } else {
+        timelineLaneList.appendChild(lane);
+    }
+
+    refreshTimelineLaneIndices();
+    return lane;
+}
+
 function insertTimelineLaneAt(index) {
     if (!timelineLaneList) {
         return null;

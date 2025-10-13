@@ -392,6 +392,7 @@ if (previewVideo) {
 
 syncAudioControlsToTimelineItem(null);
 syncCanvasControlsToTimelineItem(null);
+syncTextControlsToTimelineItem(null);
 
 function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
     if (!animationComboSpeedInput) {

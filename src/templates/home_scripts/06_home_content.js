@@ -1199,8 +1199,18 @@ function isVideoTimelineItem(timelineItem) {
     return fileType.startsWith('video/');
 }
 
+function isTextTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    return (timelineItem.dataset.layerType || '') === 'text';
+}
+
 function isImageTimelineItem(timelineItem) {
     if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+    if (isTextTimelineItem(timelineItem)) {
         return false;
     }
     const fileType = timelineItem.dataset.fileType || '';

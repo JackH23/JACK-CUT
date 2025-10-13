@@ -158,6 +158,16 @@ const canvasBlurInput = document.getElementById('canvas-background-blur');
 const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const textTemplateCard = document.querySelector('.text-template-card');
+const textEditorPanel = document.getElementById('text-editor');
+const textEditorEmptyState = document.getElementById('text-editor-empty');
+const textEditorContentInput = document.getElementById('text-editor-content');
+const textEditorFontSelect = document.getElementById('text-editor-font');
+const textEditorWeightSelect = document.getElementById('text-editor-weight');
+const textEditorSizeInput = document.getElementById('text-editor-size');
+const textEditorSizeValue = document.getElementById('text-editor-size-value');
+const textEditorColorInput = document.getElementById('text-editor-color');
+const textAlignButtons = Array.from(document.querySelectorAll('.text-align-button'));
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
@@ -188,6 +198,232 @@ const optionSliderConfigs = [
 ];
 
 const IMAGE_FRAME_DURATION = 1000;
+
+const TEXT_FONT_SIZE_MIN = 16;
+const TEXT_FONT_SIZE_MAX = 120;
+
+function clampTextFontSize(value) {
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) {
+        return 48;
+    }
+    return Math.max(TEXT_FONT_SIZE_MIN, Math.min(TEXT_FONT_SIZE_MAX, Math.round(numeric)));
+}
+
+function updateTextEditorSizeDisplay(value) {
+    if (!textEditorSizeValue) {
+        return;
+    }
+    const clamped = clampTextFontSize(value);
+    textEditorSizeValue.textContent = `${clamped} px`;
+}
+
+function setTextEditorControlsDisabled(disabled) {
+    const controls = [
+        textEditorContentInput,
+        textEditorFontSelect,
+        textEditorWeightSelect,
+        textEditorSizeInput,
+        textEditorColorInput,
+    ].filter(Boolean);
+    controls.forEach((control) => {
+        control.disabled = disabled;
+        if (disabled) {
+            control.setAttribute('aria-disabled', 'true');
+        } else {
+            control.removeAttribute('aria-disabled');
+        }
+    });
+    textAlignButtons.forEach((button) => {
+        button.disabled = disabled;
+        if (disabled) {
+            button.setAttribute('aria-disabled', 'true');
+            button.setAttribute('aria-pressed', 'false');
+            button.classList.remove('is-active');
+        } else {
+            button.removeAttribute('aria-disabled');
+        }
+    });
+}
+
+function setTextEditorAlignmentButtons(alignment) {
+    const target = alignment || 'center';
+    textAlignButtons.forEach((button) => {
+        const isActive = button.dataset.textAlign === target;
+        button.setAttribute('aria-pressed', String(isActive));
+        button.classList.toggle('is-active', isActive);
+    });
+}
+
+function setTextEditorVisibility(isVisible) {
+    if (!textEditorPanel || !textEditorEmptyState) {
+        return;
+    }
+    if (isVisible) {
+        textEditorPanel.hidden = false;
+        textEditorPanel.setAttribute('aria-hidden', 'false');
+        textEditorEmptyState.hidden = true;
+    } else {
+        textEditorPanel.hidden = true;
+        textEditorPanel.setAttribute('aria-hidden', 'true');
+        textEditorEmptyState.hidden = false;
+    }
+}
+
+function syncTextControlsToTimelineItem(timelineItem) {
+    if (!textEditorPanel || !textEditorEmptyState) {
+        return;
+    }
+
+    const isText = isTextTimelineItem(timelineItem);
+    setTextEditorVisibility(isText);
+    setTextEditorControlsDisabled(!isText);
+
+    if (!isText) {
+        if (textEditorContentInput) {
+            textEditorContentInput.value = '';
+        }
+        if (textEditorFontSelect) {
+            const defaults = getDefaultTextLayerSettings();
+            textEditorFontSelect.value = defaults.fontFamily;
+        }
+        if (textEditorWeightSelect) {
+            textEditorWeightSelect.value = '600';
+        }
+        if (textEditorSizeInput) {
+            textEditorSizeInput.value = String(48);
+        }
+        updateTextEditorSizeDisplay(48);
+        if (textEditorColorInput) {
+            textEditorColorInput.value = '#ffffff';
+        }
+        setTextEditorAlignmentButtons('center');
+        return;
+    }
+
+    const settings = getTimelineItemTextSettings(timelineItem);
+    if (textEditorContentInput) {
+        textEditorContentInput.value = settings.content;
+    }
+    if (textEditorFontSelect) {
+        textEditorFontSelect.value = settings.fontFamily;
+    }
+    if (textEditorWeightSelect) {
+        textEditorWeightSelect.value = settings.fontWeight;
+    }
+    if (textEditorSizeInput) {
+        textEditorSizeInput.value = String(settings.fontSize);
+    }
+    updateTextEditorSizeDisplay(settings.fontSize);
+    if (textEditorColorInput) {
+        textEditorColorInput.value = settings.color;
+    }
+    setTextEditorAlignmentButtons(settings.align);
+}
+
+function updateActiveTextLayerSettings(partialSettings = {}) {
+    if (!activeTimelineItem || !isTextTimelineItem(activeTimelineItem)) {
+        return;
+    }
+    persistTimelineItemTextSettings(activeTimelineItem, partialSettings);
+    applyTextSettingsToTimelineItem(activeTimelineItem);
+}
+
+if (textEditorContentInput) {
+    textEditorContentInput.addEventListener('input', () => {
+        if (textEditorContentInput.disabled) {
+            return;
+        }
+        updateActiveTextLayerSettings({ content: textEditorContentInput.value });
+    });
+}
+
+if (textEditorFontSelect) {
+    textEditorFontSelect.addEventListener('change', () => {
+        if (textEditorFontSelect.disabled) {
+            return;
+        }
+        updateActiveTextLayerSettings({ fontFamily: textEditorFontSelect.value });
+    });
+}
+
+if (textEditorWeightSelect) {
+    textEditorWeightSelect.addEventListener('change', () => {
+        if (textEditorWeightSelect.disabled) {
+            return;
+        }
+        updateActiveTextLayerSettings({ fontWeight: textEditorWeightSelect.value });
+    });
+}
+
+if (textEditorSizeInput) {
+    const handleSizeUpdate = () => {
+        if (textEditorSizeInput.disabled) {
+            return;
+        }
+        const clamped = clampTextFontSize(textEditorSizeInput.value);
+        textEditorSizeInput.value = String(clamped);
+        updateTextEditorSizeDisplay(clamped);
+        updateActiveTextLayerSettings({ fontSize: clamped });
+    };
+    textEditorSizeInput.addEventListener('input', handleSizeUpdate);
+    textEditorSizeInput.addEventListener('change', handleSizeUpdate);
+}
+
+if (textEditorColorInput) {
+    const handleColorUpdate = () => {
+        if (textEditorColorInput.disabled) {
+            return;
+        }
+        updateActiveTextLayerSettings({ color: textEditorColorInput.value });
+    };
+    textEditorColorInput.addEventListener('input', handleColorUpdate);
+    textEditorColorInput.addEventListener('change', handleColorUpdate);
+}
+
+if (textAlignButtons.length) {
+    textAlignButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            if (button.disabled) {
+                return;
+            }
+            const alignment = button.dataset.textAlign || 'center';
+            setTextEditorAlignmentButtons(alignment);
+            updateActiveTextLayerSettings({ align: alignment });
+        });
+    });
+}
+
+if (textTemplateCard) {
+    const handleCreateTextLayer = () => {
+        const timelineItem = createTextTimelineItem();
+        if (!timelineItem) {
+            return;
+        }
+        activateSettingsSection('text');
+        setActiveTimelineItem(timelineItem, { focus: true });
+        loadPreviewFromTimeline(timelineItem);
+        window.requestAnimationFrame(() => {
+            if (textEditorContentInput && !textEditorContentInput.disabled) {
+                textEditorContentInput.focus();
+                textEditorContentInput.select();
+            }
+        });
+    };
+
+    textTemplateCard.addEventListener('click', (event) => {
+        event.preventDefault();
+        handleCreateTextLayer();
+    });
+
+    textTemplateCard.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            handleCreateTextLayer();
+        }
+    });
+}
 
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
 const DEFAULT_CANVAS_BLUR = 18;

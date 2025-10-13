@@ -198,6 +198,58 @@
                                 <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
                             </div>
                         </div>
+                        <div class="text-editor" id="text-editor" hidden aria-hidden="true">
+                            <div class="text-editor__field">
+                                <label for="text-editor-content">Text content</label>
+                                <textarea
+                                    id="text-editor-content"
+                                    rows="3"
+                                    placeholder="Type to replace the default caption..."
+                                ></textarea>
+                            </div>
+                            <div class="text-editor__grid" aria-label="Text Options">
+                                <div class="text-editor__control">
+                                    <label for="text-editor-font">Font family</label>
+                                    <select id="text-editor-font">
+                                        <option value="Inter" selected>Inter</option>
+                                        <option value="Poppins">Poppins</option>
+                                        <option value="Roboto">Roboto</option>
+                                        <option value="Playfair Display">Playfair Display</option>
+                                    </select>
+                                </div>
+                                <div class="text-editor__control">
+                                    <label for="text-editor-weight">Weight</label>
+                                    <select id="text-editor-weight">
+                                        <option value="400">Regular</option>
+                                        <option value="500">Medium</option>
+                                        <option value="600" selected>Semi-bold</option>
+                                        <option value="700">Bold</option>
+                                    </select>
+                                </div>
+                                <div class="text-editor__control text-editor__control--range">
+                                    <label for="text-editor-size">Font size</label>
+                                    <input type="range" id="text-editor-size" min="16" max="120" step="2" value="48" aria-describedby="text-editor-size-value">
+                                    <span class="text-editor__range-value" id="text-editor-size-value">48 px</span>
+                                </div>
+                                <div class="text-editor__control">
+                                    <label for="text-editor-color">Text color</label>
+                                    <input type="color" id="text-editor-color" value="#ffffff">
+                                </div>
+                                <fieldset class="text-editor__control text-editor__control--align" role="radiogroup" aria-label="Text alignment">
+                                    <legend>Alignment</legend>
+                                    <button type="button" class="text-align-button" data-text-align="left" aria-pressed="false" aria-label="Align left">
+                                        <span aria-hidden="true">≡</span>
+                                    </button>
+                                    <button type="button" class="text-align-button" data-text-align="center" aria-pressed="true" aria-label="Align center">
+                                        <span aria-hidden="true">≣</span>
+                                    </button>
+                                    <button type="button" class="text-align-button" data-text-align="right" aria-pressed="false" aria-label="Align right">
+                                        <span aria-hidden="true">≡</span>
+                                    </button>
+                                </fieldset>
+                            </div>
+                        </div>
+                        <p class="text-editor__empty" id="text-editor-empty" aria-live="polite">Select a text layer to edit its content.</p>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
                         <div class="info-list">
