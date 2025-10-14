@@ -2495,6 +2495,17 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     color: rgba(148, 163, 184, 0.72);
 }
 
+.timeline-lane--text::before {
+    content: 'Text';
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.72);
+}
+
 .timeline-lane.is-drop-target {
     border-color: rgba(124, 58, 237, 0.55);
     background: rgba(30, 41, 59, 0.6);
@@ -2661,6 +2672,18 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     scroll-snap-align: start;
     will-change: transform, box-shadow;
+}
+
+.timeline-item--text {
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.25) 100%);
+    border: 1px solid rgba(96, 165, 250, 0.35);
+}
+
+.timeline-item--text span {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgba(226, 232, 240, 0.95);
+    text-align: center;
 }
 
 .timeline-item--audio {
