@@ -306,59 +306,117 @@
             return null;
         }
 
-        const objectURL = descriptor.item.dataset.objectUrl || '';
-        if (!objectURL) {
+        const dataset = descriptor.item.dataset || {};
+        const overlayType = dataset.overlayType || '';
+        const fileType = dataset.fileType || '';
+        const isTextOverlay = overlayType === 'text' || fileType.startsWith('text/');
+        const isImageOverlay = fileType.startsWith('image/');
+
+        if (!isImageOverlay && !isTextOverlay) {
             return null;
         }
 
+        const desiredKind = isTextOverlay ? 'text' : 'image';
         let entry = activeOverlayLayers.get(descriptor.item);
-        if (!entry || !entry.layer || !entry.image) {
+        if (!entry || !entry.layer || entry.kind !== desiredKind) {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
-            const image = document.createElement('img');
-            try {
-                image.decoding = 'async';
-            } catch (error) {
-                // Ignore unsupported decoding hint.
+            layer.dataset.type = desiredKind;
+
+            let contentElement = null;
+            if (desiredKind === 'image') {
+                const image = document.createElement('img');
+                try {
+                    image.decoding = 'async';
+                } catch (error) {
+                    // Ignore unsupported decoding hint.
+                }
+                image.loading = 'eager';
+                image.draggable = false;
+                layer.appendChild(image);
+                contentElement = image;
+                entry = {
+                    layer,
+                    image,
+                    contentElement,
+                    objectURL: '',
+                    kind: desiredKind,
+                    frame: null,
+                    isVisible: false,
+                    layerGroup: null,
+                    zIndex: 0,
+                    borderRadius: 0,
+                    opacity: 1,
+                    lastTimelineTime: null,
+                };
+            } else {
+                const textElement = document.createElement('div');
+                textElement.className = 'preview-overlay-text';
+                textElement.setAttribute('role', 'presentation');
+                layer.appendChild(textElement);
+                contentElement = textElement;
+                entry = {
+                    layer,
+                    textElement,
+                    contentElement,
+                    kind: desiredKind,
+                    frame: null,
+                    isVisible: false,
+                    layerGroup: null,
+                    zIndex: 0,
+                    borderRadius: 0,
+                    opacity: 1,
+                    lastTimelineTime: null,
+                };
             }
-            image.loading = 'eager';
-            image.draggable = false;
-            layer.appendChild(image);
-            entry = {
-                layer,
-                image,
-                objectURL: '',
-                frame: null,
-                isVisible: false,
-                layerGroup: null,
-                zIndex: 0,
-                borderRadius: 0,
-                opacity: 1,
-                lastTimelineTime: null,
-            };
             activeOverlayLayers.set(descriptor.item, entry);
         }
 
-        const { layer, image } = entry;
+        const { layer, image, textElement, contentElement } = entry;
 
         layer.className = 'preview-overlay-layer';
+        layer.dataset.type = desiredKind;
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
-        if (borderRadius > 0) {
+        if (borderRadius > 0 && desiredKind !== 'text') {
             layer.style.borderRadius = `${borderRadius}px`;
+        } else if (borderRadius > 0 && desiredKind === 'text') {
+            layer.style.borderRadius = `${Math.max(0, borderRadius - 2)}px`;
         } else {
             layer.style.removeProperty('border-radius');
         }
 
-        if (entry.objectURL !== objectURL || !image.src) {
-            image.src = objectURL;
-            entry.objectURL = objectURL;
+        if (desiredKind === 'image') {
+            const objectURL = descriptor.item.dataset.objectUrl || '';
+            if (!objectURL) {
+                return null;
+            }
+            if (entry.objectURL !== objectURL || !(image && image.src)) {
+                if (image) {
+                    image.src = objectURL;
+                }
+                entry.objectURL = objectURL;
+            }
+            if (image) {
+                image.alt = descriptor.item.dataset.displayName
+                    || descriptor.item.querySelector('span')?.textContent
+                    || 'Overlay layer';
+                layer.title = image.alt;
+            }
+        } else if (desiredKind === 'text') {
+            const textContent = descriptor.item.dataset.textContent
+                || descriptor.item.querySelector('.timeline-text-preview')?.textContent
+                || descriptor.item.dataset.displayName
+                || 'Text overlay';
+            if (textElement) {
+                textElement.textContent = textContent;
+            }
+            layer.title = textContent;
         }
 
-        image.alt = descriptor.item.dataset.displayName
-            || descriptor.item.querySelector('span')?.textContent
-            || 'Overlay layer';
-        layer.title = image.alt;
+        if (contentElement) {
+            contentElement.setAttribute('aria-hidden', 'true');
+        }
 
         return entry;
     };
@@ -418,7 +476,7 @@
             return false;
         }
 
-        const { layer, image } = entry;
+        const { layer, image, contentElement } = entry;
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
@@ -459,13 +517,19 @@
             layer.style.width = `${frame.width}px`;
             layer.style.height = `${frame.height}px`;
             const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            layer.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            if (contentElement && contentElement !== layer) {
+                contentElement.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            }
         } else {
             layer.style.left = '0px';
             layer.style.top = '0px';
             layer.style.width = '100%';
             layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            layer.style.setProperty('--preview-overlay-rotation', '0deg');
+            if (contentElement && contentElement !== layer) {
+                contentElement.style.setProperty('--preview-overlay-rotation', '0deg');
+            }
         }
 
         if (layer.parentElement !== container) {
@@ -479,8 +543,8 @@
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
         layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
-        if (image) {
-            image.style.opacity = '1';
+        if (contentElement && contentElement !== layer) {
+            contentElement.style.opacity = '1';
         }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
