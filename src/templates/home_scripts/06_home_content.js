@@ -32,7 +32,7 @@
             return descriptor;
         })
         .filter((descriptor) => descriptor.item && descriptor.item !== primaryTimelineItem)
-        .filter((descriptor) => (descriptor.item.dataset.fileType || '').startsWith('image/'))
+        .filter((descriptor) => isImageTimelineItem(descriptor.item))
         .filter((descriptor) => {
             if (descriptor.intersectsWindow || descriptor.isActive) {
                 return true;
@@ -100,8 +100,7 @@
                 return;
             }
 
-            const fileType = item.dataset?.fileType || '';
-            if (!fileType.startsWith('image/')) {
+            if (!isImageTimelineItem(item)) {
                 return;
             }
 
@@ -306,27 +305,23 @@
             return null;
         }
 
-        const objectURL = descriptor.item.dataset.objectUrl || '';
-        if (!objectURL) {
+        const item = descriptor.item;
+        const fileType = item.dataset.fileType || '';
+        const isTextOverlay = fileType.startsWith('text/');
+        const objectURL = item.dataset.objectUrl || '';
+
+        if (!isTextOverlay && !objectURL) {
             return null;
         }
 
-        let entry = activeOverlayLayers.get(descriptor.item);
-        if (!entry || !entry.layer || !entry.image) {
+        let entry = activeOverlayLayers.get(item);
+        if (!entry || !entry.layer) {
             const layer = document.createElement('div');
             layer.className = 'preview-overlay-layer';
-            const image = document.createElement('img');
-            try {
-                image.decoding = 'async';
-            } catch (error) {
-                // Ignore unsupported decoding hint.
-            }
-            image.loading = 'eager';
-            image.draggable = false;
-            layer.appendChild(image);
             entry = {
                 layer,
-                image,
+                image: null,
+                textElement: null,
                 objectURL: '',
                 frame: null,
                 isVisible: false,
@@ -336,10 +331,10 @@
                 opacity: 1,
                 lastTimelineTime: null,
             };
-            activeOverlayLayers.set(descriptor.item, entry);
+            activeOverlayLayers.set(item, entry);
         }
 
-        const { layer, image } = entry;
+        const { layer } = entry;
 
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
@@ -350,15 +345,49 @@
             layer.style.removeProperty('border-radius');
         }
 
-        if (entry.objectURL !== objectURL || !image.src) {
-            image.src = objectURL;
-            entry.objectURL = objectURL;
+        if (isTextOverlay) {
+            layer.classList.add('preview-overlay-layer--text');
+            let textElement = entry.textElement;
+            if (!textElement) {
+                textElement = document.createElement('div');
+                textElement.className = 'preview-overlay-text';
+                textElement.draggable = false;
+                layer.textContent = '';
+                layer.appendChild(textElement);
+                entry.textElement = textElement;
+            }
+            const textContent = item.dataset.textContent
+                || item.dataset.displayName
+                || 'Text overlay';
+            textElement.textContent = textContent;
+            layer.title = textContent;
+            entry.objectURL = '';
+            entry.image = null;
+        } else {
+            let image = entry.image;
+            if (!image) {
+                image = document.createElement('img');
+                try {
+                    image.decoding = 'async';
+                } catch (error) {
+                    // Ignore unsupported decoding hint.
+                }
+                image.loading = 'eager';
+                image.draggable = false;
+                layer.textContent = '';
+                layer.appendChild(image);
+                entry.image = image;
+                entry.textElement = null;
+            }
+            if (entry.objectURL !== objectURL || !image.src) {
+                image.src = objectURL;
+                entry.objectURL = objectURL;
+            }
+            image.alt = item.dataset.displayName
+                || item.querySelector('span')?.textContent
+                || 'Overlay layer';
+            layer.title = image.alt;
         }
-
-        image.alt = descriptor.item.dataset.displayName
-            || descriptor.item.querySelector('span')?.textContent
-            || 'Overlay layer';
-        layer.title = image.alt;
 
         return entry;
     };
@@ -418,7 +447,9 @@
             return false;
         }
 
-        const { layer, image } = entry;
+        const { layer } = entry;
+        const image = entry.image || null;
+        const textElement = entry.textElement || null;
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
@@ -459,13 +490,23 @@
             layer.style.width = `${frame.width}px`;
             layer.style.height = `${frame.height}px`;
             const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            if (image) {
+                image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            }
+            if (textElement) {
+                textElement.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            }
         } else {
             layer.style.left = '0px';
             layer.style.top = '0px';
             layer.style.width = '100%';
             layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            if (image) {
+                image.style.setProperty('--preview-overlay-rotation', '0deg');
+            }
+            if (textElement) {
+                textElement.style.setProperty('--preview-overlay-rotation', '0deg');
+            }
         }
 
         if (layer.parentElement !== container) {
@@ -481,6 +522,9 @@
         layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
         if (image) {
             image.style.opacity = '1';
+        }
+        if (textElement) {
+            textElement.style.opacity = '1';
         }
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
@@ -1204,7 +1248,7 @@ function isImageTimelineItem(timelineItem) {
         return false;
     }
     const fileType = timelineItem.dataset.fileType || '';
-    return fileType.startsWith('image/');
+    return fileType.startsWith('image/') || fileType.startsWith('text/');
 }
 
 function isAudioTimelineItem(timelineItem) {

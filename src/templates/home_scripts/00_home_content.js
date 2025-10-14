@@ -362,7 +362,7 @@ function getActiveImageClipDurationMs() {
     }
 
     const fileType = activeTimelineItem.dataset.fileType || '';
-    if (!fileType.startsWith('image/')) {
+    if (!fileType.startsWith('image/') && !fileType.startsWith('text/')) {
         return null;
     }
 
