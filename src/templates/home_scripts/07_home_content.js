@@ -1000,7 +1000,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         previewImageLayer.classList.toggle('preview-image-layer--text-active', isTextOverlay);
     }
 
-    applyCanvasSettingsToPreview(timelineItem);
+    applyCanvasSettingsToPreview(timelineItem, { overlayEntries });
 }
 
 function formatFileSize(bytes) {
@@ -1985,7 +1985,7 @@ async function playTimelineItem(
 
     const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
-    applyCanvasSettingsToPreview(timelineItem);
+    applyCanvasSettingsToPreview(timelineItem, { overlayEntries });
 
     if (!objectURL) {
         return;

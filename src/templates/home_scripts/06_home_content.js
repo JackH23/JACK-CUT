@@ -773,6 +773,81 @@ function getOverlayEntriesForTimelineItem(timelineItem, entriesOverride = null) 
         });
 }
 
+function resolveTextOverlayPreviewSource(timelineItem, entriesOverride = null) {
+    if (!isTextOverlayTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const overlayEntries = Array.isArray(entriesOverride) && entriesOverride.length
+        ? entriesOverride
+        : getOverlayEntriesForTimelineItem(timelineItem);
+
+    if (!overlayEntries.length) {
+        return null;
+    }
+
+    const targetLaneIndex = resolveLaneIndex(timelineItem.dataset?.laneIndex);
+
+    const candidates = overlayEntries
+        .map((entry) => {
+            const item = entry?.item;
+            if (!item || item === timelineItem) {
+                return null;
+            }
+
+            const fileType = item.dataset?.fileType || '';
+            const isVideo = fileType.startsWith('video/');
+            const isImage = fileType.startsWith('image/');
+
+            if (!isVideo && !isImage) {
+                return null;
+            }
+
+            if (fileType.startsWith('image/text-overlay')) {
+                return null;
+            }
+
+            const laneIndex = resolveLaneIndex(entry.laneIndex ?? item.dataset?.laneIndex);
+            if (!Number.isFinite(laneIndex)) {
+                return null;
+            }
+
+            return {
+                item,
+                laneIndex,
+                fileType,
+                start: Number.isFinite(entry.start) ? entry.start : getTimelineItemStartTime(item),
+            };
+        })
+        .filter((candidate) => candidate && candidate.laneIndex <= targetLaneIndex);
+
+    if (!candidates.length) {
+        return null;
+    }
+
+    candidates.sort((a, b) => {
+        const aIsVideo = a.fileType.startsWith('video/');
+        const bIsVideo = b.fileType.startsWith('video/');
+        if (aIsVideo !== bIsVideo) {
+            return aIsVideo ? -1 : 1;
+        }
+
+        if (a.laneIndex !== b.laneIndex) {
+            return b.laneIndex - a.laneIndex;
+        }
+
+        const aStart = Number.isFinite(a.start) ? a.start : -Infinity;
+        const bStart = Number.isFinite(b.start) ? b.start : -Infinity;
+        if (aStart !== bStart) {
+            return bStart - aStart;
+        }
+
+        return 0;
+    });
+
+    return candidates[0]?.item || null;
+}
+
 
 if (previewImage) {
     previewImage.addEventListener('load', () => {
@@ -1191,6 +1266,15 @@ function sanitizeKeyframeEntry(entry) {
         progress,
         transform,
     };
+}
+
+function isTextOverlayTimelineItem(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return false;
+    }
+
+    const fileType = timelineItem.dataset.fileType || '';
+    return fileType.startsWith('image/text-overlay');
 }
 
 function isVideoTimelineItem(timelineItem) {

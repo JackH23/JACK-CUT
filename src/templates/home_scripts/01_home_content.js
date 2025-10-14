@@ -119,18 +119,30 @@ function clearPreviewCanvasBackdrop() {
     }
 }
 
-function applyCanvasSettingsToPreview(timelineItem) {
+function applyCanvasSettingsToPreview(timelineItem, options = {}) {
     if (!previewCanvasBackdrop) {
         return;
     }
 
-    const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
+    const overlayEntries = Array.isArray(options?.overlayEntries)
+        ? options.overlayEntries
+        : null;
+
+    let previewSourceItem = timelineItem || null;
+    if (isTextOverlayTimelineItem(timelineItem)) {
+        const supportingClip = resolveTextOverlayPreviewSource(timelineItem, overlayEntries);
+        if (supportingClip) {
+            previewSourceItem = supportingClip;
+        }
+    }
+
+    const isClip = isImageTimelineItem(previewSourceItem) || isVideoTimelineItem(previewSourceItem);
     if (!isClip) {
         clearPreviewCanvasBackdrop();
         return;
     }
 
-    const settings = getTimelineItemCanvasSettings(timelineItem);
+    const settings = getTimelineItemCanvasSettings(previewSourceItem);
     if (settings.mode === 'none') {
         clearPreviewCanvasBackdrop();
         return;
@@ -138,7 +150,7 @@ function applyCanvasSettingsToPreview(timelineItem) {
 
     applyCanvasBlurToPreview(settings.blur);
     previewCanvasBackdrop.dataset.mode = settings.mode;
-    previewCanvasBackdrop.dataset.source = isVideoTimelineItem(timelineItem) ? 'video' : 'image';
+    previewCanvasBackdrop.dataset.source = isVideoTimelineItem(previewSourceItem) ? 'video' : 'image';
 
     if (settings.mode === 'custom') {
         const url = settings.customImageUrl;
@@ -164,13 +176,13 @@ function applyCanvasSettingsToPreview(timelineItem) {
         return;
     }
 
-    const objectURL = timelineItem.dataset.objectUrl || '';
+    const objectURL = previewSourceItem.dataset.objectUrl || '';
     if (!objectURL) {
         clearPreviewCanvasBackdrop();
         return;
     }
 
-    if (isVideoTimelineItem(timelineItem)) {
+    if (isVideoTimelineItem(previewSourceItem)) {
         if (previewCanvasImage) {
             previewCanvasImage.hidden = true;
             if (previewCanvasImage.src) {
