@@ -49,8 +49,10 @@
             return false;
         });
 
-    const OVERLAY_BELOW_Z_BASE = 10;
-    const OVERLAY_BELOW_Z_MAX = 59;
+    // Keep below overlays under the preview image frame (z-index 40 in CSS)
+    // so active overlays like text boxes remain interactive above the canvas.
+    const OVERLAY_BELOW_Z_BASE = 4;
+    const OVERLAY_BELOW_Z_MAX = 32;
     const OVERLAY_ABOVE_Z_BASE = 60;
     const OVERLAY_ABOVE_Z_MAX = 140;
 

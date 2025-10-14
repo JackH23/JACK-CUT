@@ -870,6 +870,9 @@ function clearPreview() {
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
+    if (previewImageLayer) {
+        previewImageLayer.classList.remove('preview-image-layer--text-active');
+    }
     previewPlaceholder.hidden = false;
     playVideoButton.textContent = 'Play Back';
     setPreviewMode(null);
@@ -928,6 +931,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
 
     const fileType = timelineItem.dataset.fileType || '';
     const objectURL = timelineItem.dataset.objectUrl;
+    const isTextOverlay = fileType.startsWith('image/text-overlay');
 
     const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
@@ -990,6 +994,10 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
             }
         }
         playVideoButton.textContent = 'Play Back';
+    }
+
+    if (previewImageLayer) {
+        previewImageLayer.classList.toggle('preview-image-layer--text-active', isTextOverlay);
     }
 
     applyCanvasSettingsToPreview(timelineItem);

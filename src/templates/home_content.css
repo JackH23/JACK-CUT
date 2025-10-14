@@ -2108,6 +2108,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .preview-overlay-stack__group--below {
     z-index: 10;
+    pointer-events: none;
 }
 
 .preview-overlay-stack__group--above {
@@ -2120,6 +2121,14 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     overflow: hidden;
     pointer-events: auto;
     cursor: pointer;
+}
+
+.preview-overlay-stack__group--below .preview-overlay-layer {
+    pointer-events: none;
+}
+
+.preview-overlay-stack__group--above .preview-overlay-layer {
+    pointer-events: auto;
 }
 
 .preview-overlay-layer img {
@@ -2136,6 +2145,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     position: absolute;
     inset: 0;
     pointer-events: none;
+}
+
+.preview-image-layer--text-active {
+    z-index: 70;
 }
 
 .preview-image-layer[hidden] {
