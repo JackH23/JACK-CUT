@@ -930,13 +930,136 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     const fileType = timelineItem.dataset.fileType || '';
-    const objectURL = timelineItem.dataset.objectUrl;
+    const objectURL = timelineItem.dataset.objectUrl || '';
     const isTextOverlay = fileType.startsWith('image/text-overlay');
 
     const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
 
-    if (!objectURL) {
+    let previewTimelineItem = timelineItem;
+    let previewFileType = fileType;
+    let previewObjectUrl = objectURL;
+
+    if (isTextOverlay) {
+        const selectFallbackEntry = (predicate = null) => {
+            if (!Array.isArray(overlayEntries) || !overlayEntries.length) {
+                return null;
+            }
+            for (let index = overlayEntries.length - 1; index >= 0; index -= 1) {
+                const entry = overlayEntries[index];
+                if (!entry || !entry.item || entry.item === timelineItem) {
+                    continue;
+                }
+                if (entry.isActive === false || entry.intersectsWindow === false) {
+                    continue;
+                }
+                const candidateItem = entry.item;
+                const candidateType = candidateItem.dataset?.fileType || '';
+                if (!candidateType.startsWith('image/') && !candidateType.startsWith('video/')) {
+                    continue;
+                }
+                if (typeof predicate === 'function' && !predicate(entry, candidateItem, candidateType)) {
+                    continue;
+                }
+                const candidateUrl = candidateItem.dataset?.objectUrl || '';
+                if (!candidateUrl) {
+                    continue;
+                }
+                return entry;
+            }
+            return null;
+        };
+
+        let fallbackEntry = selectFallbackEntry((entry, candidateItem, candidateType) => {
+            if (candidateType.startsWith('image/text-overlay')) {
+                return false;
+            }
+            const lane = candidateItem.closest('.timeline-lane');
+            const laneRole = lane ? lane.dataset?.laneRole || '' : '';
+            return laneRole !== 'text';
+        });
+
+        if (!fallbackEntry) {
+            fallbackEntry = selectFallbackEntry((entry, candidateItem, candidateType) => (
+                !candidateType.startsWith('image/text-overlay')
+            ));
+        }
+
+        if (!fallbackEntry) {
+            fallbackEntry = selectFallbackEntry();
+        }
+
+        if (fallbackEntry && fallbackEntry.item) {
+            const fallbackItem = fallbackEntry.item;
+            const fallbackType = fallbackItem.dataset?.fileType || '';
+            const fallbackUrl = fallbackItem.dataset?.objectUrl || '';
+            if (fallbackUrl && fallbackType) {
+                previewTimelineItem = fallbackItem;
+                previewFileType = fallbackType;
+                previewObjectUrl = fallbackUrl;
+            }
+        }
+    }
+
+    const computeActiveTimelineTimestamp = () => {
+        const sourceStart = getTimelineItemStartTime(timelineItem);
+        const sourceDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        const progress = clampProgress(getActiveClipProgress());
+        if (sourceDuration <= 0) {
+            return sourceStart;
+        }
+        return sourceStart + (sourceDuration * progress);
+    };
+
+    const applyImagePreviewForItem = (targetItem, options = {}) => {
+        if (!isImageTimelineItem(targetItem)) {
+            if (!options.deferReset) {
+                queuePreviewImageFrameReset();
+            }
+            return;
+        }
+
+        if (targetItem === timelineItem) {
+            applyActiveImageKeyframe({ deferReset: options.deferReset });
+            return;
+        }
+
+        const deferReset = options.deferReset === true;
+        const timelineTimestamp = computeActiveTimelineTimestamp();
+        const targetStart = getTimelineItemStartTime(targetItem);
+        const targetDuration = Math.max(0, getTimelineItemPlaybackDuration(targetItem));
+        const relativeProgress = targetDuration > 0
+            ? clampProgress((timelineTimestamp - targetStart) / targetDuration)
+            : 0;
+
+        const keyframeTransform = getTimelineItemKeyframeTransformAtProgress(targetItem, relativeProgress);
+        if (keyframeTransform) {
+            if (!applyNormalizedPreviewImageTransform(keyframeTransform)) {
+                pendingPreviewImageTransform = keyframeTransform;
+                schedulePreviewViewportSizeUpdate();
+            } else {
+                pendingPreviewImageTransform = null;
+            }
+            return;
+        }
+
+        const storedTransform = getStoredPreviewImageTransform(targetItem);
+        if (storedTransform) {
+            if (!applyStoredPreviewImageTransform(storedTransform)) {
+                pendingPreviewImageTransform = storedTransform;
+                schedulePreviewViewportSizeUpdate();
+            } else {
+                pendingPreviewImageTransform = null;
+            }
+            return;
+        }
+
+        if (!deferReset) {
+            queuePreviewImageFrameReset();
+        }
+    };
+
+    if (!previewObjectUrl) {
         return;
     }
 
@@ -949,33 +1072,33 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         stopTimelinePlayback();
     }
 
-    if (fileType.startsWith('video/')) {
-        const audioSettings = getTimelineItemAudioSettings(timelineItem);
+    if (previewFileType.startsWith('video/')) {
+        const audioSettings = getTimelineItemAudioSettings(previewTimelineItem);
         setPreviewMode('has-video');
         resetPreviewScroll();
         setPreviewImageVisibility(false);
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
         cancelPreviewAudioEnvelope({ restoreVolume: false });
-        if (previewVideo.src !== objectURL) {
+        if (previewVideo.src !== previewObjectUrl) {
             previewVideo.pause();
-            previewVideo.src = objectURL;
+            previewVideo.src = previewObjectUrl;
             previewVideo.load();
         }
         applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
         playVideoButton.textContent = 'Play Back';
-    } else if (fileType.startsWith('image/')) {
+    } else if (previewFileType.startsWith('image/')) {
         cancelPreviewExitAnimation({ forceRestore: true });
         setPreviewMode('has-image');
         previewVideo.pause();
         previewVideo.hidden = true;
         previewVideo.removeAttribute('src');
         setPreviewImageVisibility(true);
-        void revealPreviewImageSource(objectURL, { immediate: true });
+        void revealPreviewImageSource(previewObjectUrl, { immediate: true });
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
-        applyActiveImageKeyframe({ deferReset: true });
-    } else if (fileType.startsWith('audio/')) {
+        applyImagePreviewForItem(previewTimelineItem, { deferReset: true });
+    } else if (previewFileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });
         setPreviewMode(null);
         previewVideo.pause();
@@ -985,8 +1108,8 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
             previewPlaceholder.hidden = false;
             previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
         }
-        if (previewAudio && objectURL && previewAudio.src !== objectURL) {
-            previewAudio.src = objectURL;
+        if (previewAudio && previewObjectUrl && previewAudio.src !== previewObjectUrl) {
+            previewAudio.src = previewObjectUrl;
             try {
                 previewAudio.load();
             } catch (error) {
@@ -1000,7 +1123,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         previewImageLayer.classList.toggle('preview-image-layer--text-active', isTextOverlay);
     }
 
-    applyCanvasSettingsToPreview(timelineItem);
+    applyCanvasSettingsToPreview(previewTimelineItem);
 }
 
 function formatFileSize(bytes) {
