@@ -1165,6 +1165,9 @@ const AUDIO_WAVEFORM_HEIGHT = 80;
 const audioWaveformByObjectUrl = new Map();
 let audioDecodeContextLock = Promise.resolve();
 const audioWaveformResizeObservers = new WeakMap();
+const textTemplateCard = document.querySelector('.text-template-card');
+let defaultTextLayerCount = 0;
+let isAddingDefaultTextLayer = false;
 
 function getWaveformCssWidth(canvas, timelineItem, widthOverride) {
     if (Number.isFinite(widthOverride) && widthOverride > 0) {
@@ -1212,6 +1215,227 @@ function ensureAudioTimelineLane() {
     timelineLaneList.appendChild(lane);
     refreshTimelineLaneIndices();
     return lane;
+}
+
+function ensureTextTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+    const lanes = typeof getTimelineLanes === 'function' ? getTimelineLanes() : [];
+    const existing = lanes.find((lane) => lane?.dataset?.laneRole === 'text');
+    if (existing) {
+        existing.classList.add('timeline-lane--text');
+        existing.dataset.laneRole = 'text';
+        return existing;
+    }
+
+    let lane = null;
+    if (typeof insertTimelineLaneAt === 'function') {
+        lane = insertTimelineLaneAt(0);
+    } else if (typeof ensureTimelineLane === 'function') {
+        lane = ensureTimelineLane(0);
+    }
+
+    if (lane) {
+        lane.classList.add('timeline-lane--text');
+        lane.dataset.laneRole = 'text';
+    }
+
+    return lane;
+}
+
+function dataUrlToBlob(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string') {
+        return null;
+    }
+
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) {
+        return null;
+    }
+
+    const mimeMatch = parts[0].match(/data:([^;]+);/i);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+
+    try {
+        const binary = atob(parts[1]);
+        const length = binary.length;
+        const bytes = new Uint8Array(length);
+        for (let index = 0; index < length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        return new Blob([bytes], { type: mimeType });
+    } catch (error) {
+        console.warn('Unable to convert data URL to Blob.', error);
+        return null;
+    }
+}
+
+function drawFilledRoundedRect(context, x, y, width, height, radius, fillStyle, strokeStyle, strokeWidth) {
+    if (!context) {
+        return;
+    }
+
+    const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
+    context.beginPath();
+    if (typeof context.roundRect === 'function') {
+        context.roundRect(x, y, width, height, safeRadius);
+    } else if (safeRadius === 0) {
+        context.rect(x, y, width, height);
+    } else {
+        const r = safeRadius;
+        context.moveTo(x + r, y);
+        context.lineTo(x + width - r, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + r);
+        context.lineTo(x + width, y + height - r);
+        context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        context.lineTo(x + r, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - r);
+        context.lineTo(x, y + r);
+        context.quadraticCurveTo(x, y, x + r, y);
+    }
+    context.closePath();
+
+    if (fillStyle) {
+        context.fillStyle = fillStyle;
+        context.fill();
+    }
+
+    if (strokeStyle && Number.isFinite(strokeWidth) && strokeWidth > 0) {
+        context.lineWidth = strokeWidth;
+        context.strokeStyle = strokeStyle;
+        context.stroke();
+    }
+}
+
+function createDefaultTextOverlayAsset(textContent) {
+    const overlayText = (typeof textContent === 'string' && textContent.trim())
+        ? textContent.trim()
+        : 'Default Text';
+    const canvas = document.createElement('canvas');
+    const width = 1600;
+    const height = 420;
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+        return null;
+    }
+
+    context.clearRect(0, 0, width, height);
+
+    const boxWidth = Math.round(width * 0.78);
+    const boxHeight = Math.round(height * 0.58);
+    const boxX = Math.round((width - boxWidth) / 2);
+    const boxY = Math.round((height - boxHeight) / 2);
+    const radius = Math.round(boxHeight * 0.28);
+
+    drawFilledRoundedRect(
+        context,
+        boxX,
+        boxY,
+        boxWidth,
+        boxHeight,
+        radius,
+        'rgba(15, 23, 42, 0.62)',
+        'rgba(129, 140, 248, 0.45)',
+        Math.max(2, Math.round(boxHeight * 0.08)),
+    );
+
+    context.save();
+    context.shadowColor = 'rgba(15, 23, 42, 0.45)';
+    context.shadowBlur = Math.round(boxHeight * 0.4);
+    context.fillStyle = '#ffffff';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.font = `700 ${Math.round(boxHeight * 0.52)}px "Inter", "Segoe UI", sans-serif`;
+    context.fillText(overlayText, width / 2, height / 2);
+    context.restore();
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const blob = dataUrlToBlob(dataUrl);
+
+    if (!blob) {
+        return null;
+    }
+
+    const safeNameBase = overlayText
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        || 'default-text';
+    const fileName = `${safeNameBase}-${Date.now()}.png`;
+
+    let file = null;
+    try {
+        file = new File([blob], fileName, { type: blob.type || 'image/png' });
+    } catch (error) {
+        file = blob;
+        file.name = fileName;
+        file.type = blob.type || 'image/png';
+    }
+
+    const objectURL = URL.createObjectURL(file);
+    return { file, objectURL };
+}
+
+function createUniqueTextLayerId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function addDefaultTextLayerToTimeline() {
+    if (isAddingDefaultTextLayer || !textTemplateCard) {
+        return;
+    }
+
+    isAddingDefaultTextLayer = true;
+    textTemplateCard.setAttribute('aria-pressed', 'true');
+    textTemplateCard.setAttribute('aria-busy', 'true');
+
+    let asset = null;
+    try {
+        asset = createDefaultTextOverlayAsset('Default Text');
+        if (!asset) {
+            throw new Error('Unable to generate default text overlay asset.');
+        }
+
+        const textLane = ensureTextTimelineLane();
+        if (!textLane) {
+            throw new Error('Unable to create a timeline lane for text overlays.');
+        }
+
+        const displayName = `Default Text ${defaultTextLayerCount + 1}`;
+        const timelineItem = await addToTimeline(asset.file, asset.objectURL, {
+            laneOverride: textLane,
+            displayName,
+            extraDataset: {
+                overlayKind: 'text',
+                overlayText: 'Default Text',
+                textLayerId: createUniqueTextLayerId(),
+            },
+            timelineItemClasses: ['timeline-item--text'],
+            focusTimelineItem: true,
+        });
+
+        if (timelineItem) {
+            defaultTextLayerCount += 1;
+        } else if (asset.objectURL) {
+            URL.revokeObjectURL(asset.objectURL);
+        }
+    } catch (error) {
+        console.error('Unable to add default text layer to the timeline.', error);
+        if (asset?.objectURL) {
+            URL.revokeObjectURL(asset.objectURL);
+        }
+    } finally {
+        isAddingDefaultTextLayer = false;
+        textTemplateCard.setAttribute('aria-pressed', 'false');
+        textTemplateCard.removeAttribute('aria-busy');
+    }
 }
 
 async function decodeAudioBufferFromFile(file) {
@@ -1714,7 +1938,16 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
-async function addToTimeline(file, objectURL) {
+async function addToTimeline(file, objectURL, options = {}) {
+    const normalizedOptions = options || {};
+    const {
+        laneOverride = null,
+        displayName: displayNameOverride = null,
+        extraDataset = null,
+        timelineItemClasses = null,
+        focusTimelineItem = false,
+    } = normalizedOptions;
+
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
@@ -1724,22 +1957,43 @@ async function addToTimeline(file, objectURL) {
     timelineItem.className = 'timeline-item';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
-    timelineItem.dataset.fileType = file.type;
-    timelineItem.dataset.objectUrl = objectURL;
-    timelineItem.dataset.displayName = file.name;
+
+    const fileType = (file && typeof file.type === 'string') ? file.type : '';
+    const safeObjectUrl = objectURL || '';
+    const fallbackName = (file && typeof file.name === 'string' && file.name.trim())
+        ? file.name.trim()
+        : 'Clip';
+    const displayName = (typeof displayNameOverride === 'string' && displayNameOverride.trim())
+        ? displayNameOverride.trim()
+        : fallbackName;
+
+    timelineItem.dataset.fileType = fileType;
+    timelineItem.dataset.objectUrl = safeObjectUrl;
+    timelineItem.dataset.displayName = displayName;
+
+    if (Array.isArray(timelineItemClasses)) {
+        timelineItemClasses.forEach((className) => {
+            if (className) {
+                timelineItem.classList.add(className);
+            }
+        });
+    }
 
     const label = document.createElement('span');
-    label.textContent = file.name;
+    label.textContent = displayName;
+    label.title = displayName;
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'timeline-item-remove';
-    removeButton.setAttribute('aria-label', 'Remove clip');
+    removeButton.setAttribute('aria-label', `Remove ${displayName}`);
     removeButton.textContent = '✕';
 
-    if (file.type.startsWith('video/')) {
+    if (fileType.startsWith('video/')) {
         const videoThumb = document.createElement('video');
-        videoThumb.src = objectURL;
+        if (safeObjectUrl) {
+            videoThumb.src = safeObjectUrl;
+        }
         videoThumb.muted = true;
         videoThumb.loop = true;
         videoThumb.playsInline = true;
@@ -1773,11 +2027,11 @@ async function addToTimeline(file, objectURL) {
             }
         });
         timelineItem.appendChild(videoThumb);
-    } else if (file.type.startsWith('image/')) {
+    } else if (fileType.startsWith('image/')) {
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
-        imageThumb.src = await generateImageThumbnail(objectURL);
-        imageThumb.alt = file.name;
+        imageThumb.src = safeObjectUrl ? await generateImageThumbnail(safeObjectUrl) : '';
+        imageThumb.alt = displayName;
         timelineItem.appendChild(imageThumb);
         setTimelineItemDuration(
             timelineItem,
@@ -1785,10 +2039,12 @@ async function addToTimeline(file, objectURL) {
             IMAGE_FRAME_DURATION,
             { markCustom: false },
         );
-        preloadTimelineImage(objectURL).catch((error) => {
-            console.warn('Failed to warm timeline image for playback.', error);
-        });
-    } else if (file.type.startsWith('audio/')) {
+        if (safeObjectUrl) {
+            preloadTimelineImage(safeObjectUrl).catch((error) => {
+                console.warn('Failed to warm timeline image for playback.', error);
+            });
+        }
+    } else if (fileType.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
         const waveformContainer = document.createElement('div');
         waveformContainer.className = 'timeline-waveform';
@@ -1802,7 +2058,7 @@ async function addToTimeline(file, objectURL) {
             { markCustom: false },
         );
         timelineItem.dataset.maxAudioDuration = String(appliedDuration);
-        prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas).catch((error) => {
+        prepareAudioTimelineVisuals(timelineItem, file, safeObjectUrl, waveformCanvas).catch((error) => {
             console.warn('Failed to render audio waveform.', error);
         });
     }
@@ -1810,10 +2066,22 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(label);
     timelineItem.appendChild(removeButton);
 
-    let targetLane = defaultLane || ensureTimelineLane(0);
-    if (file.type.startsWith('audio/')) {
-        const audioLane = ensureAudioTimelineLane();
-        targetLane = audioLane || targetLane;
+    let targetLane = laneOverride;
+    if (targetLane && !targetLane.isConnected && timelineLaneList) {
+        timelineLaneList.appendChild(targetLane);
+    }
+    if (!targetLane) {
+        targetLane = defaultLane || ensureTimelineLane(0);
+        if (fileType.startsWith('audio/')) {
+            const audioLane = ensureAudioTimelineLane();
+            targetLane = audioLane || targetLane;
+        }
+    }
+    if (!laneOverride && targetLane && targetLane.dataset?.laneRole === 'text') {
+        const fallbackLane = ensureTimelineLane(1);
+        if (fallbackLane) {
+            targetLane = fallbackLane;
+        }
     }
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
@@ -1822,6 +2090,20 @@ async function addToTimeline(file, objectURL) {
         timelineItem.dataset.laneIndex = '0';
         timelineTrack.appendChild(timelineItem);
     }
+
+    if (extraDataset && timelineItem.dataset) {
+        Object.entries(extraDataset).forEach(([key, value]) => {
+            if (!key) {
+                return;
+            }
+            if (value === undefined || value === null) {
+                delete timelineItem.dataset[key];
+            } else {
+                timelineItem.dataset[key] = String(value);
+            }
+        });
+    }
+
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
 
@@ -1881,7 +2163,7 @@ async function addToTimeline(file, objectURL) {
         }
         const parentLane = targetItem.closest('.timeline-lane');
         const wasActive = targetItem === activeTimelineItem;
-        const fileType = targetItem.dataset.fileType || '';
+        const itemFileType = targetItem.dataset.fileType || '';
         const url = targetItem.dataset.objectUrl;
         detachAudioWaveformResizeObserver(targetItem);
         releaseTimelineCanvasCustomImage(targetItem);
@@ -1891,14 +2173,14 @@ async function addToTimeline(file, objectURL) {
         }
         if (url) {
             setStagedUploadAddedState(url, false);
-            if (fileType.startsWith('image/')) {
+            if (itemFileType.startsWith('image/')) {
                 releaseTimelineImage(url);
             }
             if (!stagedUploadsByObjectUrl.has(url)) {
                 URL.revokeObjectURL(url);
             }
         }
-        if (fileType.startsWith('audio/')) {
+        if (itemFileType.startsWith('audio/')) {
             stopPreviewAudio({ resetTime: true });
         }
         if (wasActive) {
@@ -1912,8 +2194,38 @@ async function addToTimeline(file, objectURL) {
         refreshImageDurationApplyAllAvailability();
     });
 
-    setActiveTimelineItem(timelineItem);
+    setActiveTimelineItem(timelineItem, { focus: Boolean(focusTimelineItem) });
     loadPreviewFromTimeline(timelineItem);
+
+    return timelineItem;
+}
+
+if (textTemplateCard) {
+    if (typeof getTimelineItems === 'function') {
+        try {
+            defaultTextLayerCount = getTimelineItems()
+                .filter((item) => item?.dataset?.overlayKind === 'text')
+                .length;
+        } catch (error) {
+            // Ignore errors while counting existing text layers.
+        }
+    }
+
+    const handleTextTemplateClick = (event) => {
+        event.preventDefault();
+        void addDefaultTextLayerToTimeline();
+    };
+
+    const handleTextTemplateKeydown = (event) => {
+        const { key } = event;
+        if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            event.preventDefault();
+            void addDefaultTextLayerToTimeline();
+        }
+    };
+
+    textTemplateCard.addEventListener('click', handleTextTemplateClick);
+    textTemplateCard.addEventListener('keydown', handleTextTemplateKeydown);
 }
 
 uploadInput.addEventListener('change', async (event) => {

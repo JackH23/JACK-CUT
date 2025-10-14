@@ -2495,6 +2495,24 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     color: rgba(148, 163, 184, 0.72);
 }
 
+.timeline-lane--text {
+    padding-top: 26px;
+    padding-bottom: 26px;
+    background: rgba(49, 46, 129, 0.22);
+    border-color: rgba(129, 140, 248, 0.32);
+}
+
+.timeline-lane--text::before {
+    content: 'Text';
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(165, 180, 252, 0.78);
+}
+
 .timeline-lane.is-drop-target {
     border-color: rgba(124, 58, 237, 0.55);
     background: rgba(30, 41, 59, 0.6);
@@ -2679,6 +2697,21 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     font-size: 0.78rem;
     color: rgba(226, 232, 240, 0.96);
     text-align: center;
+}
+
+.timeline-item--text {
+    background: linear-gradient(180deg, rgba(91, 33, 182, 0.8) 0%, rgba(59, 130, 246, 0.78) 100%);
+    border: 1px solid rgba(129, 140, 248, 0.55);
+    color: rgba(224, 231, 255, 0.96);
+}
+
+.timeline-item--text span {
+    color: rgba(224, 231, 255, 0.96);
+    font-weight: 600;
+}
+
+.timeline-item--text .timeline-item-remove {
+    background: rgba(30, 41, 59, 0.85);
 }
 
 .timeline-waveform {
