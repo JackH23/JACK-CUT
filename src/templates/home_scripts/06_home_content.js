@@ -300,6 +300,27 @@
 
     const nextActiveItems = new Set();
     const nextKnownItems = new Set();
+    let hasInteractiveOverlay = false;
+
+    const registerInteractiveDescriptor = (descriptor, entry = null) => {
+        if (hasInteractiveOverlay) {
+            return;
+        }
+
+        const item = descriptor?.item;
+        if (!item) {
+            return;
+        }
+
+        if ((item.dataset?.overlayKind || '') !== 'text') {
+            return;
+        }
+
+        const isVisible = Boolean(descriptor?.shouldRender) || Boolean(entry?.isVisible);
+        if (isVisible) {
+            hasInteractiveOverlay = true;
+        }
+    };
 
     const ensureOverlayLayerEntry = (descriptor) => {
         if (!descriptor || !descriptor.item) {
@@ -493,6 +514,8 @@
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
+        registerInteractiveDescriptor(descriptor, entry);
+
         return true;
     };
 
@@ -514,6 +537,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                registerInteractiveDescriptor(descriptor, fallbackEntry);
             }
         });
     }
@@ -536,6 +560,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                registerInteractiveDescriptor(descriptor, fallbackEntry);
             }
         });
     }
@@ -560,6 +585,10 @@
     });
 
     const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
+
+    if (previewOverlayStack) {
+        previewOverlayStack.classList.toggle('is-interactive', hasInteractiveOverlay && hasLayers);
+    }
 
     if (hasLayers) {
         previewOverlayStack.removeAttribute('hidden');

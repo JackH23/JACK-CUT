@@ -768,6 +768,8 @@ function clearPreviewOverlayLayers() {
         return;
     }
 
+    previewOverlayStack.classList.remove('is-interactive');
+
     activeOverlayLayers.forEach((entry) => {
         if (!entry) {
             return;
