@@ -861,12 +861,14 @@ async function addDefaultTextTimelineLayer() {
         timelineItem.dataset.textTemplate = 'default';
         timelineItem.dataset.textTemplateLabel = labelText;
 
+        const defaultTextWidth = 0.72;
+        const defaultTextHeight = 0.22;
         const defaultTransform = {
-            left: 0.14,
-            top: 0.68,
-            width: 0.72,
-            height: 0.22,
-            aspectRatio: 0.72 / 0.22,
+            left: (1 - defaultTextWidth) / 2,
+            top: (1 - defaultTextHeight) / 2,
+            width: defaultTextWidth,
+            height: defaultTextHeight,
+            aspectRatio: defaultTextWidth / defaultTextHeight,
             rotation: 0,
         };
         timelineItem.dataset.previewImageTransform = JSON.stringify(defaultTransform);
