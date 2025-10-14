@@ -248,6 +248,96 @@
         syncPreviewAudioOverlay(overlayEntries, segmentStartTime);
         playVideoButton.textContent = 'Play Back';
         await waitForGapDuration(effectiveDuration);
+    } else if (fileType.startsWith('text/')) {
+        const rawClipDuration = Number(timelineItem.dataset.imageDuration);
+        const clipDuration = Number.isFinite(rawClipDuration) && rawClipDuration > 0
+            ? Math.round(rawClipDuration)
+            : IMAGE_FRAME_DURATION;
+        const playbackWindowMs = Number.isFinite(playbackWindow)
+            ? Math.max(0, Math.round(playbackWindow))
+            : null;
+        const effectiveDuration = playbackWindowMs === null
+            ? clipDuration
+            : Math.min(clipDuration, playbackWindowMs);
+        const safeEffectiveDuration = Math.max(0, effectiveDuration);
+        const initialElapsed = Math.min(startOffsetMs, clipDuration);
+        const initialProgress = clipDuration > 0
+            ? clampProgress(initialElapsed / clipDuration)
+            : 0;
+
+        setPreviewMode(null);
+        previewVideo.pause();
+        previewVideo.hidden = true;
+        previewVideo.removeAttribute('src');
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = true;
+        }
+        resetPreviewScroll();
+        setActiveClipProgress(initialProgress, { source: 'text-playback' });
+
+        await new Promise((resolve) => {
+            let resolved = false;
+            const startTimestamp = performance.now() - initialElapsed;
+            let animationFrameId = 0;
+
+            const step = () => {
+                if (resolved || !isTimelinePlaying) {
+                    return;
+                }
+
+                const now = performance.now();
+                const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
+                const elapsedSinceResume = Math.max(0, elapsed - initialElapsed);
+                const playbackProgress = clipDuration > 0
+                    ? clampProgress(elapsed / clipDuration)
+                    : 0;
+
+                setActiveClipProgress(playbackProgress, { source: 'text-playback' });
+
+                if (elapsedSinceResume < safeEffectiveDuration && isTimelinePlaying) {
+                    animationFrameId = window.requestAnimationFrame(step);
+                }
+            };
+
+            animationFrameId = window.requestAnimationFrame(step);
+
+            const timeoutId = window.setTimeout(() => {
+                if (resolved) {
+                    return;
+                }
+                resolved = true;
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                }
+                const finalElapsed = Math.min(
+                    clipDuration,
+                    initialElapsed + safeEffectiveDuration,
+                );
+                const finalProgress = clipDuration > 0
+                    ? clampProgress(finalElapsed / clipDuration)
+                    : 1;
+                setActiveClipProgress(finalProgress, { source: 'text-playback-end', updatePreview: false });
+                if (timelinePlaybackAbort === abortPlayback) {
+                    timelinePlaybackAbort = null;
+                }
+                resolve();
+            }, Math.max(0, Math.round(safeEffectiveDuration)));
+
+            const abortPlayback = () => {
+                if (resolved) {
+                    return;
+                }
+                resolved = true;
+                window.clearTimeout(timeoutId);
+                if (animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                }
+                timelinePlaybackAbort = null;
+                resolve();
+            };
+
+            timelinePlaybackAbort = abortPlayback;
+        });
     } else if (fileType.startsWith('image/')) {
         const rawClipDuration = Number(timelineItem.dataset.imageDuration);
         const clipDuration = Number.isFinite(rawClipDuration) && rawClipDuration > 0

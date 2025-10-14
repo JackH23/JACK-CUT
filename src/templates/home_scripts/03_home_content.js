@@ -382,6 +382,9 @@ function describeFileType(fileType) {
     if (fileType.startsWith('image/')) {
         return 'Image frame';
     }
+    if (fileType.startsWith('text/')) {
+        return 'Text overlay';
+    }
     if (fileType.startsWith('audio/')) {
         return 'Audio track';
     }
@@ -1196,7 +1199,10 @@ function isMagnetEnabledForLaneIndex(laneIndex, lane = null, laneItems = null) {
 
     const detectImage = typeof isImageTimelineItem === 'function'
         ? isImageTimelineItem
-        : ((item) => (item?.dataset?.fileType || '').startsWith('image/'));
+        : ((item) => {
+            const type = (item?.dataset?.fileType || '').toLowerCase();
+            return type.startsWith('image/') || type.startsWith('text/');
+        });
 
     const hasVisualItems = items.some((item) => detectVideo(item) || detectImage(item));
 

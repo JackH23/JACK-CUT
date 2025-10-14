@@ -116,7 +116,7 @@ function getTimelineItemDurationKey(timelineItem) {
         return null;
     }
     const fileType = timelineItem.dataset.fileType || '';
-    if (fileType.startsWith('image/')) {
+    if (fileType.startsWith('image/') || fileType.startsWith('text/')) {
         return 'imageDuration';
     }
     if (fileType.startsWith('video/')) {
@@ -624,7 +624,10 @@ function initializeTimelineItem(timelineItem) {
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
-    if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
+    if (fileType.startsWith('image/')
+        || fileType.startsWith('text/')
+        || fileType.startsWith('video/')
+        || fileType.startsWith('audio/')) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);
     }
