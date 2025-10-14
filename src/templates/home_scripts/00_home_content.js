@@ -162,6 +162,53 @@ const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
 const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
+const defaultTextTemplateCard = document.querySelector('.text-template-card');
+
+if (defaultTextTemplateCard) {
+    let isAddingDefaultText = false;
+
+    const activateDefaultTextTemplate = () => {
+        if (isAddingDefaultText) {
+            return;
+        }
+        isAddingDefaultText = true;
+        defaultTextTemplateCard.setAttribute('aria-pressed', 'true');
+
+        const baseTimelineItem = (activeTimelineItem
+            && (isImageTimelineItem(activeTimelineItem) || isVideoTimelineItem(activeTimelineItem)))
+            ? activeTimelineItem
+            : null;
+
+        try {
+            createTextOverlayTimelineItem({ baseTimelineItem });
+        } catch (error) {
+            console.error('Unable to add default text overlay to the timeline.', error);
+        } finally {
+            window.setTimeout(() => {
+                defaultTextTemplateCard.setAttribute('aria-pressed', 'false');
+                isAddingDefaultText = false;
+            }, 240);
+        }
+    };
+
+    defaultTextTemplateCard.addEventListener('click', (event) => {
+        if (event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        activateDefaultTextTemplate();
+    });
+
+    defaultTextTemplateCard.addEventListener('keydown', (event) => {
+        if (event.defaultPrevented) {
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+            event.preventDefault();
+            activateDefaultTextTemplate();
+        }
+    });
+}
 
 const optionSliderConfigs = [
     {
