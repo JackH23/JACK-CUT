@@ -11,6 +11,7 @@ const previewAudio = document.getElementById('preview-audio');
 const previewImage = document.getElementById('preview-image');
 const previewImageLayer = document.getElementById('preview-image-layer');
 const previewImageFrame = document.getElementById('preview-image-frame');
+const previewTextEditor = document.getElementById('preview-text-editor');
 const previewCanvasBackdrop = document.getElementById('preview-canvas-backdrop');
 const previewCanvasVideo = document.getElementById('preview-canvas-video');
 const previewCanvasImage = document.getElementById('preview-canvas-image');

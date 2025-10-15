@@ -879,6 +879,8 @@ function clearPreview() {
     }
     clearPreviewCanvasBackdrop();
     clearPreviewOverlayLayers();
+    commitPreviewTextEditorContent({ force: true });
+    syncPreviewTextEditorState(null, { skipCommit: true });
     setActiveTimelineItem(null);
 }
 
@@ -890,6 +892,7 @@ function setActiveTimelineItem(item, options = {}) {
     const isSameItem = item === activeTimelineItem;
 
     if (!isSameItem) {
+        commitPreviewTextEditorContent({ force: true });
         persistPreviewImageTransformForActiveTimelineItem();
     }
     if (activeTimelineItem) {
@@ -993,6 +996,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     applyCanvasSettingsToPreview(timelineItem);
+    syncPreviewTextEditorState(timelineItem, { skipCommit: true });
 }
 
 function formatFileSize(bytes) {
@@ -1939,6 +1943,12 @@ const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
     aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
     rotation: 0,
 };
+
+if (typeof window !== 'undefined') {
+    window.DEFAULT_TEXT_TEMPLATE_LABEL = DEFAULT_TEXT_TEMPLATE_LABEL;
+    window.DEFAULT_TEXT_TEMPLATE_ID = DEFAULT_TEXT_TEMPLATE_ID;
+    window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
+}
 
 function escapeSvgTextContent(content) {
     return String(content || '')

@@ -164,6 +164,20 @@ function applyPreviewImageTransform(alignmentOverride) {
     previewImageFrame.style.width = `${previewImageTransform.width}px`;
     previewImageFrame.style.height = `${previewImageTransform.height}px`;
 
+    if (previewTextEditor) {
+        if (!previewTextEditor.hidden) {
+            const fontSizeFromHeight = previewImageTransform.height * 0.65;
+            const fontSizeFromWidth = previewImageTransform.width * 0.18;
+            const computedFontSize = Math.max(
+                12,
+                Math.min(fontSizeFromHeight, fontSizeFromWidth),
+            );
+            previewTextEditor.style.fontSize = `${computedFontSize}px`;
+        } else {
+            previewTextEditor.style.removeProperty('font-size');
+        }
+    }
+
     updatePreviewImageFrameVisibility();
 
     const rotation = clampRotation(previewImageTransform.rotation);
@@ -192,10 +206,373 @@ function clearPreviewImageTransform() {
     if (previewImage) {
         previewImage.style.removeProperty('--preview-image-rotation');
     }
+    if (previewTextEditor) {
+        previewTextEditor.style.removeProperty('font-size');
+    }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
     setPreviewGuidesVisible(false);
     updateImageRotationControlState();
+}
+
+const PREVIEW_TEXT_COMMIT_DELAY_MS = 200;
+const PREVIEW_TEXT_DRAG_THRESHOLD = 6;
+const DEFAULT_TEXT_TEMPLATE_ID_FALLBACK = 'default-text';
+const DEFAULT_TEXT_TEMPLATE_PLACEHOLDER = '(Default Text)';
+
+const previewTextEditorState = {
+    isEnabled: false,
+    currentItem: null,
+    lastCommittedValue: '',
+};
+
+let previewTextCommitTimer = null;
+
+function getDefaultTextTemplateId() {
+    if (typeof window !== 'undefined' && window.DEFAULT_TEXT_TEMPLATE_ID) {
+        return window.DEFAULT_TEXT_TEMPLATE_ID;
+    }
+    return DEFAULT_TEXT_TEMPLATE_ID_FALLBACK;
+}
+
+function getDefaultTextTemplateLabel() {
+    if (typeof window !== 'undefined' && window.DEFAULT_TEXT_TEMPLATE_LABEL) {
+        return window.DEFAULT_TEXT_TEMPLATE_LABEL;
+    }
+    return DEFAULT_TEXT_TEMPLATE_PLACEHOLDER;
+}
+
+function isDefaultTextTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return false;
+    }
+    const templateId = timelineItem.dataset?.templateId || '';
+    return templateId === getDefaultTextTemplateId();
+}
+
+function normalizePreviewTextEditorValue(value) {
+    return String(value || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function updatePreviewTextEditorPlaceholderState(valueOverride = null) {
+    if (!previewTextEditor) {
+        return;
+    }
+    const placeholder = getDefaultTextTemplateLabel();
+    previewTextEditor.dataset.placeholder = placeholder;
+    const candidate = valueOverride !== null && valueOverride !== undefined
+        ? String(valueOverride)
+        : (previewTextEditor.textContent || '');
+    const trimmed = candidate.trim();
+    if (trimmed.length === 0) {
+        previewTextEditor.setAttribute('data-show-placeholder', 'true');
+    } else {
+        previewTextEditor.removeAttribute('data-show-placeholder');
+    }
+}
+
+function focusPreviewTextEditor(options = {}) {
+    if (!previewTextEditor) {
+        return;
+    }
+    const { placeCursorAtEnd = true } = options;
+    try {
+        previewTextEditor.focus({ preventScroll: true });
+    } catch (error) {
+        previewTextEditor.focus();
+    }
+    if (!placeCursorAtEnd) {
+        return;
+    }
+    if (typeof window === 'undefined' || typeof window.getSelection !== 'function') {
+        return;
+    }
+    const selection = window.getSelection();
+    if (!selection) {
+        return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(previewTextEditor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function enablePreviewTextEditor(timelineItem, options = {}) {
+    if (!previewTextEditor || !timelineItem) {
+        return;
+    }
+
+    const storedValue = timelineItem.dataset?.textContent || '';
+
+    previewTextEditor.hidden = false;
+    if (previewTextEditor.textContent !== storedValue) {
+        previewTextEditor.textContent = storedValue;
+    }
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.add('is-text-overlay');
+    }
+
+    updatePreviewTextEditorPlaceholderState(storedValue);
+
+    previewTextEditorState.isEnabled = true;
+    previewTextEditorState.currentItem = timelineItem;
+    previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
+
+    const shouldFocus = options.forceFocus
+        || (options.autoFocus !== false && document.activeElement !== previewTextEditor);
+
+    if (shouldFocus && typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+            focusPreviewTextEditor();
+        });
+    } else if (shouldFocus) {
+        focusPreviewTextEditor();
+    }
+}
+
+function disablePreviewTextEditor(options = {}) {
+    if (!previewTextEditorState.isEnabled) {
+        return;
+    }
+
+    if (!options.skipCommit) {
+        commitPreviewTextEditorContent({ force: true });
+    }
+
+    previewTextEditorState.isEnabled = false;
+    previewTextEditorState.currentItem = null;
+    previewTextEditorState.lastCommittedValue = '';
+
+    if (previewTextCommitTimer !== null) {
+        window.clearTimeout(previewTextCommitTimer);
+        previewTextCommitTimer = null;
+    }
+
+    if (previewTextEditor) {
+        previewTextEditor.textContent = '';
+        previewTextEditor.hidden = true;
+        updatePreviewTextEditorPlaceholderState('');
+        if (previewTextEditor === document.activeElement) {
+            previewTextEditor.blur();
+        }
+    }
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('is-text-overlay', 'is-text-editing');
+    }
+}
+
+function syncPreviewTextEditorState(timelineItem, options = {}) {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        if (previewTextEditorState.isEnabled) {
+            disablePreviewTextEditor(options);
+        }
+        return;
+    }
+
+    const storedValue = timelineItem.dataset?.textContent || '';
+    const needsEnable = !previewTextEditorState.isEnabled
+        || previewTextEditorState.currentItem !== timelineItem;
+
+    if (needsEnable) {
+        enablePreviewTextEditor(timelineItem, options);
+    } else if (previewTextEditor.textContent !== storedValue) {
+        previewTextEditor.textContent = storedValue;
+        updatePreviewTextEditorPlaceholderState(storedValue);
+    }
+
+    previewTextEditorState.currentItem = timelineItem;
+    previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.add('is-text-overlay');
+    }
+}
+
+function schedulePreviewTextEditorCommit() {
+    if (previewTextCommitTimer !== null) {
+        window.clearTimeout(previewTextCommitTimer);
+    }
+    previewTextCommitTimer = window.setTimeout(() => {
+        previewTextCommitTimer = null;
+        commitPreviewTextEditorContent();
+    }, PREVIEW_TEXT_COMMIT_DELAY_MS);
+}
+
+function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const sanitizedValue = normalizedText;
+    const displayName = sanitizedValue || getDefaultTextTemplateLabel();
+
+    timelineItem.dataset.textContent = sanitizedValue;
+    timelineItem.dataset.displayName = displayName;
+
+    const labelElement = timelineItem.querySelector('span');
+    if (labelElement) {
+        labelElement.textContent = displayName;
+    }
+
+    const previousObjectUrl = timelineItem.dataset.objectUrl || '';
+    let nextObjectUrl = previousObjectUrl;
+
+    if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
+        try {
+            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName);
+        } catch (error) {
+            console.warn('Failed to generate text overlay preview.', error);
+            nextObjectUrl = previousObjectUrl;
+        }
+    }
+
+    if (nextObjectUrl && nextObjectUrl !== previousObjectUrl) {
+        timelineItem.dataset.objectUrl = nextObjectUrl;
+        const thumbnail = timelineItem.querySelector('.timeline-thumbnail--text');
+        if (thumbnail) {
+            thumbnail.src = nextObjectUrl;
+        }
+        if (previewImage && previewImage.src !== nextObjectUrl) {
+            previewImage.src = nextObjectUrl;
+        }
+        preloadTimelineImage(nextObjectUrl).catch(() => {});
+        refreshActiveOverlayLayers();
+        if (previousObjectUrl && previousObjectUrl !== nextObjectUrl) {
+            releaseTimelineImage(previousObjectUrl);
+            try {
+                URL.revokeObjectURL(previousObjectUrl);
+            } catch (error) {
+                // Ignore revoke failures.
+            }
+        }
+    } else {
+        refreshActiveOverlayLayers();
+    }
+
+    previewTextEditorState.lastCommittedValue = sanitizedValue;
+    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || sanitizedValue);
+}
+
+function commitPreviewTextEditorContent(options = {}) {
+    if (!previewTextEditorState.isEnabled) {
+        return;
+    }
+
+    if (previewTextCommitTimer !== null) {
+        window.clearTimeout(previewTextCommitTimer);
+        previewTextCommitTimer = null;
+    }
+
+    const timelineItem = previewTextEditorState.currentItem;
+    if (!timelineItem || !timelineItem.isConnected) {
+        return;
+    }
+
+    const rawValue = previewTextEditor ? (previewTextEditor.textContent || '') : '';
+    const normalized = normalizePreviewTextEditorValue(rawValue);
+
+    if (normalized === previewTextEditorState.lastCommittedValue) {
+        updatePreviewTextEditorPlaceholderState(rawValue);
+        return;
+    }
+
+    updateDefaultTextTimelineItemContent(timelineItem, normalized);
+}
+
+function onPreviewTextEditorInput() {
+    if (!previewTextEditorState.isEnabled || !previewTextEditor) {
+        return;
+    }
+
+    const currentValue = previewTextEditor.textContent || '';
+    const sanitized = currentValue.replace(/[\r\n]+/g, ' ');
+    if (sanitized !== currentValue) {
+        previewTextEditor.textContent = sanitized;
+        focusPreviewTextEditor();
+    }
+    updatePreviewTextEditorPlaceholderState(sanitized);
+    schedulePreviewTextEditorCommit();
+}
+
+function onPreviewTextEditorFocus() {
+    if (previewImageFrame) {
+        previewImageFrame.classList.add('is-text-editing');
+    }
+}
+
+function onPreviewTextEditorBlur() {
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('is-text-editing');
+    }
+    commitPreviewTextEditorContent({ force: true });
+}
+
+function onPreviewTextEditorKeyDown(event) {
+    if (!previewTextEditorState.isEnabled) {
+        return;
+    }
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        previewTextEditor.blur();
+        return;
+    }
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        const revertValue = previewTextEditorState.lastCommittedValue || '';
+        if (previewTextEditor.textContent !== revertValue) {
+            previewTextEditor.textContent = revertValue;
+            updatePreviewTextEditorPlaceholderState(revertValue);
+        }
+        previewTextEditor.blur();
+    }
+}
+
+function onPreviewTextEditorPaste(event) {
+    if (!previewTextEditorState.isEnabled) {
+        return;
+    }
+    const text = event.clipboardData?.getData('text/plain');
+    if (!text) {
+        return;
+    }
+    event.preventDefault();
+    let didInsert = false;
+    try {
+        if (typeof document.execCommand === 'function') {
+            didInsert = document.execCommand('insertText', false, text);
+        }
+    } catch (error) {
+        didInsert = false;
+    }
+    if (!didInsert && typeof window !== 'undefined' && typeof window.getSelection === 'function') {
+        const selection = window.getSelection();
+        if (selection) {
+            selection.deleteFromDocument();
+            const range = selection.getRangeAt(0);
+            range.insertNode(document.createTextNode(text));
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            didInsert = true;
+        }
+    }
+    if (!didInsert && previewTextEditor) {
+        previewTextEditor.textContent += text;
+        focusPreviewTextEditor();
+    }
+    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || text);
+    schedulePreviewTextEditorCommit();
 }
 
 function hidePreviewOutsideOutline() {
@@ -605,7 +982,8 @@ function endPreviewImagePointerInteraction() {
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
     }
-    const hadInteraction = previewImagePointerState.mode !== null;
+    const hadInteraction = previewImagePointerState.mode !== null
+        && previewImagePointerState.mode !== 'text-edit';
     previewImagePointerState.pointerId = null;
     previewImagePointerState.mode = null;
     previewImagePointerState.handle = null;
@@ -625,8 +1003,38 @@ function onPreviewImagePointerDown(event) {
         return;
     }
 
+    const isTextEditorActive = previewTextEditorState.isEnabled
+        && previewTextEditorState.currentItem
+        && previewTextEditorState.currentItem === activeTimelineItem;
+
+    const targetIsTextEditor = isTextEditorActive
+        && previewTextEditor
+        && (event.target === previewTextEditor || previewTextEditor.contains(event.target));
+
+    if (targetIsTextEditor) {
+        previewImagePointerState.pointerId = event.pointerId;
+        previewImagePointerState.mode = 'text-edit';
+        previewImagePointerState.handle = 'se';
+        previewImagePointerState.origin = {
+            pointerX: event.clientX,
+            pointerY: event.clientY,
+            left: previewImageTransform.left,
+            top: previewImageTransform.top,
+            width: previewImageTransform.width,
+            height: previewImageTransform.height,
+            aspectRatio: previewImageTransform.aspectRatio || 1,
+            oppositeX: previewImageTransform.left + previewImageTransform.width,
+            oppositeY: previewImageTransform.top + previewImageTransform.height,
+        };
+        return;
+    }
+
     const handleElement = event.target.closest('.preview-resize-handle');
     const captureTarget = handleElement || previewImageFrame;
+
+    if (isTextEditorActive && previewTextEditor && previewTextEditor === document.activeElement) {
+        previewTextEditor.blur();
+    }
 
     if (typeof captureTarget.setPointerCapture === 'function') {
         captureTarget.setPointerCapture(event.pointerId);
@@ -672,10 +1080,36 @@ function onPreviewImagePointerMove(event) {
         return;
     }
 
-    setPreviewGuidesVisible(true);
-
     const deltaX = event.clientX - previewImagePointerState.origin.pointerX;
     const deltaY = event.clientY - previewImagePointerState.origin.pointerY;
+
+    if (previewImagePointerState.mode === 'text-edit') {
+        const threshold = PREVIEW_TEXT_DRAG_THRESHOLD;
+        if ((deltaX * deltaX) + (deltaY * deltaY) <= (threshold * threshold)) {
+            return;
+        }
+        previewImagePointerState.mode = 'drag';
+        if (previewImageFrame) {
+            previewImageFrame.classList.add('is-dragging');
+        }
+        if (previewTextEditor && previewTextEditor === document.activeElement) {
+            previewTextEditor.blur();
+        }
+        if (typeof previewImageFrame?.setPointerCapture === 'function') {
+            previewImageFrame.setPointerCapture(event.pointerId);
+        }
+        setPreviewGuidesVisible(true);
+        updatePreviewGuides(
+            previewImageTransform,
+            evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize()),
+        );
+    }
+
+    if (previewImagePointerState.mode !== 'drag' && previewImagePointerState.mode !== 'resize') {
+        return;
+    }
+
+    setPreviewGuidesVisible(true);
 
     if (previewImagePointerState.mode === 'drag') {
         previewImageTransform.left = previewImagePointerState.origin.left + deltaX;
@@ -724,6 +1158,9 @@ function onPreviewImagePointerUp(event) {
     if (typeof event.target.releasePointerCapture === 'function' && event.target.hasPointerCapture(event.pointerId)) {
         event.target.releasePointerCapture(event.pointerId);
     }
+    if (previewImageFrame?.hasPointerCapture?.(event.pointerId)) {
+        previewImageFrame.releasePointerCapture(event.pointerId);
+    }
 
     endPreviewImagePointerInteraction();
 }
@@ -735,6 +1172,9 @@ function onPreviewImagePointerCancel(event) {
 
     if (typeof event.target.releasePointerCapture === 'function' && event.target.hasPointerCapture(event.pointerId)) {
         event.target.releasePointerCapture(event.pointerId);
+    }
+    if (previewImageFrame?.hasPointerCapture?.(event.pointerId)) {
+        previewImageFrame.releasePointerCapture(event.pointerId);
     }
 
     endPreviewImagePointerInteraction();

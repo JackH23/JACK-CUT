@@ -2160,6 +2160,57 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     z-index: 40;
 }
 
+.preview-image-frame.is-text-overlay {
+    cursor: text;
+}
+
+.preview-image-frame.is-text-overlay.is-dragging,
+.preview-image-frame.is-text-overlay.is-resizing {
+    cursor: grabbing;
+}
+
+.preview-image-frame.is-text-overlay img {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.preview-text-editor {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    color: #f8fafc;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-align: center;
+    font-size: clamp(20px, 5vw, 72px);
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: transparent;
+    cursor: text;
+    user-select: text;
+    outline: none;
+    transition: opacity 0.18s ease;
+}
+
+.preview-text-editor[hidden] {
+    display: none;
+}
+
+.preview-text-editor[data-show-placeholder='true']::before {
+    content: attr(data-placeholder);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.preview-text-editor:focus {
+    outline: none;
+}
+
 .preview-image-frame[data-outside-viewport="true"] {
     visibility: visible;
 }
