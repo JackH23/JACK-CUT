@@ -76,7 +76,30 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
-const defaultPreviewPlaceholderText = previewPlaceholder ? previewPlaceholder.textContent : '';
+const previewPlaceholderMessage = document.getElementById('preview-placeholder-message');
+const defaultPreviewPlaceholderText = previewPlaceholderMessage
+    ? previewPlaceholderMessage.textContent.trim()
+    : (previewPlaceholder ? previewPlaceholder.textContent.trim() : '');
+
+function setPreviewPlaceholderMessage(message) {
+    const nextMessage = (message || '').trim();
+    if (previewPlaceholderMessage) {
+        previewPlaceholderMessage.textContent = nextMessage;
+    } else if (previewPlaceholder) {
+        previewPlaceholder.textContent = nextMessage;
+    }
+    if (!previewPlaceholder) {
+        return;
+    }
+    const shouldShowVisuals = Boolean(
+        defaultPreviewPlaceholderText && nextMessage === defaultPreviewPlaceholderText,
+    );
+    previewPlaceholder.classList.toggle('preview-placeholder--message-only', !shouldShowVisuals);
+}
+
+if (previewPlaceholder && defaultPreviewPlaceholderText) {
+    setPreviewPlaceholderMessage(defaultPreviewPlaceholderText);
+}
 
 if (previewImage) {
     try {

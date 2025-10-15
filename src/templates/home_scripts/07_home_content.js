@@ -941,7 +941,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
 
     previewPlaceholder.hidden = true;
     if (previewPlaceholder) {
-        previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+        setPreviewPlaceholderMessage(defaultPreviewPlaceholderText);
     }
 
     if (isTimelinePlaying) {
@@ -982,7 +982,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         previewVideo.removeAttribute('src');
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
-            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+            setPreviewPlaceholderMessage('Audio clip ready — press Play Back to hear it');
         }
         if (previewAudio && objectURL && previewAudio.src !== objectURL) {
             previewAudio.src = objectURL;

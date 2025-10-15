@@ -228,7 +228,7 @@
         previewVideo.removeAttribute('src');
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
-            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+            setPreviewPlaceholderMessage('Audio clip ready — press Play Back to hear it');
         }
 
         const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
