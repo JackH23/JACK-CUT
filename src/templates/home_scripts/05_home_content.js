@@ -326,6 +326,10 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
         previewImageFrame.classList.add('is-text-overlay');
     }
 
+    if (typeof refreshActiveOverlayLayers === 'function') {
+        refreshActiveOverlayLayers();
+    }
+
     updatePreviewTextEditorPlaceholderState(storedValue);
 
     previewTextEditorState.isEnabled = true;
@@ -373,6 +377,10 @@ function disablePreviewTextEditor(options = {}) {
 
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-text-overlay', 'is-text-editing');
+    }
+
+    if (typeof refreshActiveOverlayLayers === 'function') {
+        refreshActiveOverlayLayers();
     }
 }
 
