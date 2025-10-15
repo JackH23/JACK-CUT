@@ -198,6 +198,69 @@ function clearPreviewImageTransform() {
     updateImageRotationControlState();
 }
 
+let previewTextEditorPlaceholder = '';
+
+function enablePreviewTextEditor(text = '', placeholder = '') {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    previewTextEditorPlaceholder = placeholder || '';
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.add('has-text-editor');
+    }
+
+    if (previewTextEditorPlaceholder) {
+        previewTextEditor.setAttribute('data-placeholder', previewTextEditorPlaceholder);
+    } else {
+        previewTextEditor.removeAttribute('data-placeholder');
+    }
+
+    previewTextEditor.hidden = false;
+    previewTextEditor.textContent = text || '';
+}
+
+function disablePreviewTextEditor(options = {}) {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    const { clearText = false } = options;
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('has-text-editor');
+    }
+
+    previewTextEditor.hidden = true;
+    if (clearText) {
+        previewTextEditor.textContent = '';
+    }
+    previewTextEditor.removeAttribute('data-placeholder');
+    previewTextEditorPlaceholder = '';
+    if (document.activeElement === previewTextEditor) {
+        previewTextEditor.blur();
+    }
+}
+
+function setPreviewTextEditorValue(text = '') {
+    if (!previewTextEditor) {
+        return;
+    }
+    previewTextEditor.textContent = text || '';
+}
+
+function getPreviewTextEditorValue() {
+    if (!previewTextEditor) {
+        return '';
+    }
+    return previewTextEditor.textContent || '';
+}
+
+function isPreviewTextEditorActive() {
+    return Boolean(previewTextEditor && !previewTextEditor.hidden);
+}
+
 function hidePreviewOutsideOutline() {
     if (!previewOutsideIndicator) {
         return;
@@ -622,6 +685,10 @@ function onPreviewImagePointerDown(event) {
     }
 
     if (event.button !== 0) {
+        return;
+    }
+
+    if (isPreviewTextEditorActive() && event.target.closest('.preview-text-editor')) {
         return;
     }
 

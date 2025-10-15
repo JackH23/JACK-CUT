@@ -344,6 +344,15 @@
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
+        if (descriptor.item === primaryTimelineItem
+            && descriptor.item.dataset?.templateId === 'default-text') {
+            layer.classList.add('preview-overlay-layer--text-edit');
+            layer.style.pointerEvents = 'none';
+        } else {
+            layer.classList.remove('preview-overlay-layer--text-edit');
+            layer.style.removeProperty('pointer-events');
+        }
+
         if (borderRadius > 0) {
             layer.style.borderRadius = `${borderRadius}px`;
         } else {

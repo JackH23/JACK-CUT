@@ -868,6 +868,7 @@ function clearPreview() {
     cancelPreviewAudioEnvelope({ restoreVolume: true });
     stopPreviewAudio({ resetTime: true });
     setPreviewImageVisibility(false);
+    disablePreviewTextEditor({ clearText: true });
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
     previewPlaceholder.hidden = false;
@@ -950,6 +951,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         setPreviewMode('has-video');
         resetPreviewScroll();
         setPreviewImageVisibility(false);
+        disablePreviewTextEditor();
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
         cancelPreviewAudioEnvelope({ restoreVolume: false });
@@ -971,12 +973,14 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
+        syncPreviewTextEditorToTimelineItem(timelineItem);
     } else if (fileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });
         setPreviewMode(null);
         previewVideo.pause();
         previewVideo.hidden = true;
         previewVideo.removeAttribute('src');
+        disablePreviewTextEditor();
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
             previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
@@ -990,6 +994,12 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
             }
         }
         playVideoButton.textContent = 'Play Back';
+    } else {
+        disablePreviewTextEditor();
+    }
+
+    if (!fileType.startsWith('image/')) {
+        syncPreviewTextEditorToTimelineItem(null);
     }
 
     applyCanvasSettingsToPreview(timelineItem);
@@ -1940,6 +1950,12 @@ const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
     rotation: 0,
 };
 
+let isSyncingPreviewTextEditor = false;
+
+function isDefaultTextTimelineItem(timelineItem) {
+    return Boolean(timelineItem?.dataset?.templateId === DEFAULT_TEXT_TEMPLATE_ID);
+}
+
 function escapeSvgTextContent(content) {
     return String(content || '')
         .replace(/&/g, '&amp;')
@@ -1963,6 +1979,100 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);
+}
+
+function syncPreviewTextEditorToTimelineItem(timelineItem) {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    const placeholder = DEFAULT_TEXT_TEMPLATE_LABEL;
+
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        if (isPreviewTextEditorActive()) {
+            disablePreviewTextEditor();
+        }
+        return;
+    }
+
+    const storedText = timelineItem.dataset.textContent || '';
+    const currentValue = getPreviewTextEditorValue();
+    const shouldShowEditor = !isPreviewTextEditorActive();
+
+    if (shouldShowEditor) {
+        isSyncingPreviewTextEditor = true;
+        enablePreviewTextEditor(storedText, placeholder);
+        isSyncingPreviewTextEditor = false;
+        return;
+    }
+
+    if (previewTextEditor.getAttribute('data-placeholder') !== placeholder) {
+        previewTextEditor.setAttribute('data-placeholder', placeholder);
+    }
+
+    if (currentValue !== storedText) {
+        isSyncingPreviewTextEditor = true;
+        setPreviewTextEditorValue(storedText);
+        isSyncingPreviewTextEditor = false;
+    }
+}
+
+function applyActiveDefaultTextOverlayText(newValue) {
+    if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    const nextValue = typeof newValue === 'string' ? newValue : String(newValue || '');
+    const previousValue = activeTimelineItem.dataset.textContent || '';
+
+    if (previousValue === nextValue) {
+        return;
+    }
+
+    activeTimelineItem.dataset.textContent = nextValue;
+
+    const effectiveLabel = nextValue.trim() ? nextValue : DEFAULT_TEXT_TEMPLATE_LABEL;
+    activeTimelineItem.dataset.displayName = effectiveLabel;
+
+    const labelElement = activeTimelineItem.querySelector('span');
+    if (labelElement) {
+        labelElement.textContent = effectiveLabel;
+    }
+
+    const previousObjectURL = activeTimelineItem.dataset.objectUrl || '';
+    const nextObjectURL = createDefaultTextOverlayObjectURL(nextValue || DEFAULT_TEXT_TEMPLATE_LABEL);
+    activeTimelineItem.dataset.objectUrl = nextObjectURL;
+
+    const thumbnail = activeTimelineItem.querySelector('.timeline-thumbnail--text');
+    if (thumbnail) {
+        generateImageThumbnail(nextObjectURL).then((thumbnailURL) => {
+            if (!thumbnail.isConnected) {
+                return;
+            }
+            if (activeTimelineItem.dataset.objectUrl === nextObjectURL) {
+                thumbnail.src = thumbnailURL;
+            }
+        }).catch((error) => {
+            console.warn('Unable to refresh text overlay thumbnail.', error);
+        });
+    }
+
+    if (previewImage) {
+        revealPreviewImageSource(nextObjectURL, { immediate: true }).catch((error) => {
+            console.warn('Failed to refresh preview image for text overlay.', error);
+        });
+    }
+
+    refreshActiveOverlayLayers();
+    renderExportSummary(getTimelineItems(), null);
+
+    if (previousObjectURL && previousObjectURL !== nextObjectURL) {
+        window.requestAnimationFrame(() => {
+            if (!stagedUploadsByObjectUrl.has(previousObjectURL)) {
+                URL.revokeObjectURL(previousObjectURL);
+            }
+        });
+    }
 }
 
 async function addDefaultTextOverlayToTimeline() {
@@ -2057,6 +2167,26 @@ async function addDefaultTextOverlayToTimeline() {
     loadPreviewFromTimeline(activeTimelineItem);
 
     return timelineItem;
+}
+
+if (previewTextEditor) {
+    previewTextEditor.addEventListener('input', () => {
+        if (isSyncingPreviewTextEditor) {
+            return;
+        }
+        if (!isDefaultTextTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        applyActiveDefaultTextOverlayText(getPreviewTextEditorValue());
+    });
+
+    previewTextEditor.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+    });
+
+    previewTextEditor.addEventListener('keyup', (event) => {
+        event.stopPropagation();
+    });
 }
 
 if (textTemplateCard) {
