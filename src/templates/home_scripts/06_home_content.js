@@ -426,8 +426,14 @@
             && typeof previewTextEditorState === 'object'
             && previewTextEditorState.isEnabled
             && previewTextEditorState.currentItem === descriptor.item;
+        const hasCustomTextContent = descriptor.item.dataset?.hasCustomText === 'true';
 
         if (isEditingDefaultText) {
+            hideOverlayLayerEntry(entry);
+            return false;
+        }
+
+        if (isDefaultTextOverlay && !hasCustomTextContent) {
             hideOverlayLayerEntry(entry);
             return false;
         }

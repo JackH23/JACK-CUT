@@ -436,10 +436,15 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
     }
 
     const sanitizedValue = normalizedText;
-    const displayName = sanitizedValue || getDefaultTextTemplateLabel();
+    const placeholderLabel = getDefaultTextTemplateLabel();
+    const displayName = sanitizedValue || placeholderLabel;
+    const normalizedValue = (sanitizedValue || '').trim();
+    const normalizedPlaceholder = (placeholderLabel || '').trim();
+    const hasCustomText = normalizedValue.length > 0 && normalizedValue !== normalizedPlaceholder;
 
     timelineItem.dataset.textContent = sanitizedValue;
     timelineItem.dataset.displayName = displayName;
+    timelineItem.dataset.hasCustomText = hasCustomText ? 'true' : 'false';
 
     const labelElement = timelineItem.querySelector('span');
     if (labelElement) {

@@ -2025,6 +2025,7 @@ async function addDefaultTextOverlayToTimeline() {
     timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
+    timelineItem.dataset.hasCustomText = 'false';
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
     timelineItem.dataset.previewImageTransform = JSON.stringify(DEFAULT_TEXT_TEMPLATE_TRANSFORM);
 
