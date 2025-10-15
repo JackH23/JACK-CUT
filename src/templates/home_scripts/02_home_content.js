@@ -395,6 +395,7 @@ const previewImagePointerState = {
     mode: null,
     handle: null,
     origin: null,
+    didMove: false,
 };
 
 const keyframeMarkerPointerState = {
