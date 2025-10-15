@@ -97,6 +97,204 @@ function applyStoredPreviewImageTransform(storedTransform, viewportSizeOverride 
     return applyNormalizedPreviewImageTransform(storedTransform, { viewportSize });
 }
 
+function isDefaultTextTemplateItem(timelineItem) {
+    return Boolean(timelineItem?.dataset?.templateId)
+        && timelineItem.dataset.templateId === DEFAULT_TEXT_TEMPLATE_ID;
+}
+
+function getDefaultTextTemplateContent(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return DEFAULT_TEXT_TEMPLATE_LABEL;
+    }
+    const stored = (timelineItem.dataset.textContent || '').trim();
+    return stored ? stored : DEFAULT_TEXT_TEMPLATE_LABEL;
+}
+
+function sanitizeDefaultTextTemplateContent(raw) {
+    const normalized = String(raw || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!normalized) {
+        return DEFAULT_TEXT_TEMPLATE_LABEL;
+    }
+    if (normalized.length > DEFAULT_TEXT_TEMPLATE_MAX_LENGTH) {
+        return normalized.slice(0, DEFAULT_TEXT_TEMPLATE_MAX_LENGTH);
+    }
+    return normalized;
+}
+
+function selectPreviewTextEditorContents() {
+    if (!previewTextEditor) {
+        return;
+    }
+    const selection = window.getSelection();
+    if (!selection) {
+        return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(previewTextEditor);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function updatePreviewTextEditorAppearance() {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    if (!isDefaultTextTemplateItem(activeTimelineItem) || !previewImageTransform) {
+        previewTextEditor.style.removeProperty('font-size');
+        previewTextEditor.style.removeProperty('transform');
+        return;
+    }
+
+    const frameHeight = Math.max(0, previewImageTransform.height || 0);
+    if (frameHeight > 0) {
+        const fontSize = Math.max(16, Math.min(360, frameHeight * 0.42));
+        previewTextEditor.style.fontSize = `${fontSize}px`;
+    } else {
+        previewTextEditor.style.removeProperty('font-size');
+    }
+
+    const rotation = clampRotation(previewImageTransform.rotation || 0);
+    if (rotation !== 0) {
+        previewTextEditor.style.transform = `rotate(${rotation}deg)`;
+    } else {
+        previewTextEditor.style.removeProperty('transform');
+    }
+}
+
+function syncPreviewTextEditorToActiveItem(options = {}) {
+    if (!previewTextEditor || !previewImageFrame) {
+        return;
+    }
+
+    const isActiveText = isDefaultTextTemplateItem(activeTimelineItem);
+
+    if (!isActiveText) {
+        if (isPreviewTextEditorEditing) {
+            isPreviewTextEditorEditing = false;
+        }
+        previewImageFrame.classList.remove('is-editing-text');
+        previewImageFrame.removeAttribute('data-text-overlay');
+        previewTextEditor.textContent = '';
+        previewTextEditor.setAttribute('contenteditable', 'false');
+        previewTextEditor.setAttribute('aria-hidden', 'true');
+        previewTextEditor.style.removeProperty('font-size');
+        previewTextEditor.style.removeProperty('transform');
+        return;
+    }
+
+    previewImageFrame.setAttribute('data-text-overlay', 'true');
+    previewTextEditor.setAttribute('contenteditable', 'true');
+    previewTextEditor.setAttribute('aria-hidden', 'false');
+
+    if (!isPreviewTextEditorEditing || options.forceContentSync) {
+        previewTextEditor.textContent = getDefaultTextTemplateContent(activeTimelineItem);
+    }
+
+    updatePreviewTextEditorAppearance();
+}
+
+function commitPreviewTextEditorContent() {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    if (!isDefaultTextTemplateItem(activeTimelineItem)) {
+        return;
+    }
+
+    const raw = previewTextEditor.textContent || '';
+    const sanitized = sanitizeDefaultTextTemplateContent(raw);
+
+    if (previewTextEditor.textContent !== sanitized) {
+        previewTextEditor.textContent = sanitized;
+    }
+
+    applyDefaultTextTimelineContent(activeTimelineItem, sanitized);
+}
+
+function handlePreviewTextEditorFocus() {
+    if (!isDefaultTextTemplateItem(activeTimelineItem)) {
+        if (previewTextEditor && document.activeElement === previewTextEditor) {
+            previewTextEditor.blur();
+        }
+        return;
+    }
+
+    isPreviewTextEditorEditing = true;
+    if (previewImageFrame) {
+        previewImageFrame.classList.add('is-editing-text');
+    }
+    stopTimelinePlayback(true, false);
+}
+
+function handlePreviewTextEditorBlur() {
+    if (!isPreviewTextEditorEditing) {
+        return;
+    }
+
+    isPreviewTextEditorEditing = false;
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('is-editing-text');
+    }
+
+    if (isDefaultTextTemplateItem(activeTimelineItem)) {
+        commitPreviewTextEditorContent();
+        syncPreviewTextEditorToActiveItem({ forceContentSync: true });
+    } else {
+        previewTextEditor.textContent = '';
+    }
+}
+
+function handlePreviewTextEditorInput() {
+    if (!isDefaultTextTemplateItem(activeTimelineItem)) {
+        return;
+    }
+
+    const raw = previewTextEditor.textContent || '';
+    let normalized = raw.replace(/\n+/g, ' ');
+    normalized = normalized.replace(/\s{2,}/g, ' ');
+    if (normalized.length > DEFAULT_TEXT_TEMPLATE_MAX_LENGTH) {
+        normalized = normalized.slice(0, DEFAULT_TEXT_TEMPLATE_MAX_LENGTH);
+    }
+
+    if (normalized !== raw) {
+        const selection = window.getSelection();
+        let caretOffset = null;
+        if (selection && selection.focusNode && previewTextEditor.contains(selection.focusNode)) {
+            caretOffset = selection.focusOffset;
+        }
+        previewTextEditor.textContent = normalized;
+        if (caretOffset !== null && previewTextEditor.firstChild && selection) {
+            const range = document.createRange();
+            range.setStart(previewTextEditor.firstChild, Math.min(caretOffset, normalized.length));
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+    }
+}
+
+function handlePreviewTextEditorKeyDown(event) {
+    if (!isDefaultTextTemplateItem(activeTimelineItem)) {
+        return;
+    }
+
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        previewTextEditor.blur();
+        return;
+    }
+
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        previewTextEditor.textContent = getDefaultTextTemplateContent(activeTimelineItem);
+        previewTextEditor.blur();
+    }
+}
+
 function tryRestorePreviewImageTransform(timelineItem) {
     const storedTransform = getStoredPreviewImageTransform(timelineItem);
 
@@ -178,6 +376,7 @@ function applyPreviewImageTransform(alignmentOverride) {
     updatePreviewOutsideOutline();
     updatePreviewGuides(previewImageTransform, alignment);
     updateImageRotationControlState();
+    updatePreviewTextEditorAppearance();
 }
 
 function clearPreviewImageTransform() {
@@ -191,6 +390,10 @@ function clearPreviewImageTransform() {
     }
     if (previewImage) {
         previewImage.style.removeProperty('--preview-image-rotation');
+    }
+    if (previewTextEditor) {
+        previewTextEditor.style.removeProperty('font-size');
+        previewTextEditor.style.removeProperty('transform');
     }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
@@ -626,6 +829,25 @@ function onPreviewImagePointerDown(event) {
     }
 
     const handleElement = event.target.closest('.preview-resize-handle');
+    const isActiveText = previewTextEditor && isDefaultTextTemplateItem(activeTimelineItem);
+    const isTextTarget = isActiveText
+        && (event.target === previewTextEditor || previewTextEditor.contains(event.target));
+
+    if (isActiveText && isTextTarget && !handleElement && event.detail >= 2) {
+        previewTextEditor.focus({ preventScroll: true });
+        window.requestAnimationFrame(selectPreviewTextEditorContents);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
+    if (isActiveText && isPreviewTextEditorEditing) {
+        if (isTextTarget && !handleElement) {
+            return;
+        }
+        previewTextEditor.blur();
+    }
+
     const captureTarget = handleElement || previewImageFrame;
 
     if (typeof captureTarget.setPointerCapture === 'function') {
@@ -756,10 +978,12 @@ function setPreviewImageVisibility(isVisible) {
         } else {
             queuePreviewImageFrameReset();
         }
+        syncPreviewTextEditorToActiveItem({ forceContentSync: true });
     } else {
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
+        syncPreviewTextEditorToActiveItem({ forceContentSync: true });
     }
 }
 

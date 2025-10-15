@@ -918,6 +918,7 @@ function setActiveTimelineItem(item, options = {}) {
     updateImageRotationControlState();
     updateActiveTimelineIndicators();
     applyCanvasSettingsToPreview(activeTimelineItem);
+    syncPreviewTextEditorToActiveItem({ forceContentSync: true });
 }
 
 function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
@@ -1926,20 +1927,6 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
     }
 }
 
-const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
-const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
-const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
-const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
-const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
-const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
-    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
-    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
-    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
-    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
-    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
-    rotation: 0,
-};
-
 function escapeSvgTextContent(content) {
     return String(content || '')
         .replace(/&/g, '&amp;')
@@ -1963,6 +1950,71 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);
+}
+
+function applyDefaultTextTimelineContent(timelineItem, textContent) {
+    if (!timelineItem || !isDefaultTextTemplateItem(timelineItem)) {
+        return;
+    }
+
+    const sanitized = sanitizeDefaultTextTemplateContent(textContent);
+    const previousText = getDefaultTextTemplateContent(timelineItem);
+
+    if (sanitized === previousText) {
+        return;
+    }
+
+    timelineItem.dataset.textContent = sanitized;
+    timelineItem.dataset.displayName = sanitized;
+
+    const label = timelineItem.querySelector('span');
+    if (label) {
+        label.textContent = sanitized;
+    }
+
+    const previousObjectUrl = timelineItem.dataset.objectUrl || '';
+    const nextObjectUrl = createDefaultTextOverlayObjectURL(sanitized);
+    timelineItem.dataset.objectUrl = nextObjectUrl;
+
+    const thumbnail = timelineItem.querySelector('.timeline-thumbnail');
+    if (thumbnail) {
+        const updateToken = nextObjectUrl;
+        generateImageThumbnail(nextObjectUrl).then((thumbnailUrl) => {
+            if (!thumbnail.isConnected) {
+                return;
+            }
+            if (timelineItem.dataset.objectUrl !== updateToken) {
+                return;
+            }
+            thumbnail.src = thumbnailUrl;
+            thumbnail.alt = sanitized;
+        }).catch(() => {
+            if (thumbnail.isConnected) {
+                thumbnail.src = nextObjectUrl;
+                thumbnail.alt = sanitized;
+            }
+        });
+    }
+
+    preloadTimelineImage(nextObjectUrl).catch(() => {});
+    releaseTimelineImage(previousObjectUrl);
+    if (previousObjectUrl && previousObjectUrl !== nextObjectUrl
+        && !stagedUploadsByObjectUrl.has(previousObjectUrl)) {
+        try {
+            URL.revokeObjectURL(previousObjectUrl);
+        } catch (error) {
+            // Ignore errors while cleaning up object URLs.
+        }
+    }
+
+    if (activeTimelineItem === timelineItem) {
+        if (previewImage && !previewImage.hidden) {
+            previewImage.src = nextObjectUrl;
+        }
+        syncPreviewTextEditorToActiveItem({ forceContentSync: false });
+    }
+
+    refreshActiveOverlayLayers();
 }
 
 async function addDefaultTextOverlayToTimeline() {

@@ -109,12 +109,28 @@ let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
 let activeClipProgress = 0;
 let keyframeStatusTimeout = null;
+let isPreviewTextEditorEditing = false;
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
         ? HTMLMediaElement.HAVE_ENOUGH_DATA
         : 4;
 const MEDIA_READY_EVENTS = ['canplaythrough', 'canplay', 'loadeddata'];
+
+const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
+const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
+const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
+const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
+const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
+const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
+    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
+    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
+    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
+    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
+    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
+    rotation: 0,
+};
+const DEFAULT_TEXT_TEMPLATE_MAX_LENGTH = 160;
 
 function maybeAutoScrollTimelineTrack(clientX) {
     if (!timelineTrack || !Number.isFinite(clientX)) {

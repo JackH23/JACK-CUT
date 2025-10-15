@@ -796,6 +796,24 @@ if (previewOverlayStack) {
     previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
 }
 
+if (previewTextEditor) {
+    previewTextEditor.addEventListener('focus', handlePreviewTextEditorFocus);
+    previewTextEditor.addEventListener('blur', handlePreviewTextEditorBlur);
+    previewTextEditor.addEventListener('input', handlePreviewTextEditorInput);
+    previewTextEditor.addEventListener('keydown', handlePreviewTextEditorKeyDown);
+    previewTextEditor.addEventListener('dblclick', (event) => {
+        if (!isDefaultTextTemplateItem(activeTimelineItem)) {
+            return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        if (!isPreviewTextEditorEditing) {
+            previewTextEditor.focus({ preventScroll: true });
+            window.requestAnimationFrame(selectPreviewTextEditorContents);
+        }
+    });
+}
+
 if (window && typeof window.addEventListener === 'function') {
     window.addEventListener('pointermove', onPreviewImagePointerMove, { passive: false });
     window.addEventListener('pointerup', onPreviewImagePointerUp, { passive: true });
