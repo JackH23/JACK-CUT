@@ -2193,6 +2193,55 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transition: transform 0.2s ease;
 }
 
+.preview-image-frame.has-text-editor img {
+    opacity: 0;
+    transition: opacity 0.18s ease, transform 0.2s ease;
+}
+
+.preview-text-editor[hidden] {
+    display: none;
+}
+
+.preview-text-editor {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 12px;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(1rem, 2.8vw, 2.5rem);
+    letter-spacing: 1px;
+    line-height: 1.2;
+    color: #f8fafc;
+    background: none;
+    border: none;
+    outline: none;
+    pointer-events: auto;
+    cursor: text;
+    user-select: text;
+    white-space: pre-wrap;
+    word-break: break-word;
+    text-shadow: 0 2px 18px rgba(15, 23, 42, 0.45);
+    z-index: 50;
+}
+
+.preview-text-editor:focus-visible {
+    outline: 2px solid rgba(148, 163, 184, 0.5);
+    outline-offset: 4px;
+}
+
+.preview-image-frame.has-text-editor .preview-text-editor {
+    display: flex;
+}
+
+.preview-text-editor[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    opacity: 0.55;
+}
+
 .preview-resize-handle {
     position: absolute;
     width: 18px;

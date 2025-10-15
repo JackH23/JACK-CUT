@@ -727,7 +727,7 @@ function onPreviewOverlayPointerDown(event) {
     event.stopPropagation();
 
     stopTimelinePlayback();
-    setActiveTimelineItem(timelineItem);
+    setActiveTimelineItem(timelineItem, { focus: true });
     loadPreviewFromTimeline(timelineItem);
 }
 

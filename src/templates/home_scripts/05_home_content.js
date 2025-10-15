@@ -626,6 +626,14 @@ function onPreviewImagePointerDown(event) {
     }
 
     const handleElement = event.target.closest('.preview-resize-handle');
+
+    if (!handleElement
+        && previewTextEditor
+        && previewTextEditor.contains(event.target)
+        && document.activeElement === previewTextEditor) {
+        return;
+    }
+
     const captureTarget = handleElement || previewImageFrame;
 
     if (typeof captureTarget.setPointerCapture === 'function') {
@@ -756,10 +764,14 @@ function setPreviewImageVisibility(isVisible) {
         } else {
             queuePreviewImageFrameReset();
         }
+        if (activeTimelineItem && isDefaultTextTimelineItem(activeTimelineItem)) {
+            syncPreviewTextEditorToTimelineItem(activeTimelineItem);
+        }
     } else {
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
+        hidePreviewTextEditor();
     }
 }
 
@@ -1225,3 +1237,226 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 : doesClipIntersectWindow(
                     descriptor,
                 expandedWindowStart,
+const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
+const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
+const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
+const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
+const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
+const DEFAULT_TEXT_TEMPLATE_MAX_LENGTH = 140;
+const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
+    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
+    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
+    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
+    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
+    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
+    rotation: 0,
+};
+
+const PREVIEW_TEXT_EDITOR_COMMIT_DELAY_MS = 180;
+
+const previewTextEditorState = {
+    activeTimelineItem: null,
+    lastCommittedValue: null,
+    commitTimer: null,
+};
+
+function normalizeDefaultTextOverlayText(value) {
+    const raw = typeof value === 'string' ? value : '';
+    const condensed = raw
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    let next = condensed || DEFAULT_TEXT_TEMPLATE_LABEL;
+    if (next.length > DEFAULT_TEXT_TEMPLATE_MAX_LENGTH) {
+        next = next.slice(0, DEFAULT_TEXT_TEMPLATE_MAX_LENGTH).trim();
+    }
+    return next || DEFAULT_TEXT_TEMPLATE_LABEL;
+}
+
+function isDefaultTextTimelineItem(timelineItem) {
+    return Boolean(timelineItem?.dataset?.templateId)
+        && timelineItem.dataset.templateId === DEFAULT_TEXT_TEMPLATE_ID;
+}
+
+function getTimelineItemDefaultTextContent(timelineItem) {
+    if (!timelineItem) {
+        return DEFAULT_TEXT_TEMPLATE_LABEL;
+    }
+    return timelineItem.dataset.textContent
+        || timelineItem.dataset.displayName
+        || DEFAULT_TEXT_TEMPLATE_LABEL;
+}
+
+function clearPreviewTextEditorCommitTimer() {
+    if (previewTextEditorState.commitTimer !== null) {
+        clearTimeout(previewTextEditorState.commitTimer);
+        previewTextEditorState.commitTimer = null;
+    }
+}
+
+function commitPreviewTextEditorChanges(options = {}) {
+    if (!previewTextEditor || !previewTextEditorState.activeTimelineItem) {
+        clearPreviewTextEditorCommitTimer();
+        return;
+    }
+
+    const targetItem = previewTextEditorState.activeTimelineItem;
+    if (!isDefaultTextTimelineItem(targetItem)) {
+        clearPreviewTextEditorCommitTimer();
+        return;
+    }
+
+    const rawValue = previewTextEditor.textContent || '';
+    const normalized = normalizeDefaultTextOverlayText(rawValue);
+    if (!options.force && normalized === previewTextEditorState.lastCommittedValue) {
+        return;
+    }
+
+    if (typeof updateDefaultTextTimelineItemContent === 'function') {
+        updateDefaultTextTimelineItemContent(targetItem, normalized, { source: 'preview-text-editor' });
+    }
+
+    previewTextEditorState.lastCommittedValue = normalized;
+    previewTextEditor.dataset.placeholder = DEFAULT_TEXT_TEMPLATE_LABEL;
+
+    if (options.syncDom && previewTextEditor.textContent !== normalized) {
+        previewTextEditor.textContent = normalized;
+    }
+}
+
+function hidePreviewTextEditor(options = {}) {
+    const { skipCommit = false } = options;
+
+    if (!previewTextEditor) {
+        clearPreviewTextEditorCommitTimer();
+        previewTextEditorState.activeTimelineItem = null;
+        previewTextEditorState.lastCommittedValue = null;
+        return;
+    }
+
+    if (!skipCommit) {
+        commitPreviewTextEditorChanges({ force: true, syncDom: true });
+    }
+
+    clearPreviewTextEditorCommitTimer();
+
+    previewTextEditorState.activeTimelineItem = null;
+    previewTextEditorState.lastCommittedValue = null;
+
+    previewTextEditor.textContent = '';
+    previewTextEditor.setAttribute('hidden', '');
+    previewTextEditor.setAttribute('aria-hidden', 'true');
+    previewTextEditor.removeAttribute('data-template-id');
+    previewTextEditor.blur();
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('has-text-editor');
+    }
+
+    if (previewImage) {
+        previewImage.style.removeProperty('opacity');
+    }
+}
+
+function syncPreviewTextEditorToTimelineItem(timelineItem, options = {}) {
+    if (!previewTextEditor || !previewImageFrame) {
+        return;
+    }
+
+    if (timelineItem === previewTextEditorState.activeTimelineItem) {
+        if (!timelineItem || !isDefaultTextTimelineItem(timelineItem) || previewImage?.hidden) {
+            hidePreviewTextEditor({ skipCommit: true });
+            return;
+        }
+
+        if (!previewImageFrame.classList.contains('has-text-editor')) {
+            previewImageFrame.classList.add('has-text-editor');
+        }
+        previewTextEditor.dataset.placeholder = DEFAULT_TEXT_TEMPLATE_LABEL;
+        previewTextEditor.removeAttribute('hidden');
+        previewTextEditor.setAttribute('aria-hidden', 'false');
+        if (previewImage) {
+            previewImage.style.setProperty('opacity', '0');
+        }
+
+        const liveValue = getTimelineItemDefaultTextContent(timelineItem);
+        const normalized = normalizeDefaultTextOverlayText(liveValue);
+        previewTextEditorState.lastCommittedValue = normalized;
+
+        if (document.activeElement !== previewTextEditor && previewTextEditor.textContent !== liveValue) {
+            previewTextEditor.textContent = liveValue;
+        }
+        return;
+    }
+
+    commitPreviewTextEditorChanges({ force: true, syncDom: true });
+
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem) || previewImage?.hidden) {
+        hidePreviewTextEditor({ skipCommit: true });
+        return;
+    }
+
+    const nextValue = getTimelineItemDefaultTextContent(timelineItem);
+    previewTextEditorState.activeTimelineItem = timelineItem;
+    previewTextEditorState.lastCommittedValue = normalizeDefaultTextOverlayText(nextValue);
+
+    previewTextEditor.textContent = nextValue;
+    previewTextEditor.dataset.placeholder = DEFAULT_TEXT_TEMPLATE_LABEL;
+    previewTextEditor.removeAttribute('hidden');
+    previewTextEditor.setAttribute('aria-hidden', 'false');
+    previewTextEditor.setAttribute('data-template-id', DEFAULT_TEXT_TEMPLATE_ID);
+
+    previewImageFrame.classList.add('has-text-editor');
+    if (previewImage) {
+        previewImage.style.setProperty('opacity', '0');
+    }
+
+    if (options.focus === true) {
+        requestAnimationFrame(() => {
+            if (previewTextEditor?.isConnected) {
+                previewTextEditor.focus();
+                const selection = window.getSelection ? window.getSelection() : null;
+                if (selection && typeof selection.removeAllRanges === 'function') {
+                    const range = document.createRange();
+                    range.selectNodeContents(previewTextEditor);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            }
+        });
+    }
+}
+
+function schedulePreviewTextEditorCommit() {
+    if (!previewTextEditorState.activeTimelineItem) {
+        return;
+    }
+
+    clearPreviewTextEditorCommitTimer();
+
+    previewTextEditorState.commitTimer = setTimeout(() => {
+        previewTextEditorState.commitTimer = null;
+        commitPreviewTextEditorChanges({ force: false, syncDom: false });
+    }, PREVIEW_TEXT_EDITOR_COMMIT_DELAY_MS);
+}
+
+if (previewTextEditor) {
+    previewTextEditor.dataset.placeholder = DEFAULT_TEXT_TEMPLATE_LABEL;
+    previewTextEditor.addEventListener('input', () => {
+        schedulePreviewTextEditorCommit();
+    });
+    previewTextEditor.addEventListener('blur', () => {
+        clearPreviewTextEditorCommitTimer();
+        commitPreviewTextEditorChanges({ force: true, syncDom: true });
+    });
+    previewTextEditor.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            previewTextEditor.blur();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            previewTextEditor.blur();
+        }
+    });
+}
+

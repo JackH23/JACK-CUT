@@ -918,6 +918,11 @@ function setActiveTimelineItem(item, options = {}) {
     updateImageRotationControlState();
     updateActiveTimelineIndicators();
     applyCanvasSettingsToPreview(activeTimelineItem);
+    if (activeTimelineItem && isDefaultTextTimelineItem(activeTimelineItem)) {
+        syncPreviewTextEditorToTimelineItem(activeTimelineItem, { focus: shouldFocus });
+    } else {
+        hidePreviewTextEditor();
+    }
 }
 
 function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
@@ -933,6 +938,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
 
     if (!objectURL) {
+        hidePreviewTextEditor();
         return;
     }
 
@@ -950,6 +956,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         setPreviewMode('has-video');
         resetPreviewScroll();
         setPreviewImageVisibility(false);
+        hidePreviewTextEditor();
         previewImage.removeAttribute('src');
         previewVideo.hidden = false;
         cancelPreviewAudioEnvelope({ restoreVolume: false });
@@ -971,12 +978,14 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
+        syncPreviewTextEditorToTimelineItem(timelineItem);
     } else if (fileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });
         setPreviewMode(null);
         previewVideo.pause();
         previewVideo.hidden = true;
         previewVideo.removeAttribute('src');
+        hidePreviewTextEditor();
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
             previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
@@ -1838,7 +1847,7 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
 
     timelineItem.addEventListener('click', () => {
         stopTimelinePlayback();
-        setActiveTimelineItem(timelineItem);
+        setActiveTimelineItem(timelineItem, { focus: true });
         loadPreviewFromTimeline(timelineItem);
     });
 
@@ -1926,20 +1935,6 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
     }
 }
 
-const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
-const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
-const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
-const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
-const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
-const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
-    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
-    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
-    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
-    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
-    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
-    rotation: 0,
-};
-
 function escapeSvgTextContent(content) {
     return String(content || '')
         .replace(/&/g, '&amp;')
@@ -1963,6 +1958,64 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);
+}
+
+function updateDefaultTextTimelineItemContent(timelineItem, nextValue, options = {}) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return;
+    }
+
+    const normalized = normalizeDefaultTextOverlayText(nextValue);
+    const previousText = timelineItem.dataset.textContent || DEFAULT_TEXT_TEMPLATE_LABEL;
+    if (!options.force && normalized === previousText) {
+        return;
+    }
+
+    timelineItem.dataset.textContent = normalized;
+    timelineItem.dataset.displayName = normalized;
+
+    const label = timelineItem.querySelector('span');
+    if (label) {
+        label.textContent = normalized;
+    }
+
+    const previousObjectUrl = timelineItem.dataset.objectUrl || '';
+    const nextObjectUrl = createDefaultTextOverlayObjectURL(normalized);
+    timelineItem.dataset.objectUrl = nextObjectUrl;
+
+    const thumbnail = timelineItem.querySelector('.timeline-thumbnail');
+    if (thumbnail) {
+        generateImageThumbnail(nextObjectUrl)
+            .then((thumbnailUrl) => {
+                if (!thumbnail.isConnected) {
+                    return;
+                }
+                thumbnail.src = thumbnailUrl;
+                thumbnail.alt = normalized;
+            })
+            .catch((error) => {
+                console.warn('Unable to update text overlay thumbnail.', error);
+            });
+    }
+
+    releaseTimelineImage(previousObjectUrl);
+    if (previousObjectUrl && previousObjectUrl !== nextObjectUrl) {
+        try {
+            URL.revokeObjectURL(previousObjectUrl);
+        } catch (error) {
+            // Ignore URL revocation failures.
+        }
+    }
+
+    preloadTimelineImage(nextObjectUrl).catch(() => {});
+
+    if (timelineItem === activeTimelineItem) {
+        void revealPreviewImageSource(nextObjectUrl, { immediate: true });
+        syncPreviewTextEditorToTimelineItem(timelineItem);
+    }
+
+    refreshActiveOverlayLayers();
+    renderExportSummary(getTimelineItems(), null);
 }
 
 async function addDefaultTextOverlayToTimeline() {
