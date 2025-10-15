@@ -339,6 +339,8 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
 
     if (previewImageFrame) {
         previewImageFrame.classList.add('is-text-overlay');
+        previewImageFrame.setAttribute('data-text-overlay-active', 'true');
+        showPreviewImageLayer();
     }
 
     updatePreviewTextEditorPlaceholderState(editorValue);
@@ -402,6 +404,7 @@ function disablePreviewTextEditor(options = {}) {
 
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-text-overlay', 'is-text-editing');
+        previewImageFrame.removeAttribute('data-text-overlay-active');
     }
 }
 
@@ -437,6 +440,8 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
 
     if (previewImageFrame) {
         previewImageFrame.classList.add('is-text-overlay');
+        previewImageFrame.setAttribute('data-text-overlay-active', 'true');
+        showPreviewImageLayer();
     }
 }
 
@@ -1044,6 +1049,13 @@ function onPreviewImagePointerDown(event) {
     }
 
     if (event.button !== 0) {
+        return;
+    }
+
+    const isTextOverlayActive = activeTimelineItem && isDefaultTextTimelineItem(activeTimelineItem);
+    const isOverlayEditingEnabled = previewImageFrame.dataset.textOverlayActive === 'true';
+
+    if (isTextOverlayActive && !isOverlayEditingEnabled) {
         return;
     }
 

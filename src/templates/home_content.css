@@ -2258,6 +2258,19 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     pointer-events: auto;
     padding: 0;
     z-index: 80;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.preview-image-frame.is-text-overlay .preview-resize-handle {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.75);
+}
+
+.preview-image-frame.is-text-overlay[data-text-overlay-active='true'] .preview-resize-handle {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
 }
 
 .preview-resize-handle:focus-visible {
