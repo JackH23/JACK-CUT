@@ -728,7 +728,14 @@ function onPreviewOverlayPointerDown(event) {
 
     stopTimelinePlayback();
     setActiveTimelineItem(timelineItem);
-    loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
+
+    const shouldFocusTextEditor = typeof isDefaultTextTimelineItem === 'function'
+        && isDefaultTextTimelineItem(timelineItem);
+    const previewOptions = shouldFocusTextEditor
+        ? { focusTextEditor: true, placeTextCursorAtEnd: false }
+        : { focusTextEditor: false };
+
+    loadPreviewFromTimeline(timelineItem, null, previewOptions);
 }
 
 function refreshActiveOverlayLayers() {
