@@ -1928,6 +1928,17 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
 
 const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
 const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
+const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
+const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
+const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
+const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
+    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
+    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
+    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
+    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
+    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
+    rotation: 0,
+};
 
 function escapeSvgTextContent(content) {
     return String(content || '')
@@ -1997,6 +2008,7 @@ async function addDefaultTextOverlayToTimeline() {
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
+    timelineItem.dataset.previewImageTransform = JSON.stringify(DEFAULT_TEXT_TEMPLATE_TRANSFORM);
 
     const label = document.createElement('span');
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
