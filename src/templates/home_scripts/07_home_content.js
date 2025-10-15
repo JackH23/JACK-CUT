@@ -1825,6 +1825,17 @@ async function addToTimeline(file, objectURL) {
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
 
+    registerTimelineItemInteractions(timelineItem, removeButton);
+
+    setActiveTimelineItem(timelineItem);
+    loadPreviewFromTimeline(timelineItem);
+}
+
+function registerTimelineItemInteractions(timelineItem, removeButton) {
+    if (!timelineItem) {
+        return;
+    }
+
     timelineItem.addEventListener('click', () => {
         stopTimelinePlayback();
         setActiveTimelineItem(timelineItem);
@@ -1873,47 +1884,201 @@ async function addToTimeline(file, objectURL) {
         loadPreviewFromTimeline(nextItem);
     });
 
-    removeButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const targetItem = removeButton.closest('.timeline-item');
-        if (!targetItem) {
-            return;
-        }
-        const parentLane = targetItem.closest('.timeline-lane');
-        const wasActive = targetItem === activeTimelineItem;
-        const fileType = targetItem.dataset.fileType || '';
-        const url = targetItem.dataset.objectUrl;
-        detachAudioWaveformResizeObserver(targetItem);
-        releaseTimelineCanvasCustomImage(targetItem);
-        targetItem.remove();
-        if (parentLane) {
-            flushTimelineLaneReflow(parentLane);
-        }
-        if (url) {
-            setStagedUploadAddedState(url, false);
-            if (fileType.startsWith('image/')) {
-                releaseTimelineImage(url);
+    if (removeButton) {
+        removeButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const targetItem = removeButton.closest('.timeline-item');
+            if (!targetItem) {
+                return;
             }
-            if (!stagedUploadsByObjectUrl.has(url)) {
-                URL.revokeObjectURL(url);
+            const parentLane = targetItem.closest('.timeline-lane');
+            const wasActive = targetItem === activeTimelineItem;
+            const fileType = targetItem.dataset.fileType || '';
+            const url = targetItem.dataset.objectUrl;
+            detachAudioWaveformResizeObserver(targetItem);
+            releaseTimelineCanvasCustomImage(targetItem);
+            targetItem.remove();
+            if (parentLane) {
+                flushTimelineLaneReflow(parentLane);
             }
-        }
-        if (fileType.startsWith('audio/')) {
-            stopPreviewAudio({ resetTime: true });
-        }
-        if (wasActive) {
-            setActiveTimelineItem(null);
-            clearPreview();
-        }
-        cleanupEmptyTimelineLanes();
-        updateTimelineEmptyState();
-        updateActiveTimelineIndicators();
-        renderExportSummary(getTimelineItems(), null);
-        refreshImageDurationApplyAllAvailability();
+            if (url) {
+                setStagedUploadAddedState(url, false);
+                if (fileType.startsWith('image/')) {
+                    releaseTimelineImage(url);
+                }
+                if (!stagedUploadsByObjectUrl.has(url)) {
+                    URL.revokeObjectURL(url);
+                }
+            }
+            if (fileType.startsWith('audio/')) {
+                stopPreviewAudio({ resetTime: true });
+            }
+            if (wasActive) {
+                setActiveTimelineItem(null);
+                clearPreview();
+            }
+            cleanupEmptyTimelineLanes();
+            updateTimelineEmptyState();
+            updateActiveTimelineIndicators();
+            renderExportSummary(getTimelineItems(), null);
+            refreshImageDurationApplyAllAvailability();
+        });
+    }
+}
+
+const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
+const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
+
+function escapeSvgTextContent(content) {
+    return String(content || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
+    const safeText = escapeSvgTextContent(textContent);
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <style>
+        text { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+    </style>
+    <rect width="1920" height="1080" fill="rgba(15,23,42,0.0)" />
+    <text x="960" y="540" fill="#F8FAFC" font-size="120" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
+        ${safeText}
+    </text>
+</svg>`;
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    return URL.createObjectURL(blob);
+}
+
+async function addDefaultTextOverlayToTimeline() {
+    if (!activeTimelineItem) {
+        return null;
+    }
+
+    const fileType = activeTimelineItem.dataset.fileType || '';
+    if (!fileType.startsWith('image/') && !fileType.startsWith('video/')) {
+        return null;
+    }
+
+    if (activeTimelineItem.dataset.templateId) {
+        return null;
+    }
+
+    stopTimelinePlayback(true, false);
+
+    const activeLaneIndex = resolveLaneIndex(activeTimelineItem.dataset.laneIndex);
+    let overlayLane = null;
+    if (activeLaneIndex <= 0) {
+        overlayLane = insertTimelineLaneAt(0);
+    } else {
+        overlayLane = ensureTimelineLane(activeLaneIndex - 1);
+    }
+    if (!overlayLane) {
+        overlayLane = ensureTimelineLane(0);
+    }
+
+    const startTime = getTimelineItemStartTime(activeTimelineItem);
+    const baseDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
+    const overlayDuration = baseDuration > 0 ? baseDuration : IMAGE_FRAME_DURATION;
+
+    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL);
+
+    const timelineItem = document.createElement('div');
+    timelineItem.className = 'timeline-item timeline-item--text';
+    timelineItem.setAttribute('role', 'listitem');
+    timelineItem.tabIndex = 0;
+    timelineItem.dataset.fileType = 'image/svg+xml';
+    timelineItem.dataset.objectUrl = objectURL;
+    timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_LABEL;
+    timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
+    timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
+    timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
+
+    const label = document.createElement('span');
+    label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'timeline-item-remove';
+    removeButton.setAttribute('aria-label', 'Remove text overlay');
+    removeButton.textContent = '✕';
+
+    try {
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
+        thumbnail.src = await generateImageThumbnail(objectURL);
+        thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
+        timelineItem.appendChild(thumbnail);
+    } catch (error) {
+        console.warn('Unable to generate thumbnail for text overlay.', error);
+    }
+
+    timelineItem.appendChild(label);
+    timelineItem.appendChild(removeButton);
+
+    setTimelineItemDuration(
+        timelineItem,
+        'imageDuration',
+        overlayDuration,
+        { markCustom: false },
+    );
+
+    overlayLane.appendChild(timelineItem);
+    timelineItem.dataset.laneIndex = overlayLane.dataset.laneIndex || '0';
+
+    initializeTimelineItem(timelineItem);
+    registerTimelineItemInteractions(timelineItem, removeButton);
+    preloadTimelineImage(objectURL).catch((error) => {
+        console.warn('Failed to warm text overlay image for playback.', error);
     });
 
-    setActiveTimelineItem(timelineItem);
-    loadPreviewFromTimeline(timelineItem);
+    scheduleTimelineLaneReflow(overlayLane);
+    scrollTimelineItemIntoView(timelineItem);
+    updateTimelineEmptyState();
+    updateActiveTimelineIndicators();
+    renderExportSummary(getTimelineItems(), null);
+    refreshImageDurationApplyAllAvailability();
+    loadPreviewFromTimeline(activeTimelineItem);
+
+    return timelineItem;
+}
+
+if (textTemplateCard) {
+    let isActivatingTextTemplate = false;
+    const activateTextTemplate = async () => {
+        if (isActivatingTextTemplate) {
+            return;
+        }
+        isActivatingTextTemplate = true;
+        textTemplateCard.setAttribute('aria-pressed', 'true');
+        try {
+            await addDefaultTextOverlayToTimeline();
+        } finally {
+            textTemplateCard.setAttribute('aria-pressed', 'false');
+            isActivatingTextTemplate = false;
+        }
+    };
+
+    textTemplateCard.addEventListener('click', () => {
+        activateTextTemplate().catch((error) => {
+            console.error('Failed to apply text template.', error);
+        });
+    });
+
+    textTemplateCard.addEventListener('keydown', (event) => {
+        const { key } = event;
+        if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') {
+            return;
+        }
+        event.preventDefault();
+        activateTextTemplate().catch((error) => {
+            console.error('Failed to apply text template.', error);
+        });
+    });
 }
 
 uploadInput.addEventListener('change', async (event) => {
