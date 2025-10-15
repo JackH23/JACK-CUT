@@ -636,6 +636,273 @@
     lastOverlayRenderTimestamp = safeTimelineNow;
 }
 
+function parsePixelValue(value, fallback = 0) {
+    if (typeof value !== 'string' || !value.trim()) {
+        return fallback;
+    }
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseLineHeightValue(value, fontSize) {
+    const base = Number.isFinite(fontSize) ? fontSize : 16;
+    if (typeof value !== 'string' || value.trim() === '' || value === 'normal') {
+        return base * 1.25;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.endsWith('%')) {
+        const percentage = Number.parseFloat(trimmed.slice(0, -1));
+        if (Number.isFinite(percentage)) {
+            return base * (percentage / 100);
+        }
+    }
+
+    if (trimmed.endsWith('px')) {
+        const pixels = Number.parseFloat(trimmed.slice(0, -2));
+        if (Number.isFinite(pixels)) {
+            return pixels;
+        }
+    }
+
+    const numeric = Number.parseFloat(trimmed);
+    if (Number.isFinite(numeric)) {
+        if (numeric > 0 && numeric < 10) {
+            return base * numeric;
+        }
+        return numeric;
+    }
+
+    return base * 1.25;
+}
+
+function parseShadowValue(shadowString) {
+    if (typeof shadowString !== 'string' || !shadowString.trim() || shadowString === 'none') {
+        return null;
+    }
+
+    const firstShadow = shadowString.split(',')[0].trim();
+    if (!firstShadow) {
+        return null;
+    }
+
+    const colorMatch = firstShadow.match(/rgba?\([^\)]+\)|hsla?\([^\)]+\)|#[0-9a-fA-F]{3,8}/);
+    const color = colorMatch ? colorMatch[0] : 'rgba(15, 23, 42, 0.6)';
+    const numericPart = colorMatch
+        ? firstShadow.replace(colorMatch[0], '').trim()
+        : firstShadow;
+
+    const components = numericPart.split(/\s+/).filter(Boolean).map((part) => Number.parseFloat(part));
+    const offsetX = Number.isFinite(components[0]) ? components[0] : 0;
+    const offsetY = Number.isFinite(components[1]) ? components[1] : 0;
+    const blurRadius = Number.isFinite(components[2]) ? components[2] : 0;
+
+    return {
+        color,
+        offsetX,
+        offsetY,
+        blur: Math.max(0, blurRadius),
+    };
+}
+
+function createTextOverlaySnapshot(entry, baseSnapshot) {
+    if (!entry || !entry.textElement || !entry.layer) {
+        return null;
+    }
+
+    if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+        return null;
+    }
+
+    const textContentRaw = entry.textElement.textContent || '';
+    const textContent = textContentRaw.replace(/\r\n/g, '\n');
+    const textLines = textContent.split('\n');
+
+    const layerStyle = window.getComputedStyle(entry.layer);
+    const textStyle = window.getComputedStyle(entry.textElement);
+
+    const padding = {
+        top: parsePixelValue(layerStyle?.paddingTop, 12),
+        right: parsePixelValue(layerStyle?.paddingRight, 16),
+        bottom: parsePixelValue(layerStyle?.paddingBottom, 12),
+        left: parsePixelValue(layerStyle?.paddingLeft, 16),
+    };
+
+    const fontSize = parsePixelValue(textStyle?.fontSize, 24);
+    const lineHeight = parseLineHeightValue(textStyle?.lineHeight, fontSize);
+    const letterSpacing = parsePixelValue(textStyle?.letterSpacing, 0);
+
+    const textShadow = parseShadowValue(textStyle?.textShadow);
+    const boxShadow = parseShadowValue(layerStyle?.boxShadow);
+
+    return {
+        ...baseSnapshot,
+        kind: 'text',
+        textContent,
+        textLines,
+        padding,
+        backgroundColor: layerStyle?.backgroundColor || 'rgba(15, 23, 42, 0.35)',
+        gradientStops: [
+            { offset: 0, color: 'rgba(99, 102, 241, 0.35)' },
+            { offset: 0.48, color: 'rgba(236, 72, 153, 0.25)' },
+            { offset: 1, color: 'rgba(14, 165, 233, 0.35)' },
+        ],
+        gradientOpacity: 0.35,
+        boxShadow,
+        font: {
+            style: textStyle?.fontStyle || 'normal',
+            weight: textStyle?.fontWeight || '600',
+            family: textStyle?.fontFamily || 'Inter, "Segoe UI", sans-serif',
+            size: fontSize,
+            lineHeight,
+            letterSpacing,
+            textAlign: textStyle?.textAlign || 'center',
+            color: textStyle?.color || 'rgba(248, 250, 252, 0.96)',
+            shadow: textShadow,
+        },
+    };
+}
+
+function measureTextWidthWithLetterSpacing(context, text, letterSpacing) {
+    if (!text) {
+        return 0;
+    }
+
+    const spacing = Number.isFinite(letterSpacing) ? letterSpacing : 0;
+    if (Math.abs(spacing) < 0.001) {
+        return context.measureText(text).width;
+    }
+
+    let width = 0;
+    for (const char of text) {
+        width += context.measureText(char).width + spacing;
+    }
+    if (text.length) {
+        width -= spacing;
+    }
+    return width;
+}
+
+function drawTextLineWithLetterSpacing(context, text, x, y, letterSpacing) {
+    const spacing = Number.isFinite(letterSpacing) ? letterSpacing : 0;
+    if (Math.abs(spacing) < 0.001) {
+        context.fillText(text, x, y);
+        return;
+    }
+
+    let cursor = x;
+    for (const char of text) {
+        context.fillText(char, cursor, y);
+        cursor += context.measureText(char).width + spacing;
+    }
+}
+
+function drawTextOverlaySnapshot(context, snapshot, frame, opacity) {
+    const radius = Math.max(0, snapshot.borderRadius || 0);
+    const { padding, backgroundColor, gradientStops, gradientOpacity, boxShadow, font, textLines } = snapshot;
+
+    context.save();
+    if (radius > 0) {
+        clipRoundRectPath(context, 0, 0, frame.width, frame.height, radius);
+        context.clip();
+    }
+
+    if (boxShadow) {
+        context.shadowColor = boxShadow.color;
+        context.shadowBlur = boxShadow.blur;
+        context.shadowOffsetX = boxShadow.offsetX;
+        context.shadowOffsetY = boxShadow.offsetY;
+    } else {
+        context.shadowColor = 'rgba(0, 0, 0, 0)';
+        context.shadowBlur = 0;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+    }
+
+    context.globalAlpha = opacity;
+    context.fillStyle = backgroundColor;
+    context.fillRect(0, 0, frame.width, frame.height);
+
+    if (Array.isArray(gradientStops) && gradientStops.length) {
+        const gradient = context.createLinearGradient(0, 0, frame.width, frame.height);
+        gradientStops.forEach((stop) => {
+            if (!stop) {
+                return;
+            }
+            const offset = Number.isFinite(stop.offset) ? clamp(stop.offset, 0, 1) : 0;
+            gradient.addColorStop(offset, stop.color || 'rgba(255, 255, 255, 0.2)');
+        });
+        const gradientAlpha = Number.isFinite(gradientOpacity) ? clamp(gradientOpacity, 0, 1) : 0.35;
+        context.globalAlpha = opacity * gradientAlpha;
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, frame.width, frame.height);
+    }
+
+    context.restore();
+
+    context.save();
+    if (radius > 0) {
+        clipRoundRectPath(context, 0, 0, frame.width, frame.height, radius);
+        context.clip();
+    }
+
+    const fontSize = Number.isFinite(font?.size) ? font.size : 24;
+    const fontStyle = font?.style || 'normal';
+    const fontWeight = font?.weight || 'normal';
+    const fontFamily = font?.family || 'sans-serif';
+    context.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
+    context.fillStyle = font?.color || '#ffffff';
+    context.textBaseline = 'middle';
+    context.globalAlpha = opacity;
+
+    if (font?.shadow) {
+        context.shadowColor = font.shadow.color;
+        context.shadowBlur = font.shadow.blur;
+        context.shadowOffsetX = font.shadow.offsetX;
+        context.shadowOffsetY = font.shadow.offsetY;
+    } else {
+        context.shadowColor = 'rgba(0, 0, 0, 0)';
+        context.shadowBlur = 0;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+    }
+
+    const lines = Array.isArray(textLines) && textLines.length ? textLines : [''];
+    const lineHeight = Number.isFinite(font?.lineHeight) ? font.lineHeight : fontSize * 1.25;
+    const letterSpacing = Number.isFinite(font?.letterSpacing) ? font.letterSpacing : 0;
+    const innerWidth = frame.width - (padding.left + padding.right);
+    const innerHeight = frame.height - (padding.top + padding.bottom);
+    const totalHeight = Math.max(lineHeight * lines.length, lineHeight);
+    const verticalOffset = innerHeight > totalHeight ? (innerHeight - totalHeight) / 2 : 0;
+    let cursorY = padding.top + verticalOffset + (lineHeight / 2);
+
+    lines.forEach((line) => {
+        const measuredWidth = measureTextWidthWithLetterSpacing(context, line, letterSpacing);
+        let startX = padding.left;
+        const align = font?.textAlign || 'center';
+        if (align === 'center') {
+            const centered = padding.left + ((innerWidth - measuredWidth) / 2);
+            startX = Number.isFinite(centered) ? centered : padding.left;
+        } else if (align === 'right' || align === 'end') {
+            startX = frame.width - padding.right - measuredWidth;
+        }
+        const minStart = padding.left;
+        const maxStart = frame.width - padding.right - measuredWidth;
+        if (Number.isFinite(minStart) && Number.isFinite(maxStart)) {
+            if (startX < minStart && align !== 'right' && align !== 'end') {
+                startX = minStart;
+            }
+            if (startX > maxStart && (align === 'right' || align === 'end')) {
+                startX = maxStart;
+            }
+        }
+        drawTextLineWithLetterSpacing(context, line, startX, cursorY, letterSpacing);
+        cursorY += lineHeight;
+    });
+
+    context.restore();
+}
+
 function getActiveOverlayLayerSnapshots() {
     const snapshots = [];
     const groupPriority = { below: 0, above: 1 };
@@ -652,8 +919,9 @@ function getActiveOverlayLayerSnapshots() {
             }
         }
 
-        const { image } = entry;
-        if (!image || !image.complete) {
+        const frameWidth = Math.max(0, entry.frame.width || 0);
+        const frameHeight = Math.max(0, entry.frame.height || 0);
+        if (frameWidth <= 0 || frameHeight <= 0) {
             return;
         }
 
@@ -663,22 +931,7 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        const naturalWidth = Math.max(0, image.naturalWidth || 0);
-        const naturalHeight = Math.max(0, image.naturalHeight || 0);
-        if (naturalWidth <= 0 || naturalHeight <= 0) {
-            return;
-        }
-
-        const frameWidth = Math.max(0, entry.frame.width || 0);
-        const frameHeight = Math.max(0, entry.frame.height || 0);
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            return;
-        }
-
-        const group = entry.layerGroup === 'below' ? 'below' : 'above';
-
-        snapshots.push({
-            image,
+        const baseSnapshot = {
             frame: {
                 left: entry.frame.left,
                 top: entry.frame.top,
@@ -686,12 +939,44 @@ function getActiveOverlayLayerSnapshots() {
                 height: frameHeight,
                 rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
             },
-            group,
+            group: entry.layerGroup === 'below' ? 'below' : 'above',
             zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
-            priority: groupPriority[group] ?? 1,
-        });
+        };
+
+        const entryKind = entry.kind || (entry.image ? 'image' : (entry.textElement ? 'text' : null));
+
+        if (entryKind === 'image') {
+            const { image } = entry;
+            if (!image || !image.complete) {
+                return;
+            }
+
+            const naturalWidth = Math.max(0, image.naturalWidth || 0);
+            const naturalHeight = Math.max(0, image.naturalHeight || 0);
+            if (naturalWidth <= 0 || naturalHeight <= 0) {
+                return;
+            }
+
+            snapshots.push({
+                ...baseSnapshot,
+                kind: 'image',
+                image,
+            });
+            return;
+        }
+
+        if (entryKind === 'text') {
+            const textSnapshot = createTextOverlaySnapshot(entry, baseSnapshot);
+            if (textSnapshot) {
+                snapshots.push(textSnapshot);
+            }
+        }
+    });
+
+    snapshots.forEach((snapshot) => {
+        snapshot.priority = snapshot.group === 'below' ? 0 : 1;
     });
 
     snapshots.sort((a, b) => {
@@ -724,19 +1009,8 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
     snapshots
         .filter((snapshot) => snapshot.group === group)
         .forEach((snapshot) => {
-            const { image, frame } = snapshot;
+            const { frame } = snapshot;
             if (!frame || frame.width <= 0 || frame.height <= 0) {
-                return;
-            }
-
-            const naturalWidth = Math.max(1, image.naturalWidth || 0);
-            const naturalHeight = Math.max(1, image.naturalHeight || 0);
-            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
-                return;
-            }
-
-            const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
-            if (!Number.isFinite(drawScale) || drawScale <= 0) {
                 return;
             }
 
@@ -752,21 +1026,48 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             }
             exportMirrorContext.translate(-(frame.width / 2), -(frame.height / 2));
 
-            const radius = Math.max(0, snapshot.borderRadius || 0);
-            if (radius > 0) {
-                clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
-                exportMirrorContext.clip();
+            const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
+
+            if (snapshot.kind === 'image' && snapshot.image) {
+                const naturalWidth = Math.max(1, snapshot.image.naturalWidth || 0);
+                const naturalHeight = Math.max(1, snapshot.image.naturalHeight || 0);
+                if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
+                    exportMirrorContext.restore();
+                    return;
+                }
+
+                const drawScale = Math.max(frame.width / naturalWidth, frame.height / naturalHeight);
+                if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                    exportMirrorContext.restore();
+                    return;
+                }
+
+                const radius = Math.max(0, snapshot.borderRadius || 0);
+                exportMirrorContext.save();
+                if (radius > 0) {
+                    clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
+                    exportMirrorContext.clip();
+                }
+
+                exportMirrorContext.globalAlpha *= clampedOpacity;
+
+                const drawWidth = naturalWidth * drawScale;
+                const drawHeight = naturalHeight * drawScale;
+                const offsetX = (frame.width - drawWidth) / 2;
+                const offsetY = (frame.height - drawHeight) / 2;
+
+                exportMirrorContext.drawImage(snapshot.image, offsetX, offsetY, drawWidth, drawHeight);
+                exportMirrorContext.restore();
+                exportMirrorContext.restore();
+                return;
             }
 
-            const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
-            exportMirrorContext.globalAlpha *= clampedOpacity;
+            if (snapshot.kind === 'text') {
+                drawTextOverlaySnapshot(exportMirrorContext, snapshot, frame, clampedOpacity);
+                exportMirrorContext.restore();
+                return;
+            }
 
-            const drawWidth = naturalWidth * drawScale;
-            const drawHeight = naturalHeight * drawScale;
-            const offsetX = (frame.width - drawWidth) / 2;
-            const offsetY = (frame.height - drawHeight) / 2;
-
-            exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
             exportMirrorContext.restore();
         });
 }
