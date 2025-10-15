@@ -158,6 +158,7 @@ const canvasBlurInput = document.getElementById('canvas-background-blur');
 const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
+const textTemplateCard = document.querySelector('.text-template-card');
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';

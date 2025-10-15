@@ -2671,6 +2671,12 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
+.timeline-item--text {
+    background: linear-gradient(180deg, rgba(30, 64, 175, 0.18) 0%, rgba(15, 23, 42, 0.92) 100%);
+    border: 1px solid rgba(96, 165, 250, 0.38);
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
+}
+
 .timeline-item--audio .timeline-item-remove {
     background: rgba(15, 23, 42, 0.85);
 }
@@ -2773,6 +2779,13 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     height: 40px;
     border-radius: 8px;
     object-fit: cover;
+}
+
+.timeline-thumbnail--text {
+    background: rgba(37, 99, 235, 0.12);
+    object-fit: contain;
+    padding: 4px;
+    display: block;
 }
 
 .timeline-item span {
