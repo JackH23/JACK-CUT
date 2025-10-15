@@ -420,6 +420,18 @@
 
         const { layer, image } = entry;
 
+        const isDefaultTextOverlay = typeof isDefaultTextTimelineItem === 'function'
+            && isDefaultTextTimelineItem(descriptor.item);
+        const isEditingDefaultText = isDefaultTextOverlay
+            && typeof previewTextEditorState === 'object'
+            && previewTextEditorState.isEnabled
+            && previewTextEditorState.currentItem === descriptor.item;
+
+        if (isEditingDefaultText) {
+            hideOverlayLayerEntry(entry);
+            return false;
+        }
+
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
         layer.style.zIndex = String(targetZIndex);
 
