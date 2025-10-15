@@ -998,10 +998,12 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
     applyCanvasSettingsToPreview(timelineItem);
     const shouldFocusTextEditor = Boolean(options.focusTextEditor);
     const autoFocusTextEditor = options.autoFocus;
+    const placeTextCursorAtEnd = options.placeTextCursorAtEnd !== false;
     syncPreviewTextEditorState(timelineItem, {
         skipCommit: true,
         forceFocus: shouldFocusTextEditor,
         autoFocus: autoFocusTextEditor,
+        placeCursorAtEnd: placeTextCursorAtEnd,
     });
 }
 
