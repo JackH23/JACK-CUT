@@ -792,6 +792,15 @@ if (previewImageFrame) {
     previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
 }
 
+if (previewTextEditor) {
+    updatePreviewTextEditorPlaceholderState(previewTextEditor.textContent || '');
+    previewTextEditor.addEventListener('input', onPreviewTextEditorInput);
+    previewTextEditor.addEventListener('focus', onPreviewTextEditorFocus);
+    previewTextEditor.addEventListener('blur', onPreviewTextEditorBlur);
+    previewTextEditor.addEventListener('keydown', onPreviewTextEditorKeyDown);
+    previewTextEditor.addEventListener('paste', onPreviewTextEditorPaste);
+}
+
 if (previewOverlayStack) {
     previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
 }
