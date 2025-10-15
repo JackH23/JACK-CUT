@@ -394,6 +394,10 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
     previewTextEditorState.currentItem = timelineItem;
     previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
 
+    if (options.forceFocus && previewTextEditor && document.activeElement !== previewTextEditor) {
+        focusPreviewTextEditor();
+    }
+
     if (previewImageFrame) {
         previewImageFrame.classList.add('is-text-overlay');
     }
