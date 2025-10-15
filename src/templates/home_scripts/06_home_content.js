@@ -790,6 +790,7 @@ if (previewVideo) {
 
 if (previewImageFrame) {
     previewImageFrame.addEventListener('pointerdown', onPreviewImagePointerDown);
+    previewImageFrame.addEventListener('dblclick', onPreviewImageFrameDoubleClick);
 }
 
 if (previewTextEditor) {
