@@ -923,7 +923,7 @@ function setActiveTimelineItem(item, options = {}) {
     applyCanvasSettingsToPreview(activeTimelineItem);
 }
 
-function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
+function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, options = {}) {
     if (!timelineItem) {
         clearPreview();
         return;
@@ -996,7 +996,13 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null) {
     }
 
     applyCanvasSettingsToPreview(timelineItem);
-    syncPreviewTextEditorState(timelineItem, { skipCommit: true });
+    const shouldFocusTextEditor = Boolean(options.focusTextEditor);
+    const autoFocusTextEditor = options.autoFocus;
+    syncPreviewTextEditorState(timelineItem, {
+        skipCommit: true,
+        forceFocus: shouldFocusTextEditor,
+        autoFocus: autoFocusTextEditor,
+    });
 }
 
 function formatFileSize(bytes) {
@@ -1832,7 +1838,7 @@ async function addToTimeline(file, objectURL) {
     registerTimelineItemInteractions(timelineItem, removeButton);
 
     setActiveTimelineItem(timelineItem);
-    loadPreviewFromTimeline(timelineItem);
+    loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
 }
 
 function registerTimelineItemInteractions(timelineItem, removeButton) {
@@ -1843,7 +1849,7 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
     timelineItem.addEventListener('click', () => {
         stopTimelinePlayback();
         setActiveTimelineItem(timelineItem);
-        loadPreviewFromTimeline(timelineItem);
+        loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
     });
 
     timelineItem.addEventListener('keydown', (event) => {
@@ -1852,7 +1858,7 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
             event.preventDefault();
             stopTimelinePlayback();
             setActiveTimelineItem(timelineItem, { focus: true });
-            loadPreviewFromTimeline(timelineItem);
+            loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
             return;
         }
 
@@ -1885,7 +1891,7 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
 
         stopTimelinePlayback();
         setActiveTimelineItem(nextItem, { focus: true });
-        loadPreviewFromTimeline(nextItem);
+        loadPreviewFromTimeline(nextItem, null, { focusTextEditor: true });
     });
 
     if (removeButton) {

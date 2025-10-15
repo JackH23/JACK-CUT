@@ -728,7 +728,7 @@ function onPreviewOverlayPointerDown(event) {
 
     stopTimelinePlayback();
     setActiveTimelineItem(timelineItem);
-    loadPreviewFromTimeline(timelineItem);
+    loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
 }
 
 function refreshActiveOverlayLayers() {
