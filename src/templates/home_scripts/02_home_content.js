@@ -67,7 +67,7 @@ function shouldPreviewExitAnimation() {
     if (!animationDirectionSelect) {
         return true;
     }
-    const value = animationDirectionSelect.value;
+    const value = sanitizeAnimationDirection(animationDirectionSelect.value);
     return value === 'out' || value === 'combo';
 }
 
@@ -518,9 +518,19 @@ function updateAnimationModeContent(selectedMode) {
         return;
     }
 
+    const sanitizedMode = sanitizeAnimationDirection(selectedMode);
+    if (sanitizedMode === 'none') {
+        animationModeContainers.forEach((container) => {
+            container.classList.remove('is-active');
+            container.setAttribute('hidden', '');
+            container.setAttribute('aria-hidden', 'true');
+        });
+        return;
+    }
+
     const validModes = new Set(animationModeContainers.map((container) => container.dataset.animationMode));
     const fallbackMode = animationModeContainers[0]?.dataset.animationMode;
-    const mode = validModes.has(selectedMode) ? selectedMode : fallbackMode;
+    const mode = validModes.has(sanitizedMode) ? sanitizedMode : fallbackMode;
 
     animationModeContainers.forEach((container) => {
         const isActive = container.dataset.animationMode === mode;
@@ -533,6 +543,23 @@ function updateAnimationModeContent(selectedMode) {
             container.setAttribute('aria-hidden', 'true');
         }
     });
+}
+
+function previewAnimationForDirection(direction) {
+    const sanitizedDirection = sanitizeAnimationDirection(direction);
+
+    cancelPreviewExitAnimation({ forceRestore: true });
+
+    if (sanitizedDirection === 'combo') {
+        previewComboAnimationCycle();
+        return;
+    }
+
+    if (sanitizedDirection === 'out') {
+        previewExitAnimationDemo();
+    } else if (sanitizedDirection === 'in') {
+        previewEntranceAnimationDemo();
+    }
 }
 
 function syncAnimationControlsToTimelineItem(timelineItem) {
@@ -933,39 +960,25 @@ function handleComboApplyAllClick() {
 }
 
 if (animationDirectionSelect && animationModeContainers.length) {
-    updateAnimationModeContent(animationDirectionSelect.value);
-    if (animationDirectionSelect.value === 'out') {
-        cancelComboPreviewCycle();
-        previewExitAnimationDemo();
-    } else if (animationDirectionSelect.value === 'combo') {
-        previewComboAnimationCycle();
-    } else if (animationDirectionSelect.value === 'in') {
-        cancelComboPreviewCycle();
-        previewEntranceAnimationDemo();
-    }
+    const initialDirection = sanitizeAnimationDirection(animationDirectionSelect.value);
+    animationDirectionSelect.value = initialDirection;
+    updateAnimationModeContent(initialDirection);
+    previewAnimationForDirection(initialDirection);
 
     animationDirectionSelect.addEventListener('change', (event) => {
-        const nextValue = event.target.value;
-        updateAnimationModeContent(nextValue);
-        persistActiveTimelineAnimationDirection(nextValue);
-        if (nextValue === 'out') {
-            cancelComboPreviewCycle();
-            previewExitAnimationDemo();
-        } else {
-            cancelPreviewExitAnimation({ forceRestore: true });
-            if (nextValue === 'combo') {
-                previewComboAnimationCycle();
-            } else if (nextValue === 'in') {
-                cancelComboPreviewCycle();
-                previewEntranceAnimationDemo();
-            }
-        }
+        const rawValue = event.target.value;
+        const sanitizedValue = sanitizeAnimationDirection(rawValue);
+        animationDirectionSelect.value = sanitizedValue;
+        updateAnimationModeContent(sanitizedValue);
+        persistActiveTimelineAnimationDirection(sanitizedValue);
+        previewAnimationForDirection(sanitizedValue);
     });
 }
 
 if (animationInPresetSelect) {
     animationInPresetSelect.addEventListener('change', () => {
-        if (!animationDirectionSelect || animationDirectionSelect.value === 'in') {
+        if (!animationDirectionSelect
+            || sanitizeAnimationDirection(animationDirectionSelect.value) === 'in') {
             previewEntranceAnimationDemo();
         }
     });
@@ -973,7 +986,8 @@ if (animationInPresetSelect) {
 
 if (animationInTimingInput) {
     const handleEntranceTimingChange = () => {
-        if (!animationDirectionSelect || animationDirectionSelect.value === 'in') {
+        if (!animationDirectionSelect
+            || sanitizeAnimationDirection(animationDirectionSelect.value) === 'in') {
             previewEntranceAnimationDemo();
         }
     };
@@ -1024,7 +1038,8 @@ syncAnimationControlsToTimelineItem(activeTimelineItem);
 
 if (animationOutPresetSelect) {
     animationOutPresetSelect.addEventListener('change', () => {
-        if (!animationDirectionSelect || animationDirectionSelect.value === 'out') {
+        if (!animationDirectionSelect
+            || sanitizeAnimationDirection(animationDirectionSelect.value) === 'out') {
             previewExitAnimationDemo();
         }
     });
@@ -1032,7 +1047,8 @@ if (animationOutPresetSelect) {
 
 if (animationOutDelayInput) {
     const handleExitDelayChange = () => {
-        if (!animationDirectionSelect || animationDirectionSelect.value === 'out') {
+        if (!animationDirectionSelect
+            || sanitizeAnimationDirection(animationDirectionSelect.value) === 'out') {
             previewExitAnimationDemo();
         }
     };

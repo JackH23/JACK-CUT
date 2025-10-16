@@ -455,7 +455,7 @@ function getEntranceTimingKey() {
 }
 
 function isComboModeActive() {
-    return animationDirectionSelect?.value === 'combo';
+    return sanitizeAnimationDirection(animationDirectionSelect?.value) === 'combo';
 }
 
 function getComboSpeedWindowMs() {
@@ -489,14 +489,15 @@ const DEFAULT_COMBO_SPEED_MS = Math.min(
     Math.max(COMBO_SPEED_DEFAULT_SECONDS, COMBO_SPEED_MIN_SECONDS),
     COMBO_SPEED_MAX_SECONDS,
 ) * 1000;
-const DEFAULT_ANIMATION_DIRECTION = 'in';
+const DEFAULT_ANIMATION_DIRECTION = 'none';
+const ALLOWED_ANIMATION_DIRECTIONS = new Set(['none', 'in', 'out', 'combo']);
 const DEFAULT_COMBO_ENTRANCE_PRESET = 'fade';
 const DEFAULT_COMBO_EXIT_PRESET = 'fade';
 const COMBO_APPLY_EMPTY_STATE_MESSAGE = 'Add images to apply animations.';
 
 function sanitizeAnimationDirection(value) {
     const normalized = typeof value === 'string' ? value.toLowerCase() : '';
-    if (normalized === 'combo' || normalized === 'out') {
+    if (ALLOWED_ANIMATION_DIRECTIONS.has(normalized)) {
         return normalized;
     }
     return DEFAULT_ANIMATION_DIRECTION;
@@ -707,6 +708,10 @@ function getPreviewImageEntranceConfig(options = {}) {
         : null;
     const fallbackDirection = animationDirectionSelect?.value || DEFAULT_ANIMATION_DIRECTION;
     const direction = sanitizeAnimationDirection(overrideDirection || fallbackDirection);
+
+    if (direction !== 'in' && direction !== 'combo') {
+        return null;
+    }
 
     if (direction === 'combo') {
         const presetKey = sanitizeComboEntrancePreset(
@@ -920,7 +925,7 @@ function shouldPreviewEntranceAnimation() {
         return true;
     }
 
-    const value = animationDirectionSelect.value;
+    const value = sanitizeAnimationDirection(animationDirectionSelect.value);
     return value === 'in' || value === 'combo';
 }
 
@@ -1021,6 +1026,10 @@ function getPreviewImageExitConfig(options = {}) {
         : null;
     const fallbackDirection = animationDirectionSelect?.value || DEFAULT_ANIMATION_DIRECTION;
     const direction = sanitizeAnimationDirection(overrideDirection || fallbackDirection);
+
+    if (direction !== 'combo' && direction !== 'out') {
+        return null;
+    }
 
     if (direction === 'combo') {
         const exitPresetKey = sanitizeComboExitPreset(

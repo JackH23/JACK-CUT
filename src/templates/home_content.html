@@ -216,13 +216,14 @@
                                 <div>
                                     <label for="animation-direction">Animation direction</label>
                                     <select id="animation-direction">
-                                        <option value="in" selected>In (enter)</option>
+                                        <option value="none" selected>None (no animation)</option>
+                                        <option value="in">In (enter)</option>
                                         <option value="out">Out (exit)</option>
                                         <option value="combo">Combo (in &amp; out)</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="animation-mode is-active" data-animation-mode="in" role="group" aria-label="Entrance animation settings">
+                            <div class="animation-mode" data-animation-mode="in" role="group" aria-label="Entrance animation settings" hidden aria-hidden="true">
                                 <div class="info-list">
                                     <div class="info-item">
                                         <div class="info-icon">✨</div>
