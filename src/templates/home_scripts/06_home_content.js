@@ -351,6 +351,39 @@
 
     const { below, above } = previewOverlayGroups;
 
+    const activeOverlayDescriptor = overlayEntries.find(
+        (descriptor) => descriptor && descriptor.item === primaryTimelineItem,
+    );
+
+    const activeOverlayZIndex = shouldProxyPrimary && activeOverlayDescriptor
+        ? getDescriptorZIndex(activeOverlayDescriptor)
+        : null;
+
+    const updateOverlayEntryInteraction = (entry, descriptor) => {
+        if (!entry || !entry.layer) {
+            return;
+        }
+
+        if (!shouldProxyPrimary || !descriptor) {
+            entry.layer.classList.remove('is-pointer-pass-through');
+            return;
+        }
+
+        if (descriptor.item === primaryTimelineItem || !Number.isFinite(activeOverlayZIndex)) {
+            entry.layer.classList.remove('is-pointer-pass-through');
+            return;
+        }
+
+        const descriptorZIndex = Number.isFinite(descriptor.zIndex)
+            ? descriptor.zIndex
+            : getDescriptorZIndex(descriptor);
+
+        const shouldDisablePointerEvents = Number.isFinite(descriptorZIndex)
+            && descriptorZIndex > activeOverlayZIndex;
+
+        entry.layer.classList.toggle('is-pointer-pass-through', shouldDisablePointerEvents);
+    };
+
     if (!below && !above) {
         clearPreviewOverlayLayers();
         return;
@@ -437,6 +470,7 @@
         entry.lastTimelineTime = null;
 
         if (entry.layer) {
+            entry.layer.classList.remove('is-pointer-pass-through');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -569,6 +603,8 @@
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
+        updateOverlayEntryInteraction(entry, descriptor);
+
         return true;
     };
 
@@ -591,6 +627,7 @@
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
                 fallbackEntry.overlayOrder = getDescriptorOverlayOrder(descriptor);
+                updateOverlayEntryInteraction(fallbackEntry, descriptor);
             }
         });
     }
@@ -614,6 +651,7 @@
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
                 fallbackEntry.overlayOrder = getDescriptorOverlayOrder(descriptor);
+                updateOverlayEntryInteraction(fallbackEntry, descriptor);
             }
         });
     }
