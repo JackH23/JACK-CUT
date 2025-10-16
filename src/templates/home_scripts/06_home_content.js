@@ -78,6 +78,30 @@
         return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
     };
 
+    const resolvedPrimaryZIndex = (() => {
+        const computed = computeOverlayLayerZIndex({ laneIndex: primaryLaneIndex });
+        return Number.isFinite(computed) ? computed : (OVERLAY_ABOVE_Z_BASE + 1);
+    })();
+
+    if (previewImageLayer) {
+        previewImageLayer.style.setProperty('--preview-active-layer-z', String(resolvedPrimaryZIndex));
+    }
+    if (previewImageFrame) {
+        previewImageFrame.style.setProperty('--preview-active-layer-z', String(resolvedPrimaryZIndex));
+    }
+    if (previewGuidesLayer) {
+        previewGuidesLayer.style.setProperty('--preview-active-layer-z', String(resolvedPrimaryZIndex));
+    }
+    if (previewOutsideIndicator) {
+        previewOutsideIndicator.style.setProperty('--preview-active-layer-z', String(resolvedPrimaryZIndex));
+    }
+    if (previewOverlayStack) {
+        const overlayAboveZ = resolvedPrimaryZIndex + 20;
+        const overlayBelowZ = Math.max(0, resolvedPrimaryZIndex - 20);
+        previewOverlayStack.style.setProperty('--preview-overlay-above-z', String(overlayAboveZ));
+        previewOverlayStack.style.setProperty('--preview-overlay-below-z', String(overlayBelowZ));
+    }
+
     const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
         ? 'below'
         : 'above');
@@ -291,6 +315,19 @@
     overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
     overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
 
+    if (previewOverlayStack) {
+        const hasOverlaysAbovePrimary = overlayGroups.above.some(
+            (descriptor) => descriptor && descriptor.shouldRender,
+        );
+        const isVisualPrimary = primaryFileType.startsWith('image/')
+            || primaryFileType.startsWith('video/');
+        if (isVisualPrimary && hasOverlaysAbovePrimary) {
+            previewOverlayStack.setAttribute('data-disable-above-pointer-events', 'true');
+        } else {
+            previewOverlayStack.removeAttribute('data-disable-above-pointer-events');
+        }
+    }
+
     const { below, above } = previewOverlayGroups;
 
     if (!below && !above) {
@@ -377,6 +414,7 @@
         entry.lastTimelineTime = null;
 
         if (entry.layer) {
+            entry.layer.removeAttribute('data-layer-group');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -486,6 +524,8 @@
             container.appendChild(layer);
         }
 
+        layer.dataset.layerGroup = groupName;
+
         overlayLayerToTimelineItem.set(layer, descriptor.item);
 
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
@@ -526,6 +566,9 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                if (fallbackEntry.layer) {
+                    fallbackEntry.layer.dataset.layerGroup = getDescriptorLayerGroup(descriptor);
+                }
             }
         });
     }
@@ -548,6 +591,9 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                if (fallbackEntry.layer) {
+                    fallbackEntry.layer.dataset.layerGroup = getDescriptorLayerGroup(descriptor);
+                }
             }
         });
     }

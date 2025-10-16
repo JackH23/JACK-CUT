@@ -1241,6 +1241,7 @@ function clearPreviewOverlayLayers() {
         entry.opacity = 1;
         entry.lastTimelineTime = null;
         if (entry.layer) {
+            entry.layer.removeAttribute('data-layer-group');
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
@@ -1259,6 +1260,7 @@ function clearPreviewOverlayLayers() {
 
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
+    previewOverlayStack.removeAttribute('data-disable-above-pointer-events');
 
     lastOverlayRenderTimestamp = null;
 }
@@ -1599,6 +1601,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     }
 
     const primaryLaneIndex = resolveLaneIndex(primaryTimelineItem.dataset?.laneIndex);
+    const primaryFileType = (primaryTimelineItem.dataset?.fileType || '').toLowerCase();
     const primaryStartTime = getTimelineItemStartTime(primaryTimelineItem);
     const primaryDuration = Math.max(0, getTimelineItemPlaybackDuration(primaryTimelineItem));
     const primaryProgress = getActiveClipProgress();
