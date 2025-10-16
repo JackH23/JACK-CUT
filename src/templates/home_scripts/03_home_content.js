@@ -1268,6 +1268,7 @@ function getTimelineLaneLayout(lane, fallbackIndex = 0) {
             end,
             duration: entry.duration,
             leadingGap,
+            order: entry.order,
         };
     });
 }
@@ -1444,6 +1445,9 @@ function getTimelineLaneEntries() {
                     : index,
                 start: entry.start,
                 end: entry.end,
+                order: Number.isFinite(entry?.order)
+                    ? entry.order
+                    : 0,
             });
         });
     });

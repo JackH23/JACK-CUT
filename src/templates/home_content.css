@@ -2106,14 +2106,6 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     inset: 0;
 }
 
-.preview-overlay-stack__group--below {
-    z-index: 10;
-}
-
-.preview-overlay-stack__group--above {
-    z-index: 60;
-}
-
 .preview-overlay-layer {
     position: absolute;
     display: block;
@@ -2158,6 +2150,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     touch-action: none;
     transition: box-shadow 0.18s ease;
     z-index: 40;
+}
+
+.preview-image-frame.is-overlay-proxy img {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .preview-image-frame.is-text-overlay {
