@@ -96,7 +96,7 @@
         if (activeOverlayLayers.size) {
         const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
         activeOverlayLayers.forEach((entry, item) => {
-            if (!entry || !entry.isVisible || !item || knownOverlayItems.has(item)) {
+            if (!entry || !entry.isVisible || !item || item === primaryTimelineItem || knownOverlayItems.has(item)) {
                 return;
             }
 
