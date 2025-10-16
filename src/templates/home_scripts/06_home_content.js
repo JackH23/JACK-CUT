@@ -301,6 +301,13 @@
     const nextActiveItems = new Set();
     const nextKnownItems = new Set();
 
+    const overlayResizeHandleLabels = {
+        nw: 'Resize overlay from top left',
+        ne: 'Resize overlay from top right',
+        se: 'Resize overlay from bottom right',
+        sw: 'Resize overlay from bottom left',
+    };
+
     const ensureOverlayLayerEntry = (descriptor) => {
         if (!descriptor || !descriptor.item) {
             return null;
@@ -314,7 +321,10 @@
         let entry = activeOverlayLayers.get(descriptor.item);
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
-            layer.className = 'preview-overlay-layer';
+            layer.classList.add('preview-overlay-layer');
+            const content = document.createElement('div');
+            content.className = 'preview-overlay-content';
+            layer.appendChild(content);
             const image = document.createElement('img');
             try {
                 image.decoding = 'async';
@@ -323,9 +333,21 @@
             }
             image.loading = 'eager';
             image.draggable = false;
-            layer.appendChild(image);
+            content.appendChild(image);
+            ['nw', 'ne', 'se', 'sw'].forEach((direction) => {
+                const handle = document.createElement('button');
+                handle.type = 'button';
+                handle.className = `preview-resize-handle handle-${direction}`;
+                handle.dataset.handle = direction;
+                handle.setAttribute(
+                    'aria-label',
+                    overlayResizeHandleLabels[direction] || 'Resize overlay',
+                );
+                layer.appendChild(handle);
+            });
             entry = {
                 layer,
+                content,
                 image,
                 objectURL: '',
                 frame: null,
@@ -340,14 +362,39 @@
         }
 
         const { layer, image } = entry;
+        let { content } = entry;
 
-        layer.className = 'preview-overlay-layer';
+        if (!content || !content.isConnected) {
+            content = document.createElement('div');
+            content.className = 'preview-overlay-content';
+            layer.insertBefore(content, layer.firstChild);
+            content.appendChild(image);
+            entry.content = content;
+        }
+
+        if (!layer.querySelector('.preview-resize-handle')) {
+            ['nw', 'ne', 'se', 'sw'].forEach((direction) => {
+                const handle = document.createElement('button');
+                handle.type = 'button';
+                handle.className = `preview-resize-handle handle-${direction}`;
+                handle.dataset.handle = direction;
+                handle.setAttribute(
+                    'aria-label',
+                    overlayResizeHandleLabels[direction] || 'Resize overlay',
+                );
+                layer.appendChild(handle);
+            });
+        }
+
+        layer.classList.add('preview-overlay-layer');
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
         if (borderRadius > 0) {
-            layer.style.borderRadius = `${borderRadius}px`;
-        } else {
-            layer.style.removeProperty('border-radius');
+            if (content) {
+                content.style.borderRadius = `${borderRadius}px`;
+            }
+        } else if (content) {
+            content.style.removeProperty('border-radius');
         }
 
         if (entry.objectURL !== objectURL || !image.src) {
@@ -377,6 +424,7 @@
         entry.lastTimelineTime = null;
 
         if (entry.layer) {
+            entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
@@ -494,6 +542,16 @@
         if (image) {
             image.style.opacity = '1';
         }
+
+        const isActiveItem = descriptor.item === activeTimelineItem;
+        const isPointerTarget = overlayPointerState.pointerId !== null
+            && overlayPointerState.timelineItem === descriptor.item;
+        const isDragging = isPointerTarget && overlayPointerState.mode === 'drag';
+        const isResizing = isPointerTarget && overlayPointerState.mode === 'resize';
+
+        layer.classList.toggle('is-active', isActiveItem);
+        layer.classList.toggle('is-dragging', isDragging);
+        layer.classList.toggle('is-resizing', isResizing);
 
         const layerOpacity = computeOverlayEntryOpacity(entry);
 
@@ -719,6 +777,287 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
         });
 }
 
+function applyOverlayLayerTransform(entry, transform) {
+    if (!entry || !entry.layer || !transform) {
+        return;
+    }
+
+    const rotationValue = Number.isFinite(transform.rotation) ? transform.rotation : 0;
+    const left = Number.isFinite(transform.left) ? transform.left : 0;
+    const top = Number.isFinite(transform.top) ? transform.top : 0;
+    const width = Number.isFinite(transform.width) ? Math.max(transform.width, 0) : 0;
+    const height = Number.isFinite(transform.height) ? Math.max(transform.height, 0) : 0;
+
+    entry.layer.style.left = `${left}px`;
+    entry.layer.style.top = `${top}px`;
+    entry.layer.style.width = `${width}px`;
+    entry.layer.style.height = `${height}px`;
+
+    if (entry.image) {
+        entry.image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+    }
+
+    entry.frame = {
+        left,
+        top,
+        width,
+        height,
+        rotation: rotationValue,
+    };
+}
+
+function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = {}) {
+    if (!timelineItem || !isImageTimelineItem(timelineItem) || !transform) {
+        return null;
+    }
+
+    const viewportSize = getPreviewViewportSize();
+    const normalized = normalizePreviewImageTransform(transform, viewportSize);
+
+    if (!normalized) {
+        return null;
+    }
+
+    timelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
+
+    if (options.skipKeyframes) {
+        return normalized;
+    }
+
+    const existingKeyframes = getTimelineItemImageKeyframes(timelineItem);
+
+    if (!existingKeyframes.length) {
+        return normalized;
+    }
+
+    const progress = Object.prototype.hasOwnProperty.call(options, 'progressOverride')
+        ? clampProgress(options.progressOverride)
+        : getActiveClipProgress();
+
+    if (!Number.isFinite(progress)) {
+        return normalized;
+    }
+
+    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, progress, normalized);
+    storeTimelineImageKeyframes(timelineItem, updatedKeyframes);
+    renderKeyframeTrack(timelineItem);
+
+    return normalized;
+}
+
+function beginOverlayPointerInteraction(event, timelineItem, layer) {
+    if (!event || !timelineItem || !layer) {
+        return false;
+    }
+
+    if (!isImageTimelineItem(timelineItem)) {
+        return false;
+    }
+
+    const entry = activeOverlayLayers.get(timelineItem);
+    if (!entry || !entry.frame) {
+        return false;
+    }
+
+    const handleElement = event.target?.closest?.('.preview-resize-handle') || null;
+    const mode = handleElement ? 'resize' : 'drag';
+
+    const pointerId = event.pointerId;
+    if (overlayPointerState.pointerId !== null && overlayPointerState.pointerId !== pointerId) {
+        return false;
+    }
+
+    const captureTarget = handleElement || layer;
+    if (typeof captureTarget?.setPointerCapture === 'function') {
+        captureTarget.setPointerCapture(pointerId);
+    }
+
+    const aspectRatio = entry.frame.width > 0 && entry.frame.height > 0
+        ? entry.frame.width / entry.frame.height
+        : 1;
+
+    overlayPointerState.pointerId = pointerId;
+    overlayPointerState.timelineItem = timelineItem;
+    overlayPointerState.mode = mode;
+    overlayPointerState.handle = handleElement?.dataset?.handle || 'se';
+    overlayPointerState.origin = {
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        left: entry.frame.left,
+        top: entry.frame.top,
+        width: entry.frame.width,
+        height: entry.frame.height,
+        aspectRatio,
+        oppositeX: entry.frame.left + entry.frame.width,
+        oppositeY: entry.frame.top + entry.frame.height,
+        rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+    };
+    overlayPointerState.layer = layer;
+    overlayPointerState.captureTarget = captureTarget || null;
+    overlayPointerState.lastTransform = {
+        left: entry.frame.left,
+        top: entry.frame.top,
+        width: entry.frame.width,
+        height: entry.frame.height,
+        rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+        aspectRatio,
+    };
+
+    layer.classList.remove('is-dragging', 'is-resizing');
+    if (mode === 'resize') {
+        layer.classList.add('is-resizing');
+    } else {
+        layer.classList.add('is-dragging');
+    }
+
+    setPreviewGuidesVisible(true);
+    updatePreviewGuides(
+        entry.frame,
+        evaluatePreviewImageAlignment(entry.frame, getPreviewViewportSize()),
+    );
+
+    return true;
+}
+
+function finishOverlayPointerInteraction(commit = true) {
+    const { pointerId, layer, timelineItem, lastTransform, captureTarget } = overlayPointerState;
+
+    if (pointerId !== null) {
+        if (typeof captureTarget?.hasPointerCapture === 'function'
+            && captureTarget.hasPointerCapture(pointerId)) {
+            captureTarget.releasePointerCapture(pointerId);
+        }
+        if (typeof layer?.hasPointerCapture === 'function'
+            && layer.hasPointerCapture(pointerId)) {
+            layer.releasePointerCapture(pointerId);
+        }
+    }
+
+    if (layer) {
+        layer.classList.remove('is-dragging', 'is-resizing');
+    }
+
+    overlayPointerState.pointerId = null;
+    overlayPointerState.timelineItem = null;
+    overlayPointerState.mode = null;
+    overlayPointerState.handle = null;
+    overlayPointerState.origin = null;
+    overlayPointerState.layer = null;
+    overlayPointerState.captureTarget = null;
+
+    if (commit && timelineItem && lastTransform) {
+        const transformToPersist = {
+            left: lastTransform.left,
+            top: lastTransform.top,
+            width: lastTransform.width,
+            height: lastTransform.height,
+            rotation: Number.isFinite(lastTransform.rotation) ? lastTransform.rotation : 0,
+        };
+        storeOverlayTransformOnTimelineItem(timelineItem, transformToPersist, { skipKeyframes: false });
+        refreshActiveOverlayLayers();
+    }
+
+    overlayPointerState.lastTransform = null;
+    schedulePreviewGuidesHide();
+}
+
+function cancelOverlayPointerInteraction() {
+    finishOverlayPointerInteraction(false);
+}
+
+function onOverlayPointerMove(event) {
+    if (overlayPointerState.pointerId === null || event.pointerId !== overlayPointerState.pointerId) {
+        return;
+    }
+
+    const { timelineItem, origin, handle, mode, layer } = overlayPointerState;
+    if (!timelineItem || !origin) {
+        cancelOverlayPointerInteraction();
+        return;
+    }
+
+    const entry = activeOverlayLayers.get(timelineItem);
+    if (!entry) {
+        cancelOverlayPointerInteraction();
+        return;
+    }
+
+    const deltaX = event.clientX - origin.pointerX;
+    const deltaY = event.clientY - origin.pointerY;
+
+    let nextTransform;
+    if (mode === 'resize') {
+        nextTransform = calculatePreviewImageResize(handle || 'se', deltaX, deltaY, origin);
+    } else {
+        nextTransform = {
+            left: origin.left + deltaX,
+            top: origin.top + deltaY,
+            width: origin.width,
+            height: origin.height,
+        };
+    }
+
+    const workingTransform = {
+        left: nextTransform.left,
+        top: nextTransform.top,
+        width: nextTransform.width,
+        height: nextTransform.height,
+        rotation: Number.isFinite(origin.rotation) ? origin.rotation : 0,
+        aspectRatio: origin.aspectRatio > 0 ? origin.aspectRatio : 1,
+    };
+
+    const snapResult = snapPreviewImageTransform(workingTransform, { mode, handle, origin });
+    const snapped = snapResult?.transform
+        ? {
+            left: snapResult.transform.left,
+            top: snapResult.transform.top,
+            width: snapResult.transform.width,
+            height: snapResult.transform.height,
+            rotation: Number.isFinite(snapResult.transform.rotation)
+                ? snapResult.transform.rotation
+                : workingTransform.rotation,
+            aspectRatio: Number.isFinite(snapResult.transform.aspectRatio)
+                && snapResult.transform.aspectRatio > 0
+                ? snapResult.transform.aspectRatio
+                : workingTransform.aspectRatio,
+        }
+        : workingTransform;
+
+    overlayPointerState.lastTransform = snapped;
+
+    applyOverlayLayerTransform(entry, snapped);
+    storeOverlayTransformOnTimelineItem(timelineItem, snapped, { skipKeyframes: true });
+
+    if (layer) {
+        layer.classList.toggle('is-dragging', mode === 'drag');
+        layer.classList.toggle('is-resizing', mode === 'resize');
+    }
+
+    const alignment = snapResult?.alignment
+        || evaluatePreviewImageAlignment(snapped, getPreviewViewportSize());
+    setPreviewGuidesVisible(true);
+    updatePreviewGuides(snapped, alignment);
+
+    event.preventDefault();
+    event.stopPropagation();
+}
+
+function onOverlayPointerUp(event) {
+    if (overlayPointerState.pointerId === null || event.pointerId !== overlayPointerState.pointerId) {
+        return;
+    }
+
+    finishOverlayPointerInteraction(true);
+}
+
+function onOverlayPointerCancel(event) {
+    if (overlayPointerState.pointerId === null || event.pointerId !== overlayPointerState.pointerId) {
+        return;
+    }
+
+    cancelOverlayPointerInteraction();
+}
+
 function onPreviewOverlayPointerDown(event) {
     const target = event.target;
     if (!target || typeof target.closest !== 'function') {
@@ -735,19 +1074,37 @@ function onPreviewOverlayPointerDown(event) {
         return;
     }
 
-    event.preventDefault();
-    event.stopPropagation();
-
-    stopTimelinePlayback();
-    setActiveTimelineItem(timelineItem);
-
     const shouldFocusTextEditor = typeof isDefaultTextTimelineItem === 'function'
         && isDefaultTextTimelineItem(timelineItem);
     const previewOptions = shouldFocusTextEditor
         ? { focusTextEditor: true, placeTextCursorAtEnd: false }
         : { focusTextEditor: false };
 
-    loadPreviewFromTimeline(timelineItem, null, previewOptions);
+    event.preventDefault();
+    event.stopPropagation();
+
+    const wasActive = activeTimelineItem === timelineItem;
+
+    stopTimelinePlayback();
+    setActiveTimelineItem(timelineItem);
+
+    if (!wasActive || shouldFocusTextEditor) {
+        loadPreviewFromTimeline(timelineItem, null, previewOptions);
+    }
+
+    const isPrimaryPointer = (event.button === undefined)
+        || (event.button === 0)
+        || (event.button === -1);
+
+    if (!isPrimaryPointer || event.isPrimary === false) {
+        return;
+    }
+
+    if (!isImageTimelineItem(timelineItem)) {
+        return;
+    }
+
+    beginOverlayPointerInteraction(event, timelineItem, layer);
 }
 
 function refreshActiveOverlayLayers() {
@@ -828,6 +1185,9 @@ if (window && typeof window.addEventListener === 'function') {
     window.addEventListener('pointermove', onPreviewImagePointerMove, { passive: false });
     window.addEventListener('pointerup', onPreviewImagePointerUp, { passive: true });
     window.addEventListener('pointercancel', onPreviewImagePointerCancel, { passive: true });
+    window.addEventListener('pointermove', onOverlayPointerMove, { passive: false });
+    window.addEventListener('pointerup', onOverlayPointerUp, { passive: true });
+    window.addEventListener('pointercancel', onOverlayPointerCancel, { passive: true });
 }
 
 if (timelineZoomInput) {

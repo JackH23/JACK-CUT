@@ -1229,6 +1229,10 @@ function clearPreviewOverlayLayers() {
         return;
     }
 
+    if (typeof cancelOverlayPointerInteraction === 'function') {
+        cancelOverlayPointerInteraction();
+    }
+
     activeOverlayLayers.forEach((entry) => {
         if (!entry) {
             return;

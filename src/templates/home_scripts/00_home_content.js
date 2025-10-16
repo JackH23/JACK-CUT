@@ -30,6 +30,16 @@ const previewOverlayGroups = previewOverlayStack
     : null;
 const activeOverlayLayers = new Map();
 const overlayLayerToTimelineItem = new WeakMap();
+const overlayPointerState = {
+    pointerId: null,
+    timelineItem: null,
+    mode: null,
+    handle: null,
+    origin: null,
+    layer: null,
+    captureTarget: null,
+    lastTransform: null,
+};
 let lastOverlayRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
