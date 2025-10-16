@@ -1727,7 +1727,7 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
 }
 
 async function addToTimeline(file, objectURL) {
-    const defaultLane = ensureTimelineLane(0);
+    const defaultLane = getDefaultMediaLane();
     if (timelineEmptyState) {
         timelineEmptyState.hidden = true;
     }
@@ -1826,6 +1826,10 @@ async function addToTimeline(file, objectURL) {
     if (file.type.startsWith('audio/')) {
         const audioLane = ensureAudioTimelineLane();
         targetLane = audioLane || targetLane;
+        const overlayLane = findDefaultTextTimelineItem()?.closest('.timeline-lane');
+        if (overlayLane) {
+            ensureDefaultTextLaneIsFirst(overlayLane);
+        }
     }
     if (targetLane) {
         timelineItem.dataset.laneIndex = targetLane.dataset.laneIndex || '0';
@@ -1838,6 +1842,10 @@ async function addToTimeline(file, objectURL) {
     updateTimelineEmptyState();
 
     registerTimelineItemInteractions(timelineItem, removeButton);
+
+    if (!file.type.startsWith('audio/')) {
+        synchronizeDefaultTextOverlayWithTimelineItem(timelineItem);
+    }
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
@@ -1938,6 +1946,83 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
     }
 }
 
+function findDefaultTextTimelineItem() {
+    if (typeof getTimelineItems !== 'function' || typeof isDefaultTextTimelineItem !== 'function') {
+        return null;
+    }
+
+    const items = getTimelineItems();
+    return items.find((item) => isDefaultTextTimelineItem(item)) || null;
+}
+
+function ensureDefaultTextLaneIsFirst(lane) {
+    if (!timelineLaneList || !lane || !lane.isConnected || typeof getTimelineLanes !== 'function') {
+        return;
+    }
+
+    const lanes = getTimelineLanes();
+    if (!lanes.length || lanes[0] === lane) {
+        return;
+    }
+
+    timelineLaneList.insertBefore(lane, lanes[0]);
+    refreshTimelineLaneIndices();
+}
+
+function getDefaultMediaLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const defaultTextItem = findDefaultTextTimelineItem();
+    if (defaultTextItem) {
+        const overlayLane = defaultTextItem.closest('.timeline-lane');
+        if (overlayLane) {
+            ensureDefaultTextLaneIsFirst(overlayLane);
+            const overlayIndex = resolveLaneIndex(overlayLane.dataset.laneIndex);
+            const mediaLaneIndex = Number.isFinite(overlayIndex) ? overlayIndex + 1 : 1;
+            return ensureTimelineLane(mediaLaneIndex);
+        }
+    }
+
+    return ensureTimelineLane(0);
+}
+
+function synchronizeDefaultTextOverlayWithTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const defaultTextItem = findDefaultTextTimelineItem();
+    if (!defaultTextItem || defaultTextItem === timelineItem) {
+        return;
+    }
+
+    const overlayLane = defaultTextItem.closest('.timeline-lane');
+    if (overlayLane) {
+        ensureDefaultTextLaneIsFirst(overlayLane);
+    }
+
+    const startOffset = Number(timelineItem.dataset.startOffsetMs);
+    if (Number.isFinite(startOffset)) {
+        defaultTextItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startOffset)));
+    } else {
+        defaultTextItem.dataset.startOffsetMs = '0';
+    }
+
+    if (defaultTextItem.dataset.customDuration !== '1') {
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+        if (clipDuration > 0) {
+            setTimelineItemDuration(defaultTextItem, 'imageDuration', clipDuration, { markCustom: false });
+        }
+    }
+
+    if (overlayLane) {
+        defaultTextItem.dataset.laneIndex = overlayLane.dataset.laneIndex || defaultTextItem.dataset.laneIndex || '0';
+        scheduleTimelineLaneReflow(overlayLane);
+    }
+}
+
 const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
 const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
@@ -1983,35 +2068,76 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
     return URL.createObjectURL(blob);
 }
 
-async function addDefaultTextOverlayToTimeline() {
-    if (!activeTimelineItem) {
+async function addDefaultTextOverlayToTimeline(options = {}) {
+    const {
+        anchorTimelineItem = null,
+        allowWithoutActive = false,
+        shouldActivate = false,
+        focusTextEditor = false,
+    } = options || {};
+
+    const existingDefault = findDefaultTextTimelineItem();
+    if (existingDefault) {
+        const existingLane = existingDefault.closest('.timeline-lane');
+        if (existingLane) {
+            ensureDefaultTextLaneIsFirst(existingLane);
+        }
+        if (shouldActivate || (!activeTimelineItem && !anchorTimelineItem)) {
+            setActiveTimelineItem(existingDefault, { focus: false });
+            loadPreviewFromTimeline(existingDefault, null, {
+                focusTextEditor,
+                autoFocus: focusTextEditor,
+                placeTextCursorAtEnd: !focusTextEditor,
+            });
+        } else if (anchorTimelineItem) {
+            loadPreviewFromTimeline(anchorTimelineItem);
+        } else if (activeTimelineItem) {
+            loadPreviewFromTimeline(activeTimelineItem);
+        }
+        return existingDefault;
+    }
+
+    let baseTimelineItem = anchorTimelineItem || activeTimelineItem || null;
+    if (!baseTimelineItem && allowWithoutActive && typeof getTimelineItems === 'function') {
+        const items = getTimelineItems();
+        baseTimelineItem = items.find((item) => !isDefaultTextTimelineItem(item)) || null;
+    }
+
+    if (!baseTimelineItem && !allowWithoutActive) {
         return null;
     }
 
-    const fileType = activeTimelineItem.dataset.fileType || '';
-    if (!fileType.startsWith('image/') && !fileType.startsWith('video/')) {
-        return null;
+    if (baseTimelineItem) {
+        const fileType = baseTimelineItem.dataset.fileType || '';
+        if (!fileType.startsWith('image/') && !fileType.startsWith('video/')) {
+            return null;
+        }
+        if (baseTimelineItem.dataset.templateId) {
+            return null;
+        }
+        stopTimelinePlayback(true, false);
     }
 
-    if (activeTimelineItem.dataset.templateId) {
-        return null;
-    }
-
-    stopTimelinePlayback(true, false);
-
-    const activeLaneIndex = resolveLaneIndex(activeTimelineItem.dataset.laneIndex);
     let overlayLane = null;
-    if (activeLaneIndex <= 0) {
-        overlayLane = insertTimelineLaneAt(0);
+    if (baseTimelineItem) {
+        const activeLaneIndex = resolveLaneIndex(baseTimelineItem.dataset.laneIndex);
+        if (activeLaneIndex <= 0) {
+            overlayLane = insertTimelineLaneAt(0);
+        } else {
+            overlayLane = ensureTimelineLane(activeLaneIndex - 1);
+        }
     } else {
-        overlayLane = ensureTimelineLane(activeLaneIndex - 1);
+        overlayLane = ensureTimelineLane(0);
     }
     if (!overlayLane) {
         overlayLane = ensureTimelineLane(0);
     }
+    ensureDefaultTextLaneIsFirst(overlayLane);
 
-    const startTime = getTimelineItemStartTime(activeTimelineItem);
-    const baseDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
+    const startTime = baseTimelineItem ? getTimelineItemStartTime(baseTimelineItem) : 0;
+    const baseDuration = baseTimelineItem
+        ? Math.max(0, getTimelineItemPlaybackDuration(baseTimelineItem))
+        : 0;
     const overlayDuration = baseDuration > 0 ? baseDuration : IMAGE_FRAME_DURATION;
 
     const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL);
@@ -2072,7 +2198,18 @@ async function addDefaultTextOverlayToTimeline() {
     updateActiveTimelineIndicators();
     renderExportSummary(getTimelineItems(), null);
     refreshImageDurationApplyAllAvailability();
-    loadPreviewFromTimeline(activeTimelineItem);
+
+    const shouldActivateOverlay = shouldActivate || !baseTimelineItem;
+    if (shouldActivateOverlay) {
+        setActiveTimelineItem(timelineItem, { focus: false });
+        loadPreviewFromTimeline(timelineItem, null, {
+            focusTextEditor,
+            autoFocus: focusTextEditor,
+            placeTextCursorAtEnd: !focusTextEditor,
+        });
+    } else if (baseTimelineItem) {
+        loadPreviewFromTimeline(baseTimelineItem);
+    }
 
     return timelineItem;
 }
@@ -2110,6 +2247,38 @@ if (textTemplateCard) {
         });
     });
 }
+
+async function ensureDefaultTextOverlayVisibleOnLoad() {
+    if (!timelineLaneList) {
+        return;
+    }
+
+    const existingDefault = findDefaultTextTimelineItem();
+    if (existingDefault) {
+        const lane = existingDefault.closest('.timeline-lane');
+        if (lane) {
+            ensureDefaultTextLaneIsFirst(lane);
+        }
+        if (!activeTimelineItem) {
+            setActiveTimelineItem(existingDefault, { focus: false });
+            loadPreviewFromTimeline(existingDefault, null, {
+                focusTextEditor: false,
+                autoFocus: false,
+            });
+        }
+        return;
+    }
+
+    await addDefaultTextOverlayToTimeline({
+        allowWithoutActive: true,
+        shouldActivate: true,
+        focusTextEditor: false,
+    });
+}
+
+ensureDefaultTextOverlayVisibleOnLoad().catch((error) => {
+    console.error('Failed to initialize default text overlay on load.', error);
+});
 
 uploadInput.addEventListener('change', async (event) => {
     const files = Array.from(event.target.files || []);
