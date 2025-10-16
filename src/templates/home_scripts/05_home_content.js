@@ -192,6 +192,10 @@ function applyPreviewImageTransform(alignmentOverride) {
     updatePreviewOutsideOutline();
     updatePreviewGuides(previewImageTransform, alignment);
     updateImageRotationControlState();
+
+    if (typeof refreshActiveOverlayLayers === 'function') {
+        refreshActiveOverlayLayers();
+    }
 }
 
 function clearPreviewImageTransform() {
@@ -1260,6 +1264,13 @@ function clearPreviewOverlayLayers() {
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
 
+    if (previewImageFrame) {
+        previewImageFrame.classList.remove('is-overlay-proxy');
+    }
+    if (previewImage) {
+        previewImage.style.removeProperty('opacity');
+    }
+
     lastOverlayRenderTimestamp = null;
 }
 
@@ -1638,6 +1649,14 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const expandedWindowStart = timelineWindowStart - OVERLAY_TIMELINE_WINDOW_SLACK_MS;
     const expandedWindowEnd = timelineWindowEnd + OVERLAY_TIMELINE_WINDOW_SLACK_MS;
 
+    const totalLaneCount = timelineLaneList
+        ? timelineLaneList.querySelectorAll('.timeline-lane').length
+        : 0;
+    let maxLaneIndex = Math.max(
+        primaryLaneIndex,
+        totalLaneCount > 0 ? (totalLaneCount - 1) : primaryLaneIndex,
+    );
+
     const overlayEntries = (Array.isArray(entries) ? entries : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {
@@ -1658,6 +1677,12 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 start,
                 end,
             };
+
+            descriptor.overlayOrder = Number.isFinite(entry.order)
+                ? entry.order
+                : 0;
+
+            maxLaneIndex = Math.max(maxLaneIndex, laneIndex);
             
             const explicitClipDuration = Number.isFinite(entry.clipDuration)
                 ? Math.max(0, Number(entry.clipDuration) || 0)

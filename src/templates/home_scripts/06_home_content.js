@@ -49,10 +49,25 @@
             return false;
         });
 
-    const OVERLAY_BELOW_Z_BASE = 10;
-    const OVERLAY_BELOW_Z_MAX = 59;
-    const OVERLAY_ABOVE_Z_BASE = 60;
-    const OVERLAY_ABOVE_Z_MAX = 140;
+    const OVERLAY_LANE_Z_BASE = 12;
+    const OVERLAY_LANE_Z_STRIDE = 6;
+    const OVERLAY_ORDER_Z_RANGE = 4;
+
+    const getDescriptorOverlayOrder = (descriptor) => {
+        const value = Number(descriptor?.overlayOrder);
+        return Number.isFinite(value) ? value : 0;
+    };
+
+    const computeLaneStackZIndex = (laneIndex, overlayOrder = 0) => {
+        const normalizedLaneIndex = Number.isFinite(laneIndex) ? Math.max(0, laneIndex) : 0;
+        const laneRank = Math.max(0, maxLaneIndex - normalizedLaneIndex);
+        const baseZ = OVERLAY_LANE_Z_BASE + (laneRank * OVERLAY_LANE_Z_STRIDE);
+        const clampedOrder = Math.max(
+            0,
+            Math.min(OVERLAY_ORDER_Z_RANGE, Number(overlayOrder) || 0),
+        );
+        return baseZ + (OVERLAY_ORDER_Z_RANGE - clampedOrder);
+    };
 
     const computeOverlayLayerGroup = (descriptor) => {
         if (!descriptor) {
@@ -63,19 +78,13 @@
 
     const computeOverlayLayerZIndex = (descriptor) => {
         if (!descriptor) {
-            return OVERLAY_ABOVE_Z_BASE + 1;
+            return computeLaneStackZIndex(primaryLaneIndex, 0);
         }
 
-        const laneDelta = descriptor.laneIndex - primaryLaneIndex;
-        if (laneDelta > 0) {
-            const laneOffset = Math.max(1, laneDelta);
-            const clampedOffset = Math.min(laneOffset, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
-            return OVERLAY_BELOW_Z_MAX - clampedOffset + 1;
-        }
-
-        const laneOffset = Math.max(0, Math.abs(laneDelta));
-        const clampedOffset = Math.min(laneOffset, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
-        return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
+        return computeLaneStackZIndex(
+            descriptor.laneIndex,
+            getDescriptorOverlayOrder(descriptor),
+        );
     };
 
     const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
@@ -83,7 +92,7 @@
         : 'above');
     const getDescriptorZIndex = (descriptor) => {
         if (!descriptor) {
-            return OVERLAY_ABOVE_Z_BASE + 1;
+            return computeLaneStackZIndex(primaryLaneIndex, 0);
         }
         if (Number.isFinite(descriptor.zIndex)) {
             return descriptor.zIndex;
@@ -117,6 +126,12 @@
                 end,
                 clipDuration,
             };
+
+            descriptor.overlayOrder = Number.isFinite(entry?.overlayOrder)
+                ? entry.overlayOrder
+                : 0;
+
+            maxLaneIndex = Math.max(maxLaneIndex, laneIndex);
 
             descriptor.isActive = isClipActiveAtTime(descriptor, safeTimelineNow);
             descriptor.intersectsWindow = doesClipIntersectWindow(
@@ -184,7 +199,43 @@
         });
     }
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    const shouldProxyPrimary = isImageTimelineItem(primaryTimelineItem)
+        && ((totalLaneCount > 1)
+            || overlayEntries.some((descriptor) => descriptor.laneIndex !== primaryLaneIndex));
+
+    if (shouldProxyPrimary) {
+        let normalizedTransform = null;
+        if (previewImageTransform) {
+            normalizedTransform = normalizePreviewImageTransform(
+                previewImageTransform,
+                viewportSize,
+            );
+        }
+        if (!normalizedTransform) {
+            normalizedTransform = getStoredPreviewImageTransform(primaryTimelineItem);
+        }
+
+        const primaryDescriptor = {
+            item: primaryTimelineItem,
+            laneIndex: primaryLaneIndex,
+            start: primaryStartTime,
+            end: primaryStartTime + primaryDuration,
+            clipDuration: primaryDuration,
+            isActive: true,
+            intersectsWindow: true,
+            shouldRender: true,
+            overlayOrder: -1,
+            normalizedTransform,
+            progress: primaryProgress,
+            layerGroup: null,
+            isPrimary: true,
+        };
+
+        overlayEntries.unshift(primaryDescriptor);
+        maxLaneIndex = Math.max(maxLaneIndex, primaryLaneIndex);
+    }
+
+    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -288,8 +339,15 @@
         }
     });
 
-    overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
-    overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+    const compareDescriptorsByLane = (a, b) => {
+        if (a.laneIndex !== b.laneIndex) {
+            return a.laneIndex - b.laneIndex;
+        }
+        return getDescriptorOverlayOrder(a) - getDescriptorOverlayOrder(b);
+    };
+
+    overlayGroups.above.sort(compareDescriptorsByLane);
+    overlayGroups.below.sort(compareDescriptorsByLane);
 
     const { below, above } = previewOverlayGroups;
 
@@ -335,6 +393,7 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                overlayOrder: 0,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -343,6 +402,7 @@
 
         layer.className = 'preview-overlay-layer';
         layer.dataset.laneIndex = String(descriptor.laneIndex);
+        entry.overlayOrder = getDescriptorOverlayOrder(descriptor);
 
         if (borderRadius > 0) {
             layer.style.borderRadius = `${borderRadius}px`;
@@ -436,9 +496,13 @@
         layer.style.zIndex = String(targetZIndex);
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
-        const normalizedTransform = overlayProgress !== null
-            ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
-            : null;
+        let normalizedTransform = descriptor.normalizedTransform || null;
+        if (!normalizedTransform && overlayProgress !== null) {
+            normalizedTransform = getTimelineItemKeyframeTransformAtProgress(
+                descriptor.item,
+                overlayProgress,
+            );
+        }
 
         const frame = resolveOverlayFramePixels(
             descriptor.item,
@@ -526,6 +590,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                fallbackEntry.overlayOrder = getDescriptorOverlayOrder(descriptor);
             }
         });
     }
@@ -548,6 +613,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                fallbackEntry.overlayOrder = getDescriptorOverlayOrder(descriptor);
             }
         });
     }
@@ -579,6 +645,17 @@
     } else {
         previewOverlayStack.setAttribute('hidden', '');
         previewOverlayStack.setAttribute('aria-hidden', 'true');
+    }
+
+    if (previewImageFrame) {
+        previewImageFrame.classList.toggle('is-overlay-proxy', shouldProxyPrimary);
+    }
+    if (previewImage) {
+        if (shouldProxyPrimary) {
+            previewImage.style.opacity = '0';
+        } else {
+            previewImage.style.removeProperty('opacity');
+        }
     }
 
     lastOverlayRenderTimestamp = safeTimelineNow;
