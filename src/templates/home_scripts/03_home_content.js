@@ -599,6 +599,9 @@ function applyTimelineZoom(options = {}) {
     const { preserveScroll = true } = options;
     const previousScroll = preserveScroll ? timelineTrack.scrollLeft : 0;
     const items = getTimelineItems();
+    const currentProgressFraction = typeof getTimelineProgressFraction === 'function'
+        ? getTimelineProgressFraction()
+        : 0;
 
     items.forEach((item) => {
         const duration = getTimelineItemPlaybackDuration(item);
@@ -613,6 +616,22 @@ function applyTimelineZoom(options = {}) {
 
     updateTimelineZoomDisplay();
     updateActiveTimelineIndicators();
+
+    if (typeof applyTimelineProgressGeometry === 'function') {
+        applyTimelineProgressGeometry();
+    }
+
+    if (typeof setTimelineProgressVisuals === 'function') {
+        setTimelineProgressVisuals(currentProgressFraction, { forceGeometryUpdate: true });
+    }
+
+    if (typeof getTimelinePlaybackSegments === 'function') {
+        const { totalDuration } = getTimelinePlaybackSegments();
+        if (typeof updatePlaybackTimeDisplay === 'function') {
+            const elapsed = Math.round(totalDuration * currentProgressFraction);
+            updatePlaybackTimeDisplay(elapsed, totalDuration);
+        }
+    }
 }
 
 function setTimelineDurationPerPixel(value, options = {}) {
