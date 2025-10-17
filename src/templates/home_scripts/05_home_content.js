@@ -1021,7 +1021,11 @@ function handlePreviewViewportResized() {
 function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
     const aspectRatio = origin.aspectRatio > 0 ? origin.aspectRatio : 1;
     const baseMin = Math.max(32, MIN_IMAGE_FRAME_SIZE);
+    const minWidth = baseMin;
     const minHeight = Math.max(32, baseMin / aspectRatio);
+
+    const clampWidth = (value) => Math.max(minWidth, value);
+    const clampHeight = (value) => Math.max(minHeight, value);
 
     const chooseWidth = (primary, secondary) => {
         const candidate = Math.abs(deltaX) >= Math.abs(deltaY) ? primary : secondary;
@@ -1029,6 +1033,56 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
     };
 
     switch (handle) {
+        case 'n': {
+            const nextHeight = clampHeight(origin.height - deltaY);
+            const top = origin.oppositeY - nextHeight;
+            return {
+                left: origin.left,
+                top,
+                width: origin.width,
+                height: nextHeight,
+                aspectRatio: origin.width > 0 && nextHeight > 0
+                    ? origin.width / nextHeight
+                    : aspectRatio,
+            };
+        }
+        case 's': {
+            const nextHeight = clampHeight(origin.height + deltaY);
+            return {
+                left: origin.left,
+                top: origin.top,
+                width: origin.width,
+                height: nextHeight,
+                aspectRatio: origin.width > 0 && nextHeight > 0
+                    ? origin.width / nextHeight
+                    : aspectRatio,
+            };
+        }
+        case 'w': {
+            const nextWidth = clampWidth(origin.width - deltaX);
+            const left = origin.oppositeX - nextWidth;
+            return {
+                left,
+                top: origin.top,
+                width: nextWidth,
+                height: origin.height,
+                aspectRatio: nextWidth > 0 && origin.height > 0
+                    ? nextWidth / origin.height
+                    : aspectRatio,
+            };
+        }
+        case 'e': {
+            const nextWidth = clampWidth(origin.width + deltaX);
+            return {
+                left: origin.left,
+                top: origin.top,
+                width: nextWidth,
+                height: origin.height,
+                aspectRatio: nextWidth > 0 && origin.height > 0
+                    ? nextWidth / origin.height
+                    : aspectRatio,
+            };
+        }
         case 'nw': {
             const widthFromDx = origin.width - deltaX;
             const heightFromDy = origin.height - deltaY;
@@ -1043,6 +1097,7 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
                 top: origin.oppositeY - nextHeight,
                 width: nextWidth,
                 height: nextHeight,
+                aspectRatio,
             };
         }
         case 'ne': {
@@ -1059,6 +1114,7 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
                 top: origin.oppositeY - nextHeight,
                 width: nextWidth,
                 height: nextHeight,
+                aspectRatio,
             };
         }
         case 'sw': {
@@ -1075,6 +1131,7 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
                 top: origin.top,
                 width: nextWidth,
                 height: nextHeight,
+                aspectRatio,
             };
         }
         case 'se':
@@ -1092,6 +1149,7 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
                 top: origin.top,
                 width: nextWidth,
                 height: nextHeight,
+                aspectRatio,
             };
         }
     }
@@ -1244,7 +1302,13 @@ function onPreviewImagePointerMove(event) {
         previewImageTransform.top = next.top;
         previewImageTransform.width = next.width;
         previewImageTransform.height = next.height;
-        previewImageTransform.aspectRatio = previewImagePointerState.origin.aspectRatio;
+        if (Number.isFinite(next.aspectRatio) && next.aspectRatio > 0) {
+            previewImageTransform.aspectRatio = next.aspectRatio;
+        } else if (previewImageTransform.width > 0 && previewImageTransform.height > 0) {
+            previewImageTransform.aspectRatio = previewImageTransform.width / previewImageTransform.height;
+        } else {
+            previewImageTransform.aspectRatio = previewImagePointerState.origin.aspectRatio;
+        }
     }
 
     const snapResult = snapPreviewImageTransform(previewImageTransform, {

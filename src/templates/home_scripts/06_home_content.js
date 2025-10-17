@@ -302,6 +302,10 @@
     const nextKnownItems = new Set();
 
     const overlayResizeHandleLabels = {
+        n: 'Resize overlay from top edge',
+        s: 'Resize overlay from bottom edge',
+        e: 'Resize overlay from right edge',
+        w: 'Resize overlay from left edge',
         nw: 'Resize overlay from top left',
         ne: 'Resize overlay from top right',
         se: 'Resize overlay from bottom right',
@@ -334,7 +338,7 @@
             image.loading = 'eager';
             image.draggable = false;
             content.appendChild(image);
-            ['nw', 'ne', 'se', 'sw'].forEach((direction) => {
+            ['n', 's', 'e', 'w', 'nw', 'ne', 'se', 'sw'].forEach((direction) => {
                 const handle = document.createElement('button');
                 handle.type = 'button';
                 handle.className = `preview-resize-handle handle-${direction}`;
@@ -373,7 +377,7 @@
         }
 
         if (!layer.querySelector('.preview-resize-handle')) {
-            ['nw', 'ne', 'se', 'sw'].forEach((direction) => {
+            ['n', 's', 'e', 'w', 'nw', 'ne', 'se', 'sw'].forEach((direction) => {
                 const handle = document.createElement('button');
                 handle.type = 'button';
                 handle.className = `preview-resize-handle handle-${direction}`;
@@ -1004,8 +1008,16 @@ function onOverlayPointerMove(event) {
             top: origin.top + deltaY,
             width: origin.width,
             height: origin.height,
+            aspectRatio: origin.aspectRatio > 0 ? origin.aspectRatio : 1,
         };
     }
+
+    const resolvedAspectRatio = Number.isFinite(nextTransform?.aspectRatio)
+        && nextTransform.aspectRatio > 0
+        ? nextTransform.aspectRatio
+        : (nextTransform.width > 0 && nextTransform.height > 0
+            ? nextTransform.width / nextTransform.height
+            : (origin.aspectRatio > 0 ? origin.aspectRatio : 1));
 
     const workingTransform = {
         left: nextTransform.left,
@@ -1013,7 +1025,7 @@ function onOverlayPointerMove(event) {
         width: nextTransform.width,
         height: nextTransform.height,
         rotation: Number.isFinite(origin.rotation) ? origin.rotation : 0,
-        aspectRatio: origin.aspectRatio > 0 ? origin.aspectRatio : 1,
+        aspectRatio: resolvedAspectRatio,
     };
 
     const snapResult = snapPreviewImageTransform(workingTransform, { mode, handle, origin });

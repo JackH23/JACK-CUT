@@ -2305,6 +2305,13 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     cursor: nesw-resize;
 }
 
+.preview-resize-handle.handle-n {
+    top: -9px;
+    left: 50%;
+    transform: translate(-50%, 0);
+    cursor: ns-resize;
+}
+
 .preview-resize-handle.handle-se {
     bottom: -9px;
     right: -9px;
@@ -2315,6 +2322,27 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     bottom: -9px;
     left: -9px;
     cursor: nesw-resize;
+}
+
+.preview-resize-handle.handle-s {
+    bottom: -9px;
+    left: 50%;
+    transform: translate(-50%, 0);
+    cursor: ns-resize;
+}
+
+.preview-resize-handle.handle-e {
+    right: -9px;
+    top: 50%;
+    transform: translate(0, -50%);
+    cursor: ew-resize;
+}
+
+.preview-resize-handle.handle-w {
+    left: -9px;
+    top: 50%;
+    transform: translate(0, -50%);
+    cursor: ew-resize;
 }
 
 .preview-guides-layer {
