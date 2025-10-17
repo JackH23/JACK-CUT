@@ -212,6 +212,112 @@
                                 <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
                             </div>
                         </div>
+                        <div class="text-style-controls" data-disabled="true">
+                            <div class="info-list">
+                                <div class="info-item">
+                                    <div class="info-icon">🔤</div>
+                                    <div class="info-item__body">
+                                        <label for="text-font-size">Font size</label>
+                                        <div class="line-slider-group" data-slider="text-font-size">
+                                            <input
+                                                type="range"
+                                                class="line-slider"
+                                                id="text-font-size"
+                                                min="50"
+                                                max="200"
+                                                step="1"
+                                                value="100"
+                                                aria-describedby="text-font-size-value"
+                                                disabled
+                                            >
+                                            <div class="line-slider__value" id="text-font-size-value">100%</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-icon">🎨</div>
+                                    <div class="info-item__body text-color-control">
+                                        <label for="text-color">Text color</label>
+                                        <div class="text-color-picker">
+                                            <input type="color" id="text-color" value="#F8FAFC" aria-describedby="text-color-value" disabled>
+                                            <span class="text-color-value" id="text-color-value">#F8FAFC</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-icon">📐</div>
+                                    <div class="info-item__body">
+                                        <span class="info-item__title">Alignment</span>
+                                        <div class="text-alignment-group" id="text-alignment-group">
+                                            <button type="button" class="text-style-button" data-text-align="left" aria-pressed="false" disabled>
+                                                <span aria-hidden="true">⭰</span>
+                                                <span class="visually-hidden">Align left</span>
+                                            </button>
+                                            <button type="button" class="text-style-button" data-text-align="center" aria-pressed="true" disabled>
+                                                <span aria-hidden="true">⭒</span>
+                                                <span class="visually-hidden">Align center</span>
+                                            </button>
+                                            <button type="button" class="text-style-button" data-text-align="right" aria-pressed="false" disabled>
+                                                <span aria-hidden="true">⭲</span>
+                                                <span class="visually-hidden">Align right</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-icon">↔️</div>
+                                    <div class="info-item__body">
+                                        <label for="text-letter-spacing">Letter spacing</label>
+                                        <div class="line-slider-group" data-slider="text-letter-spacing">
+                                            <input
+                                                type="range"
+                                                class="line-slider"
+                                                id="text-letter-spacing"
+                                                min="0"
+                                                max="40"
+                                                step="1"
+                                                value="4"
+                                                aria-describedby="text-letter-spacing-value"
+                                                disabled
+                                            >
+                                            <div class="line-slider__value" id="text-letter-spacing-value">0.04em</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-icon">↕️</div>
+                                    <div class="info-item__body">
+                                        <label for="text-line-height">Line height</label>
+                                        <div class="line-slider-group" data-slider="text-line-height">
+                                            <input
+                                                type="range"
+                                                class="line-slider"
+                                                id="text-line-height"
+                                                min="80"
+                                                max="240"
+                                                step="5"
+                                                value="120"
+                                                aria-describedby="text-line-height-value"
+                                                disabled
+                                            >
+                                            <div class="line-slider__value" id="text-line-height-value">1.20</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="info-item text-style-actions">
+                                    <div class="info-icon">Aa</div>
+                                    <div class="text-style-actions__body">
+                                        <button type="button" class="text-style-button" id="text-uppercase-toggle" aria-pressed="false" disabled>Uppercase</button>
+                                        <label for="text-font-weight">Font weight</label>
+                                        <select id="text-font-weight" disabled>
+                                            <option value="400">Regular</option>
+                                            <option value="600" selected>Semibold</option>
+                                            <option value="700">Bold</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
                         <div class="info-list">
