@@ -440,14 +440,22 @@ function waitForGapDuration(durationMs) {
     });
 }
 
-async function playTimelineSequence(startIndex = 0, resumeOptions = null) {
-    const timelineItems = getTimelineItems();
+async function playTimelineSequence(startIndex = 0, resumeOptions = null, playbackContext = null) {
+    const timelineItems = Array.isArray(playbackContext?.timelineItems)
+        ? playbackContext.timelineItems
+        : getTimelineItems();
     if (!timelineItems.length) {
         alert('Upload an image or video to build your timeline.');
         return false;
     }
 
-    const { segments, totalDuration } = getTimelinePlaybackSegments();
+    const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
+    const segments = Array.isArray(playbackState?.segments)
+        ? playbackState.segments
+        : [];
+    const totalDuration = Number.isFinite(playbackState?.totalDuration)
+        ? playbackState.totalDuration
+        : 0;
     if (!segments.length || totalDuration <= 0) {
         alert('Upload an image or video to build your timeline.');
         return false;
@@ -689,8 +697,12 @@ if (exportButton) {
         exportButton.textContent = 'Preparing export…';
 
         try {
-            const refreshedTimelineItems = getTimelineItems();
-            renderExportSummary(refreshedTimelineItems, null);
+            const exportContext = prepareExportPlaybackContext(timelineItems);
+            renderExportSummary(
+                exportContext.timelineItems,
+                null,
+                exportContext.playbackState,
+            );
         } finally {
             exportButton.disabled = false;
             exportButton.textContent = originalLabel || 'Export video';
@@ -706,11 +718,29 @@ if (cancelExportButton) {
             return;
         }
         closeExportDialog();
+        resetExportPlaybackContext();
     });
 }
 
 let sharedExportAudioContext = null;
 let sharedExportAudioSources = new WeakMap();
+let pendingExportPlaybackContext = null;
+
+function prepareExportPlaybackContext(existingItems = null) {
+    const timelineItems = Array.isArray(existingItems)
+        ? existingItems
+        : getTimelineItems();
+    const playbackState = getTimelinePlaybackSegments();
+    pendingExportPlaybackContext = {
+        timelineItems,
+        playbackState,
+    };
+    return pendingExportPlaybackContext;
+}
+
+function resetExportPlaybackContext() {
+    pendingExportPlaybackContext = null;
+}
 
 function getOrCreateSharedExportAudioContext() {
     if (sharedExportAudioContext && sharedExportAudioContext.state === 'closed') {
@@ -983,8 +1013,26 @@ async function handleConfirmExport() {
         return;
     }
 
-    const timelineItems = getTimelineItems();
+    const playbackContext = pendingExportPlaybackContext || prepareExportPlaybackContext();
+    const timelineItems = Array.isArray(playbackContext?.timelineItems)
+        ? playbackContext.timelineItems
+        : getTimelineItems();
     if (!timelineItems.length) {
+        alert('Upload an image or video to build your timeline.');
+        return;
+    }
+
+    const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
+    if (!playbackContext?.playbackState) {
+        playbackContext.playbackState = playbackState;
+    }
+    const playbackSegments = Array.isArray(playbackState?.segments)
+        ? playbackState.segments
+        : [];
+    const playbackDuration = Number.isFinite(playbackState?.totalDuration)
+        ? playbackState.totalDuration
+        : 0;
+    if (!playbackSegments.length || playbackDuration <= 0) {
         alert('Upload an image or video to build your timeline.');
         return;
     }
@@ -1079,7 +1127,7 @@ async function handleConfirmExport() {
         });
 
         recorder.start(250);
-        const playbackCompleted = await playTimelineSequence(0);
+        const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
         if (recorder.state !== 'inactive') {
             recorder.stop();
         }
@@ -1113,6 +1161,7 @@ async function handleConfirmExport() {
             exportDialogStatus.dataset.state = 'warning';
         }
     } finally {
+        resetExportPlaybackContext();
         if (typeof audioAttachmentCleanup === 'function') {
             try {
                 audioAttachmentCleanup();
@@ -1148,6 +1197,7 @@ if (exportDialog) {
     exportDialog.addEventListener('click', (event) => {
         if (event.target === exportDialog) {
             closeExportDialog();
+            resetExportPlaybackContext();
         }
     });
 }
@@ -1166,6 +1216,7 @@ document.addEventListener('keydown', (event) => {
     if (isExportDialogOpen()) {
         event.preventDefault();
         closeExportDialog();
+        resetExportPlaybackContext();
     }
 });
 

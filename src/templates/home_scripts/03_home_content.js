@@ -403,12 +403,17 @@ function updatePreviewAspectLabel() {
     previewAspectLabel.textContent = getSelectedAspectLabel();
 }
 
-function renderExportSummary(timelineItems, playbackCompleted = null) {
+function renderExportSummary(timelineItems, playbackCompleted = null, playbackState = null) {
+    const summaryItems = Array.isArray(timelineItems) ? timelineItems : [];
+
     if (exportSummaryClips) {
-        exportSummaryClips.textContent = String(timelineItems.length);
+        exportSummaryClips.textContent = String(summaryItems.length);
     }
 
-    const totalDuration = Math.max(getTotalTimelineDuration(), 0);
+    const totalDuration = Math.max(
+        playbackState?.totalDuration ?? getTotalTimelineDuration(),
+        0,
+    );
     if (exportSummaryDuration) {
         const formattedDuration = formatTime(totalDuration);
         exportSummaryDuration.textContent = `${formattedDuration} (${formatSecondsLabel(totalDuration)})`;
@@ -450,7 +455,7 @@ function renderExportSummary(timelineItems, playbackCompleted = null) {
 
     if (exportTimelineList) {
         exportTimelineList.innerHTML = '';
-        if (!timelineItems.length) {
+        if (!summaryItems.length) {
             const emptyMessage = document.createElement('p');
             emptyMessage.className = 'export-dialog__subtitle';
             emptyMessage.textContent = 'No media in the timeline. Add clips to export.';
@@ -458,7 +463,7 @@ function renderExportSummary(timelineItems, playbackCompleted = null) {
         } else {
             const list = document.createElement('ul');
             list.className = 'export-timeline-list__items';
-            timelineItems.forEach((timelineItem, index) => {
+            summaryItems.forEach((timelineItem, index) => {
                 const listItem = document.createElement('li');
                 listItem.className = 'export-timeline-list__item';
 
