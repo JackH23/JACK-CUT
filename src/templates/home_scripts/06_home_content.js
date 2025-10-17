@@ -1231,6 +1231,37 @@ if (previewTextEditor) {
     previewTextEditor.addEventListener('paste', onPreviewTextEditorPaste);
 }
 
+if (textFontSizeInput) {
+    textFontSizeInput.addEventListener('input', onTextFontSizeInput);
+}
+
+if (textColorInput) {
+    textColorInput.addEventListener('input', onTextColorInput);
+    textColorInput.addEventListener('change', onTextColorInput);
+}
+
+if (textLetterSpacingInput) {
+    textLetterSpacingInput.addEventListener('input', onTextLetterSpacingInput);
+}
+
+if (textLineHeightInput) {
+    textLineHeightInput.addEventListener('input', onTextLineHeightInput);
+}
+
+if (textUppercaseToggle) {
+    textUppercaseToggle.addEventListener('click', onTextUppercaseToggle);
+}
+
+if (textFontWeightSelect) {
+    textFontWeightSelect.addEventListener('change', onTextFontWeightChange);
+}
+
+if (textAlignmentButtons.length) {
+    textAlignmentButtons.forEach((button) => {
+        button.addEventListener('click', onTextAlignmentButtonClick);
+    });
+}
+
 if (previewOverlayStack) {
     previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
 }

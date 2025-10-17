@@ -2197,8 +2197,74 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH = 1920;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
+const DEFAULT_TEXT_TEMPLATE_STYLE = {
+    fontSizeScale: 1,
+    color: '#F8FAFC',
+    textAlign: 'center',
+    letterSpacing: 0.04,
+    lineHeight: 1.2,
+    isUppercase: false,
+    fontWeight: 600,
+};
 
-function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
+function sanitizeDefaultTextStyleForTemplate(style) {
+    if (typeof window !== 'undefined' && typeof window.sanitizeDefaultTextStyle === 'function') {
+        return window.sanitizeDefaultTextStyle(style, DEFAULT_TEXT_TEMPLATE_STYLE);
+    }
+
+    const fallback = { ...DEFAULT_TEXT_TEMPLATE_STYLE };
+    if (!style || typeof style !== 'object') {
+        return fallback;
+    }
+
+    const result = { ...fallback };
+
+    if (style.fontSizeScale !== undefined) {
+        const scale = Number(style.fontSizeScale);
+        if (Number.isFinite(scale)) {
+            result.fontSizeScale = Math.min(Math.max(scale, 0.5), 2.5);
+        }
+    }
+    if (style.color !== undefined && typeof style.color === 'string') {
+        const trimmed = style.color.trim();
+        const match = /^#([0-9a-fA-F]{6})$/.exec(trimmed);
+        if (match) {
+            result.color = `#${match[1].toUpperCase()}`;
+        }
+    }
+    if (style.textAlign !== undefined && typeof style.textAlign === 'string') {
+        const align = style.textAlign.trim();
+        if (align === 'left' || align === 'center' || align === 'right') {
+            result.textAlign = align;
+        }
+    }
+    if (style.letterSpacing !== undefined) {
+        const spacing = Number(style.letterSpacing);
+        if (Number.isFinite(spacing)) {
+            result.letterSpacing = Math.min(Math.max(spacing, 0), 0.4);
+        }
+    }
+    if (style.lineHeight !== undefined) {
+        const lineHeight = Number(style.lineHeight);
+        if (Number.isFinite(lineHeight)) {
+            result.lineHeight = Math.min(Math.max(lineHeight, 0.8), 2.4);
+        }
+    }
+    if (style.isUppercase !== undefined) {
+        result.isUppercase = Boolean(style.isUppercase);
+    }
+    if (style.fontWeight !== undefined) {
+        const weight = Number(style.fontWeight);
+        if (Number.isFinite(weight)) {
+            const clamped = Math.min(Math.max(weight, 300), 900);
+            result.fontWeight = Math.round(clamped / 100) * 100;
+        }
+    }
+
+    return result;
+}
+
+function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverride = null) {
     const fallback = {
         left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
         top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
@@ -2219,23 +2285,40 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
-    const safeText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
-    const fontDescriptor = `600 ${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}px Inter, 'Segoe UI', system-ui, sans-serif`;
+    const sanitizedStyle = sanitizeDefaultTextStyleForTemplate(styleOverride);
+    const rawText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
+    const renderedText = sanitizedStyle.isUppercase ? rawText.toUpperCase() : rawText;
+    const lines = renderedText.split(/\r?\n/);
+    const effectiveFontSize = Math.max(1, DEFAULT_TEXT_TEMPLATE_FONT_SIZE * sanitizedStyle.fontSizeScale);
+    const fontWeight = Math.round(sanitizedStyle.fontWeight / 100) * 100;
+    const fontDescriptor = `${fontWeight} ${effectiveFontSize}px Inter, 'Segoe UI', system-ui, sans-serif`;
     context.font = fontDescriptor;
 
-    const metrics = context.measureText(safeText);
-    const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-    const letterSpacing = DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.04;
-    const totalLetterSpacing = Math.max(0, safeText.length - 1) * letterSpacing;
-    const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
+    let measuredWidth = 0;
+    let maxAscent = 0;
+    let maxDescent = 0;
+    const letterSpacingPx = effectiveFontSize * sanitizedStyle.letterSpacing;
 
-    const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
-        ? metrics.actualBoundingBoxAscent
-        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.82;
-    const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
-        ? metrics.actualBoundingBoxDescent
-        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.18;
-    const measuredHeight = Math.max(0, ascent + descent);
+    lines.forEach((line) => {
+        const safeLine = line || '';
+        const metrics = context.measureText(safeLine);
+        const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
+        const totalLetterSpacing = Math.max(0, safeLine.length - 1) * letterSpacingPx;
+        measuredWidth = Math.max(measuredWidth, baseWidth + totalLetterSpacing);
+        const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
+            ? metrics.actualBoundingBoxAscent
+            : effectiveFontSize * 0.82;
+        const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
+            ? metrics.actualBoundingBoxDescent
+            : effectiveFontSize * 0.18;
+        maxAscent = Math.max(maxAscent, ascent);
+        maxDescent = Math.max(maxDescent, descent);
+    });
+
+    const baseLineHeight = Math.max(0, maxAscent + maxDescent) || effectiveFontSize;
+    const additionalLines = Math.max(0, lines.length - 1);
+    const totalHeightFromLines = additionalLines * (effectiveFontSize * sanitizedStyle.lineHeight);
+    const measuredHeight = Math.max(0, baseLineHeight + totalHeightFromLines);
 
     const totalWidthPx = measuredWidth + (DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING * 2);
     const totalHeightPx = measuredHeight + (DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING * 2);
@@ -2307,6 +2390,13 @@ if (typeof window !== 'undefined') {
     window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE = DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
     window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING = DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
     window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING = DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    window.DEFAULT_TEXT_TEMPLATE_STYLE = DEFAULT_TEXT_TEMPLATE_STYLE;
+    if (typeof window.sanitizeDefaultTextStyle !== 'function') {
+        window.sanitizeDefaultTextStyle = (style, base) => sanitizeDefaultTextStyleForTemplate({
+            ...(base || {}),
+            ...(style || {}),
+        });
+    }
     window.calculateDefaultTextTemplateTransform = calculateDefaultTextTemplateTransform;
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
@@ -2320,16 +2410,48 @@ function escapeSvgTextContent(content) {
         .replace(/'/g, '&#39;');
 }
 
-function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
-    const safeText = escapeSvgTextContent(textContent);
+function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverride = null) {
+    const sanitizedStyle = sanitizeDefaultTextStyleForTemplate(styleOverride);
+    const rawText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
+    const lines = rawText.split(/\r?\n/);
+    const fontSize = Math.max(1, DEFAULT_TEXT_TEMPLATE_FONT_SIZE * sanitizedStyle.fontSizeScale);
+    const fontWeight = Math.round(sanitizedStyle.fontWeight / 100) * 100;
+    const textAnchor = sanitizedStyle.textAlign === 'left'
+        ? 'start'
+        : sanitizedStyle.textAlign === 'right'
+            ? 'end'
+            : 'middle';
+    let x = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
+    if (textAnchor === 'start') {
+        x = DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    } else if (textAnchor === 'end') {
+        x = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    }
+    const totalLineHeightEm = lines.length > 0
+        ? 1 + Math.max(0, lines.length - 1) * sanitizedStyle.lineHeight
+        : 1;
+    const totalLineHeightPx = totalLineHeightEm * fontSize;
+    const startY = (DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2) - (totalLineHeightPx / 2) + (fontSize / 2);
+    const tspans = lines.map((line, index) => {
+        const safeLine = escapeSvgTextContent(line);
+        const dy = index === 0 ? '0' : `${sanitizedStyle.lineHeight}em`;
+        const content = safeLine.length > 0 ? safeLine : '&#160;';
+        return `<tspan x="${x}" dy="${dy}">${content}</tspan>`;
+    }).join('');
+    const textStyles = [
+        "font-family:'Inter','Segoe UI',system-ui,sans-serif",
+        `font-weight:${fontWeight}`,
+        `font-size:${fontSize}px`,
+        `fill:${sanitizedStyle.color}`,
+        `letter-spacing:${sanitizedStyle.letterSpacing}em`,
+        `line-height:${sanitizedStyle.lineHeight}`,
+        `text-transform:${sanitizedStyle.isUppercase ? 'uppercase' : 'none'}`,
+    ].join('; ');
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <style>
-        text { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
-    </style>
     <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="#F8FAFC" font-size="${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
-        ${safeText}
+    <text x="${x}" y="${startY}" text-anchor="${textAnchor}" dominant-baseline="middle" style="${textStyles}" xml:space="preserve">
+        ${tspans}
     </text>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -2367,7 +2489,10 @@ async function addDefaultTextOverlayToTimeline() {
     const baseDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
     const overlayDuration = baseDuration > 0 ? baseDuration : IMAGE_FRAME_DURATION;
 
-    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL);
+    const objectURL = createDefaultTextOverlayObjectURL(
+        DEFAULT_TEXT_TEMPLATE_LABEL,
+        DEFAULT_TEXT_TEMPLATE_STYLE,
+    );
 
     const timelineItem = document.createElement('div');
     timelineItem.className = 'timeline-item timeline-item--text';
@@ -2378,8 +2503,12 @@ async function addDefaultTextOverlayToTimeline() {
     timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
+    timelineItem.dataset.textStyle = JSON.stringify(DEFAULT_TEXT_TEMPLATE_STYLE);
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
-    const initialTransform = calculateDefaultTextTemplateTransform(DEFAULT_TEXT_TEMPLATE_LABEL);
+    const initialTransform = calculateDefaultTextTemplateTransform(
+        DEFAULT_TEXT_TEMPLATE_LABEL,
+        DEFAULT_TEXT_TEMPLATE_STYLE,
+    );
     timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
     timelineItem.dataset.autoFitText = 'true';
 

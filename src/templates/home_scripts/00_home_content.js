@@ -154,6 +154,21 @@ const imageDurationApplyAllButton = document.getElementById('image-duration-appl
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
+const textStyleControls = document.querySelector('.text-style-controls');
+const textFontSizeInput = document.getElementById('text-font-size');
+const textFontSizeValue = document.getElementById('text-font-size-value');
+const textColorInput = document.getElementById('text-color');
+const textColorValue = document.getElementById('text-color-value');
+const textAlignmentGroup = document.getElementById('text-alignment-group');
+const textAlignmentButtons = textAlignmentGroup
+    ? Array.from(textAlignmentGroup.querySelectorAll('[data-text-align]'))
+    : [];
+const textLetterSpacingInput = document.getElementById('text-letter-spacing');
+const textLetterSpacingValue = document.getElementById('text-letter-spacing-value');
+const textLineHeightInput = document.getElementById('text-line-height');
+const textLineHeightValue = document.getElementById('text-line-height-value');
+const textUppercaseToggle = document.getElementById('text-uppercase-toggle');
+const textFontWeightSelect = document.getElementById('text-font-weight');
 const masterVolumeInput = document.getElementById('video-volume');
 const masterVolumeValue = document.getElementById('video-volume-value');
 const audioFadeInInput = document.getElementById('audio-fade-in');

@@ -906,6 +906,150 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     line-height: 1.4;
 }
 
+.text-style-controls {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.text-style-controls[data-disabled='true'] {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.text-style-controls .info-list {
+    display: grid;
+    gap: 18px;
+}
+
+.text-color-control {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.text-color-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.text-color-picker input[type='color'] {
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+}
+
+.text-color-picker input[type='color']:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.text-color-picker input[type='color']::-webkit-color-swatch,
+.text-color-picker input[type='color']::-webkit-color-swatch-wrapper {
+    border: none;
+    padding: 0;
+    border-radius: 11px;
+}
+
+.text-color-picker input[type='color']::-moz-color-swatch {
+    border: none;
+    border-radius: 11px;
+}
+
+.text-color-value {
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+}
+
+.text-alignment-group {
+    display: inline-grid;
+    grid-auto-flow: column;
+    gap: 10px;
+}
+
+.text-style-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.4);
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    min-width: 42px;
+}
+
+.text-style-button:hover:not(:disabled),
+.text-style-button:focus-visible:not(:disabled) {
+    border-color: rgba(148, 163, 184, 0.45);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.text-style-button[aria-pressed='true'] {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.42);
+    color: #e0f2ff;
+}
+
+.text-style-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.text-style-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.text-style-actions__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.text-style-actions__body label {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+}
+
+.text-style-actions__body select {
+    appearance: none;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 10px;
+    color: var(--text-primary);
+    padding: 6px 12px;
+    font-size: 0.92rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.text-style-actions__body select:focus-visible {
+    border-color: rgba(56, 189, 248, 0.6);
+    outline: none;
+}
+
+.text-style-actions__body select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .audio-fade-controls {
     display: flex;
     flex-direction: column;
@@ -2206,15 +2350,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     inset: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: var(--preview-text-justify, center);
     padding: var(--preview-text-padding-block, 20px)
         var(--preview-text-padding-inline, 32px);
-    color: #f8fafc;
+    color: var(--preview-text-color, #f8fafc);
     font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    line-height: 1.2;
-    text-align: center;
+    font-weight: var(--preview-text-font-weight, 600);
+    letter-spacing: var(--preview-text-letter-spacing, 0.04em);
+    line-height: var(--preview-text-line-height, 1.2);
+    text-align: var(--preview-text-align, center);
+    text-transform: var(--preview-text-transform, none);
     font-size: clamp(20px, 5vw, 72px);
     white-space: pre-wrap;
     word-break: break-word;
@@ -2233,6 +2378,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     content: attr(data-placeholder);
     opacity: 0.55;
     pointer-events: none;
+    display: block;
+    width: 100%;
+    text-align: inherit;
 }
 
 .preview-text-editor:focus {
