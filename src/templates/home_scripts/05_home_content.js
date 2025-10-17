@@ -338,11 +338,10 @@ function isDefaultTextTimelineItem(timelineItem) {
 }
 
 function normalizePreviewTextEditorValue(value) {
-    return String(value || '')
-        .replace(/\u00A0/g, ' ')
-        .replace(/[\r\n]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value);
 }
 
 function updatePreviewTextEditorPlaceholderState(valueOverride = null) {
@@ -531,10 +530,13 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
         return;
     }
 
-    const sanitizedValue = normalizedText;
-    const displayName = sanitizedValue || getDefaultTextTemplateLabel();
+    const committedValue = normalizedText;
+    const hasVisibleText = committedValue.trim().length > 0;
+    const displayName = hasVisibleText
+        ? committedValue
+        : getDefaultTextTemplateLabel();
 
-    timelineItem.dataset.textContent = sanitizedValue;
+    timelineItem.dataset.textContent = committedValue;
     timelineItem.dataset.displayName = displayName;
 
     const labelElement = timelineItem.querySelector('span');
@@ -579,8 +581,8 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
 
     autoFitDefaultTextTimelineItem(timelineItem, displayName);
 
-    previewTextEditorState.lastCommittedValue = sanitizedValue;
-    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || sanitizedValue);
+    previewTextEditorState.lastCommittedValue = committedValue;
+    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
 }
 
 function commitPreviewTextEditorContent(options = {}) {
@@ -615,12 +617,7 @@ function onPreviewTextEditorInput() {
     }
 
     const currentValue = previewTextEditor.textContent || '';
-    const sanitized = currentValue.replace(/[\r\n]+/g, ' ');
-    if (sanitized !== currentValue) {
-        previewTextEditor.textContent = sanitized;
-        focusPreviewTextEditor();
-    }
-    updatePreviewTextEditorPlaceholderState(sanitized);
+    updatePreviewTextEditorPlaceholderState(currentValue);
     schedulePreviewTextEditorCommit();
 }
 
