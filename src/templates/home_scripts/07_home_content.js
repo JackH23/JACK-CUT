@@ -527,6 +527,78 @@ function deleteActiveTimelineKeyframe(progressOverride = null) {
 
 let lastTimelinePlayheadGeometry = { offset: 0, width: 0 };
 
+function getTimelineTrackPadding() {
+    if (!timelineTrack || typeof window === 'undefined' || !window.getComputedStyle) {
+        return { left: 0, right: 0 };
+    }
+
+    const computed = window.getComputedStyle(timelineTrack);
+    const left = Number.parseFloat(computed.paddingLeft) || 0;
+    const right = Number.parseFloat(computed.paddingRight) || 0;
+    return { left, right };
+}
+
+function getTimelineLanePadding() {
+    const lanes = getTimelineLanes();
+    if (!lanes.length || typeof window === 'undefined' || !window.getComputedStyle) {
+        return { left: 0, right: 0 };
+    }
+
+    const computed = window.getComputedStyle(lanes[0]);
+    const left = Number.parseFloat(computed.paddingLeft) || 0;
+    const right = Number.parseFloat(computed.paddingRight) || 0;
+    return { left, right };
+}
+
+function computeTimelineDurationGeometry() {
+    if (!timelineTrack) {
+        return null;
+    }
+
+    const perPixel = getTimelineDurationPerPixel();
+    if (!Number.isFinite(perPixel) || perPixel <= 0) {
+        return null;
+    }
+
+    const entries = getTimelineLaneEntries();
+    if (!entries.length) {
+        return null;
+    }
+
+    let minStart = null;
+    let maxEnd = 0;
+
+    entries.forEach((entry) => {
+        if (!entry) {
+            return;
+        }
+
+        const start = Number.isFinite(entry.start) ? Math.max(0, Math.round(entry.start)) : null;
+        const end = Number.isFinite(entry.end) ? Math.max(0, Math.round(entry.end)) : null;
+
+        if (start === null || end === null || end < start) {
+            return;
+        }
+
+        minStart = minStart === null ? start : Math.min(minStart, start);
+        maxEnd = Math.max(maxEnd, end);
+    });
+
+    if (minStart === null) {
+        return null;
+    }
+
+    const { left: trackPaddingLeft } = getTimelineTrackPadding();
+    const { left: lanePaddingLeft } = getTimelineLanePadding();
+    const offset = trackPaddingLeft + lanePaddingLeft + Math.round(minStart / perPixel);
+    const spanDuration = Math.max(0, maxEnd - minStart);
+    const width = spanDuration > 0
+        ? Math.max(1, Math.round(spanDuration / perPixel))
+        : 0;
+
+    return { offset, width };
+}
+
 let timelineProgressAnimationFrame = null;
 let timelineProgressAnimationStartTimestamp = 0;
 let timelineProgressAnimationDurationMs = 0;
@@ -608,20 +680,14 @@ function getTimelineProgressGeometry() {
         return { offset: 0, width: 0 };
     }
 
-    const items = getTimelineItems();
-    if (!items.length) {
-        const computedStyle = window.getComputedStyle(timelineTrack);
-        const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
-        const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
-        const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
-        return { offset: paddingLeft, width };
+    const geometry = computeTimelineDurationGeometry();
+    if (geometry) {
+        return geometry;
     }
 
-    const firstItem = items[0];
-    const lastItem = items[items.length - 1];
-    const offset = firstItem.offsetLeft;
-    const width = (lastItem.offsetLeft + lastItem.offsetWidth) - offset;
-    return { offset, width: Math.max(0, width) };
+    const { left: paddingLeft, right: paddingRight } = getTimelineTrackPadding();
+    const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
+    return { offset: paddingLeft, width };
 }
 
 function recomputeTimelinePlayheadGeometry() {
@@ -630,23 +696,15 @@ function recomputeTimelinePlayheadGeometry() {
         return lastTimelinePlayheadGeometry;
     }
 
-    const items = getTimelineItems();
-
-    if (!items.length) {
-        const computedStyle = window.getComputedStyle(timelineTrack);
-        const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0;
-        const paddingRight = Number.parseFloat(computedStyle.paddingRight) || 0;
-        const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
-        lastTimelinePlayheadGeometry = { offset: paddingLeft, width };
+    const geometry = computeTimelineDurationGeometry();
+    if (geometry) {
+        lastTimelinePlayheadGeometry = geometry;
         return lastTimelinePlayheadGeometry;
     }
 
-    const firstItem = items[0];
-    const lastItem = items[items.length - 1];
-    const offset = firstItem.offsetLeft;
-    const width = Math.max(0, (lastItem.offsetLeft + lastItem.offsetWidth) - offset);
-
-    lastTimelinePlayheadGeometry = { offset, width };
+    const { left: paddingLeft, right: paddingRight } = getTimelineTrackPadding();
+    const width = Math.max(0, timelineTrack.clientWidth - paddingLeft - paddingRight);
+    lastTimelinePlayheadGeometry = { offset: paddingLeft, width };
     return lastTimelinePlayheadGeometry;
 }
 
