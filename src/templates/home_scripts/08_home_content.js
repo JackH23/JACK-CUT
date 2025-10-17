@@ -1177,8 +1177,21 @@ playVideoButton.addEventListener('click', () => {
         return;
     }
 
+    const playbackState = getTimelinePlaybackSegments();
+    const { totalDuration } = playbackState;
+    const progressSource = (typeof getTimelineProgressFraction === 'function')
+        ? getTimelineProgressFraction()
+        : clampProgress(timelineProgressCurrentFraction || 0);
+    const startTimeMs = totalDuration > 0
+        ? Math.min(
+            Math.max(Math.round(progressSource * totalDuration), 0),
+            Math.max(totalDuration - 1, 0),
+        )
+        : 0;
+    const resumeOptions = totalDuration > 0 ? { timeMs: startTimeMs } : null;
+
     const startIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : 0;
-    playTimelineSequence(startIndex >= 0 ? startIndex : 0).catch((error) => {
+    playTimelineSequence(startIndex >= 0 ? startIndex : 0, resumeOptions).catch((error) => {
         console.error('Timeline playback failed.', error);
     });
 });

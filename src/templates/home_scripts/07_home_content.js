@@ -533,6 +533,15 @@ let timelineProgressAnimationDurationMs = 0;
 let timelineProgressAnimationStartFraction = 0;
 let timelineProgressAnimationEndFraction = 0;
 let timelineProgressCurrentFraction = 0;
+let timelinePlayheadManualVisible = false;
+const timelinePlayheadDragState = {
+    pointerId: null,
+    lastFraction: null,
+};
+
+function getTimelineProgressFraction() {
+    return clampProgress(timelineProgressCurrentFraction);
+}
 
 function cancelTimelineProgressAnimation() {
     if (timelineProgressAnimationFrame !== null) {
@@ -543,6 +552,17 @@ function cancelTimelineProgressAnimation() {
     timelineProgressAnimationDurationMs = 0;
     timelineProgressAnimationStartFraction = timelineProgressCurrentFraction;
     timelineProgressAnimationEndFraction = timelineProgressCurrentFraction;
+}
+
+function hasTimelineItems() {
+    return Boolean(timelineTrack && timelineTrack.querySelector('.timeline-item'));
+}
+
+function shouldShowTimelinePlayhead() {
+    if (!hasTimelineItems()) {
+        return false;
+    }
+    return isTimelinePlaying || isTimelinePaused || timelinePlayheadManualVisible;
 }
 
 function setTimelineProgressVisuals(fraction, options = {}) {
@@ -566,8 +586,11 @@ function setTimelineProgressVisuals(fraction, options = {}) {
     }
 
     if (updatePlayhead) {
+        if (!timelinePlayheadManualVisible && hasTimelineItems()) {
+            timelinePlayheadManualVisible = true;
+        }
         updateTimelinePlayheadIndicator(clamped, {
-            visible: isTimelinePlaying || isTimelinePaused,
+            visible: shouldShowTimelinePlayhead(),
             forceGeometryUpdate,
         });
     }
@@ -700,6 +723,11 @@ function scheduleTimelineIndicatorUpdate() {
 
 function resetTimelineProgressLine(fraction = 0) {
     cancelTimelineProgressAnimation();
+    if (!hasTimelineItems()) {
+        timelinePlayheadManualVisible = false;
+    } else if (!timelinePlayheadManualVisible) {
+        timelinePlayheadManualVisible = true;
+    }
     if (!timelineProgressLine) {
         const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
         timelineProgressCurrentFraction = clamped;
@@ -783,6 +811,168 @@ if (timelineTrack) {
             updateTimelinePlayheadIndicator(stored, { visible: true });
         }
     });
+}
+
+function computeTimelineFractionFromClientX(clientX) {
+    if (!timelineTrack || !Number.isFinite(clientX)) {
+        return getTimelineProgressFraction();
+    }
+
+    const rect = timelineTrack.getBoundingClientRect();
+    recomputeTimelinePlayheadGeometry();
+    const { offset, width } = lastTimelinePlayheadGeometry;
+
+    if (!Number.isFinite(width) || width <= 0) {
+        return 0;
+    }
+
+    const trackX = (clientX - rect.left) + timelineTrack.scrollLeft;
+    const relative = (trackX - offset) / width;
+    return clampProgress(relative);
+}
+
+function updateTimelinePauseStateFromTime(targetTimeMs, playbackState = null) {
+    if (!isTimelinePaused) {
+        timelinePauseState = null;
+        return;
+    }
+
+    const state = playbackState || getTimelinePlaybackSegments();
+    const { segments, totalDuration } = state;
+
+    if (!segments.length || totalDuration <= 0) {
+        timelinePauseState = null;
+        return;
+    }
+
+    const timelineItems = getTimelineItems();
+    if (!timelineItems.length) {
+        timelinePauseState = null;
+        return;
+    }
+
+    const safeUpperBound = Math.max(totalDuration - 1, 0);
+    const clampedTime = Math.min(
+        Math.max(Math.round(Number(targetTimeMs) || 0), 0),
+        safeUpperBound,
+    );
+
+    const matchingSegment = segments.find((segment, index) => {
+        const isLast = index === segments.length - 1;
+        return clampedTime >= segment.start && (clampedTime < segment.end || isLast);
+    }) || null;
+
+    let resumeItemIndex = activeTimelineItem
+        ? timelineItems.indexOf(activeTimelineItem)
+        : -1;
+
+    if (matchingSegment && matchingSegment.item) {
+        const segmentIndex = timelineItems.indexOf(matchingSegment.item);
+        if (segmentIndex >= 0) {
+            resumeItemIndex = segmentIndex;
+        }
+    }
+
+    if (resumeItemIndex < 0) {
+        resumeItemIndex = 0;
+    }
+
+    timelinePauseState = {
+        resumeItemIndex,
+        resumeTimeMs: clampedTime,
+    };
+}
+
+function applyManualTimelineSeek(fraction, options = {}) {
+    const { commit = false, playbackState = null } = options;
+
+    const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+    timelinePlayheadManualVisible = true;
+    cancelTimelineProgressAnimation();
+
+    const state = playbackState || getTimelinePlaybackSegments();
+    const { totalDuration } = state;
+    const safeTotal = Math.max(0, Math.round(Number(totalDuration) || 0));
+    const safeTarget = safeTotal > 0
+        ? Math.min(Math.max(Math.round(clamped * safeTotal), 0), Math.max(safeTotal - 1, 0))
+        : 0;
+
+    setTimelineProgressVisuals(clamped, { forceGeometryUpdate: true });
+    updatePlaybackTimeDisplay(safeTarget, safeTotal);
+    timelinePlayheadDragState.lastFraction = clamped;
+
+    if (commit) {
+        seekTimelineToFraction(clamped);
+        updateTimelinePauseStateFromTime(safeTarget, state);
+    }
+}
+
+function handleTimelinePlayheadPointerDown(event) {
+    if (!timelinePlayheadLine || !timelineTrack) {
+        return;
+    }
+    if (event.button !== undefined && event.button !== 0) {
+        return;
+    }
+
+    event.preventDefault();
+    timelinePlayheadDragState.pointerId = event.pointerId;
+
+    if (timelinePlayheadLine.setPointerCapture) {
+        try {
+            timelinePlayheadLine.setPointerCapture(event.pointerId);
+        } catch (error) {
+            // Ignore pointer capture errors.
+        }
+    }
+
+    if (isTimelinePlaying) {
+        stopTimelinePlayback(false, false);
+    }
+
+    const fraction = computeTimelineFractionFromClientX(event.clientX);
+    applyManualTimelineSeek(fraction, { commit: false });
+}
+
+function handleTimelinePlayheadPointerMove(event) {
+    if (timelinePlayheadDragState.pointerId !== event.pointerId) {
+        return;
+    }
+
+    event.preventDefault();
+    const fraction = computeTimelineFractionFromClientX(event.clientX);
+    applyManualTimelineSeek(fraction, { commit: false });
+}
+
+function finalizeTimelinePlayheadDrag(event) {
+    if (timelinePlayheadDragState.pointerId !== event.pointerId) {
+        return;
+    }
+
+    if (timelinePlayheadLine.releasePointerCapture) {
+        try {
+            timelinePlayheadLine.releasePointerCapture(event.pointerId);
+        } catch (error) {
+            // Ignore release errors.
+        }
+    }
+
+    event.preventDefault();
+    const fraction = timelinePlayheadDragState.lastFraction !== null
+        ? timelinePlayheadDragState.lastFraction
+        : getTimelineProgressFraction();
+    const state = getTimelinePlaybackSegments();
+    applyManualTimelineSeek(fraction, { commit: true, playbackState: state });
+
+    timelinePlayheadDragState.pointerId = null;
+    timelinePlayheadDragState.lastFraction = null;
+}
+
+if (timelinePlayheadLine) {
+    timelinePlayheadLine.addEventListener('pointerdown', handleTimelinePlayheadPointerDown);
+    timelinePlayheadLine.addEventListener('pointermove', handleTimelinePlayheadPointerMove);
+    timelinePlayheadLine.addEventListener('pointerup', finalizeTimelinePlayheadDrag);
+    timelinePlayheadLine.addEventListener('pointercancel', finalizeTimelinePlayheadDrag);
 }
 
 function getTimelineItemPlaybackDuration(timelineItem) {

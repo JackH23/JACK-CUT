@@ -3048,7 +3048,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     box-shadow:
         0 0 0 1px rgba(244, 114, 182, 0.55),
         0 0 14px rgba(236, 72, 153, 0.35);
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: ew-resize;
+    touch-action: none;
     opacity: 0;
     transform: translateX(-9999px);
     transition: opacity 0.16s ease, transform 0.08s ease;
