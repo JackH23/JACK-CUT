@@ -1941,25 +1941,125 @@ function registerTimelineItemInteractions(timelineItem, removeButton) {
 const DEFAULT_TEXT_TEMPLATE_LABEL = '(Default Text)';
 const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
+const DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING = 32;
+const DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING = 20;
 const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
 const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH = 1920;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
-const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
-    left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
-    top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
-    width: DEFAULT_TEXT_TEMPLATE_WIDTH,
-    height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
-    aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
-    rotation: 0,
-};
+const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
+
+function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
+    const fallback = {
+        left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
+        top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
+        width: DEFAULT_TEXT_TEMPLATE_WIDTH,
+        height: DEFAULT_TEXT_TEMPLATE_HEIGHT,
+        aspectRatio: DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO,
+        rotation: 0,
+    };
+
+    if (typeof document === 'undefined') {
+        return fallback;
+    }
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+        return fallback;
+    }
+
+    const safeText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
+    const fontDescriptor = `600 ${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}px Inter, 'Segoe UI', system-ui, sans-serif`;
+    context.font = fontDescriptor;
+
+    const metrics = context.measureText(safeText);
+    const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
+    const letterSpacing = DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.04;
+    const totalLetterSpacing = Math.max(0, safeText.length - 1) * letterSpacing;
+    const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
+
+    const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
+        ? metrics.actualBoundingBoxAscent
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.82;
+    const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
+        ? metrics.actualBoundingBoxDescent
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.18;
+    const measuredHeight = Math.max(0, ascent + descent);
+
+    const totalWidthPx = measuredWidth + (DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING * 2);
+    const totalHeightPx = measuredHeight + (DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING * 2);
+
+    if (!Number.isFinite(totalWidthPx) || !Number.isFinite(totalHeightPx) || totalWidthPx <= 0 || totalHeightPx <= 0) {
+        return fallback;
+    }
+
+    const normalizedWidth = totalWidthPx / DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH;
+    const normalizedHeight = totalHeightPx / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
+
+    if (!Number.isFinite(normalizedWidth) || !Number.isFinite(normalizedHeight)
+        || normalizedWidth <= 0 || normalizedHeight <= 0) {
+        return fallback;
+    }
+
+    const aspectRatio = Number.isFinite(totalWidthPx / totalHeightPx)
+        && totalWidthPx > 0
+        && totalHeightPx > 0
+        ? totalWidthPx / totalHeightPx
+        : DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
+
+    let width = normalizedWidth;
+    let height = normalizedHeight;
+
+    if (width < DEFAULT_TEXT_TEMPLATE_MIN_WIDTH) {
+        const scale = DEFAULT_TEXT_TEMPLATE_MIN_WIDTH / width;
+        width = DEFAULT_TEXT_TEMPLATE_MIN_WIDTH;
+        height *= scale;
+    }
+
+    const MAX_DIMENSION = 0.95;
+    if (width > MAX_DIMENSION) {
+        const scale = MAX_DIMENSION / width;
+        width = MAX_DIMENSION;
+        height *= scale;
+    }
+
+    if (height > MAX_DIMENSION) {
+        const scale = MAX_DIMENSION / height;
+        height = MAX_DIMENSION;
+        width *= scale;
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        return fallback;
+    }
+
+    const top = (1 - height) / 2;
+    const left = (1 - width) / 2;
+
+    const resolvedAspectRatio = width > 0 && height > 0 ? width / height : aspectRatio;
+
+    return {
+        left,
+        top,
+        width,
+        height,
+        aspectRatio: resolvedAspectRatio,
+        rotation: 0,
+    };
+}
+
 
 if (typeof window !== 'undefined') {
     window.DEFAULT_TEXT_TEMPLATE_LABEL = DEFAULT_TEXT_TEMPLATE_LABEL;
     window.DEFAULT_TEXT_TEMPLATE_ID = DEFAULT_TEXT_TEMPLATE_ID;
     window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
     window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE = DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
+    window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING = DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING = DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    window.calculateDefaultTextTemplateTransform = calculateDefaultTextTemplateTransform;
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
 
@@ -2031,7 +2131,9 @@ async function addDefaultTextOverlayToTimeline() {
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
-    timelineItem.dataset.previewImageTransform = JSON.stringify(DEFAULT_TEXT_TEMPLATE_TRANSFORM);
+    const initialTransform = calculateDefaultTextTemplateTransform(DEFAULT_TEXT_TEMPLATE_LABEL);
+    timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
+    timelineItem.dataset.autoFitText = 'true';
 
     const label = document.createElement('span');
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
