@@ -166,12 +166,13 @@ function applyPreviewImageTransform(alignmentOverride) {
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
-            const fontSizeFromHeight = previewImageTransform.height * 0.65;
+            const fontScale = getDefaultTextTemplateFontScale();
+            const fontSizeFromHeight = previewImageTransform.height * fontScale;
             const fontSizeFromWidth = previewImageTransform.width * 0.18;
-            const computedFontSize = Math.max(
-                12,
-                Math.min(fontSizeFromHeight, fontSizeFromWidth),
-            );
+            const widthLimitedFontSize = fontSizeFromWidth > 0
+                ? Math.min(fontSizeFromHeight, fontSizeFromWidth)
+                : fontSizeFromHeight;
+            const computedFontSize = Math.max(12, widthLimitedFontSize);
             previewTextEditor.style.fontSize = `${computedFontSize}px`;
         } else {
             previewTextEditor.style.removeProperty('font-size');
@@ -219,6 +220,8 @@ const PREVIEW_TEXT_COMMIT_DELAY_MS = 200;
 const PREVIEW_TEXT_DRAG_THRESHOLD = 6;
 const DEFAULT_TEXT_TEMPLATE_ID_FALLBACK = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_PLACEHOLDER = '(Default Text)';
+const DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK = 120;
+const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
 
 const previewTextEditorState = {
     isEnabled: false,
@@ -240,6 +243,27 @@ function getDefaultTextTemplateLabel() {
         return window.DEFAULT_TEXT_TEMPLATE_LABEL;
     }
     return DEFAULT_TEXT_TEMPLATE_PLACEHOLDER;
+}
+
+function getDefaultTextTemplateFontScale() {
+    const baseFontSize = (typeof window !== 'undefined'
+            && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE))
+        ? Number(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE)
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK;
+    const baseCanvasHeight = (typeof window !== 'undefined'
+            && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT))
+        ? Number(window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT)
+        : DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK;
+
+    if (!Number.isFinite(baseFontSize)
+        || !Number.isFinite(baseCanvasHeight)
+        || baseFontSize <= 0
+        || baseCanvasHeight <= 0) {
+        return DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK
+            / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK;
+    }
+
+    return baseFontSize / baseCanvasHeight;
 }
 
 function isDefaultTextTimelineItem(timelineItem) {

@@ -1943,6 +1943,9 @@ const DEFAULT_TEXT_TEMPLATE_ID = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO = 16 / 9;
 const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
 const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
+const DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH = 1920;
+const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
+const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
     left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
     top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
@@ -1955,6 +1958,8 @@ const DEFAULT_TEXT_TEMPLATE_TRANSFORM = {
 if (typeof window !== 'undefined') {
     window.DEFAULT_TEXT_TEMPLATE_LABEL = DEFAULT_TEXT_TEMPLATE_LABEL;
     window.DEFAULT_TEXT_TEMPLATE_ID = DEFAULT_TEXT_TEMPLATE_ID;
+    window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
+    window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE = DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
 
@@ -1970,12 +1975,12 @@ function escapeSvgTextContent(content) {
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
     const safeText = escapeSvgTextContent(textContent);
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
     <style>
         text { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
     </style>
-    <rect width="1920" height="1080" fill="rgba(15,23,42,0.0)" />
-    <text x="960" y="540" fill="#F8FAFC" font-size="120" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
+    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
+    <text x="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="#F8FAFC" font-size="${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
         ${safeText}
     </text>
 </svg>`;
