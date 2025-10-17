@@ -134,11 +134,7 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
 
     const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
-    const shouldPersistKeyframe = Boolean(options.forceKeyframe) || existingKeyframes.length > 0;
-
-    if (!shouldPersistKeyframe) {
-        return;
-    }
+    const serializedExistingKeyframes = JSON.stringify(existingKeyframes);
 
     const targetProgress = Object.prototype.hasOwnProperty.call(options, 'progressOverride')
         ? clampProgress(options.progressOverride)
@@ -148,7 +144,28 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         return;
     }
 
+    const hasKeyframes = existingKeyframes.length > 0;
+    const allowKeyframeUpdate = Boolean(options.allowKeyframeUpdate);
+
+    let shouldPersistKeyframe = Boolean(options.forceKeyframe);
+
+    if (!shouldPersistKeyframe && allowKeyframeUpdate && hasKeyframes) {
+        shouldPersistKeyframe = existingKeyframes.some(
+            (entry) => Math.abs(entry.progress - targetProgress) <= KEYFRAME_PROGRESS_TOLERANCE,
+        );
+    }
+
+    if (!shouldPersistKeyframe) {
+        return;
+    }
+
     const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
+    const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
+
+    if (serializedUpdatedKeyframes === serializedExistingKeyframes) {
+        return;
+    }
+
     storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
     renderKeyframeTrack(activeTimelineItem);
 }
@@ -1163,7 +1180,7 @@ function endPreviewImagePointerInteraction() {
     previewImagePointerState.handle = null;
     previewImagePointerState.origin = null;
     if (hadInteraction) {
-        persistPreviewImageTransformForActiveTimelineItem();
+        persistPreviewImageTransformForActiveTimelineItem({ allowKeyframeUpdate: true });
     }
     schedulePreviewGuidesHide();
 }

@@ -1315,7 +1315,7 @@ if (imageRotationInput) {
         const nextRotation = clampRotation(event.target.value);
         previewImageTransform.rotation = nextRotation;
         applyPreviewImageTransform();
-        persistPreviewImageTransformForActiveTimelineItem();
+        persistPreviewImageTransformForActiveTimelineItem({ allowKeyframeUpdate: true });
     });
 }
 
