@@ -54,6 +54,34 @@
     const OVERLAY_ABOVE_Z_BASE = 60;
     const OVERLAY_ABOVE_Z_MAX = 140;
 
+    const resolveOverlayLaneRank = (laneIndex, group) => {
+        const normalizedLaneIndex = resolveLaneIndex(laneIndex);
+        const targetGroup = group === 'below' ? 'below' : 'above';
+        const matchesGroup = targetGroup === 'below'
+            ? normalizedLaneIndex > primaryLaneIndex
+            : normalizedLaneIndex <= primaryLaneIndex;
+
+        const laneSet = new Set(
+            overlayEntries
+                .map((entry) => resolveLaneIndex(entry.laneIndex))
+                .filter((index) => (targetGroup === 'below'
+                    ? index > primaryLaneIndex
+                    : index <= primaryLaneIndex)),
+        );
+
+        if (matchesGroup) {
+            laneSet.add(normalizedLaneIndex);
+        }
+
+        if (laneSet.size === 0) {
+            return 0;
+        }
+
+        const ordered = Array.from(laneSet).sort((a, b) => a - b);
+        const position = ordered.indexOf(normalizedLaneIndex);
+        return position === -1 ? ordered.length - 1 : position;
+    };
+
     const computeOverlayLayerGroup = (descriptor) => {
         if (!descriptor) {
             return 'above';
@@ -66,16 +94,20 @@
             return OVERLAY_ABOVE_Z_BASE + 1;
         }
 
-        const laneDelta = descriptor.laneIndex - primaryLaneIndex;
-        if (laneDelta > 0) {
-            const laneOffset = Math.max(1, laneDelta);
-            const clampedOffset = Math.min(laneOffset, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
-            return OVERLAY_BELOW_Z_MAX - clampedOffset + 1;
+        const group = computeOverlayLayerGroup(descriptor);
+        const laneRank = resolveOverlayLaneRank(descriptor.laneIndex, group);
+
+        if (group === 'below') {
+            const range = Math.max(1, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
+            const clampedRank = Math.min(laneRank, range - 1);
+            const zIndex = OVERLAY_BELOW_Z_MAX - clampedRank;
+            return Math.max(OVERLAY_BELOW_Z_BASE + 1, zIndex);
         }
 
-        const laneOffset = Math.max(0, Math.abs(laneDelta));
-        const clampedOffset = Math.min(laneOffset, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
-        return OVERLAY_ABOVE_Z_BASE + clampedOffset + 1;
+        const range = Math.max(1, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
+        const clampedRank = Math.min(laneRank, range - 1);
+        const zIndex = OVERLAY_ABOVE_Z_MAX - clampedRank;
+        return Math.max(OVERLAY_ABOVE_Z_BASE + 1, zIndex);
     };
 
     const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
