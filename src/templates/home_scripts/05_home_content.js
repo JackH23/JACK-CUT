@@ -222,6 +222,8 @@ const DEFAULT_TEXT_TEMPLATE_ID_FALLBACK = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_PLACEHOLDER = '(Default Text)';
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK = 120;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
+const DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK = 32;
+const DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK = 20;
 
 const previewTextEditorState = {
     isEnabled: false,
@@ -264,6 +266,67 @@ function getDefaultTextTemplateFontScale() {
     }
 
     return baseFontSize / baseCanvasHeight;
+}
+
+function getDefaultTextTemplatePaddingInline() {
+    if (typeof window !== 'undefined'
+        && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING)) {
+        return Number(window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING);
+    }
+    return DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK;
+}
+
+function getDefaultTextTemplatePaddingBlock() {
+    if (typeof window !== 'undefined'
+        && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING)) {
+        return Number(window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING);
+    }
+    return DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK;
+}
+
+function shouldAutoFitDefaultTextTimelineItem(timelineItem) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return false;
+    }
+
+    return timelineItem.dataset?.autoFitText !== 'false';
+}
+
+function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
+    if (!shouldAutoFitDefaultTextTimelineItem(timelineItem)) {
+        return;
+    }
+
+    if (typeof window === 'undefined'
+        || typeof window.calculateDefaultTextTemplateTransform !== 'function') {
+        return;
+    }
+
+    let transform = null;
+    try {
+        transform = window.calculateDefaultTextTemplateTransform(textContent);
+    } catch (error) {
+        console.warn('Unable to calculate text overlay dimensions.', error);
+        transform = null;
+    }
+
+    if (!transform
+        || !Number.isFinite(transform.width)
+        || !Number.isFinite(transform.height)
+        || transform.width <= 0
+        || transform.height <= 0) {
+        return;
+    }
+
+    timelineItem.dataset.previewImageTransform = JSON.stringify(transform);
+    timelineItem.dataset.autoFitText = 'true';
+
+    if (timelineItem === activeTimelineItem) {
+        applyStoredPreviewImageTransform(transform);
+        if (typeof refreshActiveOverlayLayers === 'function') {
+            refreshActiveOverlayLayers();
+        }
+    }
 }
 
 function isDefaultTextTimelineItem(timelineItem) {
@@ -344,6 +407,15 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     previewTextEditor.hidden = false;
     if (previewTextEditor.textContent !== storedValue) {
         previewTextEditor.textContent = storedValue;
+    }
+
+    const inlinePadding = getDefaultTextTemplatePaddingInline();
+    const blockPadding = getDefaultTextTemplatePaddingBlock();
+    if (Number.isFinite(inlinePadding)) {
+        previewTextEditor.style.setProperty('--preview-text-padding-inline', `${inlinePadding}px`);
+    }
+    if (Number.isFinite(blockPadding)) {
+        previewTextEditor.style.setProperty('--preview-text-padding-block', `${blockPadding}px`);
     }
 
     if (previewImageFrame) {
@@ -504,6 +576,8 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
     } else {
         refreshActiveOverlayLayers();
     }
+
+    autoFitDefaultTextTimelineItem(timelineItem, displayName);
 
     previewTextEditorState.lastCommittedValue = sanitizedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || sanitizedValue);

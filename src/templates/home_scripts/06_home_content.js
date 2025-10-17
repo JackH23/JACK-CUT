@@ -820,6 +820,16 @@ function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = 
 
     timelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
 
+    const templateId = timelineItem.dataset?.templateId || '';
+    const defaultTemplateId = (typeof getDefaultTextTemplateId === 'function')
+        ? getDefaultTextTemplateId()
+        : ((typeof window !== 'undefined' && window.DEFAULT_TEXT_TEMPLATE_ID)
+            ? window.DEFAULT_TEXT_TEMPLATE_ID
+            : 'default-text');
+    if (templateId && templateId === defaultTemplateId) {
+        timelineItem.dataset.autoFitText = 'false';
+    }
+
     if (options.skipKeyframes) {
         return normalized;
     }

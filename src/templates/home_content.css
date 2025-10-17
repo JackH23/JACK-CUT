@@ -2207,7 +2207,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12px;
+    padding: var(--preview-text-padding-block, 20px)
+        var(--preview-text-padding-inline, 32px);
     color: #f8fafc;
     font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     font-weight: 600;
