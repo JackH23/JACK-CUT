@@ -261,19 +261,25 @@
             : Math.min(clipDuration, playbackWindowMs);
         const safeEffectiveDuration = Math.max(0, effectiveDuration);
         const initialElapsed = Math.min(startOffsetMs, clipDuration);
+        const totalElapsed = initialElapsed + safeEffectiveDuration;
+        const clipPlaysToEnd = clipDuration === 0 || totalElapsed >= clipDuration;
+        const animationClipDuration = clipDuration > 0 ? clipDuration : safeEffectiveDuration;
+        const skipEntranceAnimation = startOffsetMs > 0;
         const initialProgress = clipDuration > 0
             ? clampProgress(initialElapsed / clipDuration)
             : 0;
         const animationSettings = getTimelineItemAnimationSettings(timelineItem);
         const entranceConfigOverride = getPreviewImageEntranceConfig({
-            clipDurationMs: safeEffectiveDuration,
+            clipDurationMs: animationClipDuration,
             settingsOverride: animationSettings,
         });
         const exitConfig = getPreviewImageExitConfig({
-            clipDurationMs: safeEffectiveDuration,
+            clipDurationMs: animationClipDuration,
             settingsOverride: animationSettings,
         });
-        const exitWindow = exitConfig ? Math.max(0, exitConfig.totalDuration) : 0;
+        const exitWindow = exitConfig
+            ? Math.min(animationClipDuration, Math.max(0, exitConfig.totalDuration))
+            : 0;
         setPreviewMode('has-image');
         previewVideo.pause();
         previewVideo.hidden = true;
@@ -281,8 +287,9 @@
         setPreviewImageVisibility(true);
         previewPlaceholder.hidden = true;
         await revealPreviewImageSource(objectURL, {
-            clipDurationMs: safeEffectiveDuration,
+            clipDurationMs: animationClipDuration,
             entranceConfigOverride,
+            immediate: skipEntranceAnimation,
         });
         resetPreviewScroll();
         setActiveClipProgress(initialProgress, { source: 'image-playback' });
@@ -322,9 +329,9 @@
                 return didAnimate;
             };
 
-            const exitStartOffset = exitConfig
-                ? Math.max(0, safeEffectiveDuration - exitWindow)
-                : 0;
+            const exitStartTime = exitConfig
+                ? Math.max(0, clipDuration - exitWindow)
+                : Number.POSITIVE_INFINITY;
 
             const step = () => {
                 if (resolved || !isTimelinePlaying) {
@@ -341,8 +348,8 @@
                 setActiveClipProgress(playbackProgress, { source: 'image-playback' });
 
                 if (exitConfig && !exitAnimationRequested) {
-                    const shouldStartExit = safeEffectiveDuration === 0
-                        || elapsedSinceResume >= exitStartOffset;
+                    const shouldStartExit = clipPlaysToEnd
+                        && (safeEffectiveDuration === 0 || elapsed >= exitStartTime);
                     if (shouldStartExit) {
                         startExitAnimation();
                     }
@@ -355,7 +362,7 @@
 
             animationFrameId = window.requestAnimationFrame(step);
 
-            if (exitConfig && safeEffectiveDuration === 0) {
+            if (exitConfig && clipPlaysToEnd && safeEffectiveDuration === 0) {
                 startExitAnimation({ force: true });
             }
 
@@ -364,7 +371,9 @@
                     return;
                 }
                 resolved = true;
-                startExitAnimation({ force: true });
+                if (clipPlaysToEnd) {
+                    startExitAnimation({ force: true });
+                }
                 stopAnimation();
                 const finalElapsed = Math.min(
                     clipDuration,
