@@ -2241,6 +2241,12 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
     const fontWeight = Number.isFinite(fontWeightCandidate)
         ? fontWeightCandidate
         : (DEFAULT_TEXT_STYLE?.fontWeight || 600);
+    const fontStyleCandidate = typeof base.fontStyle === 'string'
+        ? base.fontStyle.toLowerCase()
+        : '';
+    const fontStyle = TEXT_FONT_STYLE_OPTIONS?.has?.(fontStyleCandidate)
+        ? fontStyleCandidate
+        : (DEFAULT_TEXT_STYLE?.fontStyle || 'normal');
     const letterSpacingCandidate = Number(base.letterSpacingScale);
     const letterSpacingScale = Number.isFinite(letterSpacingCandidate)
         ? (typeof clampTextLetterSpacing === 'function'
@@ -2262,6 +2268,12 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
     const transform = TEXT_TRANSFORM_OPTIONS?.has?.(transformCandidate)
         ? transformCandidate
         : (DEFAULT_TEXT_STYLE?.transform || 'none');
+    const decorationCandidate = typeof base.textDecoration === 'string'
+        ? base.textDecoration.toLowerCase()
+        : '';
+    const textDecoration = TEXT_DECORATION_OPTIONS?.has?.(decorationCandidate)
+        ? decorationCandidate
+        : (DEFAULT_TEXT_STYLE?.textDecoration || 'none');
     const paddingInlineCandidate = Number(base.paddingInline);
     const paddingInline = Number.isFinite(paddingInlineCandidate)
         ? paddingInlineCandidate
@@ -2274,11 +2286,13 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
     return {
         fontFamily,
         fontWeight,
+        fontStyle,
         letterSpacingScale,
         fontSize,
         color,
         align,
         transform,
+        textDecoration,
         paddingInline,
         paddingBlock,
     };
@@ -2306,7 +2320,8 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
     }
 
     const measuredText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
-    const fontDescriptor = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
+    const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
+    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
     context.font = fontDescriptor;
     context.textBaseline = 'alphabetic';
     context.textAlign = 'left';
@@ -2435,10 +2450,10 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
     <style>
-        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; }
+        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; font-style: ${style.fontStyle}; text-decoration: ${style.textDecoration}; }
     </style>
     <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
+    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" font-style="${style.fontStyle}" text-decoration="${style.textDecoration}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
         ${safeText}
     </text>
 </svg>`;

@@ -292,6 +292,8 @@ const TEXT_FONT_LIBRARY = {
 
 const TEXT_ALIGNMENT_OPTIONS = new Set(['left', 'center', 'right']);
 const TEXT_TRANSFORM_OPTIONS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
+const TEXT_FONT_STYLE_OPTIONS = new Set(['normal', 'italic']);
+const TEXT_DECORATION_OPTIONS = new Set(['none', 'underline']);
 const TEXT_FONT_SIZE_MIN = 48;
 const TEXT_FONT_SIZE_MAX = 220;
 const TEXT_LETTER_SPACING_MIN = -0.05;
@@ -301,6 +303,8 @@ const DEFAULT_TEXT_STYLE = {
     fontKey: 'inter',
     fontFamily: TEXT_FONT_LIBRARY.inter.family,
     fontWeight: TEXT_FONT_LIBRARY.inter.weight,
+    fontStyle: 'normal',
+    textDecoration: 'none',
     letterSpacingScale: TEXT_FONT_LIBRARY.inter.letterSpacingScale,
     fontSize: DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK,
     color: '#F8FAFC',
@@ -440,6 +444,15 @@ function getFontLibraryEntry(fontKey) {
     return TEXT_FONT_LIBRARY[normalizedKey] || TEXT_FONT_LIBRARY[DEFAULT_TEXT_STYLE.fontKey];
 }
 
+function getBoldFontWeightForFont(fontEntry = null) {
+    const baseWeightCandidate = fontEntry && Number.isFinite(Number(fontEntry.weight))
+        ? Number(fontEntry.weight)
+        : DEFAULT_TEXT_STYLE.fontWeight;
+    const increased = baseWeightCandidate + 200;
+    const boldWeight = Math.max(700, increased);
+    return Math.min(900, boldWeight);
+}
+
 function clampTextFontSize(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -519,6 +532,14 @@ function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
     letterSpacingScale = clampTextLetterSpacing(letterSpacingScale);
     const fontSizeCandidate = styleOverrides.fontSize ?? timelineItem.dataset.textFontSize;
     const fontSize = clampTextFontSize(fontSizeCandidate);
+    const fontStyleCandidate = styleOverrides.fontStyle || timelineItem.dataset.textFontStyle;
+    const fontStyle = TEXT_FONT_STYLE_OPTIONS.has(fontStyleCandidate)
+        ? fontStyleCandidate
+        : DEFAULT_TEXT_STYLE.fontStyle;
+    const decorationCandidate = styleOverrides.textDecoration || timelineItem.dataset.textDecoration;
+    const textDecoration = TEXT_DECORATION_OPTIONS.has(decorationCandidate)
+        ? decorationCandidate
+        : DEFAULT_TEXT_STYLE.textDecoration;
     const color = normalizeTextColor(styleOverrides.color || timelineItem.dataset.textColor || DEFAULT_TEXT_STYLE.color);
     const alignCandidate = styleOverrides.align || timelineItem.dataset.textAlign;
     const align = TEXT_ALIGNMENT_OPTIONS.has(alignCandidate) ? alignCandidate : DEFAULT_TEXT_STYLE.align;
@@ -530,6 +551,8 @@ function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
     timelineItem.dataset.textFontWeight = String(fontWeight);
     timelineItem.dataset.textLetterSpacingScale = String(letterSpacingScale);
     timelineItem.dataset.textFontSize = String(fontSize);
+    timelineItem.dataset.textFontStyle = fontStyle;
+    timelineItem.dataset.textDecoration = textDecoration;
     timelineItem.dataset.textColor = color;
     timelineItem.dataset.textAlign = align;
     timelineItem.dataset.textTransform = transform;
@@ -538,6 +561,8 @@ function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
         fontKey: fontEntry.key,
         fontFamily,
         fontWeight,
+        fontStyle,
+        textDecoration,
         letterSpacingScale,
         fontSize,
         color,
@@ -578,11 +603,21 @@ function getTimelineTextStyle(timelineItem) {
     const transform = TEXT_TRANSFORM_OPTIONS.has(transformCandidate)
         ? transformCandidate
         : DEFAULT_TEXT_STYLE.transform;
+    const fontStyleCandidate = timelineItem.dataset.textFontStyle;
+    const fontStyle = TEXT_FONT_STYLE_OPTIONS.has(fontStyleCandidate)
+        ? fontStyleCandidate
+        : DEFAULT_TEXT_STYLE.fontStyle;
+    const decorationCandidate = timelineItem.dataset.textDecoration;
+    const textDecoration = TEXT_DECORATION_OPTIONS.has(decorationCandidate)
+        ? decorationCandidate
+        : DEFAULT_TEXT_STYLE.textDecoration;
 
     return {
         fontKey: fontEntry.key,
         fontFamily,
         fontWeight,
+        fontStyle,
+        textDecoration,
         letterSpacingScale,
         fontSize,
         color,
@@ -604,8 +639,10 @@ function applyTextStyleToPreviewEditor(styleOverrides = null) {
 
     previewTextEditor.style.fontFamily = style.fontFamily;
     previewTextEditor.style.fontWeight = String(style.fontWeight);
+    previewTextEditor.style.fontStyle = style.fontStyle || 'normal';
     previewTextEditor.style.letterSpacing = `${style.letterSpacingScale}em`;
     previewTextEditor.style.color = style.color;
+    previewTextEditor.style.textDecoration = style.textDecoration || 'none';
     previewTextEditor.style.textTransform = style.transform || 'none';
     previewTextEditor.dataset.align = style.align || 'center';
 }
@@ -639,6 +676,13 @@ function updateTextEffectsControlsAvailability(isEnabled) {
     textEffectAlignmentButtons.forEach((button) => {
         button.disabled = !isEnabled;
     });
+    textStyleToolbarButtons.forEach((button) => {
+        button.disabled = !isEnabled;
+        if (!isEnabled) {
+            button.setAttribute('aria-pressed', 'false');
+            button.classList.remove('is-active');
+        }
+    });
     if (textEffectsPanel) {
         if (isEnabled) {
             textEffectsPanel.removeAttribute('aria-disabled');
@@ -664,6 +708,10 @@ function syncTextEffectsControlsToTimelineItem(timelineItem) {
 
     if (!isTextItem) {
         textEffectAlignmentButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', 'false');
+            button.classList.remove('is-active');
+        });
+        textStyleToolbarButtons.forEach((button) => {
             button.setAttribute('aria-pressed', 'false');
             button.classList.remove('is-active');
         });
@@ -695,6 +743,21 @@ function syncTextEffectsControlsToTimelineItem(timelineItem) {
     textEffectAlignmentButtons.forEach((button) => {
         const targetAlign = button.dataset.textAlign;
         const isActive = targetAlign === style.align;
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.classList.toggle('is-active', isActive);
+    });
+    const fontEntry = getFontLibraryEntry(style.fontKey);
+    const boldWeight = getBoldFontWeightForFont(fontEntry);
+    textStyleToolbarButtons.forEach((button) => {
+        const styleType = button.dataset.textStyle;
+        let isActive = false;
+        if (styleType === 'bold') {
+            isActive = Number(style.fontWeight) >= boldWeight;
+        } else if (styleType === 'italic') {
+            isActive = (style.fontStyle || 'normal') === 'italic';
+        } else if (styleType === 'underline') {
+            isActive = (style.textDecoration || 'none') === 'underline';
+        }
         button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         button.classList.toggle('is-active', isActive);
     });
@@ -762,6 +825,42 @@ function applyTimelineTextStyleUpdates(updates = {}) {
     applyTextStyleToPreviewEditor(normalizedStyle);
     regenerateDefaultTextOverlayAssets(timelineItem, normalizedStyle);
     syncTextEffectsControlsToTimelineItem(timelineItem);
+}
+
+function toggleActiveTextStyle(styleKey) {
+    if (!styleKey) {
+        return;
+    }
+
+    const timelineItem = getActiveDefaultTextTimelineItem();
+    if (!timelineItem) {
+        return;
+    }
+
+    const currentStyle = getTimelineTextStyle(timelineItem);
+    const fontEntry = getFontLibraryEntry(currentStyle.fontKey);
+
+    if (styleKey === 'bold') {
+        const baseWeight = Number.isFinite(Number(fontEntry?.weight))
+            ? Number(fontEntry.weight)
+            : DEFAULT_TEXT_STYLE.fontWeight;
+        const boldWeight = getBoldFontWeightForFont(fontEntry);
+        const isBoldActive = Number(currentStyle.fontWeight) >= boldWeight;
+        const nextWeight = isBoldActive ? baseWeight : boldWeight;
+        applyTimelineTextStyleUpdates({ fontWeight: nextWeight });
+        return;
+    }
+
+    if (styleKey === 'italic') {
+        const nextStyle = currentStyle.fontStyle === 'italic' ? 'normal' : 'italic';
+        applyTimelineTextStyleUpdates({ fontStyle: nextStyle });
+        return;
+    }
+
+    if (styleKey === 'underline') {
+        const nextDecoration = currentStyle.textDecoration === 'underline' ? 'none' : 'underline';
+        applyTimelineTextStyleUpdates({ textDecoration: nextDecoration });
+    }
 }
 
 function updatePreviewTextEditorPlaceholderState(valueOverride = null) {

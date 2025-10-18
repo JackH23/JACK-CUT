@@ -989,6 +989,54 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     gap: 8px;
 }
 
+.text-style-toolbar {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.text-style-toolbar__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.8);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.18s ease;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.text-style-toolbar__button--bold {
+    font-weight: 700;
+}
+
+.text-style-toolbar__button--italic {
+    font-style: italic;
+}
+
+.text-style-toolbar__button--underline {
+    text-decoration: underline;
+    text-decoration-thickness: 0.12em;
+}
+
+.text-style-toolbar__button.is-active,
+.text-style-toolbar__button[aria-pressed="true"] {
+    border-color: rgba(56, 189, 248, 0.6);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(56, 189, 248, 0.2);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.85), rgba(124, 58, 237, 0.7));
+}
+
+.text-style-toolbar__button:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.65);
+    outline-offset: 2px;
+}
+
 .text-effects__toggle {
     display: inline-flex;
     align-items: center;
