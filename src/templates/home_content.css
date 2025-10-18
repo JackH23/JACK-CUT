@@ -183,7 +183,7 @@ body {
 .editor-layout {
     display: grid;
     gap: clamp(16px, 3vw, 24px);
-    grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr) minmax(0, 0.85fr);
+    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 2fr) minmax(320px, 1.05fr);
     grid-template-areas: "upload preview settings";
     align-items: stretch;
 }
@@ -772,6 +772,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    --settings-panel-height: auto;
+    min-height: 0;
 }
 
 .settings-tabs {
@@ -819,15 +821,23 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-direction: column;
     gap: 16px;
     flex: 1;
+    min-height: 0;
 }
 
 .settings-section {
     display: none;
     animation: fadeIn 0.18s ease;
+    min-height: 0;
 }
 
 .settings-section.is-active {
     display: block;
+    height: var(--settings-panel-height, auto);
+    max-height: 360px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    padding-right: 4px;
 }
 
 .info-list {
@@ -3389,10 +3399,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 @media (max-width: 960px) {
     .editor-layout {
-        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
+        grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
-            "upload preview"
-            "settings preview";
+            "upload"
+            "preview"
+            "settings";
     }
 
     .preview-toolbar {
