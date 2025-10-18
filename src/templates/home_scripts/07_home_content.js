@@ -2198,7 +2198,7 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
 
-function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
+function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = null) {
     const fallback = {
         left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
         top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
@@ -2219,26 +2219,53 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
-    const safeText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
-    const fontDescriptor = `600 ${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}px Inter, 'Segoe UI', system-ui, sans-serif`;
+    const style = resolveDefaultTextStyle(styleOverrides || {});
+    const fontStack = getTextFontStack(style.font);
+    const fontWeight = Number.isFinite(style.fontWeight) ? style.fontWeight : 600;
+    const fontStyle = style.fontStyle || 'normal';
+    const fontDescriptor = `${fontStyle} ${fontWeight} ${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}px ${fontStack}`;
     context.font = fontDescriptor;
 
-    const metrics = context.measureText(safeText);
-    const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-    const letterSpacing = DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.04;
-    const totalLetterSpacing = Math.max(0, safeText.length - 1) * letterSpacing;
-    const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
+    const rawText = textContent === null || textContent === undefined
+        ? ''
+        : String(textContent);
+    const baseText = rawText.trim().length > 0
+        ? rawText
+        : DEFAULT_TEXT_TEMPLATE_LABEL;
+    const renderedText = applyDefaultTextTransform(baseText, style.transform);
+    const lines = renderedText.split(/\r?\n/);
+    const safeLines = lines.length ? lines : [renderedText];
 
-    const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
-        ? metrics.actualBoundingBoxAscent
+    const letterSpacingPx = DEFAULT_TEXT_TEMPLATE_FONT_SIZE * style.letterSpacing;
+
+    let maxLineWidth = 0;
+    safeLines.forEach((line) => {
+        const content = line || '';
+        const metrics = context.measureText(content || ' ');
+        const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
+        const spacingWidth = Math.max(0, content.length - 1) * letterSpacingPx;
+        const totalWidth = Math.max(0, baseWidth + spacingWidth);
+        if (totalWidth > maxLineWidth) {
+            maxLineWidth = totalWidth;
+        }
+    });
+
+    const firstMetrics = context.measureText((safeLines[0] || '') || ' ');
+    const ascent = Number.isFinite(firstMetrics.actualBoundingBoxAscent)
+        ? firstMetrics.actualBoundingBoxAscent
         : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.82;
-    const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
-        ? metrics.actualBoundingBoxDescent
+    const descent = Number.isFinite(firstMetrics.actualBoundingBoxDescent)
+        ? firstMetrics.actualBoundingBoxDescent
         : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.18;
-    const measuredHeight = Math.max(0, ascent + descent);
+    const metricHeight = Math.max(0, ascent + descent);
+    const lineHeightPx = Math.max(
+        DEFAULT_TEXT_TEMPLATE_FONT_SIZE * style.lineHeight,
+        metricHeight,
+    );
+    const totalHeightPx = (lineHeightPx * Math.max(1, safeLines.length))
+        + (DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING * 2);
 
-    const totalWidthPx = measuredWidth + (DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING * 2);
-    const totalHeightPx = measuredHeight + (DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING * 2);
+    const totalWidthPx = Math.max(0, maxLineWidth) + (DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING * 2);
 
     if (!Number.isFinite(totalWidthPx) || !Number.isFinite(totalHeightPx) || totalWidthPx <= 0 || totalHeightPx <= 0) {
         return fallback;
@@ -2320,16 +2347,56 @@ function escapeSvgTextContent(content) {
         .replace(/'/g, '&#39;');
 }
 
-function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
-    const safeText = escapeSvgTextContent(textContent);
+function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = null) {
+    const style = resolveDefaultTextStyle(styleOverrides || {});
+    const fontStack = getTextFontStack(style.font);
+    const fontWeight = Number.isFinite(style.fontWeight) ? style.fontWeight : 600;
+    const fontStyle = style.fontStyle || 'normal';
+    const fillColor = normalizeTextHexColor(style.color, '#F8FAFC');
+
+    const rawText = textContent === null || textContent === undefined
+        ? ''
+        : String(textContent);
+    const baseText = rawText.trim().length > 0
+        ? rawText
+        : DEFAULT_TEXT_TEMPLATE_LABEL;
+    const renderedText = applyDefaultTextTransform(baseText, style.transform);
+    const lines = renderedText.split(/\r?\n/);
+    const safeLines = lines.length ? lines : [renderedText];
+
+    const lineHeightPx = Math.max(
+        DEFAULT_TEXT_TEMPLATE_FONT_SIZE * style.lineHeight,
+        DEFAULT_TEXT_TEMPLATE_FONT_SIZE,
+    );
+    const verticalOffset = (safeLines.length - 1) / 2;
+
+    const anchor = style.align === 'left'
+        ? 'start'
+        : (style.align === 'right' ? 'end' : 'middle');
+    const xPosition = style.align === 'left'
+        ? DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING
+        : (style.align === 'right'
+            ? DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING
+            : DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2);
+
+    const tspans = safeLines.map((line, index) => {
+        const escaped = escapeSvgTextContent(line);
+        const display = escaped.length ? escaped : '&#160;';
+        const yPosition = (DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2)
+            + ((index - verticalOffset) * lineHeightPx);
+        return `        <tspan x="${xPosition}" y="${yPosition.toFixed(2)}" alignment-baseline="middle">${display}</tspan>`;
+    }).join('\n');
+
+    const letterSpacingValue = `${style.letterSpacing.toFixed(3)}em`;
+
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
     <style>
-        text { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+        text { font-family: ${fontStack}; }
     </style>
     <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="#F8FAFC" font-size="${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
-        ${safeText}
+    <text x="${xPosition}" text-anchor="${anchor}" fill="${fillColor}" font-size="${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}" font-weight="${fontWeight}" font-style="${fontStyle}" dominant-baseline="middle" letter-spacing="${letterSpacingValue}" xml:space="preserve">
+${tspans}
     </text>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -2367,24 +2434,25 @@ async function addDefaultTextOverlayToTimeline() {
     const baseDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
     const overlayDuration = baseDuration > 0 ? baseDuration : IMAGE_FRAME_DURATION;
 
-    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL);
-
     const timelineItem = document.createElement('div');
     timelineItem.className = 'timeline-item timeline-item--text';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
     timelineItem.dataset.fileType = 'image/svg+xml';
-    timelineItem.dataset.objectUrl = objectURL;
-    timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
-    const initialTransform = calculateDefaultTextTemplateTransform(DEFAULT_TEXT_TEMPLATE_LABEL);
+    const initialStyle = storeDefaultTextTimelineItemStyle(timelineItem, { preset: DEFAULT_TEXT_STYLE_PRESET });
+    const displayName = applyDefaultTextTransform(DEFAULT_TEXT_TEMPLATE_LABEL, initialStyle.transform);
+    timelineItem.dataset.displayName = displayName;
+    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL, initialStyle);
+    timelineItem.dataset.objectUrl = objectURL;
+    const initialTransform = calculateDefaultTextTemplateTransform(DEFAULT_TEXT_TEMPLATE_LABEL, initialStyle);
     timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
     timelineItem.dataset.autoFitText = 'true';
 
     const label = document.createElement('span');
-    label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
+    label.textContent = displayName;
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
@@ -2396,7 +2464,7 @@ async function addDefaultTextOverlayToTimeline() {
         const thumbnail = document.createElement('img');
         thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
-        thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
+        thumbnail.alt = displayName;
         timelineItem.appendChild(thumbnail);
     } catch (error) {
         console.warn('Unable to generate thumbnail for text overlay.', error);
@@ -2428,6 +2496,10 @@ async function addDefaultTextOverlayToTimeline() {
     renderExportSummary(getTimelineItems(), null);
     refreshImageDurationApplyAllAvailability();
     loadPreviewFromTimeline(activeTimelineItem);
+
+    if (typeof window !== 'undefined' && typeof window.activateTextEffectsPane === 'function') {
+        window.activateTextEffectsPane('effects');
+    }
 
     return timelineItem;
 }

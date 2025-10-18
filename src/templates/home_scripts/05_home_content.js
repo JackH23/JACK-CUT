@@ -242,6 +242,555 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
 const DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK = 32;
 const DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK = 20;
 
+const DEFAULT_TEXT_STYLE_PRESET = 'clean';
+const CUSTOM_TEXT_STYLE_KEY = 'custom';
+const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
+const TEXT_TRANSFORMS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
+const TEXT_ALIGNMENTS = new Set(['left', 'center', 'right']);
+
+const TEXT_FONT_OPTIONS = {
+    inter: {
+        label: 'Inter',
+        stack: "'Inter', 'Segoe UI', system-ui, sans-serif",
+        defaultWeight: 600,
+        defaultStyle: 'normal',
+    },
+    manrope: {
+        label: 'Manrope',
+        stack: "'Manrope', 'Segoe UI', system-ui, sans-serif",
+        defaultWeight: 700,
+        defaultStyle: 'normal',
+    },
+    playfair: {
+        label: 'Playfair Display',
+        stack: "'Playfair Display', 'Times New Roman', serif",
+        defaultWeight: 600,
+        defaultStyle: 'italic',
+    },
+};
+
+const TEXT_STYLE_PRESETS = {
+    clean: {
+        label: 'Clean caption',
+        font: 'inter',
+        color: '#F8FAFC',
+        align: 'center',
+        transform: 'none',
+        letterSpacing: 0.04,
+        lineHeight: 1.2,
+        fontWeight: 600,
+        fontStyle: 'normal',
+    },
+    contrast: {
+        label: 'Bold contrast',
+        font: 'manrope',
+        color: '#FACC15',
+        align: 'center',
+        transform: 'uppercase',
+        letterSpacing: 0.08,
+        lineHeight: 1.1,
+        fontWeight: 700,
+        fontStyle: 'normal',
+    },
+    elegant: {
+        label: 'Elegant serif',
+        font: 'playfair',
+        color: '#F8FAFC',
+        align: 'center',
+        transform: 'capitalize',
+        letterSpacing: 0.02,
+        lineHeight: 1.24,
+        fontWeight: 600,
+        fontStyle: 'italic',
+    },
+};
+
+function getDefaultTextFontKey() {
+    const preset = TEXT_STYLE_PRESETS[DEFAULT_TEXT_STYLE_PRESET];
+    if (preset && preset.font && TEXT_FONT_OPTIONS[preset.font]) {
+        return preset.font;
+    }
+    return 'inter';
+}
+
+function normalizeTextHexColor(value, fallback = '#F8FAFC') {
+    if (typeof value !== 'string') {
+        return fallback;
+    }
+    const trimmed = value.trim();
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) {
+        if (trimmed.length === 4) {
+            const expanded = trimmed.slice(1).split('').map((char) => `${char}${char}`).join('');
+            return `#${expanded.toUpperCase()}`;
+        }
+        return trimmed.toUpperCase();
+    }
+    return fallback;
+}
+
+function getTextFontStack(fontKey) {
+    const entry = TEXT_FONT_OPTIONS[fontKey];
+    if (entry && entry.stack) {
+        return entry.stack;
+    }
+    const fallbackKey = getDefaultTextFontKey();
+    return TEXT_FONT_OPTIONS[fallbackKey]?.stack
+        || "'Inter', 'Segoe UI', system-ui, sans-serif";
+}
+
+function resolveDefaultTextStyle(styleOverrides = {}) {
+    const overrides = styleOverrides || {};
+    const requestedPreset = overrides.preset
+            && overrides.preset !== CUSTOM_TEXT_STYLE_KEY
+            && Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, overrides.preset)
+        ? overrides.preset
+        : DEFAULT_TEXT_STYLE_PRESET;
+    const preset = TEXT_STYLE_PRESETS[requestedPreset] || TEXT_STYLE_PRESETS[DEFAULT_TEXT_STYLE_PRESET];
+
+    const base = {
+        preset: overrides.preset === CUSTOM_TEXT_STYLE_KEY ? CUSTOM_TEXT_STYLE_KEY : requestedPreset,
+        font: preset?.font || getDefaultTextFontKey(),
+        color: normalizeTextHexColor(preset?.color || '#F8FAFC'),
+        align: TEXT_ALIGNMENTS.has(preset?.align) ? preset.align : 'center',
+        transform: TEXT_TRANSFORMS.has(preset?.transform) ? preset.transform : 'none',
+        letterSpacing: Number.isFinite(preset?.letterSpacing) ? Number(preset.letterSpacing) : 0.04,
+        lineHeight: Number.isFinite(preset?.lineHeight) ? Number(preset.lineHeight) : DEFAULT_TEXT_LINE_HEIGHT,
+        fontWeight: Number.isFinite(preset?.fontWeight) ? Number(preset.fontWeight) : 600,
+        fontStyle: typeof preset?.fontStyle === 'string' ? preset.fontStyle : 'normal',
+    };
+
+    let nextPreset = base.preset;
+
+    if (overrides.preset && overrides.preset === CUSTOM_TEXT_STYLE_KEY) {
+        nextPreset = CUSTOM_TEXT_STYLE_KEY;
+    } else if (overrides.preset && Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, overrides.preset)) {
+        nextPreset = overrides.preset;
+    }
+
+    const nextFont = overrides.font && TEXT_FONT_OPTIONS[overrides.font]
+        ? overrides.font
+        : base.font;
+
+    let nextFontWeight = base.fontWeight;
+    if (Object.prototype.hasOwnProperty.call(overrides, 'fontWeight')) {
+        const weightCandidate = Number(overrides.fontWeight);
+        if (Number.isFinite(weightCandidate) && weightCandidate > 0) {
+            nextFontWeight = weightCandidate;
+        }
+    } else if (TEXT_FONT_OPTIONS[nextFont]?.defaultWeight) {
+        nextFontWeight = TEXT_FONT_OPTIONS[nextFont].defaultWeight;
+    }
+
+    let nextFontStyle = base.fontStyle;
+    if (typeof overrides.fontStyle === 'string') {
+        const normalizedStyle = overrides.fontStyle.toLowerCase();
+        if (normalizedStyle === 'normal' || normalizedStyle === 'italic' || normalizedStyle === 'oblique') {
+            nextFontStyle = normalizedStyle;
+        }
+    } else if (TEXT_FONT_OPTIONS[nextFont]?.defaultStyle) {
+        nextFontStyle = TEXT_FONT_OPTIONS[nextFont].defaultStyle;
+    }
+
+    let nextColor = base.color;
+    if (typeof overrides.color === 'string') {
+        nextColor = normalizeTextHexColor(overrides.color, nextColor);
+    }
+
+    let nextAlign = base.align;
+    if (typeof overrides.align === 'string' && TEXT_ALIGNMENTS.has(overrides.align)) {
+        nextAlign = overrides.align;
+    }
+
+    let nextTransform = base.transform;
+    if (typeof overrides.transform === 'string' && TEXT_TRANSFORMS.has(overrides.transform)) {
+        nextTransform = overrides.transform;
+    }
+
+    let nextLetterSpacing = base.letterSpacing;
+    if (Object.prototype.hasOwnProperty.call(overrides, 'letterSpacing')) {
+        const spacingCandidate = Number(overrides.letterSpacing);
+        if (Number.isFinite(spacingCandidate)) {
+            nextLetterSpacing = spacingCandidate;
+        }
+    }
+
+    let nextLineHeight = base.lineHeight;
+    if (Object.prototype.hasOwnProperty.call(overrides, 'lineHeight')) {
+        const lineHeightCandidate = Number(overrides.lineHeight);
+        if (Number.isFinite(lineHeightCandidate) && lineHeightCandidate > 0) {
+            nextLineHeight = lineHeightCandidate;
+        }
+    }
+
+    return {
+        preset: nextPreset,
+        font: nextFont,
+        color: nextColor,
+        align: nextAlign,
+        transform: nextTransform,
+        letterSpacing: nextLetterSpacing,
+        lineHeight: nextLineHeight,
+        fontWeight: nextFontWeight,
+        fontStyle: nextFontStyle,
+    };
+}
+
+function getDefaultTextTimelineItemStyle(timelineItem) {
+    const fallback = resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+    if (!timelineItem) {
+        return fallback;
+    }
+    const rawStyle = timelineItem.dataset?.textStyle || '';
+    if (!rawStyle) {
+        return fallback;
+    }
+    try {
+        const parsed = JSON.parse(rawStyle);
+        return resolveDefaultTextStyle(parsed);
+    } catch (error) {
+        console.warn('Unable to parse stored text style. Falling back to defaults.', error);
+        return fallback;
+    }
+}
+
+function storeDefaultTextTimelineItemStyle(timelineItem, styleOverrides = {}) {
+    if (!timelineItem) {
+        return resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+    }
+
+    const current = getDefaultTextTimelineItemStyle(timelineItem);
+    const merged = resolveDefaultTextStyle({ ...current, ...styleOverrides });
+
+    try {
+        timelineItem.dataset.textStyle = JSON.stringify(merged);
+    } catch (error) {
+        timelineItem.dataset.textStyle = JSON.stringify({
+            preset: merged.preset,
+            font: merged.font,
+            color: merged.color,
+            align: merged.align,
+            transform: merged.transform,
+            letterSpacing: merged.letterSpacing,
+            lineHeight: merged.lineHeight,
+            fontWeight: merged.fontWeight,
+            fontStyle: merged.fontStyle,
+        });
+    }
+
+    timelineItem.dataset.textPreset = merged.preset;
+    timelineItem.dataset.textFont = merged.font;
+    timelineItem.dataset.textColor = merged.color;
+    timelineItem.dataset.textAlign = merged.align;
+    timelineItem.dataset.textTransform = merged.transform;
+
+    return merged;
+}
+
+function applyDefaultTextTransform(value, transform) {
+    const source = value === null || value === undefined ? '' : String(value);
+    if (!transform || transform === 'none') {
+        return source;
+    }
+    if (transform === 'uppercase') {
+        return source.toUpperCase();
+    }
+    if (transform === 'lowercase') {
+        return source.toLowerCase();
+    }
+    if (transform === 'capitalize') {
+        const lower = source.toLowerCase();
+        return lower.replace(/\b([a-z])/g, (match, char) => char.toUpperCase());
+    }
+    return source;
+}
+
+function applyDefaultTextStyleToPreviewEditor(style) {
+    if (!previewTextEditor) {
+        return;
+    }
+    const resolved = resolveDefaultTextStyle(style);
+    const fontStack = getTextFontStack(resolved.font);
+    previewTextEditor.style.fontFamily = fontStack;
+    previewTextEditor.style.fontWeight = `${resolved.fontWeight}`;
+    previewTextEditor.style.fontStyle = resolved.fontStyle || 'normal';
+    previewTextEditor.style.color = resolved.color;
+    previewTextEditor.style.textAlign = resolved.align;
+    previewTextEditor.style.textTransform = resolved.transform;
+    previewTextEditor.style.letterSpacing = `${resolved.letterSpacing}em`;
+    previewTextEditor.style.lineHeight = resolved.lineHeight ? `${resolved.lineHeight}` : '';
+    if (resolved.align === 'left') {
+        previewTextEditor.style.justifyContent = 'flex-start';
+    } else if (resolved.align === 'right') {
+        previewTextEditor.style.justifyContent = 'flex-end';
+    } else {
+        previewTextEditor.style.justifyContent = 'center';
+    }
+}
+
+function resetPreviewTextEditorStyles() {
+    if (!previewTextEditor) {
+        return;
+    }
+    previewTextEditor.style.removeProperty('font-family');
+    previewTextEditor.style.removeProperty('font-weight');
+    previewTextEditor.style.removeProperty('font-style');
+    previewTextEditor.style.removeProperty('color');
+    previewTextEditor.style.removeProperty('text-align');
+    previewTextEditor.style.removeProperty('text-transform');
+    previewTextEditor.style.removeProperty('letter-spacing');
+    previewTextEditor.style.removeProperty('line-height');
+    previewTextEditor.style.removeProperty('justify-content');
+}
+
+function updateTextEffectsControlsFromStyle(style) {
+    if (!textPresetSelect || !textFontSelect || !textColorInput || !textColorValueInput || !textTransformSelect) {
+        return;
+    }
+    const resolved = resolveDefaultTextStyle(style);
+    const presetValue = resolved.preset === CUSTOM_TEXT_STYLE_KEY
+        || !Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, resolved.preset)
+        ? CUSTOM_TEXT_STYLE_KEY
+        : resolved.preset;
+    if (textPresetSelect.value !== presetValue) {
+        textPresetSelect.value = presetValue;
+    }
+    const fontValue = TEXT_FONT_OPTIONS[resolved.font] ? resolved.font : getDefaultTextFontKey();
+    if (textFontSelect.value !== fontValue) {
+        textFontSelect.value = fontValue;
+    }
+    if (textColorInput.value !== resolved.color) {
+        textColorInput.value = resolved.color;
+    }
+    if (textColorValueInput.value !== resolved.color) {
+        textColorValueInput.value = resolved.color;
+    }
+    const transformValue = TEXT_TRANSFORMS.has(resolved.transform)
+        ? resolved.transform
+        : 'none';
+    if (textTransformSelect.value !== transformValue) {
+        textTransformSelect.value = transformValue;
+    }
+    if (Array.isArray(textAlignmentButtons) && textAlignmentButtons.length) {
+        textAlignmentButtons.forEach((button) => {
+            const alignKey = button.dataset?.textAlign || '';
+            const isActive = alignKey === resolved.align;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    }
+}
+
+function setTextEffectsAvailability(isEnabled) {
+    if (textEffectsFieldset) {
+        if (isEnabled) {
+            textEffectsFieldset.removeAttribute('disabled');
+        } else {
+            textEffectsFieldset.setAttribute('disabled', '');
+        }
+    }
+    if (textEffectsPlaceholder) {
+        textEffectsPlaceholder.hidden = Boolean(isEnabled);
+    }
+}
+
+function updateActiveTextStyle(partialStyle = {}, options = {}) {
+    const timelineItem = previewTextEditorState.currentItem;
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const current = getDefaultTextTimelineItemStyle(timelineItem);
+    const mergedInput = { ...current, ...partialStyle };
+
+    if (!Object.prototype.hasOwnProperty.call(partialStyle, 'preset')
+        && current.preset !== CUSTOM_TEXT_STYLE_KEY
+        && options.keepPreset !== true) {
+        mergedInput.preset = CUSTOM_TEXT_STYLE_KEY;
+    }
+
+    const resolved = storeDefaultTextTimelineItemStyle(timelineItem, mergedInput);
+    applyDefaultTextStyleToPreviewEditor(resolved);
+    updateTextEffectsControlsFromStyle(resolved);
+
+    const committedText = timelineItem.dataset?.textContent || '';
+    updateDefaultTextTimelineItemContent(timelineItem, committedText, resolved, {
+        skipStateUpdate: true,
+    });
+
+    return resolved;
+}
+
+let activeTextPaneKey = 'templates';
+
+function setActiveTextPane(key = 'templates') {
+    const nextKey = key === 'effects' ? 'effects' : 'templates';
+    activeTextPaneKey = nextKey;
+
+    if (Array.isArray(textPaneTabs) && textPaneTabs.length) {
+        textPaneTabs.forEach((tab) => {
+            const tabKey = tab?.dataset?.textPaneTab || 'templates';
+            const isActive = tabKey === nextKey;
+            tab.classList.toggle('is-active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.setAttribute('tabindex', isActive ? '0' : '-1');
+        });
+    }
+
+    if (Array.isArray(textPaneSections) && textPaneSections.length) {
+        textPaneSections.forEach((section) => {
+            const sectionKey = section?.dataset?.textPaneSection || 'templates';
+            const matches = sectionKey === nextKey;
+            section.classList.toggle('is-active', matches);
+            if (matches) {
+                section.removeAttribute('hidden');
+            } else {
+                section.setAttribute('hidden', '');
+            }
+        });
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.activateTextEffectsPane = (key) => {
+        setActiveTextPane(key);
+    };
+}
+
+function applyTextStylePreset(presetKey) {
+    const timelineItem = previewTextEditorState.currentItem;
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const key = Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, presetKey)
+        ? presetKey
+        : DEFAULT_TEXT_STYLE_PRESET;
+    const preset = TEXT_STYLE_PRESETS[key];
+    const baseStyle = {
+        preset: key,
+        font: preset.font,
+        color: preset.color,
+        align: preset.align,
+        transform: preset.transform,
+        letterSpacing: preset.letterSpacing,
+        lineHeight: preset.lineHeight,
+        fontWeight: preset.fontWeight,
+        fontStyle: preset.fontStyle,
+    };
+
+    const resolved = storeDefaultTextTimelineItemStyle(timelineItem, baseStyle);
+    applyDefaultTextStyleToPreviewEditor(resolved);
+    updateTextEffectsControlsFromStyle(resolved);
+
+    const committedText = timelineItem.dataset?.textContent || '';
+    updateDefaultTextTimelineItemContent(timelineItem, committedText, resolved, {
+        skipStateUpdate: true,
+    });
+
+    return resolved;
+}
+
+setActiveTextPane(activeTextPaneKey);
+setTextEffectsAvailability(false);
+updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+
+if (Array.isArray(textPaneTabs) && textPaneTabs.length) {
+    textPaneTabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            const targetKey = tab?.dataset?.textPaneTab || 'templates';
+            setActiveTextPane(targetKey);
+        });
+        tab.addEventListener('keydown', (event) => {
+            if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+                return;
+            }
+            event.preventDefault();
+            const direction = event.key === 'ArrowRight' ? 1 : -1;
+            const currentIndex = textPaneTabs.indexOf(tab);
+            const nextIndex = (currentIndex + direction + textPaneTabs.length) % textPaneTabs.length;
+            const nextTab = textPaneTabs[nextIndex];
+            if (nextTab) {
+                setActiveTextPane(nextTab.dataset?.textPaneTab || 'templates');
+                nextTab.focus({ preventScroll: true });
+            }
+        });
+    });
+}
+
+if (textPresetSelect) {
+    textPresetSelect.addEventListener('change', () => {
+        const value = textPresetSelect.value;
+        if (value === CUSTOM_TEXT_STYLE_KEY) {
+            updateActiveTextStyle({ preset: CUSTOM_TEXT_STYLE_KEY }, { keepPreset: true });
+            return;
+        }
+        applyTextStylePreset(value);
+    });
+}
+
+if (textFontSelect) {
+    textFontSelect.addEventListener('change', () => {
+        const value = textFontSelect.value;
+        if (!value) {
+            return;
+        }
+        updateActiveTextStyle({ font: value });
+    });
+}
+
+if (textColorInput) {
+    textColorInput.addEventListener('input', (event) => {
+        const nextColor = event.target?.value || '#F8FAFC';
+        const style = updateActiveTextStyle({ color: nextColor });
+        const resolvedColor = style ? style.color : normalizeTextHexColor(nextColor);
+        if (textColorValueInput) {
+            textColorValueInput.value = resolvedColor;
+        }
+        textColorInput.value = resolvedColor;
+    });
+}
+
+if (textColorValueInput) {
+    const syncColorFromText = () => {
+        const timelineItem = previewTextEditorState.currentItem;
+        const fallbackStyle = timelineItem && isDefaultTextTimelineItem(timelineItem)
+            ? getDefaultTextTimelineItemStyle(timelineItem)
+            : resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+        const raw = textColorValueInput.value;
+        const normalized = normalizeTextHexColor(raw, fallbackStyle.color);
+        const style = updateActiveTextStyle({ color: normalized });
+        const resolvedColor = style ? style.color : normalized;
+        textColorValueInput.value = resolvedColor;
+        if (textColorInput) {
+            textColorInput.value = resolvedColor;
+        }
+    };
+    textColorValueInput.addEventListener('change', syncColorFromText);
+    textColorValueInput.addEventListener('blur', syncColorFromText);
+}
+
+if (Array.isArray(textAlignmentButtons) && textAlignmentButtons.length) {
+    textAlignmentButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const alignKey = button?.dataset?.textAlign;
+            if (!alignKey || !TEXT_ALIGNMENTS.has(alignKey)) {
+                return;
+            }
+            updateActiveTextStyle({ align: alignKey });
+        });
+    });
+}
+
+if (textTransformSelect) {
+    textTransformSelect.addEventListener('change', () => {
+        const value = textTransformSelect.value;
+        if (!TEXT_TRANSFORMS.has(value)) {
+            return;
+        }
+        updateActiveTextStyle({ transform: value });
+    });
+}
+
 const previewTextEditorState = {
     isEnabled: false,
     currentItem: null,
@@ -309,7 +858,7 @@ function shouldAutoFitDefaultTextTimelineItem(timelineItem) {
     return timelineItem.dataset?.autoFitText !== 'false';
 }
 
-function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
+function autoFitDefaultTextTimelineItem(timelineItem, textContent, styleOverride = null) {
     if (!shouldAutoFitDefaultTextTimelineItem(timelineItem)) {
         return;
     }
@@ -321,7 +870,7 @@ function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
 
     let transform = null;
     try {
-        transform = window.calculateDefaultTextTemplateTransform(textContent);
+        transform = window.calculateDefaultTextTemplateTransform(textContent, styleOverride);
     } catch (error) {
         console.warn('Unable to calculate text overlay dimensions.', error);
         transform = null;
@@ -419,6 +968,14 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     const placeCursorAtEnd = options.placeCursorAtEnd !== false;
 
     const storedValue = timelineItem.dataset?.textContent || '';
+    const style = getDefaultTextTimelineItemStyle(timelineItem);
+    applyDefaultTextStyleToPreviewEditor(style);
+    updateTextEffectsControlsFromStyle(style);
+    setTextEffectsAvailability(true);
+
+    if (typeof setActiveTextPane === 'function') {
+        setActiveTextPane('effects');
+    }
 
     previewTextEditor.hidden = false;
     if (previewTextEditor.textContent !== storedValue) {
@@ -487,6 +1044,13 @@ function disablePreviewTextEditor(options = {}) {
         }
     }
 
+    resetPreviewTextEditorStyles();
+    setTextEffectsAvailability(false);
+    updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+    if (!options.keepPaneActive && typeof setActiveTextPane === 'function') {
+        setActiveTextPane('templates');
+    }
+
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-text-overlay', 'is-text-editing');
     }
@@ -505,6 +1069,8 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
         if (previewTextEditorState.isEnabled) {
             disablePreviewTextEditor(options);
         }
+        setTextEffectsAvailability(false);
+        updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
         return;
     }
 
@@ -517,6 +1083,14 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
     } else if (previewTextEditor.textContent !== storedValue) {
         previewTextEditor.textContent = storedValue;
         updatePreviewTextEditorPlaceholderState(storedValue);
+    }
+
+    const style = getDefaultTextTimelineItemStyle(timelineItem);
+    applyDefaultTextStyleToPreviewEditor(style);
+    updateTextEffectsControlsFromStyle(style);
+    setTextEffectsAvailability(true);
+    if (options.forceFocus && typeof setActiveTextPane === 'function') {
+        setActiveTextPane('effects');
     }
 
     previewTextEditorState.currentItem = timelineItem;
@@ -542,15 +1116,18 @@ function schedulePreviewTextEditorCommit() {
     }, PREVIEW_TEXT_COMMIT_DELAY_MS);
 }
 
-function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
+function updateDefaultTextTimelineItemContent(timelineItem, normalizedText, styleOverride = null, options = {}) {
     if (!timelineItem) {
         return;
     }
 
     const committedValue = normalizedText;
-    const hasVisibleText = committedValue.trim().length > 0;
+    const style = resolveDefaultTextStyle(styleOverride || getDefaultTextTimelineItemStyle(timelineItem));
+    const trimmedValue = committedValue.trim();
+    const hasVisibleText = trimmedValue.length > 0;
+    const overlaySource = hasVisibleText ? committedValue : getDefaultTextTemplateLabel();
     const displayName = hasVisibleText
-        ? committedValue
+        ? applyDefaultTextTransform(committedValue, style.transform)
         : getDefaultTextTemplateLabel();
 
     timelineItem.dataset.textContent = committedValue;
@@ -566,7 +1143,7 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
 
     if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
         try {
-            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName);
+            nextObjectUrl = window.createDefaultTextOverlayObjectURL(overlaySource, style);
         } catch (error) {
             console.warn('Failed to generate text overlay preview.', error);
             nextObjectUrl = previousObjectUrl;
@@ -596,9 +1173,11 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
         refreshActiveOverlayLayers();
     }
 
-    autoFitDefaultTextTimelineItem(timelineItem, displayName);
+    autoFitDefaultTextTimelineItem(timelineItem, overlaySource, style);
 
-    previewTextEditorState.lastCommittedValue = committedValue;
+    if (!options.skipStateUpdate) {
+        previewTextEditorState.lastCommittedValue = committedValue;
+    }
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
 }
 
@@ -625,7 +1204,8 @@ function commitPreviewTextEditorContent(options = {}) {
         return;
     }
 
-    updateDefaultTextTimelineItemContent(timelineItem, normalized);
+    const style = getDefaultTextTimelineItemStyle(timelineItem);
+    updateDefaultTextTimelineItemContent(timelineItem, normalized, style);
 }
 
 function onPreviewTextEditorInput() {
