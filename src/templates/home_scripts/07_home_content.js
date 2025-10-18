@@ -1606,6 +1606,8 @@ const TIMELINE_SHORTCUT_HANDLERS = Object.freeze({
     z: (event) => (event.shiftKey ? false : undoLastTimelineAction()),
 });
 
+const DEFAULT_TEXT_SHORTCUT_KEYS = new Set(['c', 'v', 'z']);
+
 function handleTimelineKeyboardShortcuts(event) {
     if (!event || event.defaultPrevented || event.repeat) {
         return;
@@ -1621,11 +1623,48 @@ function handleTimelineKeyboardShortcuts(event) {
         return;
     }
 
-    if (isTimelineShortcutTargetEditable(event.target)) {
+    const handler = TIMELINE_SHORTCUT_HANDLERS[key];
+
+    const targetNode = event.target;
+    const targetIsPreviewTextEditor = Boolean(
+        previewTextEditor
+            && targetNode
+            && typeof previewTextEditor.contains === 'function'
+            && (targetNode === previewTextEditor || previewTextEditor.contains(targetNode))
+    );
+
+    const activeDefaultTextItem = typeof getActiveDefaultTextTimelineItem === 'function'
+        ? getActiveDefaultTextTimelineItem()
+        : null;
+
+    let allowTextEditorShortcut = Boolean(
+        handler
+            && targetIsPreviewTextEditor
+            && activeDefaultTextItem
+            && DEFAULT_TEXT_SHORTCUT_KEYS.has(key),
+    );
+
+    if (allowTextEditorShortcut && typeof window !== 'undefined' && typeof window.getSelection === 'function') {
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed) {
+            const anchorElement = selection.anchorNode instanceof Element
+                ? selection.anchorNode
+                : selection.anchorNode?.parentElement;
+            const focusElement = selection.focusNode instanceof Element
+                ? selection.focusNode
+                : selection.focusNode?.parentElement;
+            const selectionWithinEditor = (anchorElement && previewTextEditor.contains(anchorElement))
+                || (focusElement && previewTextEditor.contains(focusElement));
+            if (selectionWithinEditor) {
+                allowTextEditorShortcut = false;
+            }
+        }
+    }
+
+    if (!allowTextEditorShortcut && isTimelineShortcutTargetEditable(event.target)) {
         return;
     }
 
-    const handler = TIMELINE_SHORTCUT_HANDLERS[key];
     if (typeof handler !== 'function') {
         return;
     }
