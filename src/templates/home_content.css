@@ -833,6 +833,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .settings-section.is-active {
     display: block;
     height: var(--settings-panel-height, auto);
+    max-height: 360px;
     overflow-y: auto;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
