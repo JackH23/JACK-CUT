@@ -1287,6 +1287,27 @@ if (textEffectAlignmentButtons.length) {
     });
 }
 
+if (textStyleToolbarButtons.length) {
+    textStyleToolbarButtons.forEach((button) => {
+        const styleKey = button.dataset.textStyle;
+        if (!styleKey) {
+            return;
+        }
+        const handleToggle = () => {
+            toggleActiveTextStyle(styleKey);
+        };
+        button.addEventListener('click', handleToggle);
+        button.addEventListener('keydown', (event) => {
+            const { key } = event;
+            if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') {
+                return;
+            }
+            event.preventDefault();
+            handleToggle();
+        });
+    });
+}
+
 syncTextEffectsControlsToTimelineItem(activeTimelineItem || null);
 
 if (previewOverlayStack) {

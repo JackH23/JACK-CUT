@@ -181,6 +181,9 @@ const textEffectTransformSelect = document.getElementById('text-effect-transform
 const textEffectAlignmentButtons = textEffectsPanel
     ? Array.from(textEffectsPanel.querySelectorAll('[data-text-align]'))
     : [];
+const textStyleToolbarButtons = textEffectsPanel
+    ? Array.from(textEffectsPanel.querySelectorAll('[data-text-style]'))
+    : [];
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
