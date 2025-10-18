@@ -1600,8 +1600,14 @@ function removeTimelineItem(timelineItem, options = {}) {
     return true;
 }
 
+const TIMELINE_SHORTCUT_HANDLERS = Object.freeze({
+    c: () => copyActiveTimelineItemToClipboard(),
+    v: () => pasteTimelineClipboard(),
+    z: (event) => (event.shiftKey ? false : undoLastTimelineAction()),
+});
+
 function handleTimelineKeyboardShortcuts(event) {
-    if (!event || event.defaultPrevented) {
+    if (!event || event.defaultPrevented || event.repeat) {
         return;
     }
 
@@ -1619,24 +1625,14 @@ function handleTimelineKeyboardShortcuts(event) {
         return;
     }
 
-    if (key === 'c') {
-        if (copyActiveTimelineItemToClipboard()) {
-            event.preventDefault();
-        }
+    const handler = TIMELINE_SHORTCUT_HANDLERS[key];
+    if (typeof handler !== 'function') {
         return;
     }
 
-    if (key === 'v') {
-        if (pasteTimelineClipboard()) {
-            event.preventDefault();
-        }
-        return;
-    }
-
-    if (key === 'z' && !event.shiftKey) {
-        if (undoLastTimelineAction()) {
-            event.preventDefault();
-        }
+    const handled = handler(event) === true;
+    if (handled) {
+        event.preventDefault();
     }
 }
 
