@@ -1418,6 +1418,9 @@ function queuePreviewImageFrameReset() {
     schedulePreviewViewportSizeUpdate();
 }
 
+const CREATIVE_CONTROLS_MIN_SCROLL_HEIGHT = 500;
+const CREATIVE_CONTROLS_BOTTOM_OFFSET = 24;
+
 const creativeControlsPanel = document.querySelector('.settings-card');
 let lastCreativeControlsPanelHeight = null;
 
@@ -1432,8 +1435,26 @@ function handlePreviewViewportResized() {
     const height = Math.max(0, previewViewport.clientHeight);
 
     if (creativeControlsPanel) {
-        if (height > 0) {
-            const heightValue = `${Math.round(height)}px`;
+        const panelRect = creativeControlsPanel.getBoundingClientRect();
+        const availableHeight = Math.max(
+            0,
+            window.innerHeight - panelRect.top - CREATIVE_CONTROLS_BOTTOM_OFFSET,
+        );
+
+        let targetHeight = height > 0 ? height : 0;
+
+        if (availableHeight > 0) {
+            targetHeight = Math.max(availableHeight, CREATIVE_CONTROLS_MIN_SCROLL_HEIGHT);
+
+            if (targetHeight > availableHeight) {
+                targetHeight = availableHeight;
+            }
+        } else if (targetHeight < CREATIVE_CONTROLS_MIN_SCROLL_HEIGHT) {
+            targetHeight = CREATIVE_CONTROLS_MIN_SCROLL_HEIGHT;
+        }
+
+        if (targetHeight > 0) {
+            const heightValue = `${Math.round(targetHeight)}px`;
             if (lastCreativeControlsPanelHeight !== heightValue) {
                 creativeControlsPanel.style.setProperty('--settings-panel-height', heightValue);
                 lastCreativeControlsPanelHeight = heightValue;
