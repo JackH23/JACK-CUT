@@ -183,7 +183,10 @@ function applyPreviewImageTransform(alignmentOverride) {
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
-            const fontScale = getDefaultTextTemplateFontScale();
+            const activeTextStyle = previewTextEditorState.currentItem
+                ? getTimelineTextStyle(previewTextEditorState.currentItem)
+                : null;
+            const fontScale = getDefaultTextTemplateFontScale(activeTextStyle);
             const fontSizeFromHeight = previewImageTransform.height * fontScale;
             const fontSizeFromWidth = previewImageTransform.width * 0.18;
             const widthLimitedFontSize = fontSizeFromWidth > 0
@@ -242,6 +245,53 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
 const DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK = 32;
 const DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK = 20;
 
+const TEXT_FONT_LIBRARY = {
+    inter: {
+        key: 'inter',
+        label: 'Inter',
+        family: "Inter, 'Segoe UI', system-ui, sans-serif",
+        weight: 600,
+        letterSpacingScale: 0.04,
+    },
+    poppins: {
+        key: 'poppins',
+        label: 'Poppins',
+        family: "'Poppins', 'Segoe UI', system-ui, sans-serif",
+        weight: 600,
+        letterSpacingScale: 0.045,
+    },
+    playfair: {
+        key: 'playfair',
+        label: 'Playfair Display',
+        family: "'Playfair Display', 'Times New Roman', serif",
+        weight: 600,
+        letterSpacingScale: 0.02,
+    },
+    mono: {
+        key: 'mono',
+        label: 'JetBrains Mono',
+        family: "'JetBrains Mono', 'Fira Code', monospace",
+        weight: 500,
+        letterSpacingScale: 0.02,
+    },
+};
+
+const TEXT_ALIGNMENT_OPTIONS = new Set(['left', 'center', 'right']);
+const TEXT_TRANSFORM_OPTIONS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
+const TEXT_FONT_SIZE_MIN = 48;
+const TEXT_FONT_SIZE_MAX = 220;
+
+const DEFAULT_TEXT_STYLE = {
+    fontKey: 'inter',
+    fontFamily: TEXT_FONT_LIBRARY.inter.family,
+    fontWeight: TEXT_FONT_LIBRARY.inter.weight,
+    letterSpacingScale: TEXT_FONT_LIBRARY.inter.letterSpacingScale,
+    fontSize: DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK,
+    color: '#F8FAFC',
+    align: 'center',
+    transform: 'none',
+};
+
 const previewTextEditorState = {
     isEnabled: false,
     currentItem: null,
@@ -264,11 +314,16 @@ function getDefaultTextTemplateLabel() {
     return DEFAULT_TEXT_TEMPLATE_PLACEHOLDER;
 }
 
-function getDefaultTextTemplateFontScale() {
-    const baseFontSize = (typeof window !== 'undefined'
-            && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE))
-        ? Number(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE)
-        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK;
+function getDefaultTextTemplateFontScale(style = null) {
+    const customFontSize = style && Number.isFinite(style.fontSize)
+        ? Number(style.fontSize)
+        : null;
+    const baseFontSize = customFontSize !== null
+        ? customFontSize
+        : ((typeof window !== 'undefined'
+                && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE))
+            ? Number(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE)
+            : DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK);
     const baseCanvasHeight = (typeof window !== 'undefined'
             && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT))
         ? Number(window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT)
@@ -309,7 +364,7 @@ function shouldAutoFitDefaultTextTimelineItem(timelineItem) {
     return timelineItem.dataset?.autoFitText !== 'false';
 }
 
-function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
+function autoFitDefaultTextTimelineItem(timelineItem, textContent, style = null) {
     if (!shouldAutoFitDefaultTextTimelineItem(timelineItem)) {
         return;
     }
@@ -321,7 +376,7 @@ function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
 
     let transform = null;
     try {
-        transform = window.calculateDefaultTextTemplateTransform(textContent);
+        transform = window.calculateDefaultTextTemplateTransform(textContent, style || getTimelineTextStyle(timelineItem));
     } catch (error) {
         console.warn('Unable to calculate text overlay dimensions.', error);
         transform = null;
@@ -359,6 +414,310 @@ function normalizePreviewTextEditorValue(value) {
         return '';
     }
     return String(value);
+}
+
+function getFontLibraryEntry(fontKey) {
+    if (!fontKey) {
+        return TEXT_FONT_LIBRARY[DEFAULT_TEXT_STYLE.fontKey];
+    }
+    const normalizedKey = String(fontKey).toLowerCase();
+    return TEXT_FONT_LIBRARY[normalizedKey] || TEXT_FONT_LIBRARY[DEFAULT_TEXT_STYLE.fontKey];
+}
+
+function clampTextFontSize(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return DEFAULT_TEXT_STYLE.fontSize;
+    }
+    return Math.min(TEXT_FONT_SIZE_MAX, Math.max(TEXT_FONT_SIZE_MIN, numeric));
+}
+
+function normalizeTextColor(value) {
+    if (typeof value !== 'string') {
+        return DEFAULT_TEXT_STYLE.color;
+    }
+    const trimmed = value.trim();
+    if (/^#([0-9a-fA-F]{6})$/.test(trimmed)) {
+        return `#${trimmed.slice(1).toUpperCase()}`;
+    }
+    if (/^#([0-9a-fA-F]{3})$/.test(trimmed)) {
+        const [, r, g, b] = trimmed.split('');
+        return `#${`${r}${r}${g}${g}${b}${b}`.toUpperCase()}`;
+    }
+    return DEFAULT_TEXT_STYLE.color;
+}
+
+function getDefaultTextStyle() {
+    return { ...DEFAULT_TEXT_STYLE };
+}
+
+function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
+    if (!timelineItem) {
+        return getDefaultTextStyle();
+    }
+
+    const fontEntry = getFontLibraryEntry(styleOverrides.fontKey || timelineItem.dataset.textFontKey);
+    const didChangeFontKey = typeof styleOverrides.fontKey === 'string';
+    const fontFamily = styleOverrides.fontFamily
+        || (didChangeFontKey
+            ? fontEntry.family
+            : (timelineItem.dataset.textFontFamily || fontEntry.family));
+    let fontWeight = fontEntry.weight;
+    const fontWeightOverride = styleOverrides.fontWeight;
+    if (Number.isFinite(Number(fontWeightOverride))) {
+        fontWeight = Number(fontWeightOverride);
+    } else if (!didChangeFontKey) {
+        const datasetWeight = Number(timelineItem.dataset.textFontWeight);
+        if (Number.isFinite(datasetWeight)) {
+            fontWeight = datasetWeight;
+        }
+    }
+
+    let letterSpacingScale = fontEntry.letterSpacingScale;
+    const letterSpacingOverride = styleOverrides.letterSpacingScale;
+    if (Number.isFinite(Number(letterSpacingOverride))) {
+        letterSpacingScale = Number(letterSpacingOverride);
+    } else if (!didChangeFontKey) {
+        const datasetLetterSpacing = Number(timelineItem.dataset.textLetterSpacingScale);
+        if (Number.isFinite(datasetLetterSpacing)) {
+            letterSpacingScale = datasetLetterSpacing;
+        }
+    }
+    const fontSizeCandidate = styleOverrides.fontSize ?? timelineItem.dataset.textFontSize;
+    const fontSize = clampTextFontSize(fontSizeCandidate);
+    const color = normalizeTextColor(styleOverrides.color || timelineItem.dataset.textColor || DEFAULT_TEXT_STYLE.color);
+    const alignCandidate = styleOverrides.align || timelineItem.dataset.textAlign;
+    const align = TEXT_ALIGNMENT_OPTIONS.has(alignCandidate) ? alignCandidate : DEFAULT_TEXT_STYLE.align;
+    const transformCandidate = styleOverrides.transform || timelineItem.dataset.textTransform;
+    const transform = TEXT_TRANSFORM_OPTIONS.has(transformCandidate) ? transformCandidate : DEFAULT_TEXT_STYLE.transform;
+
+    timelineItem.dataset.textFontKey = fontEntry.key;
+    timelineItem.dataset.textFontFamily = fontFamily;
+    timelineItem.dataset.textFontWeight = String(fontWeight);
+    timelineItem.dataset.textLetterSpacingScale = String(letterSpacingScale);
+    timelineItem.dataset.textFontSize = String(fontSize);
+    timelineItem.dataset.textColor = color;
+    timelineItem.dataset.textAlign = align;
+    timelineItem.dataset.textTransform = transform;
+
+    return {
+        fontKey: fontEntry.key,
+        fontFamily,
+        fontWeight,
+        letterSpacingScale,
+        fontSize,
+        color,
+        align,
+        transform,
+    };
+}
+
+function initializeDefaultTextStyleForTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+    storeTimelineTextStyle(timelineItem, DEFAULT_TEXT_STYLE);
+}
+
+function getTimelineTextStyle(timelineItem) {
+    if (!timelineItem) {
+        return getDefaultTextStyle();
+    }
+
+    const fontKey = timelineItem.dataset.textFontKey || DEFAULT_TEXT_STYLE.fontKey;
+    const fontEntry = getFontLibraryEntry(fontKey);
+    const fontFamily = timelineItem.dataset.textFontFamily || fontEntry.family;
+    const fontWeightCandidate = Number(timelineItem.dataset.textFontWeight);
+    const fontWeight = Number.isFinite(fontWeightCandidate) ? fontWeightCandidate : fontEntry.weight;
+    const letterSpacingCandidate = Number(timelineItem.dataset.textLetterSpacingScale);
+    const letterSpacingScale = Number.isFinite(letterSpacingCandidate)
+        ? letterSpacingCandidate
+        : fontEntry.letterSpacingScale;
+    const fontSizeCandidate = Number(timelineItem.dataset.textFontSize);
+    const fontSize = Number.isFinite(fontSizeCandidate)
+        ? clampTextFontSize(fontSizeCandidate)
+        : DEFAULT_TEXT_STYLE.fontSize;
+    const color = normalizeTextColor(timelineItem.dataset.textColor || DEFAULT_TEXT_STYLE.color);
+    const alignCandidate = timelineItem.dataset.textAlign;
+    const align = TEXT_ALIGNMENT_OPTIONS.has(alignCandidate) ? alignCandidate : DEFAULT_TEXT_STYLE.align;
+    const transformCandidate = timelineItem.dataset.textTransform;
+    const transform = TEXT_TRANSFORM_OPTIONS.has(transformCandidate)
+        ? transformCandidate
+        : DEFAULT_TEXT_STYLE.transform;
+
+    return {
+        fontKey: fontEntry.key,
+        fontFamily,
+        fontWeight,
+        letterSpacingScale,
+        fontSize,
+        color,
+        align,
+        transform,
+    };
+}
+
+function applyTextStyleToPreviewEditor(styleOverrides = null) {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    const style = styleOverrides || (
+        previewTextEditorState.currentItem
+            ? getTimelineTextStyle(previewTextEditorState.currentItem)
+            : getDefaultTextStyle()
+    );
+
+    previewTextEditor.style.fontFamily = style.fontFamily;
+    previewTextEditor.style.fontWeight = String(style.fontWeight);
+    previewTextEditor.style.letterSpacing = `${style.letterSpacingScale}em`;
+    previewTextEditor.style.color = style.color;
+    previewTextEditor.style.textTransform = style.transform || 'none';
+    previewTextEditor.dataset.align = style.align || 'center';
+}
+
+function getActiveDefaultTextTimelineItem() {
+    if (previewTextEditorState.isEnabled
+        && previewTextEditorState.currentItem
+        && previewTextEditorState.currentItem.isConnected) {
+        return previewTextEditorState.currentItem;
+    }
+    if (activeTimelineItem && isDefaultTextTimelineItem(activeTimelineItem)) {
+        return activeTimelineItem;
+    }
+    return null;
+}
+
+function updateTextEffectsControlsAvailability(isEnabled) {
+    const controls = [
+        textEffectFontSelect,
+        textEffectSizeInput,
+        textEffectColorInput,
+        textEffectTransformSelect,
+    ];
+    controls.forEach((control) => {
+        if (!control) {
+            return;
+        }
+        control.disabled = !isEnabled;
+    });
+    textEffectAlignmentButtons.forEach((button) => {
+        button.disabled = !isEnabled;
+    });
+    if (textEffectsPanel) {
+        if (isEnabled) {
+            textEffectsPanel.removeAttribute('aria-disabled');
+        } else {
+            textEffectsPanel.setAttribute('aria-disabled', 'true');
+        }
+    }
+    if (!isEnabled && textEffectSizeValue) {
+        textEffectSizeValue.textContent = '—';
+    }
+}
+
+function syncTextEffectsControlsToTimelineItem(timelineItem) {
+    if (!textEffectsPanel) {
+        return;
+    }
+
+    const isTextItem = timelineItem && isDefaultTextTimelineItem(timelineItem);
+    updateTextEffectsControlsAvailability(Boolean(isTextItem));
+
+    if (!isTextItem) {
+        textEffectAlignmentButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', 'false');
+            button.classList.remove('is-active');
+        });
+        return;
+    }
+
+    const style = getTimelineTextStyle(timelineItem);
+    if (textEffectFontSelect) {
+        textEffectFontSelect.value = style.fontKey;
+    }
+    if (textEffectSizeInput) {
+        textEffectSizeInput.value = String(Math.round(style.fontSize));
+    }
+    if (textEffectSizeValue) {
+        textEffectSizeValue.textContent = `${Math.round(style.fontSize)} px`;
+    }
+    if (textEffectColorInput) {
+        textEffectColorInput.value = style.color;
+    }
+    if (textEffectTransformSelect) {
+        textEffectTransformSelect.value = style.transform;
+    }
+    textEffectAlignmentButtons.forEach((button) => {
+        const targetAlign = button.dataset.textAlign;
+        const isActive = targetAlign === style.align;
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.classList.toggle('is-active', isActive);
+    });
+}
+
+function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const style = styleOverride ? { ...getTimelineTextStyle(timelineItem), ...styleOverride } : getTimelineTextStyle(timelineItem);
+    const rawText = timelineItem.dataset.textContent || '';
+    const displayName = rawText.trim().length > 0 ? rawText : getDefaultTextTemplateLabel();
+
+    timelineItem.dataset.displayName = displayName;
+    const labelElement = timelineItem.querySelector('span');
+    if (labelElement) {
+        labelElement.textContent = displayName;
+    }
+
+    const previousObjectUrl = timelineItem.dataset.objectUrl || '';
+    let nextObjectUrl = previousObjectUrl;
+
+    if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
+        try {
+            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName, style);
+        } catch (error) {
+            console.warn('Failed to generate text overlay preview.', error);
+            nextObjectUrl = previousObjectUrl;
+        }
+    }
+
+    if (nextObjectUrl && nextObjectUrl !== previousObjectUrl) {
+        timelineItem.dataset.objectUrl = nextObjectUrl;
+        const thumbnail = timelineItem.querySelector('.timeline-thumbnail--text');
+        if (thumbnail) {
+            thumbnail.src = nextObjectUrl;
+        }
+        if (previewImage && previewImage.src !== nextObjectUrl && timelineItem === activeTimelineItem) {
+            previewImage.src = nextObjectUrl;
+        }
+        preloadTimelineImage(nextObjectUrl).catch(() => {});
+        if (previousObjectUrl && previousObjectUrl !== nextObjectUrl) {
+            releaseTimelineImage(previousObjectUrl);
+            try {
+                URL.revokeObjectURL(previousObjectUrl);
+            } catch (error) {
+                // Ignore revoke failures.
+            }
+        }
+    }
+
+    autoFitDefaultTextTimelineItem(timelineItem, displayName, style);
+    refreshActiveOverlayLayers();
+    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || rawText);
+}
+
+function applyTimelineTextStyleUpdates(updates = {}) {
+    const timelineItem = getActiveDefaultTextTimelineItem();
+    if (!timelineItem) {
+        return;
+    }
+
+    const normalizedStyle = storeTimelineTextStyle(timelineItem, updates);
+    applyTextStyleToPreviewEditor(normalizedStyle);
+    regenerateDefaultTextOverlayAssets(timelineItem, normalizedStyle);
+    syncTextEffectsControlsToTimelineItem(timelineItem);
 }
 
 function updatePreviewTextEditorPlaceholderState(valueOverride = null) {
@@ -424,6 +783,9 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     if (previewTextEditor.textContent !== storedValue) {
         previewTextEditor.textContent = storedValue;
     }
+
+    applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
+    syncTextEffectsControlsToTimelineItem(timelineItem);
 
     const inlinePadding = getDefaultTextTemplatePaddingInline();
     const blockPadding = getDefaultTextTemplatePaddingBlock();
@@ -494,6 +856,8 @@ function disablePreviewTextEditor(options = {}) {
     if (typeof refreshActiveOverlayLayers === 'function') {
         refreshActiveOverlayLayers();
     }
+
+    syncTextEffectsControlsToTimelineItem(activeTimelineItem || null);
 }
 
 function syncPreviewTextEditorState(timelineItem, options = {}) {
@@ -521,6 +885,8 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
 
     previewTextEditorState.currentItem = timelineItem;
     previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
+    applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
+    syncTextEffectsControlsToTimelineItem(timelineItem);
 
     if (options.forceFocus && previewTextEditor && document.activeElement !== previewTextEditor) {
         const placeCursorAtEnd = options.placeCursorAtEnd !== false;
@@ -548,56 +914,10 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
     }
 
     const committedValue = normalizedText;
-    const hasVisibleText = committedValue.trim().length > 0;
-    const displayName = hasVisibleText
-        ? committedValue
-        : getDefaultTextTemplateLabel();
-
     timelineItem.dataset.textContent = committedValue;
-    timelineItem.dataset.displayName = displayName;
 
-    const labelElement = timelineItem.querySelector('span');
-    if (labelElement) {
-        labelElement.textContent = displayName;
-    }
-
-    const previousObjectUrl = timelineItem.dataset.objectUrl || '';
-    let nextObjectUrl = previousObjectUrl;
-
-    if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
-        try {
-            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName);
-        } catch (error) {
-            console.warn('Failed to generate text overlay preview.', error);
-            nextObjectUrl = previousObjectUrl;
-        }
-    }
-
-    if (nextObjectUrl && nextObjectUrl !== previousObjectUrl) {
-        timelineItem.dataset.objectUrl = nextObjectUrl;
-        const thumbnail = timelineItem.querySelector('.timeline-thumbnail--text');
-        if (thumbnail) {
-            thumbnail.src = nextObjectUrl;
-        }
-        if (previewImage && previewImage.src !== nextObjectUrl) {
-            previewImage.src = nextObjectUrl;
-        }
-        preloadTimelineImage(nextObjectUrl).catch(() => {});
-        refreshActiveOverlayLayers();
-        if (previousObjectUrl && previousObjectUrl !== nextObjectUrl) {
-            releaseTimelineImage(previousObjectUrl);
-            try {
-                URL.revokeObjectURL(previousObjectUrl);
-            } catch (error) {
-                // Ignore revoke failures.
-            }
-        }
-    } else {
-        refreshActiveOverlayLayers();
-    }
-
-    autoFitDefaultTextTimelineItem(timelineItem, displayName);
-
+    regenerateDefaultTextOverlayAssets(timelineItem);
+    applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
     previewTextEditorState.lastCommittedValue = committedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
 }

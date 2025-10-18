@@ -1231,6 +1231,54 @@ if (previewTextEditor) {
     previewTextEditor.addEventListener('paste', onPreviewTextEditorPaste);
 }
 
+if (textEffectFontSelect) {
+    textEffectFontSelect.addEventListener('change', (event) => {
+        applyTimelineTextStyleUpdates({ fontKey: event.target.value });
+    });
+}
+
+if (textEffectSizeInput) {
+    textEffectSizeInput.addEventListener('input', (event) => {
+        const nextSize = clampTextFontSize(event.target.value);
+        if (textEffectSizeValue) {
+            textEffectSizeValue.textContent = `${Math.round(nextSize)} px`;
+        }
+        applyTimelineTextStyleUpdates({ fontSize: nextSize });
+    });
+}
+
+if (textEffectColorInput) {
+    textEffectColorInput.addEventListener('input', (event) => {
+        applyTimelineTextStyleUpdates({ color: event.target.value });
+    });
+}
+
+if (textEffectTransformSelect) {
+    textEffectTransformSelect.addEventListener('change', (event) => {
+        applyTimelineTextStyleUpdates({ transform: event.target.value });
+    });
+}
+
+if (textEffectAlignmentButtons.length) {
+    textEffectAlignmentButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const targetAlign = button.dataset.textAlign;
+            applyTimelineTextStyleUpdates({ align: targetAlign });
+        });
+        button.addEventListener('keydown', (event) => {
+            const { key } = event;
+            if (key !== 'Enter' && key !== ' ' && key !== 'Spacebar') {
+                return;
+            }
+            event.preventDefault();
+            const targetAlign = button.dataset.textAlign;
+            applyTimelineTextStyleUpdates({ align: targetAlign });
+        });
+    });
+}
+
+syncTextEffectsControlsToTimelineItem(activeTimelineItem || null);
+
 if (previewOverlayStack) {
     previewOverlayStack.addEventListener('pointerdown', onPreviewOverlayPointerDown);
 }

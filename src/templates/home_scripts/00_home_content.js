@@ -170,6 +170,15 @@ const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
+const textEffectsPanel = document.getElementById('text-effects-panel');
+const textEffectFontSelect = document.getElementById('text-effect-font');
+const textEffectSizeInput = document.getElementById('text-effect-size');
+const textEffectSizeValue = document.getElementById('text-effect-size-value');
+const textEffectColorInput = document.getElementById('text-effect-color');
+const textEffectAlignmentButtons = textEffectsPanel
+    ? Array.from(textEffectsPanel.querySelectorAll('[data-text-align]'))
+    : [];
+const textEffectTransformSelect = document.getElementById('text-effect-transform');
 const exportMirrorCanvas = document.createElement('canvas');
 const exportMirrorContext = exportMirrorCanvas.getContext('2d');
 const DEFAULT_EXPORT_QUALITY = '720p';
