@@ -1157,6 +1157,7 @@ function setActiveTimelineItem(item, options = {}) {
     syncAnimationControlsToTimelineItem(activeTimelineItem);
     syncAudioControlsToTimelineItem(activeTimelineItem);
     syncCanvasControlsToTimelineItem(activeTimelineItem);
+    syncTextEffectsControlsToTimelineItem(activeTimelineItem);
     refreshImageDurationApplyAllAvailability();
     const nextProgress = clipProgressOverride !== null
         ? clipProgressOverride
@@ -2198,7 +2199,69 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
 
-function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
+function applyTextTransformToContent(content, transform) {
+    const raw = String(content || '');
+    switch ((transform || 'none').toLowerCase()) {
+    case 'uppercase':
+        return raw.toUpperCase();
+    case 'lowercase':
+        return raw.toLowerCase();
+    case 'capitalize':
+        return raw.replace(/\b\w/g, (char) => char.toUpperCase());
+    default:
+        return raw;
+    }
+}
+
+function resolveTextTemplateStyle(styleOverrides = {}) {
+    const base = (styleOverrides && typeof styleOverrides === 'object') ? styleOverrides : {};
+    const fontFamily = base.fontFamily || (DEFAULT_TEXT_STYLE?.fontFamily || "Inter, 'Segoe UI', system-ui, sans-serif");
+    const fontWeightCandidate = Number(base.fontWeight);
+    const fontWeight = Number.isFinite(fontWeightCandidate)
+        ? fontWeightCandidate
+        : (DEFAULT_TEXT_STYLE?.fontWeight || 600);
+    const letterSpacingCandidate = Number(base.letterSpacingScale);
+    const letterSpacingScale = Number.isFinite(letterSpacingCandidate)
+        ? letterSpacingCandidate
+        : (DEFAULT_TEXT_STYLE?.letterSpacingScale || 0.04);
+    const fontSizeCandidate = Number(base.fontSize);
+    const fontSize = Number.isFinite(fontSizeCandidate)
+        ? clampTextFontSize(fontSizeCandidate)
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
+    const color = typeof normalizeTextColor === 'function'
+        ? normalizeTextColor(base.color || DEFAULT_TEXT_STYLE?.color || '#F8FAFC')
+        : '#F8FAFC';
+    const alignCandidate = base.align;
+    const align = TEXT_ALIGNMENT_OPTIONS?.has?.(alignCandidate)
+        ? alignCandidate
+        : (DEFAULT_TEXT_STYLE?.align || 'center');
+    const transformCandidate = base.transform;
+    const transform = TEXT_TRANSFORM_OPTIONS?.has?.(transformCandidate)
+        ? transformCandidate
+        : (DEFAULT_TEXT_STYLE?.transform || 'none');
+    const paddingInlineCandidate = Number(base.paddingInline);
+    const paddingInline = Number.isFinite(paddingInlineCandidate)
+        ? paddingInlineCandidate
+        : DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    const paddingBlockCandidate = Number(base.paddingBlock);
+    const paddingBlock = Number.isFinite(paddingBlockCandidate)
+        ? paddingBlockCandidate
+        : DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+
+    return {
+        fontFamily,
+        fontWeight,
+        letterSpacingScale,
+        fontSize,
+        color,
+        align,
+        transform,
+        paddingInline,
+        paddingBlock,
+    };
+}
+
+function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
     const fallback = {
         left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
         top: (1 - DEFAULT_TEXT_TEMPLATE_HEIGHT) / 2,
@@ -2212,6 +2275,7 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
+    const style = resolveTextTemplateStyle(styleOverrides);
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
 
@@ -2219,26 +2283,26 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
-    const safeText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
-    const fontDescriptor = `600 ${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}px Inter, 'Segoe UI', system-ui, sans-serif`;
+    const measuredText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
+    const fontDescriptor = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
     context.font = fontDescriptor;
 
-    const metrics = context.measureText(safeText);
+    const metrics = context.measureText(measuredText);
     const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-    const letterSpacing = DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.04;
-    const totalLetterSpacing = Math.max(0, safeText.length - 1) * letterSpacing;
+    const letterSpacing = style.fontSize * style.letterSpacingScale;
+    const totalLetterSpacing = Math.max(0, measuredText.length - 1) * letterSpacing;
     const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
 
     const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
         ? metrics.actualBoundingBoxAscent
-        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.82;
+        : style.fontSize * 0.82;
     const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
         ? metrics.actualBoundingBoxDescent
-        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE * 0.18;
+        : style.fontSize * 0.18;
     const measuredHeight = Math.max(0, ascent + descent);
 
-    const totalWidthPx = measuredWidth + (DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING * 2);
-    const totalHeightPx = measuredHeight + (DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING * 2);
+    const totalWidthPx = measuredWidth + (style.paddingInline * 2);
+    const totalHeightPx = measuredHeight + (style.paddingBlock * 2);
 
     if (!Number.isFinite(totalWidthPx) || !Number.isFinite(totalHeightPx) || totalWidthPx <= 0 || totalHeightPx <= 0) {
         return fallback;
@@ -2320,15 +2384,28 @@ function escapeSvgTextContent(content) {
         .replace(/'/g, '&#39;');
 }
 
-function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL) {
-    const safeText = escapeSvgTextContent(textContent);
+function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
+    const style = resolveTextTemplateStyle(styleOverrides);
+    const transformedText = applyTextTransformToContent(textContent, style.transform);
+    const safeText = escapeSvgTextContent(transformedText);
+    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
+    const anchor = style.align === 'left'
+        ? 'start'
+        : (style.align === 'right' ? 'end' : 'middle');
+    let xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
+    if (style.align === 'left') {
+        xPosition = style.paddingInline;
+    } else if (style.align === 'right') {
+        xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
+    }
+    const letterSpacingPx = Math.max(0, style.fontSize * style.letterSpacingScale);
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
     <style>
-        text { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; }
     </style>
     <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="#F8FAFC" font-size="${DEFAULT_TEXT_TEMPLATE_FONT_SIZE}" font-weight="600" text-anchor="middle" dominant-baseline="middle" letter-spacing="1">
+    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
         ${safeText}
     </text>
 </svg>`;
@@ -2367,19 +2444,23 @@ async function addDefaultTextOverlayToTimeline() {
     const baseDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
     const overlayDuration = baseDuration > 0 ? baseDuration : IMAGE_FRAME_DURATION;
 
-    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL);
-
     const timelineItem = document.createElement('div');
     timelineItem.className = 'timeline-item timeline-item--text';
     timelineItem.setAttribute('role', 'listitem');
     timelineItem.tabIndex = 0;
     timelineItem.dataset.fileType = 'image/svg+xml';
-    timelineItem.dataset.objectUrl = objectURL;
     timelineItem.dataset.displayName = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.templateId = DEFAULT_TEXT_TEMPLATE_ID;
     timelineItem.dataset.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
     timelineItem.dataset.startOffsetMs = String(Math.max(0, Math.round(startTime)));
-    const initialTransform = calculateDefaultTextTemplateTransform(DEFAULT_TEXT_TEMPLATE_LABEL);
+    initializeDefaultTextStyleForTimelineItem(timelineItem);
+    const initialStyle = getTimelineTextStyle ? getTimelineTextStyle(timelineItem) : null;
+    const objectURL = createDefaultTextOverlayObjectURL(DEFAULT_TEXT_TEMPLATE_LABEL, initialStyle || undefined);
+    timelineItem.dataset.objectUrl = objectURL;
+    const initialTransform = calculateDefaultTextTemplateTransform(
+        DEFAULT_TEXT_TEMPLATE_LABEL,
+        initialStyle || undefined,
+    );
     timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
     timelineItem.dataset.autoFitText = 'true';
 

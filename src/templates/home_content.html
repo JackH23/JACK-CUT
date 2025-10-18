@@ -212,6 +212,68 @@
                                 <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
                             </div>
                         </div>
+                        <div class="text-effects" id="text-effects-panel" aria-labelledby="text-effects-title">
+                            <div class="text-effects__header">
+                                <h3 class="text-effects__title" id="text-effects-title">Effects</h3>
+                                <p class="text-effects__description">Fine-tune your overlay typography without leaving the editor.</p>
+                            </div>
+                            <div class="text-effects__grid">
+                                <div class="text-effects__group">
+                                    <label for="text-effect-font">Font</label>
+                                    <select id="text-effect-font">
+                                        <option value="inter">Inter</option>
+                                        <option value="poppins">Poppins</option>
+                                        <option value="playfair">Playfair Display</option>
+                                        <option value="mono">JetBrains Mono</option>
+                                    </select>
+                                </div>
+                                <div class="text-effects__group">
+                                    <label for="text-effect-size">Text size</label>
+                                    <div class="text-effects__slider">
+                                        <input
+                                            type="range"
+                                            id="text-effect-size"
+                                            min="48"
+                                            max="220"
+                                            step="2"
+                                            value="120"
+                                            aria-describedby="text-effect-size-value"
+                                        >
+                                        <div class="slider-readout" id="text-effect-size-value">120 px</div>
+                                    </div>
+                                </div>
+                                <div class="text-effects__group">
+                                    <label for="text-effect-color">Color</label>
+                                    <input type="color" id="text-effect-color" value="#f8fafc">
+                                </div>
+                                <div class="text-effects__group text-effects__group--alignment" role="group" aria-label="Alignment">
+                                    <span class="text-effects__group-label">Alignment</span>
+                                    <div class="text-effects__toggle-group">
+                                        <button type="button" class="text-effects__toggle" data-text-align="left" aria-pressed="false">
+                                            <span aria-hidden="true">⟵</span>
+                                            <span class="visually-hidden">Align left</span>
+                                        </button>
+                                        <button type="button" class="text-effects__toggle" data-text-align="center" aria-pressed="true">
+                                            <span aria-hidden="true">↔</span>
+                                            <span class="visually-hidden">Align center</span>
+                                        </button>
+                                        <button type="button" class="text-effects__toggle" data-text-align="right" aria-pressed="false">
+                                            <span aria-hidden="true">⟶</span>
+                                            <span class="visually-hidden">Align right</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="text-effects__group">
+                                    <label for="text-effect-transform">Transform</label>
+                                    <select id="text-effect-transform">
+                                        <option value="none">None</option>
+                                        <option value="uppercase">Uppercase</option>
+                                        <option value="lowercase">Lowercase</option>
+                                        <option value="capitalize">Capitalize</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
                         <div class="info-list">
