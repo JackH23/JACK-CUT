@@ -593,7 +593,6 @@ function updateTextEffectsControlsAvailability(isEnabled) {
         textEffectFontSelect,
         textEffectSizeInput,
         textEffectColorInput,
-        textEffectTransformSelect,
     ];
     controls.forEach((control) => {
         if (!control) {
@@ -644,9 +643,6 @@ function syncTextEffectsControlsToTimelineItem(timelineItem) {
     }
     if (textEffectColorInput) {
         textEffectColorInput.value = style.color;
-    }
-    if (textEffectTransformSelect) {
-        textEffectTransformSelect.value = style.transform;
     }
     textEffectAlignmentButtons.forEach((button) => {
         const targetAlign = button.dataset.textAlign;

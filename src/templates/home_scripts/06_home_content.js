@@ -1253,12 +1253,6 @@ if (textEffectColorInput) {
     });
 }
 
-if (textEffectTransformSelect) {
-    textEffectTransformSelect.addEventListener('change', (event) => {
-        applyTimelineTextStyleUpdates({ transform: event.target.value });
-    });
-}
-
 if (textEffectAlignmentButtons.length) {
     textEffectAlignmentButtons.forEach((button) => {
         button.addEventListener('click', () => {
