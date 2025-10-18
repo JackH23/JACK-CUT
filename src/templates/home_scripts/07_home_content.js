@@ -550,6 +550,8 @@ function getTimelineLanePadding() {
     return { left, right };
 }
 
+// Derive the pixel geometry for the timeline based on the zero-based duration span.
+// This keeps the visual playhead aligned with fractional playback values regardless of zoom.
 function computeTimelineDurationGeometry() {
     if (!timelineTrack) {
         return null;
@@ -565,36 +567,42 @@ function computeTimelineDurationGeometry() {
         return null;
     }
 
-    let minStart = null;
-    let maxEnd = 0;
+    let timelineDurationMs = 0;
+    let hasValidEntry = false;
 
     entries.forEach((entry) => {
         if (!entry) {
             return;
         }
 
-        const start = Number.isFinite(entry.start) ? Math.max(0, Math.round(entry.start)) : null;
-        const end = Number.isFinite(entry.end) ? Math.max(0, Math.round(entry.end)) : null;
+        const start = Number.isFinite(entry.start)
+            ? Math.max(0, Number(entry.start) || 0)
+            : null;
+        const end = Number.isFinite(entry.end)
+            ? Math.max(0, Number(entry.end) || 0)
+            : null;
 
         if (start === null || end === null || end < start) {
             return;
         }
 
-        minStart = minStart === null ? start : Math.min(minStart, start);
-        maxEnd = Math.max(maxEnd, end);
+        timelineDurationMs = Math.max(timelineDurationMs, end);
+        hasValidEntry = true;
     });
 
-    if (minStart === null) {
+    if (!hasValidEntry) {
         return null;
     }
 
     const { left: trackPaddingLeft } = getTimelineTrackPadding();
     const { left: lanePaddingLeft } = getTimelineLanePadding();
-    const offset = trackPaddingLeft + lanePaddingLeft + Math.round(minStart / perPixel);
-    const spanDuration = Math.max(0, maxEnd - minStart);
-    const width = spanDuration > 0
-        ? Math.max(1, Math.round(spanDuration / perPixel))
-        : 0;
+    const offset = trackPaddingLeft + lanePaddingLeft;
+
+    if (timelineDurationMs <= 0) {
+        return { offset, width: 0 };
+    }
+
+    const width = Math.max(1, Math.round(timelineDurationMs / perPixel));
 
     return { offset, width };
 }
