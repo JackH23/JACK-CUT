@@ -2206,15 +2206,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     inset: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: var(--preview-text-justify, center);
     padding: var(--preview-text-padding-block, 20px)
         var(--preview-text-padding-inline, 32px);
-    color: #f8fafc;
-    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    color: var(--preview-text-color, #f8fafc);
+    font-family: var(--preview-text-font, 'Inter', 'Segoe UI', system-ui, sans-serif);
     font-weight: 600;
     letter-spacing: 0.04em;
     line-height: 1.2;
-    text-align: center;
+    text-align: var(--preview-text-align, center);
+    text-transform: var(--preview-text-transform, none);
     font-size: clamp(20px, 5vw, 72px);
     white-space: pre-wrap;
     word-break: break-word;
@@ -2231,12 +2232,74 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .preview-text-editor[data-show-placeholder='true']::before {
     content: attr(data-placeholder);
+    color: var(--preview-text-color, #f8fafc);
     opacity: 0.55;
     pointer-events: none;
+    text-transform: inherit;
 }
 
 .preview-text-editor:focus {
     outline: none;
+}
+
+.text-effects-slider {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.text-effects-slider input[type='range'] {
+    flex: 1 1 auto;
+}
+
+.text-effects-color {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.text-effects-color__value {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+}
+
+.text-effects-alignment {
+    display: inline-flex;
+    gap: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 999px;
+    padding: 4px;
+    background: rgba(30, 41, 82, 0.32);
+}
+
+.text-effects-alignment button {
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.text-effects-alignment button:is(:hover, :focus-visible) {
+    background: rgba(148, 163, 184, 0.18);
+    color: var(--text-primary);
+}
+
+.text-effects-alignment button.is-active {
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.55), rgba(59, 130, 246, 0.75));
+    color: #0f172a;
+}
+
+.text-effects-alignment button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
 }
 
 .preview-image-frame[data-outside-viewport="true"] {

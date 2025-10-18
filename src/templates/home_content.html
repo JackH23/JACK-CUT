@@ -155,6 +155,7 @@
                 <div class="settings-tabs" role="tablist" aria-label="Sidebar controls">
                     <button type="button" class="settings-tab is-active" id="settings-tab-video" role="tab" aria-selected="true" aria-controls="settings-video" data-section="video">Video</button>
                     <button type="button" class="settings-tab" id="settings-tab-text" role="tab" aria-selected="false" aria-controls="settings-text" data-section="text">Text</button>
+                    <button type="button" class="settings-tab" id="settings-tab-effects" role="tab" aria-selected="false" aria-controls="settings-effects" data-section="effects">Effects</button>
                     <button type="button" class="settings-tab" id="settings-tab-animation" role="tab" aria-selected="false" aria-controls="settings-animation" data-section="animation">Animation</button>
                     <button type="button" class="settings-tab" id="settings-tab-speed" role="tab" aria-selected="false" aria-controls="settings-speed" data-section="speed">Speed</button>
                     <button type="button" class="settings-tab" id="settings-tab-audio" role="tab" aria-selected="false" aria-controls="settings-audio" data-section="audio">Audio</button>
@@ -210,6 +211,63 @@
                             <div class="text-template-card__body">
                                 <h3 class="text-template-card__title">(Default Text)</h3>
                                 <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="settings-section" id="settings-effects" data-section="effects" role="tabpanel" aria-labelledby="settings-tab-effects" hidden>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <div class="info-icon">🖋️</div>
+                                <div>
+                                    <label for="text-effects-font">Font family</label>
+                                    <select id="text-effects-font" disabled>
+                                        <option value="inter">Inter</option>
+                                        <option value="roboto">Roboto</option>
+                                        <option value="playfair">Playfair Display</option>
+                                        <option value="poppins">Poppins</option>
+                                        <option value="space-mono">Space Mono</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🔠</div>
+                                <div>
+                                    <label for="text-effects-size">Text size</label>
+                                    <div class="text-effects-slider">
+                                        <input type="range" id="text-effects-size" min="60" max="200" value="120" step="1" disabled aria-describedby="text-effects-size-value">
+                                        <div class="slider-readout" id="text-effects-size-value">120 px</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">🎨</div>
+                                <div>
+                                    <label for="text-effects-color">Text color</label>
+                                    <div class="text-effects-color">
+                                        <input type="color" id="text-effects-color" value="#F8FAFC" disabled aria-describedby="text-effects-color-value">
+                                        <span class="text-effects-color__value" id="text-effects-color-value">#F8FAFC</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">📐</div>
+                                <div class="text-effects-alignment" role="group" aria-label="Text alignment">
+                                    <button type="button" data-align="left" aria-pressed="false" disabled>Left</button>
+                                    <button type="button" data-align="center" aria-pressed="true" disabled>Center</button>
+                                    <button type="button" data-align="right" aria-pressed="false" disabled>Right</button>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-icon">✨</div>
+                                <div>
+                                    <label for="text-effects-transform">Text transform</label>
+                                    <select id="text-effects-transform" disabled>
+                                        <option value="none">None</option>
+                                        <option value="uppercase">UPPERCASE</option>
+                                        <option value="lowercase">lowercase</option>
+                                        <option value="capitalize">Capitalize</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </section>

@@ -183,7 +183,14 @@ function applyPreviewImageTransform(alignmentOverride) {
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
-            const fontScale = getDefaultTextTemplateFontScale();
+            let styleOverride = null;
+            if (previewTextEditorState.isEnabled && previewTextEditorState.currentItem) {
+                styleOverride = getTimelineItemTextStyle(previewTextEditorState.currentItem);
+            } else if (activeTimelineItem && isDefaultTextTimelineItem(activeTimelineItem)) {
+                styleOverride = getTimelineItemTextStyle(activeTimelineItem);
+            }
+
+            const fontScale = getDefaultTextTemplateFontScale(styleOverride);
             const fontSizeFromHeight = previewImageTransform.height * fontScale;
             const fontSizeFromWidth = previewImageTransform.width * 0.18;
             const widthLimitedFontSize = fontSizeFromWidth > 0
@@ -242,6 +249,27 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
 const DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK = 32;
 const DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK = 20;
 
+const TEXT_EFFECTS_FONT_MAP = {
+    inter: '"Inter", "Segoe UI", system-ui, sans-serif',
+    roboto: '"Roboto", "Helvetica Neue", Arial, sans-serif',
+    playfair: '"Playfair Display", "Times New Roman", serif',
+    poppins: '"Poppins", "Segoe UI", system-ui, sans-serif',
+    'space-mono': '"Space Mono", "SFMono-Regular", Consolas, monospace',
+};
+
+const TEXT_EFFECTS_FONT_SIZE_MIN = 60;
+const TEXT_EFFECTS_FONT_SIZE_MAX = 200;
+const TEXT_EFFECTS_ALIGN_OPTIONS = new Set(['left', 'center', 'right']);
+const TEXT_EFFECTS_TRANSFORM_OPTIONS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
+
+const DEFAULT_TEXT_STYLE_CONFIG = {
+    font: 'inter',
+    fontSize: DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK,
+    color: '#F8FAFC',
+    align: 'center',
+    transform: 'none',
+};
+
 const previewTextEditorState = {
     isEnabled: false,
     currentItem: null,
@@ -264,7 +292,173 @@ function getDefaultTextTemplateLabel() {
     return DEFAULT_TEXT_TEMPLATE_PLACEHOLDER;
 }
 
-function getDefaultTextTemplateFontScale() {
+function getTextEffectsFontFamily(fontKey) {
+    const normalizedKey = String(fontKey || '').toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(TEXT_EFFECTS_FONT_MAP, normalizedKey)) {
+        return TEXT_EFFECTS_FONT_MAP[normalizedKey];
+    }
+    return TEXT_EFFECTS_FONT_MAP[DEFAULT_TEXT_STYLE_CONFIG.font];
+}
+
+function sanitizeHexColor(value) {
+    if (typeof value !== 'string') {
+        return DEFAULT_TEXT_STYLE_CONFIG.color;
+    }
+
+    const trimmed = value.trim();
+
+    if (/^#([0-9a-fA-F]{6})$/.test(trimmed)) {
+        return `#${trimmed.slice(1).toUpperCase()}`;
+    }
+
+    if (/^#([0-9a-fA-F]{3})$/.test(trimmed)) {
+        const [, r, g, b] = trimmed.split('');
+        return `#${(r + r + g + g + b + b).toUpperCase()}`;
+    }
+
+    return DEFAULT_TEXT_STYLE_CONFIG.color;
+}
+
+function normalizeDefaultTextStyle(styleOverride = null) {
+    const base = { ...DEFAULT_TEXT_STYLE_CONFIG };
+
+    if (!styleOverride || typeof styleOverride !== 'object') {
+        return base;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(styleOverride, 'font')) {
+        const candidateFont = String(styleOverride.font || '').toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(TEXT_EFFECTS_FONT_MAP, candidateFont)) {
+            base.font = candidateFont;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(styleOverride, 'fontSize')) {
+        const rawSize = Number(styleOverride.fontSize);
+        if (Number.isFinite(rawSize)) {
+            const clamped = Math.min(Math.max(rawSize, TEXT_EFFECTS_FONT_SIZE_MIN), TEXT_EFFECTS_FONT_SIZE_MAX);
+            base.fontSize = clamped;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(styleOverride, 'color')) {
+        base.color = sanitizeHexColor(styleOverride.color);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(styleOverride, 'align')) {
+        const candidateAlign = String(styleOverride.align || '').toLowerCase();
+        if (TEXT_EFFECTS_ALIGN_OPTIONS.has(candidateAlign)) {
+            base.align = candidateAlign;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(styleOverride, 'transform')) {
+        const candidateTransform = String(styleOverride.transform || '').toLowerCase();
+        if (TEXT_EFFECTS_TRANSFORM_OPTIONS.has(candidateTransform)) {
+            base.transform = candidateTransform;
+        }
+    }
+
+    return base;
+}
+
+function applyDefaultTextTransform(value, transform) {
+    const text = String(value || '');
+    const mode = String(transform || '').toLowerCase();
+
+    if (mode === 'uppercase') {
+        return text.toUpperCase();
+    }
+
+    if (mode === 'lowercase') {
+        return text.toLowerCase();
+    }
+
+    if (mode === 'capitalize') {
+        return text.replace(/\b\w+/g, (word) => {
+            if (!word) {
+                return word;
+            }
+            const firstChar = word.charAt(0).toUpperCase();
+            const remainder = word.slice(1).toLowerCase();
+            return `${firstChar}${remainder}`;
+        });
+    }
+
+    return text;
+}
+
+function parseTimelineTextStyle(raw) {
+    if (typeof raw !== 'string' || !raw.trim()) {
+        return null;
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (error) {
+        return null;
+    }
+}
+
+function getTimelineItemTextStyle(timelineItem) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return normalizeDefaultTextStyle();
+    }
+
+    const parsed = parseTimelineTextStyle(timelineItem.dataset?.textStyle);
+    const normalized = normalizeDefaultTextStyle(parsed || {});
+    const serialized = JSON.stringify(normalized);
+
+    if (timelineItem.dataset.textStyle !== serialized) {
+        timelineItem.dataset.textStyle = serialized;
+    }
+
+    return normalized;
+}
+
+function setTimelineItemTextStyle(timelineItem, updates = {}) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return null;
+    }
+
+    const current = parseTimelineTextStyle(timelineItem.dataset?.textStyle) || {};
+    const normalizedCurrent = normalizeDefaultTextStyle(current);
+    const nextInput = { ...normalizedCurrent, ...updates };
+    const normalizedNext = normalizeDefaultTextStyle(nextInput);
+    timelineItem.dataset.textStyle = JSON.stringify(normalizedNext);
+    return normalizedNext;
+}
+
+function applyTextStyleToPreviewEditor(styleOverride = null) {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    const style = normalizeDefaultTextStyle(styleOverride || {});
+    const fontFamily = getTextEffectsFontFamily(style.font);
+    const justify = style.align === 'left'
+        ? 'flex-start'
+        : (style.align === 'right' ? 'flex-end' : 'center');
+
+    previewTextEditor.style.setProperty('--preview-text-font', fontFamily);
+    previewTextEditor.style.setProperty('--preview-text-color', style.color);
+    previewTextEditor.style.setProperty('--preview-text-transform', style.transform);
+    previewTextEditor.style.setProperty('--preview-text-align', style.align);
+    previewTextEditor.style.setProperty('--preview-text-justify', justify);
+}
+
+function clearPreviewTextStyle() {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    previewTextEditor.style.removeProperty('--preview-text-font');
+    previewTextEditor.style.removeProperty('--preview-text-color');
+    previewTextEditor.style.removeProperty('--preview-text-transform');
+    previewTextEditor.style.removeProperty('--preview-text-align');
+    previewTextEditor.style.removeProperty('--preview-text-justify');
+}
+
+function getDefaultTextTemplateFontScale(styleOverride = null) {
     const baseFontSize = (typeof window !== 'undefined'
             && Number.isFinite(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE))
         ? Number(window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE)
@@ -274,15 +468,20 @@ function getDefaultTextTemplateFontScale() {
         ? Number(window.DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT)
         : DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK;
 
-    if (!Number.isFinite(baseFontSize)
-        || !Number.isFinite(baseCanvasHeight)
-        || baseFontSize <= 0
-        || baseCanvasHeight <= 0) {
+    if (!Number.isFinite(baseCanvasHeight) || baseCanvasHeight <= 0) {
         return DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK
             / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK;
     }
 
-    return baseFontSize / baseCanvasHeight;
+    const style = normalizeDefaultTextStyle(styleOverride || {});
+    const effectiveFontSize = Number.isFinite(style.fontSize) ? style.fontSize : baseFontSize;
+
+    if (!Number.isFinite(effectiveFontSize) || effectiveFontSize <= 0) {
+        return DEFAULT_TEXT_TEMPLATE_FONT_SIZE_FALLBACK
+            / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK;
+    }
+
+    return effectiveFontSize / baseCanvasHeight;
 }
 
 function getDefaultTextTemplatePaddingInline() {
@@ -319,9 +518,11 @@ function autoFitDefaultTextTimelineItem(timelineItem, textContent) {
         return;
     }
 
+    const style = getTimelineItemTextStyle(timelineItem);
+
     let transform = null;
     try {
-        transform = window.calculateDefaultTextTemplateTransform(textContent);
+        transform = window.calculateDefaultTextTemplateTransform(textContent, style);
     } catch (error) {
         console.warn('Unable to calculate text overlay dimensions.', error);
         transform = null;
@@ -425,6 +626,9 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
         previewTextEditor.textContent = storedValue;
     }
 
+    const style = getTimelineItemTextStyle(timelineItem);
+    applyTextStyleToPreviewEditor(style);
+
     const inlinePadding = getDefaultTextTemplatePaddingInline();
     const blockPadding = getDefaultTextTemplatePaddingBlock();
     if (Number.isFinite(inlinePadding)) {
@@ -485,6 +689,7 @@ function disablePreviewTextEditor(options = {}) {
         if (previewTextEditor === document.activeElement) {
             previewTextEditor.blur();
         }
+        clearPreviewTextStyle();
     }
 
     if (previewImageFrame) {
@@ -530,6 +735,186 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
     if (previewImageFrame) {
         previewImageFrame.classList.add('is-text-overlay');
     }
+
+    const currentStyle = getTimelineItemTextStyle(timelineItem);
+    applyTextStyleToPreviewEditor(currentStyle);
+}
+
+function syncTextEffectsControlsToTimelineItem(timelineItem) {
+    if (!textEffectsFontSelect || !textEffectsSizeInput || !textEffectsColorInput || !textEffectsTransformSelect) {
+        return;
+    }
+
+    const controls = [
+        textEffectsFontSelect,
+        textEffectsSizeInput,
+        textEffectsColorInput,
+        textEffectsTransformSelect,
+        ...textEffectsAlignmentButtons,
+    ];
+
+    const isTextOverlay = timelineItem && isDefaultTextTimelineItem(timelineItem);
+
+    if (!isTextOverlay) {
+        controls.forEach((control) => {
+            control.disabled = true;
+            if (control.tagName === 'BUTTON') {
+                control.classList.remove('is-active');
+                control.setAttribute('aria-pressed', 'false');
+            }
+        });
+
+        if (textEffectsFontSelect) {
+            textEffectsFontSelect.value = DEFAULT_TEXT_STYLE_CONFIG.font;
+        }
+        if (textEffectsSizeInput) {
+            textEffectsSizeInput.value = String(DEFAULT_TEXT_STYLE_CONFIG.fontSize);
+        }
+        if (textEffectsSizeValue) {
+            textEffectsSizeValue.textContent = '—';
+        }
+        if (textEffectsColorInput) {
+            textEffectsColorInput.value = DEFAULT_TEXT_STYLE_CONFIG.color;
+        }
+        if (textEffectsColorValue) {
+            textEffectsColorValue.textContent = DEFAULT_TEXT_STYLE_CONFIG.color;
+        }
+        if (textEffectsTransformSelect) {
+            textEffectsTransformSelect.value = DEFAULT_TEXT_STYLE_CONFIG.transform;
+        }
+        return;
+    }
+
+    const style = getTimelineItemTextStyle(timelineItem);
+
+    textEffectsFontSelect.disabled = false;
+    textEffectsFontSelect.value = style.font;
+
+    textEffectsSizeInput.disabled = false;
+    textEffectsSizeInput.value = String(Math.round(style.fontSize));
+    if (textEffectsSizeValue) {
+        textEffectsSizeValue.textContent = `${Math.round(style.fontSize)} px`;
+    }
+
+    textEffectsColorInput.disabled = false;
+    textEffectsColorInput.value = style.color;
+    if (textEffectsColorValue) {
+        textEffectsColorValue.textContent = style.color;
+    }
+
+    textEffectsTransformSelect.disabled = false;
+    textEffectsTransformSelect.value = style.transform;
+
+    textEffectsAlignmentButtons.forEach((button) => {
+        const alignValue = button.dataset.align || 'center';
+        const isActive = alignValue === style.align;
+        button.disabled = false;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
+function applyTextEffectsStyleUpdate(timelineItem) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return;
+    }
+
+    const currentText = normalizePreviewTextEditorValue(timelineItem.dataset?.textContent || '');
+    updateDefaultTextTimelineItemContent(timelineItem, currentText);
+    syncTextEffectsControlsToTimelineItem(timelineItem);
+}
+
+if (textEffectsFontSelect) {
+    textEffectsFontSelect.addEventListener('change', () => {
+        if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+            return;
+        }
+
+        const nextFont = textEffectsFontSelect.value;
+        const currentStyle = getTimelineItemTextStyle(activeTimelineItem);
+        if (currentStyle.font === nextFont) {
+            return;
+        }
+
+        setTimelineItemTextStyle(activeTimelineItem, { font: nextFont });
+        applyTextEffectsStyleUpdate(activeTimelineItem);
+    });
+}
+
+if (textEffectsSizeInput) {
+    textEffectsSizeInput.addEventListener('input', () => {
+        const rawValue = Number(textEffectsSizeInput.value);
+        if (textEffectsSizeValue) {
+            textEffectsSizeValue.textContent = `${Math.round(rawValue)} px`;
+        }
+
+        if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+            return;
+        }
+
+        const currentStyle = getTimelineItemTextStyle(activeTimelineItem);
+        if (Number.isFinite(currentStyle.fontSize) && Number(rawValue) === currentStyle.fontSize) {
+            return;
+        }
+
+        setTimelineItemTextStyle(activeTimelineItem, { fontSize: rawValue });
+        applyTextEffectsStyleUpdate(activeTimelineItem);
+    });
+}
+
+if (textEffectsColorInput) {
+    textEffectsColorInput.addEventListener('input', () => {
+        const rawValue = textEffectsColorInput.value;
+
+        if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+            if (textEffectsColorValue) {
+                textEffectsColorValue.textContent = rawValue.toUpperCase();
+            }
+            return;
+        }
+
+        const nextStyle = setTimelineItemTextStyle(activeTimelineItem, { color: rawValue });
+        if (textEffectsColorValue && nextStyle) {
+            textEffectsColorValue.textContent = nextStyle.color;
+        }
+        applyTextEffectsStyleUpdate(activeTimelineItem);
+    });
+}
+
+if (textEffectsAlignmentButtons.length) {
+    textEffectsAlignmentButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+                return;
+            }
+
+            const targetAlign = button.dataset.align || 'center';
+            const currentStyle = getTimelineItemTextStyle(activeTimelineItem);
+            if (currentStyle.align === targetAlign) {
+                return;
+            }
+
+            setTimelineItemTextStyle(activeTimelineItem, { align: targetAlign });
+            applyTextEffectsStyleUpdate(activeTimelineItem);
+        });
+    });
+}
+
+if (textEffectsTransformSelect) {
+    textEffectsTransformSelect.addEventListener('change', () => {
+        if (!activeTimelineItem || !isDefaultTextTimelineItem(activeTimelineItem)) {
+            return;
+        }
+
+        const nextTransform = textEffectsTransformSelect.value;
+        const currentStyle = getTimelineItemTextStyle(activeTimelineItem);
+        if (currentStyle.transform === nextTransform) {
+            return;
+        }
+
+        setTimelineItemTextStyle(activeTimelineItem, { transform: nextTransform });
+        applyTextEffectsStyleUpdate(activeTimelineItem);
+    });
 }
 
 function schedulePreviewTextEditorCommit() {
@@ -553,6 +938,8 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
         ? committedValue
         : getDefaultTextTemplateLabel();
 
+    const style = getTimelineItemTextStyle(timelineItem);
+
     timelineItem.dataset.textContent = committedValue;
     timelineItem.dataset.displayName = displayName;
 
@@ -566,7 +953,7 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
 
     if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
         try {
-            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName);
+            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName, style);
         } catch (error) {
             console.warn('Failed to generate text overlay preview.', error);
             nextObjectUrl = previousObjectUrl;
@@ -600,6 +987,10 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
 
     previewTextEditorState.lastCommittedValue = committedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
+
+    if (previewTextEditorState.isEnabled && previewTextEditorState.currentItem === timelineItem) {
+        applyTextStyleToPreviewEditor(style);
+    }
 }
 
 function commitPreviewTextEditorContent(options = {}) {
