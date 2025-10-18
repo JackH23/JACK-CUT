@@ -205,11 +205,108 @@
                         </div>
                     </section>
                     <section class="settings-section" id="settings-text" data-section="text" role="tabpanel" aria-labelledby="settings-tab-text" hidden>
-                        <div class="text-template-card" role="button" tabindex="0" aria-pressed="false">
-                            <span class="text-template-card__icon" aria-hidden="true">＋</span>
-                            <div class="text-template-card__body">
-                                <h3 class="text-template-card__title">(Default Text)</h3>
-                                <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
+                        <div class="text-pane">
+                            <div class="text-pane__tabs" role="tablist" aria-label="Text controls">
+                                <button
+                                    type="button"
+                                    class="text-pane__tab is-active"
+                                    id="text-pane-tab-templates"
+                                    role="tab"
+                                    aria-selected="true"
+                                    aria-controls="text-pane-section-templates"
+                                    data-text-pane-tab="templates"
+                                >Templates</button>
+                                <button
+                                    type="button"
+                                    class="text-pane__tab"
+                                    id="text-pane-tab-effects"
+                                    role="tab"
+                                    aria-selected="false"
+                                    aria-controls="text-pane-section-effects"
+                                    data-text-pane-tab="effects"
+                                >Effects</button>
+                            </div>
+                            <div class="text-pane__content">
+                                <div
+                                    class="text-pane__section is-active"
+                                    id="text-pane-section-templates"
+                                    role="tabpanel"
+                                    aria-labelledby="text-pane-tab-templates"
+                                    data-text-pane-section="templates"
+                                >
+                                    <div class="text-template-card" role="button" tabindex="0" aria-pressed="false">
+                                        <span class="text-template-card__icon" aria-hidden="true">＋</span>
+                                        <div class="text-template-card__body">
+                                            <h3 class="text-template-card__title">(Default Text)</h3>
+                                            <p class="text-template-card__description">Drop in a starter caption block with clean typography and smart alignment.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="text-pane__section"
+                                    id="text-pane-section-effects"
+                                    role="tabpanel"
+                                    aria-labelledby="text-pane-tab-effects"
+                                    data-text-pane-section="effects"
+                                    hidden
+                                >
+                                    <fieldset class="text-effects" id="text-effects-fieldset" disabled>
+                                        <legend class="text-effects__legend">Default text style</legend>
+                                        <div class="text-effects__grid">
+                                            <label class="text-effects__control" for="text-effect-preset">
+                                                <span class="text-effects__label">Preset</span>
+                                                <select id="text-effect-preset">
+                                                    <option value="clean">Clean caption</option>
+                                                    <option value="contrast">Bold contrast</option>
+                                                    <option value="elegant">Elegant serif</option>
+                                                    <option value="custom">Custom</option>
+                                                </select>
+                                            </label>
+                                            <label class="text-effects__control" for="text-effect-font">
+                                                <span class="text-effects__label">Font</span>
+                                                <select id="text-effect-font">
+                                                    <option value="inter">Inter</option>
+                                                    <option value="manrope">Manrope</option>
+                                                    <option value="playfair">Playfair Display</option>
+                                                </select>
+                                            </label>
+                                            <div class="text-effects__control text-effects__control--color">
+                                                <label for="text-effect-color" class="text-effects__label">Color</label>
+                                                <div class="text-effects__color-picker">
+                                                    <input type="color" id="text-effect-color" value="#F8FAFC">
+                                                    <input type="text" id="text-effect-color-value" value="#F8FAFC" maxlength="7" aria-label="Text color hex value">
+                                                </div>
+                                            </div>
+                                            <fieldset class="text-effects__control text-effects__control--alignment">
+                                                <legend class="text-effects__label">Alignment</legend>
+                                                <div class="text-effects__alignment" role="radiogroup" aria-label="Text alignment">
+                                                    <button type="button" class="text-effects__alignment-button" data-text-align="left" aria-pressed="false">
+                                                        <span aria-hidden="true">⟸</span>
+                                                        <span class="sr-only">Align left</span>
+                                                    </button>
+                                                    <button type="button" class="text-effects__alignment-button is-active" data-text-align="center" aria-pressed="true">
+                                                        <span aria-hidden="true">⇔</span>
+                                                        <span class="sr-only">Align center</span>
+                                                    </button>
+                                                    <button type="button" class="text-effects__alignment-button" data-text-align="right" aria-pressed="false">
+                                                        <span aria-hidden="true">⟹</span>
+                                                        <span class="sr-only">Align right</span>
+                                                    </button>
+                                                </div>
+                                            </fieldset>
+                                            <label class="text-effects__control" for="text-effect-transform">
+                                                <span class="text-effects__label">Transform</span>
+                                                <select id="text-effect-transform">
+                                                    <option value="none">None</option>
+                                                    <option value="uppercase">Uppercase</option>
+                                                    <option value="lowercase">Lowercase</option>
+                                                    <option value="capitalize">Capitalize</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                    </fieldset>
+                                    <p class="text-effects__placeholder" id="text-effects-placeholder">Select a text overlay to unlock Effects.</p>
+                                </div>
                             </div>
                         </div>
                     </section>

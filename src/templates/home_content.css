@@ -34,6 +34,18 @@ body {
     padding: clamp(16px, 3vh, 24px);
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .app-shell {
     width: min(1200px, 100%);
     display: grid;
@@ -849,6 +861,61 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
 }
 
+.text-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.text-pane__tabs {
+    display: inline-flex;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 14px;
+    padding: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    width: fit-content;
+}
+
+.text-pane__tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font: inherit;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.text-pane__tab.is-active {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(56, 189, 248, 0.9));
+    color: #0f172a;
+    font-weight: 600;
+    box-shadow: 0 12px 22px rgba(56, 189, 248, 0.18);
+}
+
+.text-pane__tab:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.9);
+    outline-offset: 2px;
+}
+
+.text-pane__content {
+    background: rgba(17, 24, 39, 0.65);
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    padding: 20px;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+.text-pane__section {
+    display: none;
+}
+
+.text-pane__section.is-active {
+    display: block;
+}
+
 .text-template-card {
     display: flex;
     align-items: center;
@@ -905,6 +972,132 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     font-size: 0.85rem;
     line-height: 1.4;
 }
+
+.text-effects {
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.text-effects__legend {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.text-effects__grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.text-effects__control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text-secondary);
+}
+
+.text-effects__label {
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.text-effects__control select,
+.text-effects__control input[type="text"] {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.text-effects__control select:focus-visible,
+.text-effects__control input[type="text"]:focus-visible {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.65);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+.text-effects__control--color input[type="color"] {
+    appearance: none;
+    border: none;
+    background: transparent;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    padding: 0;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.22);
+}
+
+.text-effects__color-picker {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.text-effects__control--alignment {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.text-effects__alignment {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.text-effects__alignment-button {
+    appearance: none;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(15, 23, 42, 0.6);
+    color: var(--text-secondary);
+    border-radius: 10px;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.text-effects__alignment-button.is-active,
+.text-effects__alignment-button[aria-pressed="true"] {
+    border-color: rgba(56, 189, 248, 0.75);
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(56, 189, 248, 0.85));
+    color: #0f172a;
+    box-shadow: 0 10px 24px rgba(56, 189, 248, 0.22);
+}
+
+.text-effects__alignment-button:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.9);
+    outline-offset: 2px;
+}
+
+.text-effects__placeholder {
+    margin-top: 16px;
+    font-size: 0.95rem;
+    color: rgba(226, 232, 240, 0.68);
+}
+
+.text-effects[disabled] {
+    opacity: 0.6;
+}
+
+.text-effects[disabled] .text-effects__alignment-button,
+.text-effects[disabled] .text-effects__control select,
+.text-effects[disabled] .text-effects__control input[type="text"],
+.text-effects[disabled] .text-effects__control--color input[type="color"] {
+    cursor: not-allowed;
+}
+
 
 .audio-fade-controls {
     display: flex;
@@ -2205,7 +2398,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     position: absolute;
     inset: 0;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     padding: var(--preview-text-padding-block, 20px)
         var(--preview-text-padding-inline, 32px);
