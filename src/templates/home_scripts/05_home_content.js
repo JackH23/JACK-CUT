@@ -170,16 +170,39 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     renderKeyframeTrack(activeTimelineItem);
 }
 
-function applyPreviewImageTransform(alignmentOverride) {
-    if (!previewImageFrame || !previewImageTransform) {
+let previewImageFrameUpdateHandle = 0;
+let pendingPreviewImageFrameState = null;
+
+function commitPreviewImageFrameState(state) {
+    if (!state || !previewImageFrame || !previewImageTransform) {
+        hidePreviewOutsideOutline();
         resetPreviewViewportAlignmentState();
         resetPreviewGuideElements();
+        updateImageRotationControlState();
         return;
     }
 
-    previewImageFrame.style.transform = `translate3d(${previewImageTransform.left}px, ${previewImageTransform.top}px, 0)`;
-    previewImageFrame.style.width = `${previewImageTransform.width}px`;
-    previewImageFrame.style.height = `${previewImageTransform.height}px`;
+    const {
+        left,
+        top,
+        width,
+        height,
+        rotation,
+        aspectRatio,
+        alignmentOverride,
+    } = state;
+
+    if (![left, top, width, height].every((value) => Number.isFinite(value))) {
+        hidePreviewOutsideOutline();
+        resetPreviewViewportAlignmentState();
+        resetPreviewGuideElements();
+        updateImageRotationControlState();
+        return;
+    }
+
+    previewImageFrame.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    previewImageFrame.style.width = `${width}px`;
+    previewImageFrame.style.height = `${height}px`;
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
@@ -187,8 +210,8 @@ function applyPreviewImageTransform(alignmentOverride) {
                 ? getTimelineTextStyle(previewTextEditorState.currentItem)
                 : null;
             const fontScale = getDefaultTextTemplateFontScale(activeTextStyle);
-            const fontSizeFromHeight = previewImageTransform.height * fontScale;
-            const fontSizeFromWidth = previewImageTransform.width * 0.18;
+            const fontSizeFromHeight = height * fontScale;
+            const fontSizeFromWidth = width * 0.18;
             const widthLimitedFontSize = fontSizeFromWidth > 0
                 ? Math.min(fontSizeFromHeight, fontSizeFromWidth)
                 : fontSizeFromHeight;
@@ -201,22 +224,85 @@ function applyPreviewImageTransform(alignmentOverride) {
 
     updatePreviewImageFrameVisibility();
 
-    const rotation = clampRotation(previewImageTransform.rotation);
-    previewImageTransform.rotation = rotation;
     if (previewImage) {
         previewImage.style.setProperty('--preview-image-rotation', `${rotation}deg`);
     }
 
+    const transformForGuides = {
+        left,
+        top,
+        width,
+        height,
+        aspectRatio,
+    };
+
     const alignment = alignmentOverride
-        || evaluatePreviewImageAlignment(previewImageTransform, getPreviewViewportSize());
+        || evaluatePreviewImageAlignment(transformForGuides, getPreviewViewportSize());
     updatePreviewViewportAlignmentState(alignment);
     updatePreviewOutsideOutline();
-    updatePreviewGuides(previewImageTransform, alignment);
+    updatePreviewGuides(transformForGuides, alignment);
     updateImageRotationControlState();
+}
+
+function flushPreviewImageFrameState() {
+    const state = pendingPreviewImageFrameState;
+    pendingPreviewImageFrameState = null;
+    commitPreviewImageFrameState(state);
+}
+
+function applyPreviewImageTransform(alignmentOverride) {
+    if (!previewImageFrame || !previewImageTransform) {
+        if (typeof window !== 'undefined'
+            && typeof window.cancelAnimationFrame === 'function'
+            && previewImageFrameUpdateHandle) {
+            window.cancelAnimationFrame(previewImageFrameUpdateHandle);
+        }
+        previewImageFrameUpdateHandle = 0;
+        pendingPreviewImageFrameState = null;
+        hidePreviewOutsideOutline();
+        resetPreviewViewportAlignmentState();
+        resetPreviewGuideElements();
+        updateImageRotationControlState();
+        return;
+    }
+
+    const rotation = clampRotation(previewImageTransform.rotation);
+    previewImageTransform.rotation = rotation;
+
+    pendingPreviewImageFrameState = {
+        left: previewImageTransform.left,
+        top: previewImageTransform.top,
+        width: previewImageTransform.width,
+        height: previewImageTransform.height,
+        aspectRatio: previewImageTransform.aspectRatio,
+        rotation,
+        alignmentOverride,
+    };
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        flushPreviewImageFrameState();
+        return;
+    }
+
+    if (previewImageFrameUpdateHandle) {
+        return;
+    }
+
+    previewImageFrameUpdateHandle = window.requestAnimationFrame(() => {
+        previewImageFrameUpdateHandle = 0;
+        flushPreviewImageFrameState();
+    });
 }
 
 function clearPreviewImageTransform() {
     previewImageTransform = null;
+    pendingPreviewImageFrameState = null;
+    if (typeof window !== 'undefined'
+        && typeof window.cancelAnimationFrame === 'function'
+        && previewImageFrameUpdateHandle) {
+        window.cancelAnimationFrame(previewImageFrameUpdateHandle);
+    }
+    previewImageFrameUpdateHandle = 0;
     if (previewImageFrame) {
         previewImageFrame.style.removeProperty('transform');
         previewImageFrame.style.removeProperty('width');
