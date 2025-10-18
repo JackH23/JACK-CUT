@@ -242,11 +242,20 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT_FALLBACK = 1080;
 const DEFAULT_TEXT_TEMPLATE_PADDING_INLINE_FALLBACK = 32;
 const DEFAULT_TEXT_TEMPLATE_PADDING_BLOCK_FALLBACK = 20;
 
-const DEFAULT_TEXT_STYLE_PRESET = 'clean';
-const CUSTOM_TEXT_STYLE_KEY = 'custom';
 const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
 const TEXT_TRANSFORMS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
 const TEXT_ALIGNMENTS = new Set(['left', 'center', 'right']);
+
+const DEFAULT_TEXT_STYLE = {
+    font: 'inter',
+    color: '#F8FAFC',
+    align: 'center',
+    transform: 'none',
+    letterSpacing: 0.04,
+    lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+    fontWeight: 600,
+    fontStyle: 'normal',
+};
 
 const TEXT_FONT_OPTIONS = {
     inter: {
@@ -269,46 +278,9 @@ const TEXT_FONT_OPTIONS = {
     },
 };
 
-const TEXT_STYLE_PRESETS = {
-    clean: {
-        label: 'Clean caption',
-        font: 'inter',
-        color: '#F8FAFC',
-        align: 'center',
-        transform: 'none',
-        letterSpacing: 0.04,
-        lineHeight: 1.2,
-        fontWeight: 600,
-        fontStyle: 'normal',
-    },
-    contrast: {
-        label: 'Bold contrast',
-        font: 'manrope',
-        color: '#FACC15',
-        align: 'center',
-        transform: 'uppercase',
-        letterSpacing: 0.08,
-        lineHeight: 1.1,
-        fontWeight: 700,
-        fontStyle: 'normal',
-    },
-    elegant: {
-        label: 'Elegant serif',
-        font: 'playfair',
-        color: '#F8FAFC',
-        align: 'center',
-        transform: 'capitalize',
-        letterSpacing: 0.02,
-        lineHeight: 1.24,
-        fontWeight: 600,
-        fontStyle: 'italic',
-    },
-};
-
 function getDefaultTextFontKey() {
-    const preset = TEXT_STYLE_PRESETS[DEFAULT_TEXT_STYLE_PRESET];
-    if (preset && preset.font && TEXT_FONT_OPTIONS[preset.font]) {
-        return preset.font;
+    if (DEFAULT_TEXT_STYLE.font && TEXT_FONT_OPTIONS[DEFAULT_TEXT_STYLE.font]) {
+        return DEFAULT_TEXT_STYLE.font;
     }
     return 'inter';
 }
@@ -340,32 +312,25 @@ function getTextFontStack(fontKey) {
 
 function resolveDefaultTextStyle(styleOverrides = {}) {
     const overrides = styleOverrides || {};
-    const requestedPreset = overrides.preset
-            && overrides.preset !== CUSTOM_TEXT_STYLE_KEY
-            && Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, overrides.preset)
-        ? overrides.preset
-        : DEFAULT_TEXT_STYLE_PRESET;
-    const preset = TEXT_STYLE_PRESETS[requestedPreset] || TEXT_STYLE_PRESETS[DEFAULT_TEXT_STYLE_PRESET];
 
     const base = {
-        preset: overrides.preset === CUSTOM_TEXT_STYLE_KEY ? CUSTOM_TEXT_STYLE_KEY : requestedPreset,
-        font: preset?.font || getDefaultTextFontKey(),
-        color: normalizeTextHexColor(preset?.color || '#F8FAFC'),
-        align: TEXT_ALIGNMENTS.has(preset?.align) ? preset.align : 'center',
-        transform: TEXT_TRANSFORMS.has(preset?.transform) ? preset.transform : 'none',
-        letterSpacing: Number.isFinite(preset?.letterSpacing) ? Number(preset.letterSpacing) : 0.04,
-        lineHeight: Number.isFinite(preset?.lineHeight) ? Number(preset.lineHeight) : DEFAULT_TEXT_LINE_HEIGHT,
-        fontWeight: Number.isFinite(preset?.fontWeight) ? Number(preset.fontWeight) : 600,
-        fontStyle: typeof preset?.fontStyle === 'string' ? preset.fontStyle : 'normal',
+        font: getDefaultTextFontKey(),
+        color: normalizeTextHexColor(DEFAULT_TEXT_STYLE.color || '#F8FAFC'),
+        align: TEXT_ALIGNMENTS.has(DEFAULT_TEXT_STYLE.align) ? DEFAULT_TEXT_STYLE.align : 'center',
+        transform: TEXT_TRANSFORMS.has(DEFAULT_TEXT_STYLE.transform) ? DEFAULT_TEXT_STYLE.transform : 'none',
+        letterSpacing: Number.isFinite(DEFAULT_TEXT_STYLE.letterSpacing)
+            ? Number(DEFAULT_TEXT_STYLE.letterSpacing)
+            : 0.04,
+        lineHeight: Number.isFinite(DEFAULT_TEXT_STYLE.lineHeight)
+            ? Number(DEFAULT_TEXT_STYLE.lineHeight)
+            : DEFAULT_TEXT_LINE_HEIGHT,
+        fontWeight: Number.isFinite(DEFAULT_TEXT_STYLE.fontWeight)
+            ? Number(DEFAULT_TEXT_STYLE.fontWeight)
+            : 600,
+        fontStyle: typeof DEFAULT_TEXT_STYLE.fontStyle === 'string'
+            ? DEFAULT_TEXT_STYLE.fontStyle
+            : 'normal',
     };
-
-    let nextPreset = base.preset;
-
-    if (overrides.preset && overrides.preset === CUSTOM_TEXT_STYLE_KEY) {
-        nextPreset = CUSTOM_TEXT_STYLE_KEY;
-    } else if (overrides.preset && Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, overrides.preset)) {
-        nextPreset = overrides.preset;
-    }
 
     const nextFont = overrides.font && TEXT_FONT_OPTIONS[overrides.font]
         ? overrides.font
@@ -423,7 +388,6 @@ function resolveDefaultTextStyle(styleOverrides = {}) {
     }
 
     return {
-        preset: nextPreset,
         font: nextFont,
         color: nextColor,
         align: nextAlign,
@@ -436,7 +400,7 @@ function resolveDefaultTextStyle(styleOverrides = {}) {
 }
 
 function getDefaultTextTimelineItemStyle(timelineItem) {
-    const fallback = resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+    const fallback = resolveDefaultTextStyle();
     if (!timelineItem) {
         return fallback;
     }
@@ -455,7 +419,7 @@ function getDefaultTextTimelineItemStyle(timelineItem) {
 
 function storeDefaultTextTimelineItemStyle(timelineItem, styleOverrides = {}) {
     if (!timelineItem) {
-        return resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+        return resolveDefaultTextStyle(styleOverrides);
     }
 
     const current = getDefaultTextTimelineItemStyle(timelineItem);
@@ -465,7 +429,6 @@ function storeDefaultTextTimelineItemStyle(timelineItem, styleOverrides = {}) {
         timelineItem.dataset.textStyle = JSON.stringify(merged);
     } catch (error) {
         timelineItem.dataset.textStyle = JSON.stringify({
-            preset: merged.preset,
             font: merged.font,
             color: merged.color,
             align: merged.align,
@@ -477,7 +440,6 @@ function storeDefaultTextTimelineItemStyle(timelineItem, styleOverrides = {}) {
         });
     }
 
-    timelineItem.dataset.textPreset = merged.preset;
     timelineItem.dataset.textFont = merged.font;
     timelineItem.dataset.textColor = merged.color;
     timelineItem.dataset.textAlign = merged.align;
@@ -549,18 +511,11 @@ function resetPreviewTextEditorStyles() {
     delete previewTextEditor.dataset.textJustify;
 }
 
-function updateTextEffectsControlsFromStyle(style) {
-    if (!textPresetSelect || !textFontSelect || !textColorInput || !textColorValueInput || !textTransformSelect) {
+function updateTextEffectsControlsFromStyle(style = {}) {
+    if (!textFontSelect || !textColorInput || !textColorValueInput || !textTransformSelect) {
         return;
     }
     const resolved = resolveDefaultTextStyle(style);
-    const presetValue = resolved.preset === CUSTOM_TEXT_STYLE_KEY
-        || !Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, resolved.preset)
-        ? CUSTOM_TEXT_STYLE_KEY
-        : resolved.preset;
-    if (textPresetSelect.value !== presetValue) {
-        textPresetSelect.value = presetValue;
-    }
     const fontValue = TEXT_FONT_OPTIONS[resolved.font] ? resolved.font : getDefaultTextFontKey();
     if (textFontSelect.value !== fontValue) {
         textFontSelect.value = fontValue;
@@ -600,7 +555,7 @@ function setTextEffectsAvailability(isEnabled) {
     }
 }
 
-function updateActiveTextStyle(partialStyle = {}, options = {}) {
+function updateActiveTextStyle(partialStyle = {}) {
     const timelineItem = previewTextEditorState.currentItem;
     if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
         return null;
@@ -608,12 +563,6 @@ function updateActiveTextStyle(partialStyle = {}, options = {}) {
 
     const current = getDefaultTextTimelineItemStyle(timelineItem);
     const mergedInput = { ...current, ...partialStyle };
-
-    if (!Object.prototype.hasOwnProperty.call(partialStyle, 'preset')
-        && current.preset !== CUSTOM_TEXT_STYLE_KEY
-        && options.keepPreset !== true) {
-        mergedInput.preset = CUSTOM_TEXT_STYLE_KEY;
-    }
 
     const resolved = storeDefaultTextTimelineItemStyle(timelineItem, mergedInput);
     applyDefaultTextStyleToPreviewEditor(resolved);
@@ -663,43 +612,9 @@ if (typeof window !== 'undefined') {
     };
 }
 
-function applyTextStylePreset(presetKey) {
-    const timelineItem = previewTextEditorState.currentItem;
-    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
-        return null;
-    }
-
-    const key = Object.prototype.hasOwnProperty.call(TEXT_STYLE_PRESETS, presetKey)
-        ? presetKey
-        : DEFAULT_TEXT_STYLE_PRESET;
-    const preset = TEXT_STYLE_PRESETS[key];
-    const baseStyle = {
-        preset: key,
-        font: preset.font,
-        color: preset.color,
-        align: preset.align,
-        transform: preset.transform,
-        letterSpacing: preset.letterSpacing,
-        lineHeight: preset.lineHeight,
-        fontWeight: preset.fontWeight,
-        fontStyle: preset.fontStyle,
-    };
-
-    const resolved = storeDefaultTextTimelineItemStyle(timelineItem, baseStyle);
-    applyDefaultTextStyleToPreviewEditor(resolved);
-    updateTextEffectsControlsFromStyle(resolved);
-
-    const committedText = timelineItem.dataset?.textContent || '';
-    updateDefaultTextTimelineItemContent(timelineItem, committedText, resolved, {
-        skipStateUpdate: true,
-    });
-
-    return resolved;
-}
-
 setActiveTextPane(activeTextPaneKey);
 setTextEffectsAvailability(false);
-updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+updateTextEffectsControlsFromStyle();
 
 if (Array.isArray(textPaneTabs) && textPaneTabs.length) {
     textPaneTabs.forEach((tab) => {
@@ -721,17 +636,6 @@ if (Array.isArray(textPaneTabs) && textPaneTabs.length) {
                 nextTab.focus({ preventScroll: true });
             }
         });
-    });
-}
-
-if (textPresetSelect) {
-    textPresetSelect.addEventListener('change', () => {
-        const value = textPresetSelect.value;
-        if (value === CUSTOM_TEXT_STYLE_KEY) {
-            updateActiveTextStyle({ preset: CUSTOM_TEXT_STYLE_KEY }, { keepPreset: true });
-            return;
-        }
-        applyTextStylePreset(value);
     });
 }
 
@@ -762,7 +666,7 @@ if (textColorValueInput) {
         const timelineItem = previewTextEditorState.currentItem;
         const fallbackStyle = timelineItem && isDefaultTextTimelineItem(timelineItem)
             ? getDefaultTextTimelineItemStyle(timelineItem)
-            : resolveDefaultTextStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+            : resolveDefaultTextStyle();
         const raw = textColorValueInput.value;
         const normalized = normalizeTextHexColor(raw, fallbackStyle.color);
         const style = updateActiveTextStyle({ color: normalized });
@@ -1053,7 +957,7 @@ function disablePreviewTextEditor(options = {}) {
 
     resetPreviewTextEditorStyles();
     setTextEffectsAvailability(false);
-    updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+    updateTextEffectsControlsFromStyle();
     if (!options.keepPaneActive && typeof setActiveTextPane === 'function') {
         setActiveTextPane('templates');
     }
@@ -1077,7 +981,7 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
             disablePreviewTextEditor(options);
         }
         setTextEffectsAvailability(false);
-        updateTextEffectsControlsFromStyle({ preset: DEFAULT_TEXT_STYLE_PRESET });
+        updateTextEffectsControlsFromStyle();
         return;
     }
 

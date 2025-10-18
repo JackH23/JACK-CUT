@@ -174,7 +174,6 @@ const textPaneTabs = Array.from(document.querySelectorAll('[data-text-pane-tab]'
 const textPaneSections = Array.from(document.querySelectorAll('[data-text-pane-section]'));
 const textEffectsFieldset = document.getElementById('text-effects-fieldset');
 const textEffectsPlaceholder = document.getElementById('text-effects-placeholder');
-const textPresetSelect = document.getElementById('text-effect-preset');
 const textFontSelect = document.getElementById('text-effect-font');
 const textColorInput = document.getElementById('text-effect-color');
 const textColorValueInput = document.getElementById('text-effect-color-value');
