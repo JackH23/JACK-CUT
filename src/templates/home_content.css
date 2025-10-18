@@ -772,6 +772,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    --settings-panel-height: auto;
 }
 
 .settings-tabs {
@@ -819,15 +820,22 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-direction: column;
     gap: 16px;
     flex: 1;
+    min-height: 0;
 }
 
 .settings-section {
     display: none;
     animation: fadeIn 0.18s ease;
+    min-height: 0;
 }
 
 .settings-section.is-active {
     display: block;
+    height: var(--settings-panel-height, auto);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    padding-right: 4px;
 }
 
 .info-list {

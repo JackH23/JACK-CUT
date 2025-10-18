@@ -1418,6 +1418,9 @@ function queuePreviewImageFrameReset() {
     schedulePreviewViewportSizeUpdate();
 }
 
+const creativeControlsPanel = document.querySelector('.settings-card');
+let lastCreativeControlsPanelHeight = null;
+
 function handlePreviewViewportResized() {
     if (!previewViewport) {
         hidePreviewOutsideOutline();
@@ -1427,6 +1430,19 @@ function handlePreviewViewportResized() {
 
     const width = Math.max(0, previewViewport.clientWidth);
     const height = Math.max(0, previewViewport.clientHeight);
+
+    if (creativeControlsPanel) {
+        if (height > 0) {
+            const heightValue = `${Math.round(height)}px`;
+            if (lastCreativeControlsPanelHeight !== heightValue) {
+                creativeControlsPanel.style.setProperty('--settings-panel-height', heightValue);
+                lastCreativeControlsPanelHeight = heightValue;
+            }
+        } else if (lastCreativeControlsPanelHeight !== null) {
+            creativeControlsPanel.style.removeProperty('--settings-panel-height');
+            lastCreativeControlsPanelHeight = null;
+        }
+    }
 
     if (width === 0 || height === 0) {
         lastPreviewViewportSize = { width, height };
