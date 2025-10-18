@@ -518,12 +518,17 @@ function applyDefaultTextStyleToPreviewEditor(style) {
     previewTextEditor.style.textTransform = resolved.transform;
     previewTextEditor.style.letterSpacing = `${resolved.letterSpacing}em`;
     previewTextEditor.style.lineHeight = resolved.lineHeight ? `${resolved.lineHeight}` : '';
-    if (resolved.align === 'left') {
-        previewTextEditor.style.justifyContent = 'flex-start';
-    } else if (resolved.align === 'right') {
-        previewTextEditor.style.justifyContent = 'flex-end';
+    previewTextEditor.style.alignItems = 'center';
+    const justifyContent = resolved.align === 'left'
+        ? 'flex-start'
+        : resolved.align === 'right'
+            ? 'flex-end'
+            : 'center';
+    previewTextEditor.style.justifyContent = justifyContent;
+    if (justifyContent === 'center') {
+        delete previewTextEditor.dataset.textJustify;
     } else {
-        previewTextEditor.style.justifyContent = 'center';
+        previewTextEditor.dataset.textJustify = justifyContent;
     }
 }
 
@@ -540,6 +545,8 @@ function resetPreviewTextEditorStyles() {
     previewTextEditor.style.removeProperty('letter-spacing');
     previewTextEditor.style.removeProperty('line-height');
     previewTextEditor.style.removeProperty('justify-content');
+    previewTextEditor.style.removeProperty('align-items');
+    delete previewTextEditor.dataset.textJustify;
 }
 
 function updateTextEffectsControlsFromStyle(style) {
