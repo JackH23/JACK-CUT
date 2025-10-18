@@ -225,6 +225,8 @@
                                         <option value="poppins">Poppins</option>
                                         <option value="playfair">Playfair Display</option>
                                         <option value="mono">JetBrains Mono</option>
+                                        <option value="georgia">Georgia</option>
+                                        <option value="avenir">Avenir Next</option>
                                     </select>
                                 </div>
                                 <div class="text-effects__group">
@@ -245,6 +247,30 @@
                                 <div class="text-effects__group">
                                     <label for="text-effect-color">Color</label>
                                     <input type="color" id="text-effect-color" value="#f8fafc">
+                                </div>
+                                <div class="text-effects__group">
+                                    <label for="text-effect-letter-spacing">Letter spacing</label>
+                                    <div class="text-effects__slider">
+                                        <input
+                                            type="range"
+                                            id="text-effect-letter-spacing"
+                                            min="-0.05"
+                                            max="0.2"
+                                            step="0.005"
+                                            value="0.04"
+                                            aria-describedby="text-effect-letter-spacing-value"
+                                        >
+                                        <div class="slider-readout" id="text-effect-letter-spacing-value">0.04 em</div>
+                                    </div>
+                                </div>
+                                <div class="text-effects__group">
+                                    <label for="text-effect-transform">Font style</label>
+                                    <select id="text-effect-transform">
+                                        <option value="none" selected>Normal</option>
+                                        <option value="uppercase">Uppercase</option>
+                                        <option value="lowercase">Lowercase</option>
+                                        <option value="capitalize">Title Case</option>
+                                    </select>
                                 </div>
                                 <div class="text-effects__group text-effects__group--alignment" role="group" aria-label="Alignment">
                                     <span class="text-effects__group-label">Alignment</span>

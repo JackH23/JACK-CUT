@@ -1253,6 +1253,22 @@ if (textEffectColorInput) {
     });
 }
 
+if (textEffectLetterSpacingInput) {
+    textEffectLetterSpacingInput.addEventListener('input', (event) => {
+        const nextSpacing = clampTextLetterSpacing(event.target.value);
+        if (textEffectLetterSpacingValue) {
+            textEffectLetterSpacingValue.textContent = formatLetterSpacingReadout(nextSpacing);
+        }
+        applyTimelineTextStyleUpdates({ letterSpacingScale: nextSpacing });
+    });
+}
+
+if (textEffectTransformSelect) {
+    textEffectTransformSelect.addEventListener('change', (event) => {
+        applyTimelineTextStyleUpdates({ transform: event.target.value });
+    });
+}
+
 if (textEffectAlignmentButtons.length) {
     textEffectAlignmentButtons.forEach((button) => {
         button.addEventListener('click', () => {

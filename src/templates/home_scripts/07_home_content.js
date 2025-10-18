@@ -2198,6 +2198,27 @@ const DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH = 1920;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
+const DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH * DEFAULT_TEXT_TEMPLATE_WIDTH;
+const DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT * DEFAULT_TEXT_TEMPLATE_HEIGHT;
+const MAX_TEXT_TEMPLATE_DIMENSION = 0.95;
+
+let defaultTextMeasurementContext = null;
+
+function getDefaultTextMeasurementContext() {
+    if (defaultTextMeasurementContext) {
+        return defaultTextMeasurementContext;
+    }
+    if (typeof document === 'undefined') {
+        return null;
+    }
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) {
+        return null;
+    }
+    defaultTextMeasurementContext = context;
+    return defaultTextMeasurementContext;
+}
 
 function applyTextTransformToContent(content, transform) {
     const raw = String(content || '');
@@ -2222,7 +2243,9 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
         : (DEFAULT_TEXT_STYLE?.fontWeight || 600);
     const letterSpacingCandidate = Number(base.letterSpacingScale);
     const letterSpacingScale = Number.isFinite(letterSpacingCandidate)
-        ? letterSpacingCandidate
+        ? (typeof clampTextLetterSpacing === 'function'
+            ? clampTextLetterSpacing(letterSpacingCandidate)
+            : letterSpacingCandidate)
         : (DEFAULT_TEXT_STYLE?.letterSpacingScale || 0.04);
     const fontSizeCandidate = Number(base.fontSize);
     const fontSize = Number.isFinite(fontSizeCandidate)
@@ -2276,8 +2299,7 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
     }
 
     const style = resolveTextTemplateStyle(styleOverrides);
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
+    const context = getDefaultTextMeasurementContext();
 
     if (!context) {
         return fallback;
@@ -2286,6 +2308,8 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
     const measuredText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
     const fontDescriptor = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
     context.font = fontDescriptor;
+    context.textBaseline = 'alphabetic';
+    context.textAlign = 'left';
 
     const metrics = context.measureText(measuredText);
     const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
@@ -2308,18 +2332,25 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
-    const normalizedWidth = totalWidthPx / DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH;
-    const normalizedHeight = totalHeightPx / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
+    const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
+        ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
+        : 1;
+    const scaledBaseWidthPx = DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX * Math.max(fontScale, 0.1);
+    const scaledBaseHeightPx = DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX * Math.max(fontScale, 0.1);
+
+    const desiredWidthPx = Math.max(totalWidthPx, scaledBaseWidthPx);
+    const desiredHeightPx = Math.max(totalHeightPx, scaledBaseHeightPx);
+
+    const normalizedWidth = desiredWidthPx / DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH;
+    const normalizedHeight = desiredHeightPx / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
 
     if (!Number.isFinite(normalizedWidth) || !Number.isFinite(normalizedHeight)
         || normalizedWidth <= 0 || normalizedHeight <= 0) {
         return fallback;
     }
 
-    const aspectRatio = Number.isFinite(totalWidthPx / totalHeightPx)
-        && totalWidthPx > 0
-        && totalHeightPx > 0
-        ? totalWidthPx / totalHeightPx
+    const aspectRatio = desiredWidthPx > 0 && desiredHeightPx > 0
+        ? desiredWidthPx / desiredHeightPx
         : DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
 
     let width = normalizedWidth;
@@ -2331,17 +2362,14 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         height *= scale;
     }
 
-    const MAX_DIMENSION = 0.95;
-    if (width > MAX_DIMENSION) {
-        const scale = MAX_DIMENSION / width;
-        width = MAX_DIMENSION;
-        height *= scale;
-    }
-
-    if (height > MAX_DIMENSION) {
-        const scale = MAX_DIMENSION / height;
-        height = MAX_DIMENSION;
-        width *= scale;
+    const maxScale = Math.min(
+        width > 0 ? MAX_TEXT_TEMPLATE_DIMENSION / width : 1,
+        height > 0 ? MAX_TEXT_TEMPLATE_DIMENSION / height : 1,
+        1,
+    );
+    if (maxScale < 1) {
+        width *= maxScale;
+        height *= maxScale;
     }
 
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
@@ -2353,12 +2381,14 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
 
     const resolvedAspectRatio = width > 0 && height > 0 ? width / height : aspectRatio;
 
+    const round = (value) => Math.round(value * 10000) / 10000;
+
     return {
-        left,
-        top,
-        width,
-        height,
-        aspectRatio: resolvedAspectRatio,
+        left: round(left),
+        top: round(top),
+        width: round(width),
+        height: round(height),
+        aspectRatio: round(resolvedAspectRatio),
         rotation: 0,
     };
 }
@@ -2398,7 +2428,10 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
     } else if (style.align === 'right') {
         xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
     }
-    const letterSpacingPx = Math.max(0, style.fontSize * style.letterSpacingScale);
+    const letterSpacingScale = typeof clampTextLetterSpacing === 'function'
+        ? clampTextLetterSpacing(style.letterSpacingScale)
+        : style.letterSpacingScale;
+    const letterSpacingPx = style.fontSize * letterSpacingScale;
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
     <style>
