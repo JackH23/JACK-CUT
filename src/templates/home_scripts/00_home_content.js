@@ -175,6 +175,9 @@ const textEffectFontSelect = document.getElementById('text-effect-font');
 const textEffectSizeInput = document.getElementById('text-effect-size');
 const textEffectSizeValue = document.getElementById('text-effect-size-value');
 const textEffectColorInput = document.getElementById('text-effect-color');
+const textEffectLetterSpacingInput = document.getElementById('text-effect-letter-spacing');
+const textEffectLetterSpacingValue = document.getElementById('text-effect-letter-spacing-value');
+const textEffectTransformSelect = document.getElementById('text-effect-transform');
 const textEffectAlignmentButtons = textEffectsPanel
     ? Array.from(textEffectsPanel.querySelectorAll('[data-text-align]'))
     : [];

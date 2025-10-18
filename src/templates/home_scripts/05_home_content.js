@@ -274,12 +274,28 @@ const TEXT_FONT_LIBRARY = {
         weight: 500,
         letterSpacingScale: 0.02,
     },
+    georgia: {
+        key: 'georgia',
+        label: 'Georgia',
+        family: "'Georgia', 'Times New Roman', serif",
+        weight: 600,
+        letterSpacingScale: 0.018,
+    },
+    avenir: {
+        key: 'avenir',
+        label: 'Avenir Next',
+        family: "'Avenir Next', 'Segoe UI', system-ui, sans-serif",
+        weight: 600,
+        letterSpacingScale: 0.038,
+    },
 };
 
 const TEXT_ALIGNMENT_OPTIONS = new Set(['left', 'center', 'right']);
 const TEXT_TRANSFORM_OPTIONS = new Set(['none', 'uppercase', 'lowercase', 'capitalize']);
 const TEXT_FONT_SIZE_MIN = 48;
 const TEXT_FONT_SIZE_MAX = 220;
+const TEXT_LETTER_SPACING_MIN = -0.05;
+const TEXT_LETTER_SPACING_MAX = 0.2;
 
 const DEFAULT_TEXT_STYLE = {
     fontKey: 'inter',
@@ -432,6 +448,23 @@ function clampTextFontSize(value) {
     return Math.min(TEXT_FONT_SIZE_MAX, Math.max(TEXT_FONT_SIZE_MIN, numeric));
 }
 
+function clampTextLetterSpacing(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return DEFAULT_TEXT_STYLE.letterSpacingScale;
+    }
+    return Math.min(TEXT_LETTER_SPACING_MAX, Math.max(TEXT_LETTER_SPACING_MIN, numeric));
+}
+
+function formatLetterSpacingReadout(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return '0.00 em';
+    }
+    const rounded = Math.round(numeric * 100) / 100;
+    return `${rounded.toFixed(2)} em`;
+}
+
 function normalizeTextColor(value) {
     if (typeof value !== 'string') {
         return DEFAULT_TEXT_STYLE.color;
@@ -476,13 +509,14 @@ function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
     let letterSpacingScale = fontEntry.letterSpacingScale;
     const letterSpacingOverride = styleOverrides.letterSpacingScale;
     if (Number.isFinite(Number(letterSpacingOverride))) {
-        letterSpacingScale = Number(letterSpacingOverride);
+        letterSpacingScale = clampTextLetterSpacing(letterSpacingOverride);
     } else if (!didChangeFontKey) {
         const datasetLetterSpacing = Number(timelineItem.dataset.textLetterSpacingScale);
         if (Number.isFinite(datasetLetterSpacing)) {
-            letterSpacingScale = datasetLetterSpacing;
+            letterSpacingScale = clampTextLetterSpacing(datasetLetterSpacing);
         }
     }
+    letterSpacingScale = clampTextLetterSpacing(letterSpacingScale);
     const fontSizeCandidate = styleOverrides.fontSize ?? timelineItem.dataset.textFontSize;
     const fontSize = clampTextFontSize(fontSizeCandidate);
     const color = normalizeTextColor(styleOverrides.color || timelineItem.dataset.textColor || DEFAULT_TEXT_STYLE.color);
@@ -531,7 +565,7 @@ function getTimelineTextStyle(timelineItem) {
     const fontWeight = Number.isFinite(fontWeightCandidate) ? fontWeightCandidate : fontEntry.weight;
     const letterSpacingCandidate = Number(timelineItem.dataset.textLetterSpacingScale);
     const letterSpacingScale = Number.isFinite(letterSpacingCandidate)
-        ? letterSpacingCandidate
+        ? clampTextLetterSpacing(letterSpacingCandidate)
         : fontEntry.letterSpacingScale;
     const fontSizeCandidate = Number(timelineItem.dataset.textFontSize);
     const fontSize = Number.isFinite(fontSizeCandidate)
@@ -593,6 +627,8 @@ function updateTextEffectsControlsAvailability(isEnabled) {
         textEffectFontSelect,
         textEffectSizeInput,
         textEffectColorInput,
+        textEffectLetterSpacingInput,
+        textEffectTransformSelect,
     ];
     controls.forEach((control) => {
         if (!control) {
@@ -612,6 +648,9 @@ function updateTextEffectsControlsAvailability(isEnabled) {
     }
     if (!isEnabled && textEffectSizeValue) {
         textEffectSizeValue.textContent = '—';
+    }
+    if (!isEnabled && textEffectLetterSpacingValue) {
+        textEffectLetterSpacingValue.textContent = '—';
     }
 }
 
@@ -643,6 +682,15 @@ function syncTextEffectsControlsToTimelineItem(timelineItem) {
     }
     if (textEffectColorInput) {
         textEffectColorInput.value = style.color;
+    }
+    if (textEffectLetterSpacingInput) {
+        textEffectLetterSpacingInput.value = String(style.letterSpacingScale.toFixed(3));
+    }
+    if (textEffectLetterSpacingValue) {
+        textEffectLetterSpacingValue.textContent = formatLetterSpacingReadout(style.letterSpacingScale);
+    }
+    if (textEffectTransformSelect) {
+        textEffectTransformSelect.value = style.transform || 'none';
     }
     textEffectAlignmentButtons.forEach((button) => {
         const targetAlign = button.dataset.textAlign;
