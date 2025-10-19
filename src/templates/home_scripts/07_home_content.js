@@ -562,6 +562,46 @@ function computeTimelineDurationGeometry() {
         return null;
     }
 
+    const { left: trackPaddingLeft } = getTimelineTrackPadding();
+    const { left: lanePaddingLeft } = getTimelineLanePadding();
+    const offset = trackPaddingLeft + lanePaddingLeft;
+
+    let computedWidthPx = 0;
+
+    if (typeof getTimelineLaneLayout === 'function' && typeof durationToWidth === 'function') {
+        const lanes = getTimelineLanes();
+        lanes.forEach((lane, laneIndex) => {
+            const layout = getTimelineLaneLayout(lane, laneIndex);
+            if (!layout.length) {
+                return;
+            }
+
+            let cursorPx = 0;
+
+            layout.forEach((entry) => {
+                if (!entry) {
+                    return;
+                }
+
+                const gapMs = Number(entry.leadingGap) || 0;
+                if (gapMs !== 0) {
+                    const gapPx = Math.round(gapMs / perPixel);
+                    if (Number.isFinite(gapPx)) {
+                        cursorPx = Math.max(0, cursorPx + gapPx);
+                    }
+                }
+
+                const clipWidthPx = durationToWidth(entry.duration);
+                cursorPx += clipWidthPx;
+                computedWidthPx = Math.max(computedWidthPx, cursorPx);
+            });
+        });
+    }
+
+    if (computedWidthPx > 0) {
+        return { offset, width: computedWidthPx };
+    }
+
     const entries = getTimelineLaneEntries();
     if (!entries.length) {
         return null;
@@ -593,10 +633,6 @@ function computeTimelineDurationGeometry() {
     if (!hasValidEntry) {
         return null;
     }
-
-    const { left: trackPaddingLeft } = getTimelineTrackPadding();
-    const { left: lanePaddingLeft } = getTimelineLanePadding();
-    const offset = trackPaddingLeft + lanePaddingLeft;
 
     if (timelineDurationMs <= 0) {
         return { offset, width: 0 };
