@@ -801,6 +801,46 @@ function updateTimelinePlayheadIndicator(fraction, options = {}) {
     timelinePlayheadLine.setAttribute('aria-hidden', 'false');
 }
 
+function ensureTimelinePlayheadVisibility(targetFraction, options = {}) {
+    if (!timelineTrack) {
+        return;
+    }
+
+    const { immediate = false } = options;
+
+    const adjustScroll = () => {
+        const { offset, width } = lastTimelinePlayheadGeometry;
+        if (!Number.isFinite(width) || width <= 0) {
+            return;
+        }
+
+        const clamped = clampProgress(Number.isFinite(targetFraction) ? targetFraction : getTimelineProgressFraction());
+        const targetPosition = offset + (width * clamped);
+        const { left: paddingLeft, right: paddingRight } = getTimelineTrackPadding();
+        const marginStart = Math.max(0, Math.min(32, paddingLeft || 0));
+        const marginEnd = Math.max(0, Math.min(32, paddingRight || 0));
+        const visibleStart = timelineTrack.scrollLeft + marginStart;
+        const visibleEnd = timelineTrack.scrollLeft + Math.max(0, timelineTrack.clientWidth - marginEnd);
+
+        if (targetPosition < visibleStart) {
+            const nextScroll = Math.max(0, targetPosition - marginStart);
+            timelineTrack.scrollLeft = nextScroll;
+        } else if (targetPosition > visibleEnd) {
+            const availableWidth = Math.max(0, timelineTrack.clientWidth - marginEnd);
+            const desiredScroll = targetPosition - availableWidth;
+            const maxScroll = Math.max(0, timelineTrack.scrollWidth - timelineTrack.clientWidth);
+            const nextScroll = Math.min(Math.max(0, desiredScroll), maxScroll);
+            timelineTrack.scrollLeft = nextScroll;
+        }
+    };
+
+    if (immediate) {
+        adjustScroll();
+    } else {
+        window.requestAnimationFrame(adjustScroll);
+    }
+}
+
 function applyTimelineProgressGeometry() {
     if (!timelineProgressLine || !timelineTrack) {
         return 0;
@@ -1047,12 +1087,14 @@ function applyManualTimelineSeek(fraction, options = {}) {
         : 0;
 
     setTimelineProgressVisuals(clamped, { forceGeometryUpdate: true });
+    ensureTimelinePlayheadVisibility(clamped, { immediate: true });
     updatePlaybackTimeDisplay(safeTarget, safeTotal);
     timelinePlayheadDragState.lastFraction = clamped;
 
     if (commit) {
         seekTimelineToFraction(clamped);
         updateTimelinePauseStateFromTime(safeTarget, state);
+        ensureTimelinePlayheadVisibility(clamped);
     }
 }
 
