@@ -726,6 +726,73 @@ let sharedExportAudioContext = null;
 let sharedExportAudioSources = new WeakMap();
 let pendingExportPlaybackContext = null;
 
+function stabilizeAudioTrack(track) {
+    if (!track) {
+        return;
+    }
+
+    track.enabled = true;
+
+    if (typeof track.applyConstraints === 'function') {
+        const stabilityConstraints = {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+        };
+        track.applyConstraints(stabilityConstraints).catch(() => {});
+    }
+}
+
+function createSilentAudioKeepAlive(audioContext, destinationNode) {
+    if (!audioContext || !destinationNode) {
+        return null;
+    }
+
+    try {
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 0;
+
+        let sourceNode = null;
+        if (typeof audioContext.createConstantSource === 'function') {
+            sourceNode = audioContext.createConstantSource();
+            sourceNode.offset.value = 0;
+        } else if (typeof audioContext.createOscillator === 'function') {
+            sourceNode = audioContext.createOscillator();
+            sourceNode.frequency.value = 0;
+        }
+
+        if (!sourceNode) {
+            return null;
+        }
+
+        sourceNode.connect(gainNode);
+        gainNode.connect(destinationNode);
+
+        if (typeof sourceNode.start === 'function') {
+            sourceNode.start();
+        }
+
+        return {
+            stop: () => {
+                try {
+                    if (typeof sourceNode.stop === 'function') {
+                        sourceNode.stop();
+                    }
+                } catch (stopError) {
+                    // Ignore stop errors when tearing down the keep-alive node.
+                }
+                try {
+                    gainNode.disconnect();
+                } catch (disconnectError) {
+                    // Ignore disconnect errors when tearing down the keep-alive node.
+                }
+            },
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
 function prepareExportPlaybackContext(existingItems = null) {
     const timelineItems = Array.isArray(existingItems)
         ? existingItems
@@ -805,6 +872,13 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 
     if (previewDestination?.stream) {
+        let previewKeepAlive = null;
+        if (previewDestination.context) {
+            previewKeepAlive = createSilentAudioKeepAlive(
+                previewDestination.context,
+                previewDestination,
+            );
+        }
         const primePreviewAudioGraph = () => {
             if (typeof ensureMediaElementGainNode !== 'function') {
                 return;
@@ -856,6 +930,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                 previewContext.resume().catch(() => {});
             }
             attachments.forEach(({ attached }) => {
+                stabilizeAudioTrack(attached);
                 combinedStream.addTrack(attached);
             });
             return {
@@ -875,8 +950,15 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                             attached.stop();
                         }
                     });
+                    if (previewKeepAlive && typeof previewKeepAlive.stop === 'function') {
+                        previewKeepAlive.stop();
+                    }
                 },
             };
+        }
+
+        if (previewKeepAlive && typeof previewKeepAlive.stop === 'function') {
+            previewKeepAlive.stop();
         }
     }
 
@@ -910,6 +992,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     });
     if (directTracks.length && !missingDirectCapture) {
         pendingTracks.forEach((track) => {
+            stabilizeAudioTrack(track);
             combinedStream.addTrack(track);
         });
         return {
@@ -943,6 +1026,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 
     const destination = audioContext.createMediaStreamDestination();
+    const keepAlive = createSilentAudioKeepAlive(audioContext, destination);
     const connectedSourceNodes = [];
     let hasSource = false;
     elements.forEach((element) => {
@@ -989,9 +1073,15 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     }
 
     const audioTracks = destination.stream.getAudioTracks();
-    audioTracks.forEach((track) => combinedStream.addTrack(track));
+    audioTracks.forEach((track) => {
+        stabilizeAudioTrack(track);
+        combinedStream.addTrack(track);
+    });
     if (!audioTracks.length) {
         cleanupConnections();
+        if (keepAlive && typeof keepAlive.stop === 'function') {
+            keepAlive.stop();
+        }
         return {
             audioContext: null,
             success: false,
@@ -1004,7 +1094,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         audioContext,
         success: true,
         error: null,
-        cleanup: cleanupConnections,
+        cleanup: () => {
+            cleanupConnections();
+            if (keepAlive && typeof keepAlive.stop === 'function') {
+                keepAlive.stop();
+            }
+        },
     };
 }
 
@@ -1110,6 +1205,7 @@ async function handleConfirmExport() {
         recorder = new MediaRecorder(combinedStream, {
             mimeType: exportFormat.mimeType,
             videoBitsPerSecond: 6_000_000,
+            audioBitsPerSecond: 192_000,
         });
 
         const recordingPromise = new Promise((resolve, reject) => {
