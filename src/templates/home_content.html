@@ -161,41 +161,59 @@
                 </div>
                 <div class="settings-content">
                     <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
-                        <div class="info-list">
-                            <div class="info-item clip-duration-info">
-                                <div class="info-icon">⏲️</div>
-                                <div class="info-item__body">
-                                    <div class="info-item__header">
-                                        <span class="info-item__title" id="image-duration-apply-label">Image clip duration</span>
-                                        <div class="clip-duration-actions">
-                                            <button type="button" class="clip-duration-apply-button" id="image-duration-apply-all" disabled>Apply All</button>
-                                            <span class="clip-duration-apply-status" id="image-duration-apply-status" role="status" aria-live="polite"></span>
+                        <div class="video-controls" role="group" aria-label="Video creative controls">
+                            <div class="control-card control-card--duration clip-duration-info">
+                                <div class="control-card__header">
+                                    <div class="control-card__title">
+                                        <span class="control-card__icon" aria-hidden="true">⏲️</span>
+                                        <div class="control-card__text">
+                                            <h3 class="control-card__heading" id="image-duration-apply-label">Image clip duration</h3>
+                                            <p class="control-card__description">Set a default length for newly imported images on the timeline.</p>
                                         </div>
+                                    </div>
+                                    <div class="control-card__actions clip-duration-actions">
+                                        <button type="button" class="clip-duration-apply-button" id="image-duration-apply-all" disabled>Apply all</button>
+                                        <span class="control-status clip-duration-apply-status" id="image-duration-apply-status" role="status" aria-live="polite"></span>
                                     </div>
                                 </div>
                             </div>
-                            <div class="info-item keyframe-info">
-                                <div class="info-icon">💠</div>
-                                <div class="info-item__body">
-                                    <div class="info-item__header">
-                                        <label id="keyframe-animation-label">Keyframe animation</label>
-                                        <div class="keyframe-actions">
-                                            <button type="button" class="keyframe-button" id="add-keyframe-button" aria-describedby="keyframe-status">
-                                                <span aria-hidden="true">◆</span>
-                                                Add keyframe
-                                            </button>
-                                            <span class="keyframe-status" id="keyframe-status" role="status" aria-live="polite"></span>
+                            <div class="control-card control-card--keyframes keyframe-info">
+                                <div class="control-card__header">
+                                    <div class="control-card__title">
+                                        <span class="control-card__icon" aria-hidden="true">💠</span>
+                                        <div class="control-card__text">
+                                            <h3 class="control-card__heading" id="keyframe-animation-label">Keyframe animation</h3>
+                                            <p class="control-card__description">Drop motion points to animate overlays and clips with precision.</p>
                                         </div>
                                     </div>
+                                    <div class="control-card__actions">
+                                        <button type="button" class="keyframe-button" id="add-keyframe-button" aria-describedby="keyframe-status">
+                                            <span aria-hidden="true">◆</span>
+                                            <span class="keyframe-button__label">Add keyframe</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="control-card__body">
+                                    <span class="control-status keyframe-status" id="keyframe-status" role="status" aria-live="polite"></span>
                                     <div class="keyframe-track" id="keyframe-track" role="list" aria-labelledby="keyframe-animation-label" data-disabled="true" aria-disabled="true" tabindex="-1"></div>
                                 </div>
                             </div>
-                            <div class="info-item rotation-info">
-                                <div class="info-icon">🧭</div>
-                                <div class="rotation-controls">
-                                    <label for="image-rotation">Image rotation</label>
+                            <div class="control-card control-card--rotation rotation-info">
+                                <div class="control-card__header">
+                                    <div class="control-card__title">
+                                        <span class="control-card__icon" aria-hidden="true">🧭</span>
+                                        <div class="control-card__text">
+                                            <h3 class="control-card__heading">Image rotation</h3>
+                                            <p class="control-card__description">Fine-tune the angle of the selected frame for perfect alignment.</p>
+                                        </div>
+                                    </div>
+                                    <div class="control-card__meta">
+                                        <div class="slider-readout" id="image-rotation-value">0°</div>
+                                    </div>
+                                </div>
+                                <div class="control-card__body control-card__body--aligned rotation-controls">
+                                    <label class="visually-hidden" for="image-rotation">Image rotation</label>
                                     <input type="range" id="image-rotation" min="-180" max="180" value="0" step="1">
-                                    <div class="slider-readout" id="image-rotation-value">0°</div>
                                 </div>
                             </div>
                         </div>
