@@ -2611,6 +2611,19 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     };
 }
 
+function createTimelineItemBadge(label, modifierClass, icon = null) {
+    const badge = document.createElement('span');
+    badge.className = 'timeline-item__badge';
+    if (modifierClass) {
+        badge.classList.add(modifierClass);
+    }
+    if (icon) {
+        badge.dataset.icon = icon;
+    }
+    badge.textContent = label;
+    return badge;
+}
+
 async function addToTimeline(file, objectURL) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
@@ -2626,6 +2639,7 @@ async function addToTimeline(file, objectURL) {
     timelineItem.dataset.displayName = file.name;
 
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = file.name;
 
     const removeButton = document.createElement('button');
@@ -2635,7 +2649,10 @@ async function addToTimeline(file, objectURL) {
     removeButton.textContent = '✕';
 
     if (file.type.startsWith('video/')) {
+        timelineItem.classList.add('timeline-item--video');
+        timelineItem.appendChild(createTimelineItemBadge('Video', 'timeline-item__badge--video', '🎬'));
         const videoThumb = document.createElement('video');
+        videoThumb.className = 'timeline-item__media timeline-item__media--video';
         videoThumb.src = objectURL;
         videoThumb.muted = true;
         videoThumb.loop = true;
@@ -2671,8 +2688,10 @@ async function addToTimeline(file, objectURL) {
         });
         timelineItem.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
+        timelineItem.classList.add('timeline-item--image');
+        timelineItem.appendChild(createTimelineItemBadge('Image', 'timeline-item__badge--image', '🖼️'));
         const imageThumb = document.createElement('img');
-        imageThumb.className = 'timeline-thumbnail';
+        imageThumb.className = 'timeline-item__media timeline-item__media--image timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
         timelineItem.appendChild(imageThumb);
@@ -2687,8 +2706,9 @@ async function addToTimeline(file, objectURL) {
         });
     } else if (file.type.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
+        timelineItem.appendChild(createTimelineItemBadge('Audio', 'timeline-item__badge--audio', '🎧'));
         const waveformContainer = document.createElement('div');
-        waveformContainer.className = 'timeline-waveform';
+        waveformContainer.className = 'timeline-item__media timeline-waveform';
         const waveformCanvas = document.createElement('canvas');
         waveformContainer.appendChild(waveformCanvas);
         timelineItem.appendChild(waveformContainer);
@@ -3130,7 +3150,10 @@ async function addDefaultTextOverlayToTimeline() {
     timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
     timelineItem.dataset.autoFitText = 'true';
 
+    timelineItem.appendChild(createTimelineItemBadge('Text', 'timeline-item__badge--text', '📝'));
+
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
 
     const removeButton = document.createElement('button');
@@ -3141,7 +3164,7 @@ async function addDefaultTextOverlayToTimeline() {
 
     try {
         const thumbnail = document.createElement('img');
-        thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
+        thumbnail.className = 'timeline-item__media timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
         thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
         timelineItem.appendChild(thumbnail);
