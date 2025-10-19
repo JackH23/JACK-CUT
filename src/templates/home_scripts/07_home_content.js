@@ -915,6 +915,53 @@ if (timelineTrack) {
     });
 }
 
+function shouldSeekTimelineFromTrackEvent(event) {
+    const target = event?.target;
+    if (!(target instanceof Element)) {
+        return true;
+    }
+
+    if (target.closest('.timeline-item')) {
+        return false;
+    }
+
+    if (target.closest('.timeline-playhead-line')) {
+        return false;
+    }
+
+    return true;
+}
+
+function handleTimelineTrackClick(event) {
+    if (!timelineTrack || event.defaultPrevented) {
+        return;
+    }
+
+    if (event.button !== undefined && event.button !== 0) {
+        return;
+    }
+
+    if (!shouldSeekTimelineFromTrackEvent(event)) {
+        return;
+    }
+
+    const fraction = computeTimelineFractionFromClientX(event.clientX);
+
+    if (!Number.isFinite(fraction)) {
+        return;
+    }
+
+    if (isTimelinePlaying) {
+        stopTimelinePlayback(false, false);
+    }
+
+    applyManualTimelineSeek(fraction, { commit: true });
+}
+
+if (timelineTrack) {
+    timelineTrack.addEventListener('click', handleTimelineTrackClick);
+}
+
 function computeTimelineFractionFromClientX(clientX) {
     if (!timelineTrack || !Number.isFinite(clientX)) {
         return getTimelineProgressFraction();
