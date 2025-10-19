@@ -1089,44 +1089,98 @@ function getExportResolution(aspectValue, qualityValue) {
     return presetsForAspect[qualityKey];
 }
 
+const EXPORT_AUDIO_CONFIG = (() => {
+    const defaultConfig = {
+        sampleRate: 48000,
+        codec: 'mp4a.40.2',
+        audioBitsPerSecond: 192000,
+        primingDurationMs: 250,
+    };
+    if (typeof window !== 'undefined') {
+        const existing = (typeof window.EXPORT_AUDIO_CONFIG === 'object'
+            && window.EXPORT_AUDIO_CONFIG !== null)
+            ? window.EXPORT_AUDIO_CONFIG
+            : null;
+        const merged = existing ? { ...defaultConfig, ...existing } : defaultConfig;
+        window.EXPORT_AUDIO_CONFIG = merged;
+        return merged;
+    }
+    return defaultConfig;
+})();
+
 const EXPORT_FORMAT_CANDIDATES = [
     {
         mimeType: 'video/mp4;codecs="avc1.42E01E, mp4a.40.2"',
         fileExtension: 'mp4',
         label: 'MP4 (H.264)',
+        audioCodec: 'mp4a.40.2',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: EXPORT_AUDIO_CONFIG.audioBitsPerSecond,
     },
     {
         mimeType: 'video/mp4;codecs="avc1.4D401E, mp4a.40.2"',
         fileExtension: 'mp4',
         label: 'MP4 (H.264)',
+        audioCodec: 'mp4a.40.2',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: EXPORT_AUDIO_CONFIG.audioBitsPerSecond,
     },
     {
         mimeType: 'video/mp4',
         fileExtension: 'mp4',
         label: 'MP4 (H.264)',
+        audioCodec: 'mp4a.40.2',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: EXPORT_AUDIO_CONFIG.audioBitsPerSecond,
     },
     {
         mimeType: 'video/webm;codecs="vp9,opus"',
         fileExtension: 'webm',
         label: 'WebM (VP9)',
+        audioCodec: 'opus',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: 160000,
     },
     {
         mimeType: 'video/webm;codecs="vp8,opus"',
         fileExtension: 'webm',
         label: 'WebM (VP8)',
+        audioCodec: 'opus',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: 128000,
     },
     {
         mimeType: 'video/webm',
         fileExtension: 'webm',
         label: 'WebM',
+        audioCodec: 'opus',
+        audioSampleRate: EXPORT_AUDIO_CONFIG.sampleRate,
+        audioBitsPerSecond: 128000,
     },
 ];
 
-function getSupportedExportFormat() {
+function getSupportedExportFormat(options = {}) {
+    const preferValidatedAudio = typeof options === 'object'
+        && options !== null
+        && Object.prototype.hasOwnProperty.call(options, 'preferValidatedAudio')
+        ? Boolean(options.preferValidatedAudio)
+        : Boolean(options);
     if (!window.MediaRecorder) {
         return null;
     }
-    for (const candidate of EXPORT_FORMAT_CANDIDATES) {
+    const preferredCandidates = preferValidatedAudio
+        ? EXPORT_FORMAT_CANDIDATES.filter((candidate) => (
+            candidate.audioCodec === EXPORT_AUDIO_CONFIG.codec
+            && candidate.audioSampleRate === EXPORT_AUDIO_CONFIG.sampleRate
+        ))
+        : [];
+    const orderedCandidates = preferValidatedAudio
+        ? [
+            ...preferredCandidates,
+            ...EXPORT_FORMAT_CANDIDATES.filter((candidate) => !preferredCandidates.includes(candidate)),
+        ]
+        : EXPORT_FORMAT_CANDIDATES;
+    for (const candidate of orderedCandidates) {
         try {
             if (window.MediaRecorder.isTypeSupported(candidate.mimeType)) {
                 return candidate;

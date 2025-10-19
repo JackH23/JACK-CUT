@@ -722,6 +722,174 @@ if (cancelExportButton) {
     });
 }
 
+const exportAudioConfig = (() => {
+    const fallbackConfig = {
+        sampleRate: 48000,
+        codec: 'mp4a.40.2',
+        audioBitsPerSecond: 192000,
+        primingDurationMs: 250,
+    };
+    if (typeof window !== 'undefined' && window.EXPORT_AUDIO_CONFIG) {
+        return {
+            ...fallbackConfig,
+            ...window.EXPORT_AUDIO_CONFIG,
+        };
+    }
+    return fallbackConfig;
+})();
+
+const EXPORT_AUDIO_MONITOR_POLL_INTERVAL_MS = 50;
+
+function nowForExport() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+}
+
+function delayForExport(ms) {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, Math.max(0, ms));
+    });
+}
+
+async function primeMediaElementsForExport(elements, options = {}) {
+    const { timeoutMs = 3000 } = options;
+    const validElements = (Array.isArray(elements) ? elements : [elements])
+        .filter((element) => element && typeof element.readyState === 'number');
+    if (!validElements.length) {
+        return;
+    }
+    const abortController = typeof AbortController === 'function'
+        ? new AbortController()
+        : null;
+    let timeoutId = null;
+    try {
+        if (abortController && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            timeoutId = window.setTimeout(() => {
+                try {
+                    abortController.abort();
+                } catch (error) {
+                    // Ignore abort errors
+                }
+            }, timeoutMs);
+        }
+        await Promise.all(validElements.map((element) => (
+            typeof waitForMediaReady === 'function'
+                ? waitForMediaReady(element, { signal: abortController?.signal })
+                : Promise.resolve()
+        )));
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
+    }
+}
+
+function monitorAudioTracksForExport(tracks, onError) {
+    const audioTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+    if (!audioTracks.length) {
+        return null;
+    }
+    let reported = false;
+    const normalizeError = (value) => {
+        if (value instanceof Error) {
+            return value;
+        }
+        if (value && typeof value === 'object' && value.type) {
+            return new Error(`Audio track ${value.type} during export.`);
+        }
+        return new Error('Audio track issue detected during export.');
+    };
+    const handleIssue = (event) => {
+        if (reported) {
+            return;
+        }
+        reported = true;
+        if (typeof onError === 'function') {
+            try {
+                onError(normalizeError(event));
+            } catch (error) {
+                // Ignore errors raised from error handlers.
+            }
+        }
+    };
+    const handleUnmute = () => {
+        reported = false;
+    };
+    audioTracks.forEach((track) => {
+        try {
+            track.addEventListener('ended', handleIssue);
+            track.addEventListener('mute', handleIssue);
+            track.addEventListener('unmute', handleUnmute);
+        } catch (error) {
+            // Ignore listener attachment errors.
+        }
+    });
+    return () => {
+        audioTracks.forEach((track) => {
+            try {
+                track.removeEventListener('ended', handleIssue);
+                track.removeEventListener('mute', handleIssue);
+                track.removeEventListener('unmute', handleUnmute);
+            } catch (error) {
+                // Ignore cleanup failures.
+            }
+        });
+    };
+}
+
+async function ensureTracksActive(tracks, options = {}) {
+    const { timeoutMs = 1500 } = options;
+    const audioTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+    if (!audioTracks.length) {
+        return;
+    }
+    const start = nowForExport();
+    while (nowForExport() - start < timeoutMs) {
+        const inactive = audioTracks.find((track) => track.readyState !== 'live');
+        if (!inactive) {
+            return;
+        }
+        await delayForExport(EXPORT_AUDIO_MONITOR_POLL_INTERVAL_MS);
+    }
+    throw new Error('Audio track failed to become active for export.');
+}
+
+async function waitForAudioContextStable(audioContext, options = {}) {
+    if (!audioContext) {
+        return;
+    }
+    const { timeoutMs = 1500 } = options;
+    const start = nowForExport();
+    let lastTime = audioContext.currentTime;
+    while (nowForExport() - start < timeoutMs) {
+        await delayForExport(EXPORT_AUDIO_MONITOR_POLL_INTERVAL_MS);
+        const currentTime = audioContext.currentTime;
+        if (Number.isFinite(currentTime) && currentTime > 0 && currentTime !== lastTime) {
+            return;
+        }
+        lastTime = currentTime;
+    }
+    throw new Error('Audio rendering graph did not start within the expected time.');
+}
+
+async function waitForExportAudioPrimed(audioContext, stream, options = {}) {
+    const timeoutMs = options?.timeoutMs ?? Math.max(1000, exportAudioConfig.primingDurationMs + 500);
+    const audioTracks = stream?.getAudioTracks ? stream.getAudioTracks().filter(Boolean) : [];
+    await Promise.all([
+        ensureTracksActive(audioTracks, { timeoutMs }).catch((error) => { throw error; }),
+        waitForAudioContextStable(audioContext, { timeoutMs }).catch((error) => { throw error; }),
+    ]);
+}
+
+function ensureAudioTracksNotMuted(tracks) {
+    const audioTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+    const mutedTrack = audioTracks.find((track) => track.muted === true);
+    if (mutedTrack) {
+        throw new Error('Detected muted audio track before export.');
+    }
+}
+
 let sharedExportAudioContext = null;
 let sharedExportAudioSources = new WeakMap();
 let pendingExportPlaybackContext = null;
@@ -755,9 +923,31 @@ function getOrCreateSharedExportAudioContext() {
         }
 
         try {
-            sharedExportAudioContext = new AudioContextConstructor();
-        } catch (error) {
-            return null;
+            const options = {};
+            if (Number.isFinite(exportAudioConfig.sampleRate) && exportAudioConfig.sampleRate > 0) {
+                options.sampleRate = exportAudioConfig.sampleRate;
+            }
+            options.latencyHint = 'playback';
+            sharedExportAudioContext = new AudioContextConstructor(options);
+        } catch (primaryError) {
+            try {
+                sharedExportAudioContext = new AudioContextConstructor();
+            } catch (error) {
+                return null;
+            }
+        }
+    }
+
+    if (sharedExportAudioContext && Number.isFinite(sharedExportAudioContext.sampleRate)) {
+        const expectedSampleRate = Number.isFinite(exportAudioConfig.sampleRate)
+            ? exportAudioConfig.sampleRate
+            : null;
+        if (Number.isFinite(expectedSampleRate)
+            && Math.abs(sharedExportAudioContext.sampleRate - expectedSampleRate) > 1
+        ) {
+            console.warn(
+                `Export audio context sample rate mismatch (expected ${expectedSampleRate}Hz, got ${sharedExportAudioContext.sampleRate}Hz).`,
+            );
         }
     }
 
@@ -776,7 +966,6 @@ function getOrCreateExportAudioSourceNode(element, audioContext) {
 
     try {
         sourceNode = audioContext.createMediaElementSource(element);
-        sourceNode.connect(audioContext.destination);
         sharedExportAudioSources.set(element, sourceNode);
         return sourceNode;
     } catch (error) {
@@ -784,20 +973,135 @@ function getOrCreateExportAudioSourceNode(element, audioContext) {
     }
 }
 
-function attachPreviewAudioToStream(mediaElements, combinedStream) {
+async function attachPreviewAudioToStream(mediaElements, combinedStream) {
     const elements = Array.isArray(mediaElements)
         ? mediaElements.filter(Boolean)
         : [mediaElements].filter(Boolean);
     if (!elements.length || !combinedStream) {
+        const missingError = new Error('Missing media elements or combined stream.');
         return {
             audioContext: null,
             success: false,
-            error: new Error('Missing media elements or combined stream.'),
+            error: missingError,
             cleanup: () => {},
+            getTrackError: () => missingError,
         };
     }
 
+    const monitorState = { error: null };
+    const trackMonitors = [];
+    const transientTracks = [];
+
+    const recordTrackIssue = (error) => {
+        if (monitorState.error) {
+            return;
+        }
+        monitorState.error = error instanceof Error
+            ? error
+            : new Error(String(error || 'Unknown audio track issue.'));
+    };
+
+    const removeMonitorCleanup = (cleanupFn) => {
+        if (!cleanupFn) {
+            return;
+        }
+        const index = trackMonitors.indexOf(cleanupFn);
+        if (index >= 0) {
+            trackMonitors.splice(index, 1);
+        }
+        try {
+            cleanupFn();
+        } catch (error) {
+            // Ignore cleanup failures.
+        }
+    };
+
+    const cleanupTrackMonitors = () => {
+        while (trackMonitors.length) {
+            const cleanupFn = trackMonitors.pop();
+            removeMonitorCleanup(cleanupFn);
+        }
+    };
+
+    const removeTracksFromCombinedStream = (tracksToRemove) => {
+        tracksToRemove.forEach((track) => {
+            if (!track) {
+                return;
+            }
+            const index = transientTracks.indexOf(track);
+            if (index >= 0) {
+                transientTracks.splice(index, 1);
+            }
+            try {
+                if (typeof combinedStream.removeTrack === 'function') {
+                    combinedStream.removeTrack(track);
+                }
+            } catch (error) {
+                // Ignore removal failures.
+            }
+            try {
+                if (track.readyState === 'live' && typeof track.stop === 'function') {
+                    track.stop();
+                }
+            } catch (error) {
+                // Ignore stop failures.
+            }
+        });
+    };
+
+    const cleanupTransientTracks = () => {
+        removeTracksFromCombinedStream([...transientTracks]);
+    };
+
+    const finalizeCleanup = () => {
+        cleanupTrackMonitors();
+        cleanupTransientTracks();
+    };
+
     let lastError = null;
+
+    try {
+        await primeMediaElementsForExport(elements, {
+            timeoutMs: Math.max(2000, exportAudioConfig.primingDurationMs + 500),
+        });
+    } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    const attachTracks = async (tracks, options = {}) => {
+        const exportTracks = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+        if (!exportTracks.length) {
+            return false;
+        }
+        exportTracks.forEach((track) => {
+            combinedStream.addTrack(track);
+            transientTracks.push(track);
+        });
+        const monitorCleanup = monitorAudioTracksForExport(exportTracks, recordTrackIssue);
+        if (monitorCleanup) {
+            trackMonitors.push(monitorCleanup);
+        }
+        try {
+            const timeoutMs = Math.max(1000, exportAudioConfig.primingDurationMs + 500);
+            await ensureTracksActive(exportTracks, { timeoutMs });
+            ensureAudioTracksNotMuted(exportTracks);
+            if (options?.audioContext) {
+                await waitForAudioContextStable(options.audioContext, { timeoutMs });
+            }
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            removeMonitorCleanup(monitorCleanup);
+            removeTracksFromCombinedStream(exportTracks);
+            return false;
+        }
+        if (monitorState.error) {
+            removeMonitorCleanup(monitorCleanup);
+            removeTracksFromCombinedStream(exportTracks);
+            lastError = monitorState.error;
+            return false;
+        }
+        return true;
+    };
 
     let previewDestination = null;
     if (typeof getOrCreatePreviewAudioDestination === 'function') {
@@ -830,21 +1134,20 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
                 .getAudioTracks()
                 .filter((track) => track && track.readyState !== 'ended');
         }
-        
-        const attachments = previewTracks
-            .map((track) => {
-                if (!track) {
-                    return null;
-                }
-                const cloned = typeof track.clone === 'function' ? track.clone() : track;
-                return cloned
-                    ? {
-                        original: track,
-                        attached: cloned,
-                        isClone: cloned !== track,
-                    }
-                    : null;
-            })
+
+        const filteredTracks = previewTracks.filter((track) => {
+            if (!track) {
+                return false;
+            }
+            const settings = typeof track.getSettings === 'function' ? track.getSettings() : null;
+            if (Number.isFinite(settings?.sampleRate)) {
+                return Math.abs(settings.sampleRate - exportAudioConfig.sampleRate) <= 1;
+            }
+            return true;
+        });
+
+        const attachments = filteredTracks
+            .map((track) => (typeof track.clone === 'function' ? track.clone() : track))
             .filter(Boolean);
 
         if (attachments.length) {
@@ -855,148 +1158,173 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             if (previewContext && previewContext.state === 'suspended') {
                 previewContext.resume().catch(() => {});
             }
-            attachments.forEach(({ attached }) => {
-                combinedStream.addTrack(attached);
-            });
-            return {
-                audioContext: previewContext,
-                success: true,
-                error: null,
-                cleanup: () => {
-                    attachments.forEach(({ attached, isClone }) => {
-                        try {
-                            if (typeof combinedStream.removeTrack === 'function') {
-                                combinedStream.removeTrack(attached);
-                            }
-                        } catch (removeError) {
-                            // Ignore removal errors during cleanup.
-                        }
-                        if (isClone && typeof attached.stop === 'function') {
-                            attached.stop();
-                        }
-                    });
-                },
-            };
+            const attached = await attachTracks(attachments, { audioContext: previewContext });
+            if (attached) {
+                return {
+                    audioContext: previewContext,
+                    success: true,
+                    error: null,
+                    cleanup: finalizeCleanup,
+                    getTrackError: () => monitorState.error,
+                };
+            }
         }
     }
 
     const directTracks = [];
     let missingDirectCapture = false;
-    const pendingTracks = [];
     elements.forEach((element) => {
-        if (typeof element?.captureStream === 'function') {
-            try {
-                const audioStream = element.captureStream();
-                if (audioStream) {
-                    const tracks = audioStream.getAudioTracks();
-                    if (tracks.length) {
-                        tracks.forEach((track) => {
-                            pendingTracks.push(track);
-                            directTracks.push(track);
-                        });
-                    } else {
-                        missingDirectCapture = true;
-                    }
+        if (typeof element?.captureStream !== 'function') {
+            missingDirectCapture = true;
+            return;
+        }
+        try {
+            const audioStream = element.captureStream();
+            if (!audioStream) {
+                missingDirectCapture = true;
+                return;
+            }
+            const tracks = audioStream.getAudioTracks();
+            if (!tracks.length) {
+                missingDirectCapture = true;
+                return;
+            }
+            tracks.forEach((track) => {
+                if (!track) {
+                    missingDirectCapture = true;
+                    return;
+                }
+                const settings = typeof track.getSettings === 'function' ? track.getSettings() : null;
+                if (!Number.isFinite(settings?.sampleRate)
+                    || Math.abs(settings.sampleRate - exportAudioConfig.sampleRate) > 1
+                ) {
+                    missingDirectCapture = true;
+                    return;
+                }
+                const cloned = typeof track.clone === 'function' ? track.clone() : track;
+                if (cloned) {
+                    directTracks.push(cloned);
                 } else {
                     missingDirectCapture = true;
                 }
-            } catch (error) {
-                lastError = error;
-                missingDirectCapture = true;
-            }
-        } else {
-            missingDirectCapture = true;
-        }
-    });
-    if (directTracks.length && !missingDirectCapture) {
-        pendingTracks.forEach((track) => {
-            combinedStream.addTrack(track);
-        });
-        return {
-            audioContext: null,
-            success: true,
-            error: null,
-            cleanup: () => {},
-        };
-    }
-
-    pendingTracks.forEach((track) => {
-        try {
-            track.stop();
+            });
         } catch (error) {
-            // Ignore track stop errors when falling back to AudioContext.
+            missingDirectCapture = true;
+            if (!lastError) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+            }
         }
     });
+
+    if (directTracks.length && !missingDirectCapture) {
+        const attachedDirect = await attachTracks(directTracks);
+        if (attachedDirect) {
+            return {
+                audioContext: null,
+                success: true,
+                error: null,
+                cleanup: finalizeCleanup,
+                getTrackError: () => monitorState.error,
+            };
+        }
+    }
 
     const audioContext = getOrCreateSharedExportAudioContext();
     if (!audioContext) {
+        cleanupTrackMonitors();
+        cleanupTransientTracks();
+        const error = lastError || new Error('AudioContext is not supported in this browser.');
         return {
             audioContext: null,
             success: false,
-            error: lastError || new Error('AudioContext is not supported in this browser.'),
+            error,
             cleanup: () => {},
+            getTrackError: () => monitorState.error || error,
         };
     }
 
     if (audioContext.state === 'suspended') {
-        audioContext.resume().catch(() => {});
+        try {
+            await audioContext.resume();
+        } catch (error) {
+            // Ignore resume failures; the graph may still produce audio.
+        }
     }
 
     const destination = audioContext.createMediaStreamDestination();
-    const connectedSourceNodes = [];
+    const connectedNodes = [];
     let hasSource = false;
+
     elements.forEach((element) => {
         try {
             const sourceNode = getOrCreateExportAudioSourceNode(element, audioContext);
             if (!sourceNode) {
                 return;
             }
-            sourceNode.connect(destination);
-            connectedSourceNodes.push({ node: sourceNode, destination });
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = 1;
+            sourceNode.connect(gainNode);
+            gainNode.connect(destination);
+            connectedNodes.push({ sourceNode, gainNode, destination });
             hasSource = true;
         } catch (error) {
-            lastError = error;
+            if (!lastError) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+            }
         }
     });
 
     const cleanupConnections = () => {
-        connectedSourceNodes.forEach(({ node, destination: dest }) => {
+        connectedNodes.forEach(({ sourceNode, gainNode, destination: dest }) => {
             try {
-                node.disconnect(dest);
-            } catch (disconnectError) {
-                // Ignore disconnection errors when cleaning up export routing.
+                sourceNode.disconnect(gainNode);
+            } catch (error) {
+                // Ignore disconnect errors.
+            }
+            try {
+                gainNode.disconnect(dest);
+            } catch (error) {
+                // Ignore disconnect errors.
             }
         });
-        try {
-            destination.stream.getAudioTracks().forEach((track) => {
-                if (typeof track.stop === 'function') {
-                    track.stop();
-                }
-            });
-        } catch (error) {
-            // Ignore destination cleanup errors.
-        }
+        finalizeCleanup();
     };
 
     if (!hasSource) {
         cleanupConnections();
+        const error = lastError || new Error('Unable to create audio sources for export.');
         return {
             audioContext: null,
             success: false,
-            error: lastError || new Error('Unable to create audio sources for export.'),
+            error,
             cleanup: () => {},
+            getTrackError: () => monitorState.error || error,
         };
     }
 
-    const audioTracks = destination.stream.getAudioTracks();
-    audioTracks.forEach((track) => combinedStream.addTrack(track));
-    if (!audioTracks.length) {
+    const contextTracks = destination.stream.getAudioTracks().filter(Boolean);
+    if (!contextTracks.length) {
         cleanupConnections();
+        const error = lastError || new Error('No audio tracks available from preview video.');
         return {
             audioContext: null,
             success: false,
-            error: lastError || new Error('No audio tracks available from preview video.'),
+            error,
             cleanup: () => {},
+            getTrackError: () => monitorState.error || error,
+        };
+    }
+
+    const attachedContextTracks = await attachTracks(contextTracks, { audioContext });
+    if (!attachedContextTracks) {
+        cleanupConnections();
+        const error = lastError || monitorState.error || new Error('Unable to prepare export audio tracks.');
+        return {
+            audioContext: null,
+            success: false,
+            error,
+            cleanup: () => {},
+            getTrackError: () => monitorState.error || error,
         };
     }
 
@@ -1005,6 +1333,7 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
         success: true,
         error: null,
         cleanup: cleanupConnections,
+        getTrackError: () => monitorState.error,
     };
 }
 
@@ -1042,9 +1371,29 @@ async function handleConfirmExport() {
         return;
     }
 
-    const exportFormat = getSupportedExportFormat();
+    const exportFormat = getSupportedExportFormat({ preferValidatedAudio: true });
     if (!exportFormat) {
         alert('Export is not supported by this browser. Try using a browser with MediaRecorder support for MP4 or WebM.');
+        return;
+    }
+
+    const expectedAudioCodec = exportAudioConfig.codec;
+    if (exportFormat.audioCodec
+        && expectedAudioCodec
+        && exportFormat.audioCodec !== expectedAudioCodec
+    ) {
+        alert(`Export requires ${expectedAudioCodec.toUpperCase()} audio support at ${exportAudioConfig.sampleRate}Hz. Try a different browser or update your current one.`);
+        return;
+    }
+
+    const expectedSampleRate = Number.isFinite(exportAudioConfig.sampleRate)
+        ? exportAudioConfig.sampleRate
+        : null;
+    if (Number.isFinite(expectedSampleRate)
+        && Number.isFinite(exportFormat.audioSampleRate)
+        && Math.abs(exportFormat.audioSampleRate - expectedSampleRate) > 1
+    ) {
+        alert(`Export requires an audio sample rate of ${expectedSampleRate}Hz. Your browser reported ${exportFormat.audioSampleRate}Hz.`);
         return;
     }
 
@@ -1098,41 +1447,113 @@ async function handleConfirmExport() {
         combinedStream = new MediaStream();
         canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
-        exportAudioContext = audioAttachment.audioContext;
+        const audioAttachment = await attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        exportAudioContext = audioAttachment.audioContext || null;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;
         }
         if (!audioAttachment.success) {
-            console.warn('Unable to capture audio from preview video.', audioAttachment.error);
+            throw (audioAttachment.error || new Error('Unable to attach audio to export stream.'));
         }
 
-        recorder = new MediaRecorder(combinedStream, {
+        const initialTrackError = typeof audioAttachment.getTrackError === 'function'
+            ? audioAttachment.getTrackError()
+            : null;
+        if (initialTrackError) {
+            throw initialTrackError;
+        }
+
+        await waitForExportAudioPrimed(exportAudioContext, combinedStream, {
+            timeoutMs: Math.max(1500, exportAudioConfig.primingDurationMs + 750),
+        });
+
+        const audioTracksForValidation = combinedStream
+            .getAudioTracks()
+            .filter((track) => track && track.kind === 'audio');
+        if (!audioTracksForValidation.length) {
+            throw new Error('Export stream does not include audio.');
+        }
+        ensureAudioTracksNotMuted(audioTracksForValidation);
+        const audioTrackSettings = typeof audioTracksForValidation[0].getSettings === 'function'
+            ? audioTracksForValidation[0].getSettings()
+            : null;
+        if (Number.isFinite(audioTrackSettings?.sampleRate)
+            && Math.abs(audioTrackSettings.sampleRate - exportAudioConfig.sampleRate) > 1
+        ) {
+            throw new Error(`Audio track sample rate mismatch. Expected ${exportAudioConfig.sampleRate}Hz, received ${audioTrackSettings.sampleRate}Hz.`);
+        }
+
+        const recorderOptions = {
             mimeType: exportFormat.mimeType,
             videoBitsPerSecond: 6_000_000,
-        });
+        };
+        if (Number.isFinite(exportFormat.audioBitsPerSecond)) {
+            recorderOptions.audioBitsPerSecond = exportFormat.audioBitsPerSecond;
+        } else if (Number.isFinite(exportAudioConfig.audioBitsPerSecond)) {
+            recorderOptions.audioBitsPerSecond = exportAudioConfig.audioBitsPerSecond;
+        }
+
+        recorder = new MediaRecorder(combinedStream, recorderOptions);
+
+        let recorderError = null;
+        let droppedAudioChunks = 0;
 
         const recordingPromise = new Promise((resolve, reject) => {
             recorder.addEventListener('dataavailable', (event) => {
                 if (event.data && event.data.size > 0) {
                     recordedChunks.push(event.data);
+                } else {
+                    droppedAudioChunks += 1;
                 }
             });
             recorder.addEventListener('stop', () => {
+                if (recorderError) {
+                    reject(recorderError);
+                    return;
+                }
+                if (droppedAudioChunks > 0) {
+                    reject(new Error('Audio frames were dropped during export. Please try again.'));
+                    return;
+                }
+                if (!recordedChunks.length) {
+                    reject(new Error('No media was recorded during export.'));
+                    return;
+                }
                 resolve(new Blob(recordedChunks, { type: exportFormat.mimeType }));
             }, { once: true });
             recorder.addEventListener('error', (event) => {
-                reject(event.error || new Error('Recording error.'));
+                recorderError = event.error || new Error('Recording error.');
+                reject(recorderError);
             }, { once: true });
+            try {
+                recorder.addEventListener('warning', (event) => {
+                    if (!recorderError) {
+                        recorderError = event?.error || new Error('Recording warning.');
+                    }
+                });
+            } catch (error) {
+                // Ignore browsers without MediaRecorder warning support.
+            }
         });
 
-        recorder.start(250);
+        recorder.start();
         const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
         if (recorder.state !== 'inactive') {
             recorder.stop();
         }
 
         const exportBlob = await recordingPromise;
+
+        const finalTrackError = typeof audioAttachment.getTrackError === 'function'
+            ? audioAttachment.getTrackError()
+            : null;
+        if (finalTrackError) {
+            throw finalTrackError;
+        }
+
+        if (!exportBlob || exportBlob.size <= 0) {
+            throw new Error('Exported file is empty.');
+        }
 
         if (!playbackCompleted) {
             throw new Error('Timeline playback was interrupted before completion.');
