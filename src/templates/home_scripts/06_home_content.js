@@ -240,7 +240,9 @@
                     return;
                 }
                 entry.lastTimelineTime = safeTimelineNow;
-                entry.opacity = computeOverlayEntryOpacity(entry);
+                entry.opacity = Number.isFinite(entry.renderedOpacity)
+                    ? entry.renderedOpacity
+                    : computeOverlayEntryOpacity(entry);
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
             return;
@@ -508,7 +510,9 @@
 
         if (!descriptor.shouldRender) {
             if (entry.isVisible) {
-                const liveOpacity = computeOverlayEntryOpacity(entry);
+                const liveOpacity = Number.isFinite(entry.renderedOpacity)
+                    ? entry.renderedOpacity
+                    : computeOverlayEntryOpacity(entry);
                 if (liveOpacity > 0 && liveOpacity < 0.999) {
                     descriptor.shouldRender = true;
                     entry.opacity = liveOpacity;
@@ -633,8 +637,9 @@
         const nextOpacity = clampedOpacity >= 1 ? 1 : clampedOpacity;
         if (shouldUpdateOpacity(entry.renderedOpacity, nextOpacity)) {
             layer.style.opacity = nextOpacity >= 1 ? '1' : String(nextOpacity);
-            entry.renderedOpacity = nextOpacity;
         }
+        entry.renderedOpacity = nextOpacity;
+        entry.opacity = nextOpacity;
         if (image) {
             image.style.opacity = '1';
         }
@@ -649,13 +654,11 @@
         layer.classList.toggle('is-dragging', isDragging);
         layer.classList.toggle('is-resizing', isResizing);
 
-        const layerOpacity = computeOverlayEntryOpacity(entry);
-
         entry.frame = resolvedFrame;
         entry.isVisible = true;
         entry.layerGroup = groupName;
         entry.zIndex = targetZIndex;
-        entry.opacity = layerOpacity;
+        entry.opacity = entry.renderedOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
         return true;
@@ -674,7 +677,9 @@
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
-                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.opacity = Number.isFinite(fallbackEntry.renderedOpacity)
+                    ? fallbackEntry.renderedOpacity
+                    : computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
@@ -696,7 +701,9 @@
             }
             const fallbackEntry = activeOverlayLayers.get(descriptor.item);
             if (fallbackEntry?.isVisible) {
-                fallbackEntry.opacity = computeOverlayEntryOpacity(fallbackEntry);
+                fallbackEntry.opacity = Number.isFinite(fallbackEntry.renderedOpacity)
+                    ? fallbackEntry.renderedOpacity
+                    : computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
@@ -758,7 +765,9 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        const liveOpacity = computeOverlayEntryOpacity(entry);
+        const liveOpacity = Number.isFinite(entry.renderedOpacity)
+            ? entry.renderedOpacity
+            : computeOverlayEntryOpacity(entry);
         entry.opacity = liveOpacity;
         if (liveOpacity <= 0) {
             return;
