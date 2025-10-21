@@ -310,6 +310,24 @@
 
     const overlayGroups = { below: [], above: [] };
 
+    const OVERLAY_PIXEL_PRECISION = 1000;
+    const OVERLAY_OPACITY_EPSILON = 0.0005;
+
+    const formatOverlayPixelValue = (value) => {
+        if (!Number.isFinite(value)) {
+            return '0px';
+        }
+        const rounded = Math.round(value * OVERLAY_PIXEL_PRECISION) / OVERLAY_PIXEL_PRECISION;
+        return `${rounded}px`;
+    };
+
+    const shouldUpdateOpacity = (previous, next) => {
+        if (!Number.isFinite(previous)) {
+            return true;
+        }
+        return Math.abs(previous - next) > OVERLAY_OPACITY_EPSILON;
+    };
+
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
@@ -393,6 +411,10 @@
                 borderRadius: 0,
                 opacity: 1,
                 lastTimelineTime: null,
+                renderedFrame: null,
+                renderedOpacity: null,
+                renderedZIndex: null,
+                renderedRotation: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -425,13 +447,17 @@
         layer.classList.add('preview-overlay-layer');
         layer.dataset.laneIndex = String(descriptor.laneIndex);
 
-        if (borderRadius > 0) {
-            if (content) {
-                content.style.borderRadius = `${borderRadius}px`;
+        const nextBorderRadius = borderRadius > 0 ? borderRadius : 0;
+        if (content) {
+            if (nextBorderRadius > 0) {
+                if (entry.borderRadius !== nextBorderRadius) {
+                    content.style.borderRadius = `${nextBorderRadius}px`;
+                }
+            } else if (entry.borderRadius !== 0) {
+                content.style.removeProperty('border-radius');
             }
-        } else if (content) {
-            content.style.removeProperty('border-radius');
         }
+        entry.borderRadius = nextBorderRadius;
 
         if (entry.objectURL !== objectURL || !image.src) {
             image.src = objectURL;
@@ -458,6 +484,10 @@
         entry.opacity = 1;
         entry.frame = null;
         entry.lastTimelineTime = null;
+        entry.renderedFrame = null;
+        entry.renderedOpacity = null;
+        entry.renderedZIndex = null;
+        entry.renderedRotation = null;
 
         if (entry.layer) {
             entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
@@ -517,7 +547,10 @@
         }
 
         const targetZIndex = Number.isFinite(zIndex) ? zIndex : getDescriptorZIndex(descriptor);
-        layer.style.zIndex = String(targetZIndex);
+        if (entry.renderedZIndex !== targetZIndex) {
+            layer.style.zIndex = String(targetZIndex);
+            entry.renderedZIndex = targetZIndex;
+        }
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
         const normalizedTransform = overlayProgress !== null
@@ -549,24 +582,47 @@
 
         const groupName = getDescriptorLayerGroup(descriptor);
 
+        let appliedFrameStyles = null;
+        let rotationValue = '0deg';
+
         if (frame) {
-            layer.style.left = `${frame.left}px`;
-            layer.style.top = `${frame.top}px`;
-            layer.style.width = `${frame.width}px`;
-            layer.style.height = `${frame.height}px`;
-            const rotationValue = Number.isFinite(frame.rotation) ? frame.rotation : 0;
-            image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+            appliedFrameStyles = {
+                left: formatOverlayPixelValue(frame.left),
+                top: formatOverlayPixelValue(frame.top),
+                width: formatOverlayPixelValue(frame.width),
+                height: formatOverlayPixelValue(frame.height),
+            };
+            const numericRotation = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+            rotationValue = `${numericRotation}deg`;
         } else {
-            layer.style.left = '0px';
-            layer.style.top = '0px';
-            layer.style.width = '100%';
-            layer.style.height = '100%';
-            image.style.setProperty('--preview-overlay-rotation', '0deg');
+            appliedFrameStyles = {
+                left: '0px',
+                top: '0px',
+                width: '100%',
+                height: '100%',
+            };
+            rotationValue = '0deg';
+        }
+
+        const previousFrameStyles = entry.renderedFrame;
+        if (!previousFrameStyles
+            || previousFrameStyles.left !== appliedFrameStyles.left
+            || previousFrameStyles.top !== appliedFrameStyles.top
+            || previousFrameStyles.width !== appliedFrameStyles.width
+            || previousFrameStyles.height !== appliedFrameStyles.height) {
+            layer.style.left = appliedFrameStyles.left;
+            layer.style.top = appliedFrameStyles.top;
+            layer.style.width = appliedFrameStyles.width;
+            layer.style.height = appliedFrameStyles.height;
+            entry.renderedFrame = appliedFrameStyles;
+        }
+
+        if (entry.renderedRotation !== rotationValue) {
+            image.style.setProperty('--preview-overlay-rotation', rotationValue);
+            entry.renderedRotation = rotationValue;
         }
 
         if (layer.parentElement !== container) {
-            container.appendChild(layer);
-        } else {
             container.appendChild(layer);
         }
 
@@ -574,7 +630,11 @@
 
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
-        layer.style.opacity = clampedOpacity >= 1 ? '1' : String(clampedOpacity);
+        const nextOpacity = clampedOpacity >= 1 ? 1 : clampedOpacity;
+        if (shouldUpdateOpacity(entry.renderedOpacity, nextOpacity)) {
+            layer.style.opacity = nextOpacity >= 1 ? '1' : String(nextOpacity);
+            entry.renderedOpacity = nextOpacity;
+        }
         if (image) {
             image.style.opacity = '1';
         }
@@ -595,7 +655,6 @@
         entry.isVisible = true;
         entry.layerGroup = groupName;
         entry.zIndex = targetZIndex;
-        entry.borderRadius = borderRadius > 0 ? borderRadius : 0;
         entry.opacity = layerOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
