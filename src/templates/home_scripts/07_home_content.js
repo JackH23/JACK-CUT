@@ -1954,7 +1954,7 @@ function setStagedUploadAddedState(objectURL, isAdded) {
     }
 
     const entry = stagedUploadsByObjectUrl.get(objectURL);
-    const { listItem, addButton, file } = entry;
+    const { listItem, addButton, file, previewController } = entry;
 
     if (!listItem || !addButton) {
         return;
@@ -1965,12 +1965,263 @@ function setStagedUploadAddedState(objectURL, isAdded) {
         addButton.disabled = true;
         addButton.innerHTML = '<span aria-hidden="true">✓</span>';
         addButton.setAttribute('aria-label', `${file.name} added to timeline`);
+        if (previewController && typeof previewController.setDisabled === 'function') {
+            previewController.setDisabled(true);
+            if (typeof previewController.pause === 'function') {
+                previewController.pause();
+            }
+        }
     } else {
         listItem.classList.remove('is-added');
         addButton.disabled = false;
         addButton.innerHTML = '<span aria-hidden="true">+</span>';
         addButton.setAttribute('aria-label', `Add ${file.name} to timeline`);
+        if (previewController && typeof previewController.setDisabled === 'function') {
+            previewController.setDisabled(false);
+        }
     }
+}
+
+function pauseUploadPreviewVideo(video) {
+    if (!(video instanceof HTMLVideoElement)) {
+        return;
+    }
+
+    try {
+        video.pause();
+    } catch (error) {
+        // Ignore pause failures.
+    }
+
+    try {
+        if (Number.isFinite(video.currentTime)) {
+            video.currentTime = 0;
+        }
+    } catch (error) {
+        // Some browsers may throw if the media is not seekable yet.
+    }
+}
+
+let uploadPreviewIntersectionObserver = null;
+let uploadPreviewObserverUnavailable = false;
+const uploadPreviewControllersByElement = new WeakMap();
+let uploadPreviewListObserver = null;
+
+function ensureUploadPreviewIntersectionObserver() {
+    if (uploadPreviewIntersectionObserver) {
+        return uploadPreviewIntersectionObserver;
+    }
+
+    if (uploadPreviewObserverUnavailable) {
+        return null;
+    }
+
+    if (typeof IntersectionObserver !== 'function') {
+        uploadPreviewObserverUnavailable = true;
+        return null;
+    }
+
+    uploadPreviewIntersectionObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            const controller = uploadPreviewControllersByElement.get(entry.target);
+            if (!controller) {
+                return;
+            }
+
+            const isVisible = entry.isIntersecting && entry.intersectionRatio > 0;
+            controller.setVisible(isVisible);
+
+            if (!isVisible && typeof controller.pause === 'function') {
+                controller.pause();
+            }
+        });
+    }, {
+        threshold: 0.25,
+    });
+
+    return uploadPreviewIntersectionObserver;
+}
+
+function createUploadPreviewController(listItem, video) {
+    if (!(listItem instanceof HTMLElement) || !(video instanceof HTMLVideoElement)) {
+        return null;
+    }
+
+    const controller = {
+        listItem,
+        video,
+        isVisible: false,
+        isDisabled: false,
+        isPlaying: false,
+        isHovering: false,
+        hasFocus: false,
+    };
+
+    const observer = ensureUploadPreviewIntersectionObserver();
+
+    const refreshPlayback = () => {
+        const shouldPlay = controller.isVisible
+            && !controller.isDisabled
+            && (controller.isHovering || controller.hasFocus);
+
+        if (shouldPlay) {
+            if (controller.isPlaying) {
+                return;
+            }
+
+            const playPromise = controller.video.play();
+            if (playPromise && typeof playPromise.then === 'function') {
+                playPromise.then(() => {
+                    controller.isPlaying = true;
+                }).catch(() => {
+                    controller.isPlaying = false;
+                });
+            } else {
+                controller.isPlaying = true;
+            }
+        } else {
+            controller.pause();
+        }
+    };
+
+    const handlePointerEnter = () => {
+        controller.isHovering = true;
+        refreshPlayback();
+    };
+
+    const handlePointerLeave = () => {
+        controller.isHovering = false;
+        refreshPlayback();
+    };
+
+    const handleFocusIn = () => {
+        controller.hasFocus = true;
+        refreshPlayback();
+    };
+
+    const handleFocusOut = (event) => {
+        if (event && event.relatedTarget && controller.listItem.contains(event.relatedTarget)) {
+            return;
+        }
+        controller.hasFocus = false;
+        refreshPlayback();
+    };
+
+    const handleLoadedMetadata = () => {
+        if (!controller.isHovering && !controller.hasFocus) {
+            controller.pause();
+        }
+    };
+
+    controller.setVisible = (visible) => {
+        controller.isVisible = Boolean(visible);
+        refreshPlayback();
+    };
+
+    controller.setDisabled = (disabled) => {
+        controller.isDisabled = Boolean(disabled);
+        refreshPlayback();
+    };
+
+    controller.pause = () => {
+        pauseUploadPreviewVideo(controller.video);
+        controller.isPlaying = false;
+    };
+
+    controller.cleanup = () => {
+        uploadPreviewControllersByElement.delete(controller.listItem);
+        if (observer) {
+            try {
+                observer.unobserve(controller.listItem);
+            } catch (error) {
+                // Ignore failures when unobserving.
+            }
+        }
+        controller.listItem.removeEventListener('mouseenter', handlePointerEnter);
+        controller.listItem.removeEventListener('mouseleave', handlePointerLeave);
+        controller.listItem.removeEventListener('focusin', handleFocusIn);
+        controller.listItem.removeEventListener('focusout', handleFocusOut);
+        controller.video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        controller.isHovering = false;
+        controller.hasFocus = false;
+        controller.isVisible = false;
+        controller.isDisabled = false;
+        controller.pause();
+    };
+
+    listItem.addEventListener('mouseenter', handlePointerEnter);
+    listItem.addEventListener('mouseleave', handlePointerLeave);
+    listItem.addEventListener('focusin', handleFocusIn);
+    listItem.addEventListener('focusout', handleFocusOut);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    uploadPreviewControllersByElement.set(listItem, controller);
+
+    if (observer) {
+        observer.observe(listItem);
+    } else {
+        controller.isVisible = true;
+    }
+
+    controller.pause();
+
+    return controller;
+}
+
+function handleUploadGalleryItemRemoval(item) {
+    if (!(item instanceof HTMLElement)) {
+        return;
+    }
+
+    const controller = uploadPreviewControllersByElement.get(item);
+    if (controller && typeof controller.cleanup === 'function') {
+        controller.cleanup();
+    }
+
+    const objectURL = item.dataset?.objectUrl;
+    if (objectURL && stagedUploadsByObjectUrl.has(objectURL)) {
+        const entry = stagedUploadsByObjectUrl.get(objectURL);
+        if (entry?.previewController
+            && entry.previewController !== controller
+            && typeof entry.previewController.cleanup === 'function') {
+            entry.previewController.cleanup();
+        }
+        stagedUploadsByObjectUrl.delete(objectURL);
+    }
+}
+
+function ensureUploadGalleryListObserver() {
+    if (uploadPreviewListObserver || !uploadGalleryList || typeof MutationObserver !== 'function') {
+        return uploadPreviewListObserver;
+    }
+
+    uploadPreviewListObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.removedNodes.forEach((node) => {
+                if (!(node instanceof HTMLElement)) {
+                    return;
+                }
+
+                if (node.classList && node.classList.contains('upload-gallery__item')) {
+                    handleUploadGalleryItemRemoval(node);
+                }
+
+                if (typeof node.querySelectorAll === 'function') {
+                    node.querySelectorAll('.upload-gallery__item').forEach((child) => {
+                        handleUploadGalleryItemRemoval(child);
+                    });
+                }
+            });
+        });
+    });
+
+    try {
+        uploadPreviewListObserver.observe(uploadGalleryList, { childList: true });
+    } catch (error) {
+        // Ignore observer failures.
+    }
+
+    return uploadPreviewListObserver;
 }
 
 async function stageUpload(file) {
@@ -1988,12 +2239,16 @@ async function stageUpload(file) {
         return;
     }
 
+    ensureUploadGalleryListObserver();
+
     const listItem = document.createElement('li');
     listItem.className = 'upload-gallery__item';
     listItem.dataset.objectUrl = objectURL;
 
     const previewWrapper = document.createElement('div');
     previewWrapper.className = 'upload-gallery__preview';
+
+    let previewController = null;
 
     if (isImage) {
         const img = document.createElement('img');
@@ -2010,10 +2265,9 @@ async function stageUpload(file) {
         const video = document.createElement('video');
         video.src = objectURL;
         video.muted = true;
-        video.loop = true;
         video.playsInline = true;
-        video.autoplay = true;
         previewWrapper.appendChild(video);
+        previewController = createUploadPreviewController(listItem, video);
     } else if (isAudio) {
         const icon = document.createElement('span');
         icon.className = 'upload-gallery__audio-icon';
@@ -2051,12 +2305,23 @@ async function stageUpload(file) {
         }
 
         addButton.disabled = true;
+        if (previewController) {
+            if (typeof previewController.setDisabled === 'function') {
+                previewController.setDisabled(true);
+            }
+            if (typeof previewController.pause === 'function') {
+                previewController.pause();
+            }
+        }
         try {
             await addToTimeline(file, objectURL);
             setStagedUploadAddedState(objectURL, true);
         } catch (error) {
             console.error('Failed to add upload to timeline.', error);
             addButton.disabled = false;
+            if (previewController && typeof previewController.setDisabled === 'function') {
+                previewController.setDisabled(false);
+            }
         }
     });
 
@@ -2069,6 +2334,7 @@ async function stageUpload(file) {
         file,
         listItem,
         addButton,
+        previewController,
     });
     setStagedUploadAddedState(objectURL, false);
 
