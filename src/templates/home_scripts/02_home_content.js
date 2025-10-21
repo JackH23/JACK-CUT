@@ -105,6 +105,7 @@ let isMainTrackMagnetEnabled = true;
 let previewImageTransform = null;
 let pendingPreviewImageTransform = null;
 let lastPreviewViewportSize = null;
+let lastNonZeroPreviewViewportSize = null;
 let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
 let activeClipProgress = 0;

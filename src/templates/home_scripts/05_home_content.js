@@ -1428,6 +1428,7 @@ function resetPreviewImageFrameToFit() {
     };
 
     lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
+    lastNonZeroPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
     applyPreviewImageTransform();
 }
 
@@ -1457,6 +1458,7 @@ function hidePreviewImageLayer() {
     pendingPreviewImageTransform = null;
     shouldResetImageFrameOnNextViewportUpdate = false;
     lastPreviewViewportSize = null;
+    lastNonZeroPreviewViewportSize = null;
     previewImagePointerState.pointerId = null;
     previewImagePointerState.mode = null;
     previewImagePointerState.handle = null;
@@ -1564,6 +1566,7 @@ function handlePreviewViewportResized() {
         if (applied) {
             pendingPreviewImageTransform = null;
             lastPreviewViewportSize = { width, height };
+            lastNonZeroPreviewViewportSize = { width, height };
             refreshActiveOverlayLayers();
             return;
         }
@@ -1573,12 +1576,14 @@ function handlePreviewViewportResized() {
         shouldResetImageFrameOnNextViewportUpdate = false;
         resetPreviewImageFrameToFit();
         lastPreviewViewportSize = { width, height };
+        lastNonZeroPreviewViewportSize = { width, height };
         refreshActiveOverlayLayers();
         return;
     }
 
     if (!previewImageTransform) {
         lastPreviewViewportSize = { width, height };
+        lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
         return;
@@ -1586,6 +1591,7 @@ function handlePreviewViewportResized() {
 
     if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
         lastPreviewViewportSize = { width, height };
+        lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
         return;
@@ -1595,6 +1601,7 @@ function handlePreviewViewportResized() {
 
     if (!Number.isFinite(scale) || scale <= 0) {
         lastPreviewViewportSize = { width, height };
+        lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
         return;
@@ -1614,6 +1621,7 @@ function handlePreviewViewportResized() {
     previewImageTransform.height = nextHeight;
 
     lastPreviewViewportSize = { width, height };
+    lastNonZeroPreviewViewportSize = { width, height };
     applyPreviewImageTransform();
     refreshActiveOverlayLayers();
 }

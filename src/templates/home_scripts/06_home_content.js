@@ -1896,10 +1896,18 @@ function applyNormalizedPreviewImageTransform(normalized, options = {}) {
     }
 
     previewImageTransform = denormalized;
+    const normalizedViewportWidth = Math.max(0, Number(viewportSize.width) || 0);
+    const normalizedViewportHeight = Math.max(0, Number(viewportSize.height) || 0);
     lastPreviewViewportSize = {
-        width: Math.max(0, Number(viewportSize.width) || 0),
-        height: Math.max(0, Number(viewportSize.height) || 0),
+        width: normalizedViewportWidth,
+        height: normalizedViewportHeight,
     };
+    if (normalizedViewportWidth > 0 && normalizedViewportHeight > 0) {
+        lastNonZeroPreviewViewportSize = {
+            width: normalizedViewportWidth,
+            height: normalizedViewportHeight,
+        };
+    }
     applyPreviewImageTransform();
     return true;
 }

@@ -253,13 +253,20 @@ function startPreviewMirroring(width, height) {
         exportMirrorContext.fillStyle = '#000000';
         exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
 
-        const viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
-        const viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
-        const overlaySnapshots = (viewportWidth > 0 && viewportHeight > 0)
-            ? getActiveOverlayLayerSnapshots()
-            : [];
+        let viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
+        let viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
 
-        if (overlaySnapshots.length) {
+        if ((viewportWidth === 0 || viewportHeight === 0)
+            && lastNonZeroPreviewViewportSize
+            && lastNonZeroPreviewViewportSize.width > 0
+            && lastNonZeroPreviewViewportSize.height > 0) {
+            viewportWidth = lastNonZeroPreviewViewportSize.width;
+            viewportHeight = lastNonZeroPreviewViewportSize.height;
+        }
+
+        const overlaySnapshots = getActiveOverlayLayerSnapshots();
+
+        if (overlaySnapshots.length && viewportWidth > 0 && viewportHeight > 0) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
         }
 
@@ -309,7 +316,7 @@ function startPreviewMirroring(width, height) {
             );
         }
 
-        if (overlaySnapshots.length) {
+        if (overlaySnapshots.length && viewportWidth > 0 && viewportHeight > 0) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
         }
 
