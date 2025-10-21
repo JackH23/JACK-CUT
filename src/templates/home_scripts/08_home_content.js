@@ -328,6 +328,19 @@
             let animationFrameId = 0;
             let exitAnimationRequested = false;
             let exitAnimationStarted = false;
+            let exitAnimationCompleteResolve = null;
+            const exitAnimationCompletePromise = exitConfig
+                ? new Promise((promiseResolve) => {
+                    exitAnimationCompleteResolve = promiseResolve;
+                })
+                : Promise.resolve();
+
+            const markExitAnimationComplete = () => {
+                if (exitAnimationCompleteResolve) {
+                    exitAnimationCompleteResolve();
+                    exitAnimationCompleteResolve = null;
+                }
+            };
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -346,14 +359,32 @@
                     return exitAnimationStarted;
                 }
 
-                exitAnimationRequested = true;
-                const didAnimate = runPreviewImageExitAnimation({ restoreOnComplete: false }, exitConfig);
+                const didAnimate = runPreviewImageExitAnimation({
+                    restoreOnComplete: false,
+                    onComplete: () => {
+                        markExitAnimationComplete();
+                    },
+                }, exitConfig);
 
-                if (!didAnimate && !force) {
-                    exitAnimationRequested = false;
+                if (didAnimate) {
+                    exitAnimationStarted = true;
+                    const cleanup = previewExitAnimationState?.cleanup;
+                    if (typeof cleanup === 'function') {
+                        previewExitAnimationState.cleanup = (...cleanupArgs) => {
+                            try {
+                                cleanup(...cleanupArgs);
+                            } finally {
+                                markExitAnimationComplete();
+                            }
+                        };
+                    }
+                } else {
+                    markExitAnimationComplete();
+                    if (!force) {
+                        exitAnimationRequested = false;
+                    }
                 }
 
-                exitAnimationStarted = exitAnimationStarted || didAnimate;
                 return didAnimate;
             };
 
@@ -394,15 +425,26 @@
                 startExitAnimation({ force: true });
             }
 
-            const timeoutId = window.setTimeout(() => {
+            let timeoutId = 0;
+
+            const finalize = async () => {
                 if (resolved) {
                     return;
                 }
                 resolved = true;
-                if (clipPlaysToEnd) {
-                    startExitAnimation({ force: true });
-                }
+                window.clearTimeout(timeoutId);
                 stopAnimation();
+
+                if (!exitAnimationRequested || !exitConfig || !exitAnimationStarted) {
+                    markExitAnimationComplete();
+                }
+
+                try {
+                    await exitAnimationCompletePromise;
+                } catch (error) {
+                    // Ignore exit animation timing errors during playback finalization.
+                }
+
                 const finalElapsed = Math.min(
                     clipDuration,
                     initialElapsed + safeEffectiveDuration,
@@ -415,18 +457,24 @@
                     timelinePlaybackAbort = null;
                 }
                 resolve();
+            };
+
+            timeoutId = window.setTimeout(() => {
+                if (resolved) {
+                    return;
+                }
+                if (clipPlaysToEnd) {
+                    startExitAnimation({ force: true });
+                }
+                finalize();
             }, Math.max(0, Math.round(safeEffectiveDuration)));
 
             const abortPlayback = () => {
                 if (resolved) {
                     return;
                 }
-                resolved = true;
-                window.clearTimeout(timeoutId);
-                stopAnimation();
                 cancelPreviewExitAnimation({ forceRestore: true });
-                timelinePlaybackAbort = null;
-                resolve();
+                finalize();
             };
 
             timelinePlaybackAbort = abortPlayback;
@@ -821,6 +869,71 @@ function createSilentAudioKeepAlive(audioContext, destinationNode) {
     }
 }
 
+function waitForNextFrame() {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+    });
+}
+
+function waitForMediaStreamTracks(stream, options = {}) {
+    if (!stream || typeof window === 'undefined') {
+        return Promise.resolve();
+    }
+
+    const { kind = 'audio', timeoutMs = 1500 } = options;
+    let tracks = [];
+    if (kind === 'audio') {
+        tracks = stream.getAudioTracks();
+    } else if (kind === 'video') {
+        tracks = stream.getVideoTracks();
+    } else {
+        tracks = stream.getTracks();
+    }
+
+    if (!tracks.length) {
+        return Promise.resolve();
+    }
+
+    const waiters = tracks.map((track) => new Promise((resolve) => {
+        let settled = false;
+        const finalize = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            track.removeEventListener('unmute', handleUnmute);
+            track.removeEventListener('ended', handleEnded);
+            resolve();
+        };
+        const handleUnmute = () => {
+            if (track.readyState === 'live') {
+                finalize();
+            }
+        };
+        const handleEnded = () => {
+            finalize();
+        };
+
+        if (track.readyState === 'live') {
+            finalize();
+            return;
+        }
+
+        track.addEventListener('unmute', handleUnmute);
+        track.addEventListener('ended', handleEnded);
+
+        if (timeoutMs > 0) {
+            window.setTimeout(finalize, timeoutMs);
+        }
+    }));
+
+    return Promise.all(waiters).then(() => waitForNextFrame());
+}
+
 function prepareExportPlaybackContext(existingItems = null) {
     const timelineItems = Array.isArray(existingItems)
         ? existingItems
@@ -1018,7 +1131,12 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
             missingDirectCapture = true;
         }
     });
-    if (directTracks.length && !missingDirectCapture) {
+    const canUseDirectCapture = directTracks.length
+        && !missingDirectCapture
+        && elements.length === 1;
+    // Prefer AudioContext mixing whenever more than one element contributes audio
+    // to avoid drift between independently captured MediaStream tracks.
+    if (canUseDirectCapture) {
         pendingTracks.forEach((track) => {
             stabilizeAudioTrack(track);
             combinedStream.addTrack(track);
@@ -1230,10 +1348,19 @@ async function handleConfirmExport() {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);
         }
 
+        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: 1500 });
+        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: 1500 });
+
         recorder = new MediaRecorder(combinedStream, {
             mimeType: exportFormat.mimeType,
             videoBitsPerSecond: 6_000_000,
             audioBitsPerSecond: 192_000,
+        });
+
+        const recorderStarted = new Promise((resolve) => {
+            recorder.addEventListener('start', () => {
+                resolve();
+            }, { once: true });
         });
 
         const recordingPromise = new Promise((resolve, reject) => {
@@ -1251,6 +1378,8 @@ async function handleConfirmExport() {
         });
 
         recorder.start(250);
+        await recorderStarted;
+        await waitForNextFrame();
         const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
         if (recorder.state !== 'inactive') {
             recorder.stop();
