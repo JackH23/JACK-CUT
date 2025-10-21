@@ -2532,6 +2532,63 @@ async function decodeAudioBufferFromFile(file) {
     });
 }
 
+function buildWaveformChannelDataFromAudioBuffer(audioBuffer) {
+    if (!audioBuffer) {
+        return null;
+    }
+
+    let channelData = null;
+    if (typeof AudioBuffer !== 'undefined' && audioBuffer instanceof AudioBuffer) {
+        channelData = audioBuffer.numberOfChannels > 0
+            ? audioBuffer.getChannelData(0)
+            : null;
+    } else if (audioBuffer instanceof Float32Array) {
+        channelData = audioBuffer;
+    } else if (audioBuffer?.channelData instanceof Float32Array) {
+        channelData = audioBuffer.channelData;
+    }
+
+    if (!channelData) {
+        return null;
+    }
+
+    const totalSamples = channelData.length;
+    if (!Number.isFinite(totalSamples) || totalSamples <= 0) {
+        return null;
+    }
+
+    const TARGET_BUCKETS = 4000;
+    const bucketWidth = Math.max(1, Math.floor(totalSamples / TARGET_BUCKETS) || 1);
+    const bucketCount = Math.ceil(totalSamples / bucketWidth);
+    const buckets = new Float32Array(bucketCount * 2);
+
+    for (let bucketIndex = 0; bucketIndex < bucketCount; bucketIndex += 1) {
+        const startIndex = bucketIndex * bucketWidth;
+        const endIndex = Math.min(totalSamples, startIndex + bucketWidth);
+        let min = 1;
+        let max = -1;
+
+        for (let sampleIndex = startIndex; sampleIndex < endIndex; sampleIndex += 1) {
+            const sample = channelData[sampleIndex] || 0;
+            if (sample < min) {
+                min = sample;
+            }
+            if (sample > max) {
+                max = sample;
+            }
+        }
+
+        buckets[(bucketIndex * 2)] = min;
+        buckets[(bucketIndex * 2) + 1] = max;
+    }
+
+    return {
+        bucketWidth,
+        buckets,
+        totalSamples,
+    };
+}
+
 function drawAudioWaveform(canvas, audioBuffer, options = {}) {
     if (!canvas || !audioBuffer) {
         return;
@@ -2559,23 +2616,33 @@ function drawAudioWaveform(canvas, audioBuffer, options = {}) {
     ctx.fillRect(0, 0, width, height);
 
     let channelData = null;
+    let totalSamples = 0;
+    let bucketWidth = 1;
+    let buckets = null;
+    let bucketCount = 0;
+
     const isAudioBuffer = typeof AudioBuffer !== 'undefined'
         && audioBuffer instanceof AudioBuffer;
-    if (isAudioBuffer) {
-        channelData = audioBuffer.numberOfChannels > 0
-            ? audioBuffer.getChannelData(0)
-            : null;
-    } else if (audioBuffer?.channelData instanceof Float32Array) {
-        channelData = audioBuffer.channelData;
-    } else if (audioBuffer instanceof Float32Array) {
-        channelData = audioBuffer;
+
+    if (isAudioBuffer || audioBuffer instanceof Float32Array || audioBuffer?.channelData instanceof Float32Array) {
+        channelData = isAudioBuffer
+            ? (audioBuffer.numberOfChannels > 0 ? audioBuffer.getChannelData(0) : null)
+            : (audioBuffer instanceof Float32Array
+                ? audioBuffer
+                : audioBuffer.channelData);
+        totalSamples = channelData?.length || 0;
+    } else if (
+        audioBuffer
+        && typeof audioBuffer === 'object'
+        && audioBuffer.buckets instanceof Float32Array
+        && Number.isFinite(audioBuffer.bucketWidth)
+    ) {
+        buckets = audioBuffer.buckets;
+        bucketWidth = Math.max(1, Math.round(audioBuffer.bucketWidth));
+        bucketCount = Math.max(0, Math.floor(buckets.length / 2));
+        totalSamples = Math.max(1, Math.round(audioBuffer.totalSamples || (bucketWidth * bucketCount)));
     }
 
-    if (!channelData) {
-        return;
-    }
-
-    const totalSamples = channelData.length;
     if (!Number.isFinite(totalSamples) || totalSamples <= 0) {
         return;
     }
@@ -2593,18 +2660,39 @@ function drawAudioWaveform(canvas, audioBuffer, options = {}) {
         const endIndex = Math.min(totalSamples, Math.floor((x + 1) * samplesPerPixel));
         let min = 1;
         let max = -1;
-        if (endIndex <= startIndex) {
-            const sample = channelData[startIndex] || 0;
-            min = Math.min(min, sample);
-            max = Math.max(max, sample);
-        } else {
-            for (let i = startIndex; i < endIndex; i += 1) {
-                const sample = channelData[i] || 0;
-                if (sample < min) {
-                    min = sample;
+        if (startIndex >= totalSamples) {
+            min = 0;
+            max = 0;
+        } else if (buckets && bucketCount > 0) {
+            const startBucket = Math.min(bucketCount - 1, Math.max(0, Math.floor(startIndex / bucketWidth)));
+            const endBucket = Math.min(
+                bucketCount - 1,
+                Math.max(startBucket, Math.floor((Math.max(startIndex, endIndex - 1)) / bucketWidth)),
+            );
+            for (let bucketIndex = startBucket; bucketIndex <= endBucket; bucketIndex += 1) {
+                const bucketMin = buckets[(bucketIndex * 2)] ?? 0;
+                const bucketMax = buckets[(bucketIndex * 2) + 1] ?? 0;
+                if (bucketMin < min) {
+                    min = bucketMin;
                 }
-                if (sample > max) {
-                    max = sample;
+                if (bucketMax > max) {
+                    max = bucketMax;
+                }
+            }
+        } else if (channelData) {
+            if (endIndex <= startIndex) {
+                const sample = channelData[startIndex] || 0;
+                min = Math.min(min, sample);
+                max = Math.max(max, sample);
+            } else {
+                for (let i = startIndex; i < endIndex; i += 1) {
+                    const sample = channelData[i] || 0;
+                    if (sample < min) {
+                        min = sample;
+                    }
+                    if (sample > max) {
+                        max = sample;
+                    }
                 }
             }
         }
@@ -2626,7 +2714,14 @@ function applyCachedWaveform(canvas, cacheEntry, options = {}) {
         return false;
     }
 
-    if (cacheEntry.audioBuffer || cacheEntry.channelData instanceof Float32Array) {
+    if (!cacheEntry.channelData && cacheEntry.audioBuffer) {
+        cacheEntry.channelData = buildWaveformChannelDataFromAudioBuffer(cacheEntry.audioBuffer);
+        if (cacheEntry.channelData) {
+            delete cacheEntry.audioBuffer;
+        }
+    }
+
+    if (cacheEntry.audioBuffer || cacheEntry.channelData) {
         drawAudioWaveform(canvas, cacheEntry.audioBuffer || cacheEntry.channelData, options);
         return true;
     }
@@ -2729,6 +2824,10 @@ function detachAudioWaveformResizeObserver(timelineItem) {
 async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas) {
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
+        if (!existing.channelData && existing.audioBuffer) {
+            existing.channelData = buildWaveformChannelDataFromAudioBuffer(existing.audioBuffer);
+            delete existing.audioBuffer;
+        }
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
         timelineItem.dataset.maxAudioDuration = String(duration);
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
@@ -2748,12 +2847,16 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const audioBuffer = await decodeAudioBufferFromFile(file);
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
+        const channelData = buildWaveformChannelDataFromAudioBuffer(audioBuffer);
         const cacheEntry = {
             imageDataUrl: null,
             durationMs,
             drawn: true,
-            audioBuffer,
+            channelData,
         };
+        if (!channelData) {
+            cacheEntry.audioBuffer = audioBuffer;
+        }
         audioWaveformByObjectUrl.set(objectURL, cacheEntry);
         timelineItem.dataset.maxAudioDuration = String(durationMs);
         setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
@@ -2761,7 +2864,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
             const widthOverride = timelineItem
                 ? Math.round(timelineItem.getBoundingClientRect().width)
                 : null;
-            drawAudioWaveform(waveformCanvas, audioBuffer, {
+            drawAudioWaveform(waveformCanvas, channelData || audioBuffer, {
                 timelineItem,
                 widthOverride,
             });
