@@ -215,6 +215,15 @@ const optionSliderConfigs = [
 
 const IMAGE_FRAME_DURATION = 1000;
 
+const optionSliderRegistry = new Map();
+
+function getOptionSliderController(inputId) {
+    if (!inputId) {
+        return null;
+    }
+    return optionSliderRegistry.get(inputId) || null;
+}
+
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
 const DEFAULT_CANVAS_BLUR = 18;
 const CANVAS_BLUR_MIN = 0;
@@ -598,6 +607,10 @@ class OptionSliderController {
 
         const initialIndex = this.parseIndex(this.slider.value);
         this.setIndex(initialIndex, { force: true });
+
+        if (this.slider && this.slider.id) {
+            optionSliderRegistry.set(this.slider.id, this);
+        }
     }
 
     parseIndex(rawValue) {
@@ -657,6 +670,21 @@ class OptionSliderController {
                 this.pendingIndex = null;
             }
         });
+    }
+
+    setValueByOption(optionValue, { force = false } = {}) {
+        if (this.options.length === 0) {
+            return;
+        }
+
+        const index = this.options.findIndex((option) => option.value === optionValue);
+        const targetIndex = index === -1 ? 0 : index;
+        this.setIndex(targetIndex, { force });
+    }
+
+    getCurrentOptionValue() {
+        const option = this.options[this.currentIndex];
+        return option ? option.value : null;
     }
 
     applyIndex(index) {
