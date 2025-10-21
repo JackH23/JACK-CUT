@@ -2370,7 +2370,73 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
 const AUDIO_WAVEFORM_HEIGHT = 80;
 const audioWaveformByObjectUrl = new Map();
 let audioDecodeContextLock = Promise.resolve();
+let sharedAudioDecodeContext = null;
+let sharedAudioDecodeContextPromise = null;
+let sharedAudioDecodeContextClosing = null;
 const audioWaveformResizeObservers = new WeakMap();
+
+async function ensureSharedAudioDecodeContext(AudioContextConstructor) {
+    if (!AudioContextConstructor) {
+        return null;
+    }
+
+    if (sharedAudioDecodeContextClosing) {
+        await sharedAudioDecodeContextClosing;
+    }
+
+    if (sharedAudioDecodeContext && sharedAudioDecodeContext.state === 'closed') {
+        sharedAudioDecodeContext = null;
+        sharedAudioDecodeContextPromise = null;
+    }
+
+    if (sharedAudioDecodeContext) {
+        return sharedAudioDecodeContext;
+    }
+
+    if (!sharedAudioDecodeContextPromise) {
+        sharedAudioDecodeContextPromise = Promise.resolve().then(() => {
+            const context = new AudioContextConstructor();
+            sharedAudioDecodeContext = context;
+            return context;
+        }).catch((error) => {
+            sharedAudioDecodeContextPromise = null;
+            sharedAudioDecodeContext = null;
+            throw error;
+        });
+    }
+
+    return sharedAudioDecodeContextPromise;
+}
+
+function resetSharedAudioDecodeContext() {
+    if (sharedAudioDecodeContextClosing) {
+        return sharedAudioDecodeContextClosing;
+    }
+
+    const context = sharedAudioDecodeContext;
+    sharedAudioDecodeContext = null;
+    sharedAudioDecodeContextPromise = null;
+
+    if (!context || typeof context.close !== 'function') {
+        return Promise.resolve();
+    }
+
+    let closingPromise = null;
+    try {
+        closingPromise = Promise.resolve(context.close());
+    } catch (error) {
+        closingPromise = Promise.resolve();
+    }
+
+    closingPromise = closingPromise.catch(() => {}).finally(() => {
+        if (sharedAudioDecodeContextClosing === closingPromise) {
+            sharedAudioDecodeContextClosing = null;
+        }
+    });
+
+    sharedAudioDecodeContextClosing = closingPromise;
+    return closingPromise;
+}
 
 function getWaveformCssWidth(canvas, timelineItem, widthOverride) {
     if (Number.isFinite(widthOverride) && widthOverride > 0) {
@@ -2429,20 +2495,39 @@ async function decodeAudioBufferFromFile(file) {
     const arrayBuffer = await file.arrayBuffer();
 
     return audioDecodeContextLock = audioDecodeContextLock.then(async () => {
-        let audioContext = null;
         try {
-            audioContext = new AudioContextConstructor();
-            const audioBuffer = await new Promise((resolve, reject) => {
-                audioContext.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
-            });
+            const audioContext = await ensureSharedAudioDecodeContext(AudioContextConstructor);
+
+            if (!audioContext) {
+                return null;
+            }
+
+            const decodeAudioData = audioContext.decodeAudioData;
+            const decodeAudioDataArity = typeof decodeAudioData === 'function'
+                ? decodeAudioData.length
+                : 0;
+
+            // Older implementations that require callbacks sometimes mutate the buffer
+            // argument, so defensively clone only when the callback signature is detected.
+            const shouldCloneArrayBufferForDecode = typeof decodeAudioData === 'function'
+                && decodeAudioDataArity >= 2
+                && typeof arrayBuffer.slice === 'function';
+
+            const bufferForDecoding = shouldCloneArrayBufferForDecode
+                ? arrayBuffer.slice(0)
+                : arrayBuffer;
+
+            const audioBuffer = await (decodeAudioDataArity <= 1
+                ? decodeAudioData.call(audioContext, bufferForDecoding)
+                : new Promise((resolve, reject) => {
+                    decodeAudioData.call(audioContext, bufferForDecoding, resolve, reject);
+                }));
+
             return audioBuffer;
         } catch (error) {
             console.warn('Unable to decode audio file for waveform rendering.', error);
+            await resetSharedAudioDecodeContext();
             return null;
-        } finally {
-            if (audioContext && typeof audioContext.close === 'function') {
-                audioContext.close().catch(() => {});
-            }
         }
     });
 }
