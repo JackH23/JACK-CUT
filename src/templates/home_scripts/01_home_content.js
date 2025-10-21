@@ -435,14 +435,18 @@ function updateComboSpeedSliderDisplay({ triggerPreview = false } = {}) {
     }
 }
 
-function getEntranceTimingKey() {
+function getEntranceTimingKey(override = null) {
+    if (override) {
+        return sanitizeEntranceTiming(override);
+    }
+
     if (!animationInTimingInput) {
-        return 'medium';
+        return DEFAULT_ENTRANCE_TIMING;
     }
 
     const optionValue = animationInTimingInput.dataset.optionValue;
-    if (optionValue && Object.prototype.hasOwnProperty.call(ENTRANCE_ANIMATION_TIMING_OPTIONS, optionValue)) {
-        return optionValue;
+    if (optionValue) {
+        return sanitizeEntranceTiming(optionValue);
     }
 
     const fallbackIndex = Number.parseInt(animationInTimingInput.value, 10);
@@ -450,8 +454,8 @@ function getEntranceTimingKey() {
         ? ENTRANCE_ANIMATION_TIMING_KEYS[
             Math.max(0, Math.min(ENTRANCE_ANIMATION_TIMING_KEYS.length - 1, fallbackIndex))
         ]
-        : 'medium';
-    return fallbackKey || 'medium';
+        : DEFAULT_ENTRANCE_TIMING;
+    return sanitizeEntranceTiming(fallbackKey);
 }
 
 function isComboModeActive() {
@@ -493,6 +497,10 @@ const DEFAULT_ANIMATION_DIRECTION = 'none';
 const ALLOWED_ANIMATION_DIRECTIONS = new Set(['none', 'in', 'out', 'combo']);
 const DEFAULT_COMBO_ENTRANCE_PRESET = 'fade';
 const DEFAULT_COMBO_EXIT_PRESET = 'fade';
+const DEFAULT_ENTRANCE_PRESET = 'fade';
+const DEFAULT_ENTRANCE_TIMING = 'medium';
+const DEFAULT_EXIT_PRESET = 'fade';
+const DEFAULT_EXIT_DELAY = 'none';
 const COMBO_APPLY_EMPTY_STATE_MESSAGE = 'Add images to apply animations.';
 
 function sanitizeAnimationDirection(value) {
@@ -538,9 +546,41 @@ function sanitizeComboWindowMs(value) {
     return milliseconds;
 }
 
+function sanitizeEntrancePreset(value) {
+    if (value && Object.prototype.hasOwnProperty.call(ENTRANCE_ANIMATION_PRESETS, value)) {
+        return value;
+    }
+    return DEFAULT_ENTRANCE_PRESET;
+}
+
+function sanitizeEntranceTiming(value) {
+    if (value && Object.prototype.hasOwnProperty.call(ENTRANCE_ANIMATION_TIMING_OPTIONS, value)) {
+        return value;
+    }
+    return DEFAULT_ENTRANCE_TIMING;
+}
+
+function sanitizeExitPreset(value) {
+    if (value && Object.prototype.hasOwnProperty.call(EXIT_ANIMATION_PRESETS, value)) {
+        return value;
+    }
+    return DEFAULT_EXIT_PRESET;
+}
+
+function sanitizeExitDelayKey(value) {
+    if (value && Object.prototype.hasOwnProperty.call(EXIT_ANIMATION_DELAY_OPTIONS, value)) {
+        return value;
+    }
+    return DEFAULT_EXIT_DELAY;
+}
+
 function getDefaultAnimationSettings() {
     return {
         direction: DEFAULT_ANIMATION_DIRECTION,
+        inPreset: DEFAULT_ENTRANCE_PRESET,
+        inTiming: DEFAULT_ENTRANCE_TIMING,
+        outPreset: DEFAULT_EXIT_PRESET,
+        outDelay: DEFAULT_EXIT_DELAY,
         comboInPreset: DEFAULT_COMBO_ENTRANCE_PRESET,
         comboOutPreset: DEFAULT_COMBO_EXIT_PRESET,
         comboWindowMs: DEFAULT_COMBO_SPEED_MS,
@@ -555,6 +595,10 @@ function getTimelineItemAnimationSettings(timelineItem) {
     const { dataset } = timelineItem;
     return {
         direction: sanitizeAnimationDirection(dataset.animationDirection),
+        inPreset: sanitizeEntrancePreset(dataset.animationInPreset),
+        inTiming: sanitizeEntranceTiming(dataset.animationInTiming),
+        outPreset: sanitizeExitPreset(dataset.animationOutPreset),
+        outDelay: sanitizeExitDelayKey(dataset.animationOutDelay),
         comboInPreset: sanitizeComboEntrancePreset(dataset.animationComboInPreset),
         comboOutPreset: sanitizeComboExitPreset(dataset.animationComboOutPreset),
         comboWindowMs: sanitizeComboWindowMs(dataset.animationComboWindowMs || DEFAULT_COMBO_SPEED_MS),
@@ -746,10 +790,14 @@ function getPreviewImageEntranceConfig(options = {}) {
         };
     }
 
-    const presetKey = animationInPresetSelect?.value || 'fade';
-    const preset = ENTRANCE_ANIMATION_PRESETS[presetKey] || ENTRANCE_ANIMATION_PRESETS.fade;
-    const timingKey = getEntranceTimingKey();
-    const timing = ENTRANCE_ANIMATION_TIMING_OPTIONS[timingKey] || ENTRANCE_ANIMATION_TIMING_OPTIONS.medium;
+    const presetKey = sanitizeEntrancePreset(
+        settingsOverride?.inPreset || animationInPresetSelect?.value,
+    );
+    const preset = ENTRANCE_ANIMATION_PRESETS[presetKey]
+        || ENTRANCE_ANIMATION_PRESETS[DEFAULT_ENTRANCE_PRESET];
+    const timingKey = getEntranceTimingKey(settingsOverride?.inTiming);
+    const timing = ENTRANCE_ANIMATION_TIMING_OPTIONS[timingKey]
+        || ENTRANCE_ANIMATION_TIMING_OPTIONS[DEFAULT_ENTRANCE_TIMING];
 
     const baseDuration = Math.max(0, Number(preset.baseDuration) || 600);
     const timingDuration = Math.max(0, Number(timing.duration) || baseDuration);
@@ -998,21 +1046,25 @@ function prefersReducedMotion() {
     return Boolean(prefersReducedMotionQuery.matches);
 }
 
-function getExitAnimationDelayKey() {
+function getExitAnimationDelayKey(override = null) {
+    if (override) {
+        return sanitizeExitDelayKey(override);
+    }
+
     if (!animationOutDelayInput) {
-        return 'none';
+        return DEFAULT_EXIT_DELAY;
     }
 
     const optionValue = animationOutDelayInput.dataset.optionValue;
-    if (optionValue && Object.prototype.hasOwnProperty.call(EXIT_ANIMATION_DELAY_OPTIONS, optionValue)) {
-        return optionValue;
+    if (optionValue) {
+        return sanitizeExitDelayKey(optionValue);
     }
 
     const fallbackIndex = Number.parseInt(animationOutDelayInput.value, 10);
     const fallbackKey = Number.isFinite(fallbackIndex)
         ? EXIT_ANIMATION_DELAY_KEYS[Math.max(0, Math.min(EXIT_ANIMATION_DELAY_KEYS.length - 1, fallbackIndex))]
-        : 'none';
-    return fallbackKey || 'none';
+        : DEFAULT_EXIT_DELAY;
+    return sanitizeExitDelayKey(fallbackKey);
 }
 
 function getPreviewImageExitConfig(options = {}) {
@@ -1063,9 +1115,12 @@ function getPreviewImageExitConfig(options = {}) {
         };
     }
 
-    const presetKey = animationOutPresetSelect?.value || 'fade';
-    const preset = EXIT_ANIMATION_PRESETS[presetKey] || EXIT_ANIMATION_PRESETS.fade;
-    const delayKey = getExitAnimationDelayKey();
+    const presetKey = sanitizeExitPreset(
+        settingsOverride?.outPreset || animationOutPresetSelect?.value,
+    );
+    const preset = EXIT_ANIMATION_PRESETS[presetKey]
+        || EXIT_ANIMATION_PRESETS[DEFAULT_EXIT_PRESET];
+    const delayKey = getExitAnimationDelayKey(settingsOverride?.outDelay);
     const rawDelay = EXIT_ANIMATION_DELAY_OPTIONS[delayKey] ?? 0;
     const rawDuration = Math.max(0, Number(preset.duration) || 0);
 

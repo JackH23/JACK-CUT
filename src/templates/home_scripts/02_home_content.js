@@ -586,6 +586,25 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
         updateAnimationModeContent(appliedDirection);
     }
 
+    if (animationInPresetSelect) {
+        animationInPresetSelect.disabled = !isImage;
+        animationInPresetSelect.value = settings.inPreset;
+    }
+
+    if (animationInTimingInput) {
+        animationInTimingInput.disabled = !isImage;
+        const sanitizedTiming = sanitizeEntranceTiming(settings.inTiming);
+        const timingController = getOptionSliderController('animation-in-timing');
+        if (timingController) {
+            timingController.slider.disabled = !isImage;
+            timingController.setValueByOption(sanitizedTiming, { force: true });
+        } else {
+            animationInTimingInput.dataset.optionValue = sanitizedTiming;
+            const fallbackIndex = ENTRANCE_ANIMATION_TIMING_KEYS.indexOf(sanitizedTiming);
+            animationInTimingInput.value = String(Math.max(fallbackIndex, 0));
+        }
+    }
+
     if (animationComboInPresetSelect) {
         animationComboInPresetSelect.disabled = !isImage;
         animationComboInPresetSelect.value = settings.comboInPreset;
@@ -608,6 +627,25 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
         animationComboSpeedInput.dataset.windowMs = String(appliedWindowMs);
         animationComboSpeedInput.value = String(clampedSeconds);
         updateComboSpeedSliderDisplay({ triggerPreview: false });
+    }
+
+    if (animationOutPresetSelect) {
+        animationOutPresetSelect.disabled = !isImage;
+        animationOutPresetSelect.value = settings.outPreset;
+    }
+
+    if (animationOutDelayInput) {
+        animationOutDelayInput.disabled = !isImage;
+        const sanitizedDelay = sanitizeExitDelayKey(settings.outDelay);
+        const delayController = getOptionSliderController('animation-out-delay');
+        if (delayController) {
+            delayController.slider.disabled = !isImage;
+            delayController.setValueByOption(sanitizedDelay, { force: true });
+        } else {
+            animationOutDelayInput.dataset.optionValue = sanitizedDelay;
+            const fallbackIndex = EXIT_ANIMATION_DELAY_KEYS.indexOf(sanitizedDelay);
+            animationOutDelayInput.value = String(Math.max(fallbackIndex, 0));
+        }
     }
 
     refreshComboApplyAllAvailability();
@@ -752,6 +790,62 @@ function persistActiveTimelineAnimationDirection(direction) {
             durationKey: 'imageDuration',
         });
     }
+}
+
+function persistActiveTimelineEntrancePreset(presetKey) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    const sanitized = sanitizeEntrancePreset(presetKey);
+    setTimelineItemAnimationDataset(
+        activeTimelineItem,
+        'animationInPreset',
+        sanitized,
+        DEFAULT_ENTRANCE_PRESET,
+    );
+}
+
+function persistActiveTimelineEntranceTiming(timingKey) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    const sanitized = sanitizeEntranceTiming(timingKey);
+    setTimelineItemAnimationDataset(
+        activeTimelineItem,
+        'animationInTiming',
+        sanitized,
+        DEFAULT_ENTRANCE_TIMING,
+    );
+}
+
+function persistActiveTimelineExitPreset(presetKey) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    const sanitized = sanitizeExitPreset(presetKey);
+    setTimelineItemAnimationDataset(
+        activeTimelineItem,
+        'animationOutPreset',
+        sanitized,
+        DEFAULT_EXIT_PRESET,
+    );
+}
+
+function persistActiveTimelineExitDelay(delayKey) {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    const sanitized = sanitizeExitDelayKey(delayKey);
+    setTimelineItemAnimationDataset(
+        activeTimelineItem,
+        'animationOutDelay',
+        sanitized,
+        DEFAULT_EXIT_DELAY,
+    );
 }
 
 function persistActiveTimelineComboEntrancePreset(presetKey) {
@@ -983,6 +1077,7 @@ if (animationDirectionSelect && animationModeContainers.length) {
 
 if (animationInPresetSelect) {
     animationInPresetSelect.addEventListener('change', () => {
+        persistActiveTimelineEntrancePreset(animationInPresetSelect.value);
         if (!animationDirectionSelect
             || sanitizeAnimationDirection(animationDirectionSelect.value) === 'in') {
             previewEntranceAnimationDemo();
@@ -992,6 +1087,7 @@ if (animationInPresetSelect) {
 
 if (animationInTimingInput) {
     const handleEntranceTimingChange = () => {
+        persistActiveTimelineEntranceTiming(getEntranceTimingKey());
         if (!animationDirectionSelect
             || sanitizeAnimationDirection(animationDirectionSelect.value) === 'in') {
             previewEntranceAnimationDemo();
@@ -1044,6 +1140,7 @@ syncAnimationControlsToTimelineItem(activeTimelineItem);
 
 if (animationOutPresetSelect) {
     animationOutPresetSelect.addEventListener('change', () => {
+        persistActiveTimelineExitPreset(animationOutPresetSelect.value);
         if (!animationDirectionSelect
             || sanitizeAnimationDirection(animationDirectionSelect.value) === 'out') {
             previewExitAnimationDemo();
@@ -1053,6 +1150,7 @@ if (animationOutPresetSelect) {
 
 if (animationOutDelayInput) {
     const handleExitDelayChange = () => {
+        persistActiveTimelineExitDelay(getExitAnimationDelayKey());
         if (!animationDirectionSelect
             || sanitizeAnimationDirection(animationDirectionSelect.value) === 'out') {
             previewExitAnimationDemo();
