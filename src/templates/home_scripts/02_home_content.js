@@ -461,6 +461,11 @@ let playbackClockBaseElapsed = 0;
 let playbackClockTotalDuration = 0;
 let playbackDisplayCurrentMs = 0;
 let playbackDisplayTotalMs = 0;
+let timelinePlaybackSyncSource = null;
+const timelinePlaybackSyncFallback = {
+    baseElapsed: 0,
+    startTimestamp: 0,
+};
 let timelineDurationPerPixel = TIMELINE_DURATION_PER_PIXEL_DEFAULT;
 let isPreviewFullscreen = false;
 

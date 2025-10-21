@@ -518,10 +518,104 @@ function isExportDialogOpen() {
     return Boolean(exportDialog && !exportDialog.hasAttribute('hidden'));
 }
 
+function normalizeTimelinePlaybackSyncSource(source) {
+    if (!source || typeof source.getTimelineTime !== 'function') {
+        return null;
+    }
+    const normalized = {
+        getTimelineTime: source.getTimelineTime,
+        cleanup: typeof source.cleanup === 'function' ? source.cleanup : null,
+        priority: Number.isFinite(source.priority) ? source.priority : 0,
+        ref: source.ref || source,
+    };
+    return normalized;
+}
+
+function setTimelinePlaybackSyncSource(source) {
+    const normalized = normalizeTimelinePlaybackSyncSource(source);
+    if (!normalized) {
+        if (source === null) {
+            clearTimelinePlaybackSyncSource();
+        }
+        return timelinePlaybackSyncSource;
+    }
+
+    if (timelinePlaybackSyncSource && timelinePlaybackSyncSource.ref === normalized.ref) {
+        timelinePlaybackSyncSource = normalized;
+        return timelinePlaybackSyncSource;
+    }
+
+    if (timelinePlaybackSyncSource && timelinePlaybackSyncSource.priority > normalized.priority) {
+        return timelinePlaybackSyncSource;
+    }
+
+    if (timelinePlaybackSyncSource && typeof timelinePlaybackSyncSource.cleanup === 'function') {
+        try {
+            timelinePlaybackSyncSource.cleanup();
+        } catch (error) {
+            // Ignore cleanup failures.
+        }
+    }
+
+    timelinePlaybackSyncSource = normalized;
+    return timelinePlaybackSyncSource;
+}
+
+function clearTimelinePlaybackSyncSource(source) {
+    if (!timelinePlaybackSyncSource) {
+        return;
+    }
+    if (source && timelinePlaybackSyncSource.ref !== source && timelinePlaybackSyncSource !== source) {
+        return;
+    }
+    const current = timelinePlaybackSyncSource;
+    timelinePlaybackSyncSource = null;
+    if (current && typeof current.cleanup === 'function') {
+        try {
+            current.cleanup();
+        } catch (error) {
+            // Ignore cleanup failures.
+        }
+    }
+}
+
+function getTimelinePlaybackSyncSource() {
+    return timelinePlaybackSyncSource;
+}
+
+function updateTimelinePlaybackSyncFallback(baseElapsed) {
+    timelinePlaybackSyncFallback.baseElapsed = Math.max(0, Number(baseElapsed) || 0);
+    timelinePlaybackSyncFallback.startTimestamp = performance.now();
+}
+
+function getTimelinePlaybackSyncedElapsed(defaultElapsed, nowTimestamp) {
+    const now = Number.isFinite(nowTimestamp) ? nowTimestamp : performance.now();
+    const fallbackElapsed = timelinePlaybackSyncFallback.baseElapsed
+        + Math.max(0, now - timelinePlaybackSyncFallback.startTimestamp);
+    let candidate = Number.isFinite(defaultElapsed)
+        ? Math.max(fallbackElapsed, Number(defaultElapsed))
+        : fallbackElapsed;
+
+    if (timelinePlaybackSyncSource && typeof timelinePlaybackSyncSource.getTimelineTime === 'function') {
+        try {
+            const synced = timelinePlaybackSyncSource.getTimelineTime();
+            if (Number.isFinite(synced)) {
+                candidate = synced;
+            }
+        } catch (error) {
+            // Ignore sync source errors and fall back to the computed candidate.
+        }
+    }
+
+    return Math.max(0, candidate);
+}
+
 function startPlaybackClock(startElapsed, totalDuration) {
     playbackClockBaseElapsed = Math.max(0, Number(startElapsed) || 0);
     playbackClockTotalDuration = Math.max(0, Number(totalDuration) || 0);
     playbackClockStartTimestamp = performance.now();
+
+    updateTimelinePlaybackSyncFallback(playbackClockBaseElapsed);
 
     if (playbackClockAnimationFrame) {
         window.cancelAnimationFrame(playbackClockAnimationFrame);
@@ -532,10 +626,9 @@ function startPlaybackClock(startElapsed, totalDuration) {
             return;
         }
         const now = performance.now();
-        const elapsed = Math.min(
-            playbackClockTotalDuration,
-            playbackClockBaseElapsed + Math.max(0, now - playbackClockStartTimestamp),
-        );
+        const fallbackElapsed = playbackClockBaseElapsed + Math.max(0, now - playbackClockStartTimestamp);
+        const syncedElapsed = getTimelinePlaybackSyncedElapsed(fallbackElapsed, now);
+        const elapsed = Math.min(playbackClockTotalDuration, syncedElapsed);
         updatePlaybackTimeDisplay(elapsed, playbackClockTotalDuration);
         playbackClockAnimationFrame = window.requestAnimationFrame(tick);
     };

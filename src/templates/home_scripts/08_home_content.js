@@ -10,6 +10,12 @@
                 cancelPreviewAudioEnvelope({ restoreVolume: true });
             };
 
+            let playbackSyncSource = null;
+            const clipTimelineStart = Math.max(
+                0,
+                Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+            );
+
             const finalize = () => {
                 if (resolved) {
                     return;
@@ -24,6 +30,10 @@
                 }
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
+                }
+                if (playbackSyncSource) {
+                    clearTimelinePlaybackSyncSource(playbackSyncSource);
+                    playbackSyncSource = null;
                 }
                 resolve();
             };
@@ -173,6 +183,24 @@
                         await playPromise;
                     }
                     applyPreviewAudioEnvelope(audioSettings, effectiveDuration);
+                    if (isTimelinePlaying) {
+                        if (playbackSyncSource) {
+                            clearTimelinePlaybackSyncSource(playbackSyncSource);
+                        }
+                        const syncSource = {
+                            priority: 10,
+                            getTimelineTime: () => {
+                                if (!previewVideo) {
+                                    return Number.NaN;
+                                }
+                                const mediaTimeSeconds = Number(previewVideo.currentTime) || 0;
+                                const mediaTimeMs = Math.max(0, Math.round(mediaTimeSeconds * 1000));
+                                return clipTimelineStart + mediaTimeMs;
+                            },
+                        };
+                        playbackSyncSource = syncSource;
+                        setTimelinePlaybackSyncSource(syncSource);
+                    }
                 } catch (error) {
                     if (abortController.signal.aborted) {
                         return;

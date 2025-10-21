@@ -648,6 +648,8 @@ let timelineProgressAnimationStartTimestamp = 0;
 let timelineProgressAnimationDurationMs = 0;
 let timelineProgressAnimationStartFraction = 0;
 let timelineProgressAnimationEndFraction = 0;
+let timelineProgressAnimationStartTimeMs = 0;
+let timelineProgressAnimationEndTimeMs = 0;
 let timelineProgressCurrentFraction = 0;
 let timelinePlayheadManualVisible = false;
 const timelinePlayheadDragState = {
@@ -668,6 +670,8 @@ function cancelTimelineProgressAnimation() {
     timelineProgressAnimationDurationMs = 0;
     timelineProgressAnimationStartFraction = timelineProgressCurrentFraction;
     timelineProgressAnimationEndFraction = timelineProgressCurrentFraction;
+    timelineProgressAnimationStartTimeMs = 0;
+    timelineProgressAnimationEndTimeMs = 0;
 }
 
 function hasTimelineItems() {
@@ -910,6 +914,30 @@ function animateTimelineProgress(startFraction, endFraction, durationMs) {
     timelineProgressAnimationDurationMs = duration;
     timelineProgressAnimationStartTimestamp = performance.now();
 
+    const totalDuration = Math.max(
+        0,
+        Number(playbackClockTotalDuration)
+            || Number(playbackDisplayTotalMs)
+            || 0,
+    );
+    const inferredStartTime = Number.isFinite(totalDuration) && totalDuration > 0
+        ? start * totalDuration
+        : 0;
+    const inferredEndTime = Number.isFinite(totalDuration) && totalDuration > 0
+        ? end * totalDuration
+        : inferredStartTime + duration;
+    const fallbackSpan = duration > 0
+        ? duration
+        : Math.max(inferredEndTime - inferredStartTime, 0);
+
+    timelineProgressAnimationStartTimeMs = Math.max(0, inferredStartTime);
+    timelineProgressAnimationEndTimeMs = Math.max(
+        timelineProgressAnimationStartTimeMs,
+        Number.isFinite(inferredEndTime)
+            ? inferredEndTime
+            : timelineProgressAnimationStartTimeMs + fallbackSpan,
+    );
+
     if (!isTimelinePlaying || duration <= 0) {
         setTimelineProgressVisuals(end);
         return;
@@ -922,9 +950,22 @@ function animateTimelineProgress(startFraction, endFraction, durationMs) {
         }
 
         const now = performance.now();
-        const elapsed = Math.max(0, now - timelineProgressAnimationStartTimestamp);
-        const progress = timelineProgressAnimationDurationMs > 0
-            ? Math.min(elapsed / timelineProgressAnimationDurationMs, 1)
+        const fallbackElapsed = timelineProgressAnimationStartTimeMs
+            + Math.max(0, now - timelineProgressAnimationStartTimestamp);
+        const syncedElapsed = getTimelinePlaybackSyncedElapsed(fallbackElapsed, now);
+        const segmentDuration = Math.max(
+            timelineProgressAnimationEndTimeMs - timelineProgressAnimationStartTimeMs,
+            0,
+        );
+        const clampedElapsed = Math.min(
+            timelineProgressAnimationEndTimeMs,
+            Math.max(timelineProgressAnimationStartTimeMs, syncedElapsed),
+        );
+        const progress = segmentDuration > 0
+            ? Math.min(Math.max(
+                (clampedElapsed - timelineProgressAnimationStartTimeMs) / segmentDuration,
+                0,
+            ), 1)
             : 1;
         const range = timelineProgressAnimationEndFraction - timelineProgressAnimationStartFraction;
         const nextFraction = timelineProgressAnimationStartFraction + (range * progress);
@@ -1217,6 +1258,8 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
     cancelPreviewAudioEnvelope({ restoreVolume: true });
     stopPreviewAudio({ resetTime: resetProgress });
     pausePreviewCanvasVideo();
+
+    clearTimelinePlaybackSyncSource();
 
     stopPlaybackClock(resetProgress);
     updateKeyframeControlsState();
@@ -2425,6 +2468,9 @@ function stopPreviewAudio(options = {}) {
         }
     }
     cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+    if (activeAudioOverlayEntry?.syncSource) {
+        clearTimelinePlaybackSyncSource(activeAudioOverlayEntry.syncSource);
+    }
     activeAudioOverlayEntry = null;
 }
 
@@ -2554,6 +2600,29 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         || activeAudioOverlayEntry.item !== audioEntry.item
         || previewAudio.src !== objectURL;
 
+    const applyAudioSyncSource = () => {
+        if (activeAudioOverlayEntry?.syncSource) {
+            clearTimelinePlaybackSyncSource(activeAudioOverlayEntry.syncSource);
+        }
+        const syncSource = {
+            priority: 20,
+            getTimelineTime: () => {
+                if (!previewAudio) {
+                    return Number.NaN;
+                }
+                const mediaTime = Number(previewAudio.currentTime) || 0;
+                return audioEntry.start + (mediaTime * 1000);
+            },
+        };
+        setTimelinePlaybackSyncSource(syncSource);
+        activeAudioOverlayEntry = {
+            item: audioEntry.item,
+            start: audioEntry.start,
+            end: audioEntry.end,
+            syncSource,
+        };
+    };
+
     if (needsRestart) {
         if (objectURL && previewAudio.src !== objectURL) {
             previewAudio.src = objectURL;
@@ -2583,11 +2652,7 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             console.warn('Unable to start audio clip playback.', error);
         });
 
-        activeAudioOverlayEntry = {
-            item: audioEntry.item,
-            start: audioEntry.start,
-            end: audioEntry.end,
-        };
+        applyAudioSyncSource();
         return;
     }
 
@@ -2604,11 +2669,7 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         previewAudio.play().catch(() => {});
     }
 
-    activeAudioOverlayEntry = {
-        item: audioEntry.item,
-        start: audioEntry.start,
-        end: audioEntry.end,
-    };
+    applyAudioSyncSource();
 }
 
 async function addToTimeline(file, objectURL) {
