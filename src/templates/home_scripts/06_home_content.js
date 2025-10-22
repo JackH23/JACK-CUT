@@ -1285,24 +1285,33 @@ function refreshActiveOverlayLayers() {
         clearPreviewOverlayLayers();
         return;
     }
-    const entries = getOverlayEntriesForTimelineItem(activeTimelineItem);
+    const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+        ? getTimelineLaneEntryCache()
+        : null;
+    const entries = getOverlayEntriesForTimelineItem(activeTimelineItem, null, laneCache);
     renderPreviewOverlayLayers(activeTimelineItem, entries);
 }
 
-function getOverlayEntriesForTimelineItem(timelineItem, entriesOverride = null) {
+function getOverlayEntriesForTimelineItem(
+    timelineItem,
+    entriesOverride = null,
+    laneCacheOverride = null,
+) {
     if (!timelineItem) {
         return [];
     }
 
-    const candidateEntries = Array.isArray(entriesOverride) && entriesOverride.length
-        ? entriesOverride
-        : getTimelineLaneEntries();
+    const hasOverrideEntries = Array.isArray(entriesOverride) && entriesOverride.length > 0;
+    const laneCache = hasOverrideEntries
+        ? resolveTimelineLaneEntryCache(entriesOverride)
+        : resolveTimelineLaneEntryCache(laneCacheOverride);
+    const candidateEntries = laneCache.entries;
 
     if (!candidateEntries.length) {
         return [];
     }
 
-    const start = getTimelineItemStartTime(timelineItem);
+    const start = getTimelineItemStartTime(timelineItem, laneCache);
     const duration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
     const end = start + duration;
     const safeEnd = end > start ? end : start + 1;

@@ -1423,6 +1423,8 @@ function reflowTimelineLane(lane) {
         return;
     }
 
+    invalidateTimelineLaneEntriesCache();
+
     const fallbackIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
         ? Number(lane.dataset.laneIndex)
         : getTimelineLanes().indexOf(lane);
@@ -1577,37 +1579,132 @@ function getTimelineItems() {
     return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
 }
 
-function getTimelineLaneEntries() {
-    const entries = [];
+let timelineLaneEntriesCache = null;
+
+function invalidateTimelineLaneEntriesCache() {
+    timelineLaneEntriesCache = null;
+}
+
+function createTimelineLaneEntryCache(entriesInput, { cloneEntries = true } = {}) {
+    const entriesSource = Array.isArray(entriesInput) ? entriesInput : [];
+    const entries = cloneEntries
+        ? entriesSource.map((entry) => ({
+            item: entry?.item || null,
+            laneIndex: Number.isFinite(entry?.laneIndex) ? Number(entry.laneIndex) : 0,
+            start: Number.isFinite(entry?.start) ? Number(entry.start) : 0,
+            end: Number.isFinite(entry?.end) ? Number(entry.end) : 0,
+            duration: Number.isFinite(entry?.duration) ? Number(entry.duration) : undefined,
+            leadingGap: Number.isFinite(entry?.leadingGap) ? Number(entry.leadingGap) : undefined,
+        }))
+        : entriesSource;
+
+    const byLaneIndex = new Map();
+    const byItem = new Map();
+    let totalDuration = 0;
+
+    entries.forEach((entry) => {
+        if (!entry) {
+            return;
+        }
+
+        const laneIndex = Number.isFinite(entry.laneIndex) ? Number(entry.laneIndex) : 0;
+        entry.laneIndex = laneIndex;
+
+        const start = Number.isFinite(entry.start) ? Number(entry.start) : 0;
+        const end = Number.isFinite(entry.end) ? Number(entry.end) : 0;
+        entry.start = start;
+        entry.end = end;
+
+        if (!Number.isFinite(entry.duration)) {
+            const computedDuration = end - start;
+            entry.duration = Number.isFinite(computedDuration) ? computedDuration : undefined;
+        }
+
+        totalDuration = Number.isFinite(end) ? Math.max(totalDuration, end) : totalDuration;
+
+        if (!byLaneIndex.has(laneIndex)) {
+            byLaneIndex.set(laneIndex, []);
+        }
+        byLaneIndex.get(laneIndex).push(entry);
+
+        if (entry.item) {
+            byItem.set(entry.item, entry);
+        }
+    });
+
+    return {
+        entries,
+        byLaneIndex,
+        byItem,
+        totalDuration,
+    };
+}
+
+function buildTimelineLaneEntryCache() {
     const lanes = getTimelineLanes();
+    const entries = [];
+
     lanes.forEach((lane, index) => {
         const layout = getTimelineLaneLayout(lane, index);
         layout.forEach((entry) => {
             entries.push({
-                item: entry.item,
-                laneIndex: Number.isFinite(entry?.laneIndex)
-                    ? entry.laneIndex
-                    : index,
-                start: entry.start,
-                end: entry.end,
+                item: entry?.item || null,
+                laneIndex: Number.isFinite(entry?.laneIndex) ? entry.laneIndex : index,
+                start: Number.isFinite(entry?.start) ? Number(entry.start) : 0,
+                end: Number.isFinite(entry?.end) ? Number(entry.end) : 0,
+                duration: Number.isFinite(entry?.duration) ? Number(entry.duration) : undefined,
+                leadingGap: Number.isFinite(entry?.leadingGap) ? Number(entry.leadingGap) : undefined,
             });
         });
     });
-    return entries;
+
+    return createTimelineLaneEntryCache(entries, { cloneEntries: false });
 }
 
-function getTimelinePlaybackSegments() {
-    const entries = getTimelineLaneEntries();
-    const totalDuration = entries.reduce(
-        (max, entry) => Math.max(max, entry.end),
-        0,
-    );
+function getTimelineLaneEntryCache({ laneCache = null, useCache = true } = {}) {
+    if (laneCache) {
+        if (Array.isArray(laneCache.entries)
+            && laneCache.byItem instanceof Map
+            && laneCache.byLaneIndex instanceof Map
+        ) {
+            return laneCache;
+        }
 
-    if (!entries.length || totalDuration <= 0) {
+        if (Array.isArray(laneCache)) {
+            return createTimelineLaneEntryCache(laneCache);
+        }
+    }
+
+    if (!useCache) {
+        timelineLaneEntriesCache = buildTimelineLaneEntryCache();
+        return timelineLaneEntriesCache;
+    }
+
+    if (!timelineLaneEntriesCache) {
+        timelineLaneEntriesCache = buildTimelineLaneEntryCache();
+    }
+
+    return timelineLaneEntriesCache;
+}
+
+function resolveTimelineLaneEntryCache(laneCacheOrEntries = null) {
+    return getTimelineLaneEntryCache({ laneCache: laneCacheOrEntries });
+}
+
+function getTimelineLaneEntries(options = {}) {
+    return getTimelineLaneEntryCache(options).entries;
+}
+
+function getTimelinePlaybackSegments(laneCacheOverride = null) {
+    const laneCache = resolveTimelineLaneEntryCache(laneCacheOverride);
+    const { entries, totalDuration } = laneCache;
+
+    if (!entries.length || !Number.isFinite(totalDuration) || totalDuration <= 0) {
         return {
             segments: [],
-            totalDuration,
+            totalDuration: Number.isFinite(totalDuration) ? totalDuration : 0,
             entries,
+            laneCache,
         };
     }
 
@@ -1674,28 +1771,26 @@ function getTimelinePlaybackSegments() {
         segments,
         totalDuration,
         entries,
+        laneCache,
     };
 }
 
-function getTotalTimelineDuration() {
-    return getTimelineLaneEntries().reduce(
-        (max, entry) => Math.max(max, entry.end),
-        0,
-    );
+function getTotalTimelineDuration(laneCacheOrEntries = null) {
+    const laneCache = resolveTimelineLaneEntryCache(laneCacheOrEntries);
+    return Number.isFinite(laneCache.totalDuration) ? laneCache.totalDuration : 0;
 }
 
-function getTimelineItemStartTime(timelineItem) {
+function getTimelineItemStartTime(timelineItem, laneCacheOrEntries = null) {
     if (!timelineItem) {
         return 0;
     }
-    const entry = getTimelineLaneEntries().find(
-        (candidate) => candidate.item === timelineItem,
-    );
-    return entry ? entry.start : 0;
+    const laneCache = resolveTimelineLaneEntryCache(laneCacheOrEntries);
+    const entry = laneCache.byItem.get(timelineItem) || null;
+    return entry && Number.isFinite(entry.start) ? entry.start : 0;
 }
 
-function getTimelineFractionForTime(timeMs) {
-    const total = getTotalTimelineDuration();
+function getTimelineFractionForTime(timeMs, laneCacheOrEntries = null) {
+    const total = getTotalTimelineDuration(laneCacheOrEntries);
     if (!total) {
         return 0;
     }
@@ -1770,6 +1865,8 @@ function refreshTimelineLaneIndices() {
             item.dataset.laneIndex = laneIndex;
         });
     });
+
+    invalidateTimelineLaneEntriesCache();
 }
 
 function createTimelineLaneElement() {

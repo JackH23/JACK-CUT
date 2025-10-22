@@ -13,7 +13,7 @@
             let playbackSyncSource = null;
             const clipTimelineStart = Math.max(
                 0,
-                Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+                Math.round(Number(getTimelineItemStartTime(timelineItem, laneCache)) || 0),
             );
 
             const finalize = () => {
@@ -273,7 +273,7 @@
             : Math.min(remainingClipDuration, playbackWindowMs);
         const baseSegmentStart = Math.max(
             0,
-            Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+            Math.round(Number(getTimelineItemStartTime(timelineItem, laneCache)) || 0),
         );
         const segmentStartTime = baseSegmentStart + startOffsetMs;
 
@@ -330,7 +330,7 @@
             let resolved = false;
             const clipTimelineStart = Math.max(
                 0,
-                Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+                Math.round(Number(getTimelineItemStartTime(timelineItem, laneCache)) || 0),
             );
             const resumeClipElapsed = initialElapsed;
             const resumeTimelineTime = clipTimelineStart + resumeClipElapsed;
@@ -547,6 +547,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
     }
 
     const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
+    const laneCache = playbackState?.laneCache || null;
     const segments = Array.isArray(playbackState?.segments)
         ? playbackState.segments
         : [];
@@ -595,7 +596,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
     isTimelinePlaying = true;
     playVideoButton.textContent = 'Pause playback';
     updateKeyframeControlsState();
-    resetTimelineProgressLine(getTimelineFractionForTime(startElapsed));
+    resetTimelineProgressLine(getTimelineFractionForTime(startElapsed, laneCache));
     updatePlaybackTimeDisplay(startElapsed, totalDuration);
     startPlaybackClock(startElapsed, totalDuration);
 
@@ -642,7 +643,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             if (item) {
                 const clipStartTime = Math.max(
                     0,
-                    Math.round(Number(getTimelineItemStartTime(item)) || 0),
+                    Math.round(Number(getTimelineItemStartTime(item, laneCache)) || 0),
                 );
                 const clipDuration = Math.max(
                     0,
@@ -661,8 +662,8 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             if (typeof updateTimelinePlaybackSyncFallback === 'function') {
                 updateTimelinePlaybackSyncFallback(segmentStartTime);
             }
-            const startFraction = getTimelineFractionForTime(segmentStartTime);
-            const endFraction = getTimelineFractionForTime(end);
+            const startFraction = getTimelineFractionForTime(segmentStartTime, laneCache);
+            const endFraction = getTimelineFractionForTime(end, laneCache);
             const remainingDuration = pendingResumeTime !== null
                 ? Math.max(0, Math.round(end - segmentStartTime))
                 : duration;
