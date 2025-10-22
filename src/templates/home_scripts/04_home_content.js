@@ -710,6 +710,9 @@ if (timelineTrack) {
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        if (draggingItem) {
+            markExportPlaybackContextDirty({ refreshSummary: true });
+        }
         activeTimelineDragItem = null;
     });
 }

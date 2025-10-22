@@ -482,15 +482,71 @@ function updatePreviewAspectLabel() {
     previewAspectLabel.textContent = getSelectedAspectLabel();
 }
 
+let exportPlaybackContextMutationVersion = 0;
+
+function getTimelinePlaybackMutationVersion() {
+    return exportPlaybackContextMutationVersion;
+}
+
+function markExportPlaybackContextDirty(options = {}) {
+    const { refreshSummary = false, skipAutoRefresh = false } = options;
+    exportPlaybackContextMutationVersion += 1;
+
+    if (typeof resetExportPlaybackContext === 'function') {
+        resetExportPlaybackContext();
+    }
+
+    const shouldRefreshSummary = refreshSummary
+        || (!skipAutoRefresh
+            && typeof isExportDialogOpen === 'function'
+            && isExportDialogOpen());
+
+    if (!shouldRefreshSummary) {
+        return;
+    }
+
+    if (typeof prepareExportPlaybackContext === 'function') {
+        const context = prepareExportPlaybackContext();
+        renderExportSummary(
+            context.timelineItems,
+            null,
+            context.playbackState,
+        );
+        return;
+    }
+
+    renderExportSummary(getTimelineItems(), null);
+}
+
 function renderExportSummary(timelineItems, playbackCompleted = null, playbackState = null) {
-    const summaryItems = Array.isArray(timelineItems) ? timelineItems : [];
+    let summaryItems = Array.isArray(timelineItems) ? timelineItems : [];
+    let summaryPlaybackState = playbackState;
+
+    if (!summaryPlaybackState || !Array.isArray(summaryPlaybackState.segments)) {
+        if (typeof getTimelinePlaybackSegments === 'function') {
+            summaryPlaybackState = getTimelinePlaybackSegments();
+        }
+
+        if ((!summaryPlaybackState || !Array.isArray(summaryPlaybackState.segments))
+            && typeof prepareExportPlaybackContext === 'function'
+        ) {
+            const context = prepareExportPlaybackContext(summaryItems.length ? summaryItems : null);
+            summaryItems = context.timelineItems;
+            summaryPlaybackState = context.playbackState;
+        }
+    }
 
     if (exportSummaryClips) {
         exportSummaryClips.textContent = String(summaryItems.length);
     }
 
+    const laneCache = summaryPlaybackState?.laneCache || null;
     const totalDuration = Math.max(
-        playbackState?.totalDuration ?? getTotalTimelineDuration(),
+        Number.isFinite(summaryPlaybackState?.totalDuration)
+            ? summaryPlaybackState.totalDuration
+            : (typeof getTotalTimelineDuration === 'function'
+                ? getTotalTimelineDuration(laneCache)
+                : 0),
         0,
     );
     if (exportSummaryDuration) {
@@ -1614,6 +1670,7 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     }
 
     const { skipAnimationSync = false } = options;
+    const previousDuration = Math.round(Number(timelineItem.dataset[durationKey]) || 0);
     const minimum = getTimelineItemMinimumDuration(timelineItem);
     const desired = Math.round(Number(durationMs) || 0);
     const applied = Math.max(minimum, desired);
@@ -1642,6 +1699,10 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     const parentLane = timelineItem.closest('.timeline-lane');
     if (parentLane) {
         scheduleTimelineLaneReflow(parentLane);
+    }
+
+    if (applied !== previousDuration && timelineItem.isConnected) {
+        markExportPlaybackContextDirty({ refreshSummary: true });
     }
 
     return applied;
