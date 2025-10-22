@@ -365,6 +365,8 @@
                     return exitAnimationStarted;
                 }
 
+                exitAnimationRequested = true;
+
                 const didAnimate = runPreviewImageExitAnimation({
                     restoreOnComplete: false,
                     onComplete: () => {
@@ -386,9 +388,7 @@
                     }
                 } else {
                     markExitAnimationComplete();
-                    if (!force) {
-                        exitAnimationRequested = false;
-                    }
+                    exitAnimationRequested = false;
                 }
 
                 return didAnimate;
