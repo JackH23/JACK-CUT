@@ -249,6 +249,73 @@ function preloadTimelineImage(objectURL) {
     return preloadPromise;
 }
 
+function preloadTimelineVideo(objectURL) {
+    if (!objectURL) {
+        return Promise.resolve(null);
+    }
+
+    if (timelineVideoPreloadCache.has(objectURL)) {
+        return timelineVideoPreloadCache.get(objectURL);
+    }
+
+    const preloadPromise = new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.muted = true;
+        video.playsInline = true;
+
+        let settled = false;
+
+        const finalize = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            resolve(video);
+        };
+
+        const fail = (event) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            reject(event?.error || new Error('Failed to preload video.'));
+        };
+
+        const cleanup = () => {
+            video.removeEventListener('loadeddata', finalize);
+            video.removeEventListener('canplay', finalize);
+            video.removeEventListener('error', fail);
+        };
+
+        video.addEventListener('loadeddata', finalize, { once: true });
+        video.addEventListener('canplay', finalize, { once: true });
+        video.addEventListener('error', fail, { once: true });
+
+        try {
+            video.src = objectURL;
+            video.load();
+        } catch (error) {
+            fail({ error });
+        }
+    }).catch((error) => {
+        timelineVideoPreloadCache.delete(objectURL);
+        throw error;
+    });
+
+    timelineVideoPreloadCache.set(objectURL, preloadPromise);
+    return preloadPromise;
+}
+
+function releaseTimelineVideo(objectURL) {
+    if (!objectURL) {
+        return;
+    }
+    timelineVideoPreloadCache.delete(objectURL);
+}
+
 function releaseTimelineImage(objectURL) {
     if (!objectURL) {
         return;

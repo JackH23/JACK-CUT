@@ -959,6 +959,227 @@ function waitForMediaStreamTracks(stream, options = {}) {
     return Promise.all(waiters).then(() => waitForNextFrame());
 }
 
+function withTimeout(promise, timeoutMs, fallbackError = new Error('Operation timed out.')) {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        return promise;
+    }
+
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timerId = window.setTimeout(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            reject(fallbackError);
+        }, Math.max(0, Math.round(timeoutMs)));
+
+        promise.then((value) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            window.clearTimeout(timerId);
+            resolve(value);
+        }).catch((error) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            window.clearTimeout(timerId);
+            reject(error);
+        });
+    });
+}
+
+function collectTimelineExportMedia(timelineItems) {
+    const items = Array.isArray(timelineItems) ? timelineItems : [];
+    const descriptors = [];
+    const seen = new Set();
+
+    items.forEach((item) => {
+        if (!item || !item.dataset) {
+            return;
+        }
+        const objectUrl = item.dataset.objectUrl || '';
+        if (!objectUrl || seen.has(objectUrl)) {
+            return;
+        }
+        seen.add(objectUrl);
+        descriptors.push({
+            objectUrl,
+            fileType: item.dataset.fileType || '',
+            element: item,
+        });
+    });
+
+    return descriptors;
+}
+
+async function warmupExportPlaybackContext(playbackContext, options = {}) {
+    const { timeoutMs = 4500, signal = null } = options;
+    if (!playbackContext) {
+        return { total: 0, succeeded: 0, failed: 0 };
+    }
+
+    const descriptors = Array.isArray(playbackContext.mediaDescriptors)
+        ? playbackContext.mediaDescriptors
+        : collectTimelineExportMedia(playbackContext.timelineItems);
+
+    if (!playbackContext.mediaDescriptors) {
+        playbackContext.mediaDescriptors = descriptors;
+    }
+
+    if (!descriptors.length) {
+        const emptySummary = { total: 0, succeeded: 0, failed: 0 };
+        playbackContext.warmupSummary = emptySummary;
+        return emptySummary;
+    }
+
+    const tasks = descriptors.map((descriptor) => {
+        const { objectUrl, fileType } = descriptor;
+        if (!objectUrl) {
+            return Promise.resolve({ ok: true, descriptor });
+        }
+
+        if (signal?.aborted) {
+            const abortReason = signal.reason || new DOMException('Export warmup aborted.', 'AbortError');
+            return Promise.resolve({ ok: false, descriptor, error: abortReason });
+        }
+
+        let basePromise = Promise.resolve();
+        if (fileType.startsWith('image/')) {
+            basePromise = preloadTimelineImage(objectUrl);
+        } else if (fileType.startsWith('video/')) {
+            basePromise = preloadTimelineVideo(objectUrl);
+        }
+
+        return withTimeout(
+            basePromise,
+            timeoutMs,
+            new Error('Timed out while preparing media for export.'),
+        ).then(() => ({ ok: true, descriptor }))
+            .catch((error) => ({ ok: false, descriptor, error }));
+    });
+
+    const results = await Promise.all(tasks);
+    const succeeded = results.filter((result) => result.ok).length;
+    const failed = results.length - succeeded;
+    const summary = { total: results.length, succeeded, failed };
+    if (failed > 0) {
+        summary.failures = results.filter((result) => !result.ok);
+    }
+
+    playbackContext.warmupSummary = summary;
+    return summary;
+}
+
+function estimateVideoBitrate(resolution, frameRate) {
+    const width = Math.max(1, Math.round(resolution?.width || 0));
+    const height = Math.max(1, Math.round(resolution?.height || 0));
+    const effectiveFrameRate = Math.max(1, Math.min(60, Math.round(frameRate) || 30));
+    const pixelsPerSecond = width * height * effectiveFrameRate;
+    if (!Number.isFinite(pixelsPerSecond) || pixelsPerSecond <= 0) {
+        return 3_000_000;
+    }
+
+    const baseBitrate = Math.round(pixelsPerSecond * 0.07);
+    const ceiling = (width >= 1920 || height >= 1080) ? 18_000_000 : 12_000_000;
+    return Math.max(2_500_000, Math.min(ceiling, baseBitrate));
+}
+
+function estimateAudioBitrate(resolution) {
+    const width = Math.max(1, Math.round(resolution?.width || 0));
+    const height = Math.max(1, Math.round(resolution?.height || 0));
+    const pixelCount = width * height;
+    if (pixelCount >= 1920 * 1080) {
+        return 256_000;
+    }
+    if (pixelCount >= 1280 * 720) {
+        return 224_000;
+    }
+    return 160_000;
+}
+
+function deriveAudioContentType(videoMimeType) {
+    if (typeof videoMimeType !== 'string') {
+        return '';
+    }
+    if (videoMimeType.startsWith('video/mp4')) {
+        return 'audio/mp4';
+    }
+    if (videoMimeType.startsWith('video/webm')) {
+        return 'audio/webm';
+    }
+    if (videoMimeType.startsWith('video/')) {
+        return `audio/${videoMimeType.slice('video/'.length)}`;
+    }
+    return videoMimeType;
+}
+
+async function resolveExportEncodingConfig(exportFormat, resolution, options = {}) {
+    const frameRate = Math.max(1, Math.min(60, Math.round(options.frameRate) || 30));
+    const config = {
+        mimeType: exportFormat?.mimeType || 'video/webm',
+        frameRate,
+        videoBitsPerSecond: estimateVideoBitrate(resolution, frameRate),
+        audioBitsPerSecond: estimateAudioBitrate(resolution),
+        timesliceMs: null,
+    };
+
+    const mediaCapabilities = typeof navigator !== 'undefined'
+        ? navigator.mediaCapabilities
+        : null;
+    if (!mediaCapabilities || typeof mediaCapabilities.encodingInfo !== 'function') {
+        return config;
+    }
+
+    try {
+        const encodingQuery = {
+            type: 'record',
+            video: {
+                contentType: config.mimeType,
+                width: Math.max(1, Math.round(resolution?.width || 0)),
+                height: Math.max(1, Math.round(resolution?.height || 0)),
+                bitrate: config.videoBitsPerSecond,
+                framerate: frameRate,
+            },
+        };
+        const audioContentType = deriveAudioContentType(config.mimeType);
+        if (audioContentType) {
+            encodingQuery.audio = {
+                contentType: audioContentType,
+                bitrate: config.audioBitsPerSecond,
+                samplerate: 48000,
+                channels: 2,
+            };
+        }
+
+        const info = await mediaCapabilities.encodingInfo(encodingQuery);
+        if (info?.supported) {
+            if (info.powerEfficient === false) {
+                config.videoBitsPerSecond = Math.min(
+                    Math.round(config.videoBitsPerSecond * 1.15),
+                    24_000_000,
+                );
+            } else if (info.powerEfficient === true) {
+                config.videoBitsPerSecond = Math.max(
+                    Math.round(config.videoBitsPerSecond * 0.9),
+                    3_000_000,
+                );
+            }
+
+            if (info.smooth === false) {
+                config.timesliceMs = 500;
+            }
+        }
+    } catch (error) {
+        // Ignore capability detection errors and fall back to defaults.
+    }
+
+    return config;
+}
+
 function prepareExportPlaybackContext(existingItems = null) {
     const timelineItems = Array.isArray(existingItems)
         ? existingItems
@@ -967,10 +1188,14 @@ function prepareExportPlaybackContext(existingItems = null) {
     const mutationVersion = (typeof getTimelinePlaybackMutationVersion === 'function')
         ? getTimelinePlaybackMutationVersion()
         : 0;
+    const mediaDescriptors = collectTimelineExportMedia(timelineItems);
     pendingExportPlaybackContext = {
         timelineItems,
         playbackState,
         version: mutationVersion,
+        mediaDescriptors,
+        warmupSummary: null,
+        encodingConfig: null,
     };
     return pendingExportPlaybackContext;
 }
@@ -1348,6 +1573,46 @@ async function handleConfirmExport() {
     confirmExportButton.textContent = 'Exporting…';
     if (exportDialogStatus) {
         exportDialogStatus.dataset.state = 'progress';
+        exportDialogStatus.textContent = 'Preparing media for export…';
+    }
+
+    stopTimelinePlayback();
+
+    let encodingConfig = playbackContext?.encodingConfig || null;
+    let warmupSummary = null;
+    try {
+        warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500 });
+        if (warmupSummary?.failed > 0) {
+            console.warn('Some media items could not be prepared before export.', warmupSummary.failures);
+        } else if (warmupSummary?.total) {
+            console.info(`Prepared ${warmupSummary.succeeded}/${warmupSummary.total} media items for export.`);
+        }
+    } catch (warmupError) {
+        console.warn('Export warmup encountered an error.', warmupError);
+    }
+
+    try {
+        encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
+            frameRate: encodingConfig?.frameRate || 30,
+        });
+    } catch (encodingError) {
+        console.warn('Falling back to default export encoding configuration.', encodingError);
+        encodingConfig = {
+            mimeType: exportFormat.mimeType,
+            frameRate: 30,
+            videoBitsPerSecond: 6_000_000,
+            audioBitsPerSecond: 192_000,
+            timesliceMs: null,
+        };
+    }
+
+    playbackContext.encodingConfig = encodingConfig;
+
+    const captureFrameRate = Math.max(1, Math.min(60, Math.round(encodingConfig.frameRate) || 30));
+    const readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
+
+    if (exportDialogStatus) {
+        exportDialogStatus.dataset.state = 'progress';
         exportDialogStatus.innerHTML = `
             <span class="visually-hidden" role="status">Exporting timeline preview to ${exportFormat.label}…</span>
             <div class="export-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Exporting timeline preview" aria-live="off">
@@ -1355,8 +1620,6 @@ async function handleConfirmExport() {
             </div>
         `.trim();
     }
-
-    stopTimelinePlayback();
 
     let stopMirroring = () => {};
     let recorder = null;
@@ -1366,16 +1629,23 @@ async function handleConfirmExport() {
     let audioAttachmentCleanup = null;
 
     try {
-        stopMirroring = startPreviewMirroring(resolution.width, resolution.height);
+        stopMirroring = startPreviewMirroring(resolution.width, resolution.height, {
+            frameRate: captureFrameRate,
+        });
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
-        const canvasStream = exportMirrorCanvas.captureStream(30);
+        const canvasStream = exportMirrorCanvas.captureStream(captureFrameRate);
         if (!canvasStream) {
             throw new Error('Unable to access canvas capture stream.');
         }
         combinedStream = new MediaStream();
-        canvasStream.getVideoTracks().forEach((track) => combinedStream.addTrack(track));
+        canvasStream.getVideoTracks().forEach((track) => {
+            combinedStream.addTrack(track);
+            if (typeof track.applyConstraints === 'function') {
+                track.applyConstraints({ frameRate: captureFrameRate }).catch(() => {});
+            }
+        });
 
         const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
         exportAudioContext = audioAttachment.audioContext;
@@ -1386,14 +1656,18 @@ async function handleConfirmExport() {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);
         }
 
-        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: 1500 });
-        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: 1500 });
+        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: readinessTimeout });
+        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: readinessTimeout });
 
-        recorder = new MediaRecorder(combinedStream, {
-            mimeType: exportFormat.mimeType,
-            videoBitsPerSecond: 6_000_000,
-            audioBitsPerSecond: 192_000,
-        });
+        const recorderOptions = { mimeType: exportFormat.mimeType };
+        if (Number.isFinite(encodingConfig.videoBitsPerSecond)) {
+            recorderOptions.videoBitsPerSecond = encodingConfig.videoBitsPerSecond;
+        }
+        if (Number.isFinite(encodingConfig.audioBitsPerSecond)) {
+            recorderOptions.audioBitsPerSecond = encodingConfig.audioBitsPerSecond;
+        }
+
+        recorder = new MediaRecorder(combinedStream, recorderOptions);
 
         const recorderStarted = new Promise((resolve) => {
             recorder.addEventListener('start', () => {
@@ -1415,7 +1689,15 @@ async function handleConfirmExport() {
             }, { once: true });
         });
 
-        recorder.start(250);
+        const timesliceMs = Number.isFinite(encodingConfig.timesliceMs)
+            && encodingConfig.timesliceMs > 0
+            ? Math.max(0, Math.round(encodingConfig.timesliceMs))
+            : null;
+        if (timesliceMs) {
+            recorder.start(timesliceMs);
+        } else {
+            recorder.start();
+        }
         await recorderStarted;
         await waitForNextFrame();
         const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
@@ -1424,6 +1706,7 @@ async function handleConfirmExport() {
         }
 
         const exportBlob = await recordingPromise;
+        recordedChunks.length = 0;
 
         if (!playbackCompleted) {
             throw new Error('Timeline playback was interrupted before completion.');
@@ -1470,6 +1753,8 @@ async function handleConfirmExport() {
         if (combinedStream) {
             combinedStream.getTracks().forEach((track) => track.stop());
         }
+        recorder = null;
+        combinedStream = null;
         exportAudioContext = null;
         stopMirroring();
         confirmExportButton.disabled = false;

@@ -19,6 +19,7 @@ const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
 const timelineImagePreloadCache = new Map();
+const timelineVideoPreloadCache = new Map();
 const stagedUploadsByObjectUrl = new Map();
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');
@@ -185,7 +186,19 @@ const textStyleToolbarButtons = textEffectsPanel
     ? Array.from(textEffectsPanel.querySelectorAll('[data-text-style]'))
     : [];
 const exportMirrorCanvas = document.createElement('canvas');
-const exportMirrorContext = exportMirrorCanvas.getContext('2d');
+let exportMirrorContext = null;
+try {
+    exportMirrorContext = exportMirrorCanvas.getContext('2d', {
+        alpha: false,
+        desynchronized: true,
+    });
+} catch (error) {
+    exportMirrorContext = null;
+}
+
+if (!exportMirrorContext) {
+    exportMirrorContext = exportMirrorCanvas.getContext('2d');
+}
 const DEFAULT_EXPORT_QUALITY = '720p';
 const previewFullscreenToggle = document.getElementById('preview-fullscreen-toggle');
 
