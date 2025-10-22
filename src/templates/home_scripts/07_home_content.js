@@ -1664,6 +1664,11 @@ function pasteTimelineClipboard() {
     let childIndex = timelineClipboardSnapshot.childIndex;
     let startOffsetMs = timelineClipboardSnapshot.startOffsetMs;
 
+    const isTextLayerSnapshot = Boolean(
+        timelineClipboardSnapshot?.template?.classList
+            && timelineClipboardSnapshot.template.classList.contains('timeline-item--text'),
+    );
+
     if (baseItem) {
         const laneCache = (typeof getTimelineLaneEntryCache === 'function')
             ? getTimelineLaneEntryCache()
@@ -1673,10 +1678,12 @@ function pasteTimelineClipboard() {
         if (lane) {
             childIndex = Array.from(lane.children).indexOf(baseItem) + 1;
         }
-        const baseStart = getTimelineItemStartTime(baseItem, laneCache);
-        const baseDuration = getTimelineItemPlaybackDuration(baseItem);
-        if (Number.isFinite(baseStart) && Number.isFinite(baseDuration)) {
-            startOffsetMs = Math.max(0, Math.round(baseStart + baseDuration));
+        if (!isTextLayerSnapshot) {
+            const baseStart = getTimelineItemStartTime(baseItem, laneCache);
+            const baseDuration = getTimelineItemPlaybackDuration(baseItem);
+            if (Number.isFinite(baseStart) && Number.isFinite(baseDuration)) {
+                startOffsetMs = Math.max(0, Math.round(baseStart + baseDuration));
+            }
         }
     } else {
         const lane = ensureTimelineLane(laneIndex);
