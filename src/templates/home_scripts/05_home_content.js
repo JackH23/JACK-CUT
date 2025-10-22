@@ -2014,6 +2014,7 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        resetOverlayAnimationState(entry);
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
@@ -2347,6 +2348,356 @@ function computeOverlayEntryOpacity(entry) {
     }
 
     return clamp(opacity, 0, 1);
+}
+
+const OVERLAY_ANIMATION_IDENTITY = Object.freeze({
+    translateX: 0,
+    translateY: 0,
+    scale: 1,
+    rotate: 0,
+});
+
+const OVERLAY_ENTRANCE_ANIMATION_CURVES = {
+    fade: [
+        { time: 0, scale: 0.96 },
+        { time: 0.45, scale: 1.01 },
+        { time: 1, scale: 1 },
+    ],
+    'slide-up': [
+        { time: 0, translateY: 26, scale: 0.94 },
+        { time: 0.6, translateY: -6, scale: 1.02 },
+        { time: 1, translateY: 0, scale: 1 },
+    ],
+    zoom: [
+        { time: 0, scale: 0.82 },
+        { time: 0.7, scale: 1.05 },
+        { time: 1, scale: 1 },
+    ],
+    bounce: [
+        { time: 0, translateY: 28, scale: 0.88 },
+        { time: 0.55, translateY: -14, scale: 1.08 },
+        { time: 0.75, translateY: 8, scale: 0.96 },
+        { time: 1, translateY: 0, scale: 1 },
+    ],
+    'slide-left': [
+        { time: 0, translateX: -104, scale: 0.98 },
+        { time: 0.55, translateX: 2.5, scale: 1.01 },
+        { time: 1, translateX: 0, scale: 1 },
+    ],
+};
+
+const OVERLAY_EXIT_ANIMATION_CURVES = {
+    fade: [
+        { time: 0, scale: 1 },
+        { time: 1, scale: 1 },
+    ],
+    'slide-down': [
+        { time: 0, translateY: 0, scale: 1 },
+        { time: 1, translateY: 28, scale: 0.92 },
+    ],
+    'zoom-out': [
+        { time: 0, scale: 1 },
+        { time: 1, scale: 0.78 },
+    ],
+    spin: [
+        { time: 0, rotate: 0, scale: 1 },
+        { time: 0.6, rotate: 0, scale: 1 },
+        { time: 1, rotate: 540, scale: 0.6 },
+    ],
+    'slide-right': [
+        { time: 0, translateX: 0, scale: 1 },
+        { time: 0.35, translateX: -2.5, scale: 0.99 },
+        { time: 1, translateX: 104, scale: 0.96 },
+    ],
+};
+
+function formatOverlayAnimationPercent(value) {
+    const numeric = Number.isFinite(value) ? value : 0;
+    const rounded = Math.round(numeric * 1000) / 1000;
+    if (Math.abs(rounded) < 0.0005) {
+        return '0%';
+    }
+    return `${rounded}%`;
+}
+
+function formatOverlayAnimationScale(value) {
+    const numeric = Number.isFinite(value) ? value : 1;
+    const rounded = Math.round(numeric * 1000) / 1000;
+    if (Math.abs(rounded) < 0.0005) {
+        return '0';
+    }
+    return `${rounded}`;
+}
+
+function formatOverlayAnimationRotation(value) {
+    const numeric = Number.isFinite(value) ? value : 0;
+    const rounded = Math.round(numeric * 1000) / 1000;
+    if (Math.abs(rounded) < 0.0005) {
+        return '0deg';
+    }
+    return `${rounded}deg`;
+}
+
+function interpolateOverlayAnimationValue(start, end, ratio, fallback) {
+    const startValue = Number.isFinite(start) ? start : fallback;
+    const endValue = Number.isFinite(end) ? end : startValue;
+    const clampedRatio = clampProgress(ratio);
+    return startValue + ((endValue - startValue) * clampedRatio);
+}
+
+function evaluateOverlayAnimationCurve(curve, progress) {
+    if (!Array.isArray(curve) || curve.length === 0) {
+        return { ...OVERLAY_ANIMATION_IDENTITY };
+    }
+
+    const clampedProgress = clampProgress(progress);
+    let previous = curve[0];
+
+    if (clampedProgress <= previous.time) {
+        return {
+            translateX: Number.isFinite(previous.translateX) ? previous.translateX : 0,
+            translateY: Number.isFinite(previous.translateY) ? previous.translateY : 0,
+            scale: Number.isFinite(previous.scale) ? previous.scale : 1,
+            rotate: Number.isFinite(previous.rotate) ? previous.rotate : 0,
+        };
+    }
+
+    for (let index = 1; index < curve.length; index += 1) {
+        const current = curve[index];
+        if (clampedProgress <= current.time) {
+            const span = current.time - previous.time;
+            const ratio = span <= 0 ? 0 : (clampedProgress - previous.time) / span;
+            return {
+                translateX: interpolateOverlayAnimationValue(
+                    previous.translateX,
+                    current.translateX,
+                    ratio,
+                    0,
+                ),
+                translateY: interpolateOverlayAnimationValue(
+                    previous.translateY,
+                    current.translateY,
+                    ratio,
+                    0,
+                ),
+                scale: interpolateOverlayAnimationValue(previous.scale, current.scale, ratio, 1),
+                rotate: interpolateOverlayAnimationValue(previous.rotate, current.rotate, ratio, 0),
+            };
+        }
+        previous = current;
+    }
+
+    const last = curve[curve.length - 1];
+    return {
+        translateX: Number.isFinite(last.translateX) ? last.translateX : 0,
+        translateY: Number.isFinite(last.translateY) ? last.translateY : 0,
+        scale: Number.isFinite(last.scale) ? last.scale : 1,
+        rotate: Number.isFinite(last.rotate) ? last.rotate : 0,
+    };
+}
+
+function computeOverlayEntranceAnimationState(animationSettings, direction, clipDurationMs, clipTimeMs) {
+    const sanitizedDirection = sanitizeAnimationDirection(direction);
+    if (sanitizedDirection !== 'in' && sanitizedDirection !== 'combo') {
+        return null;
+    }
+
+    const config = getPreviewImageEntranceConfig({
+        clipDurationMs,
+        settingsOverride: animationSettings,
+    });
+    if (!config) {
+        return null;
+    }
+
+    const presetKey = sanitizedDirection === 'combo'
+        ? sanitizeComboEntrancePreset(animationSettings?.comboInPreset)
+        : sanitizeEntrancePreset(animationSettings?.inPreset);
+
+    if (!presetKey || presetKey === 'none') {
+        return { state: OVERLAY_ANIMATION_IDENTITY, active: false };
+    }
+
+    const curve = OVERLAY_ENTRANCE_ANIMATION_CURVES[presetKey]
+        || OVERLAY_ENTRANCE_ANIMATION_CURVES.fade;
+    const delay = Math.max(0, Number(config.delay) || 0);
+    const duration = Math.max(0, Number(config.duration) || 0);
+    if (duration <= 0) {
+        return { state: OVERLAY_ANIMATION_IDENTITY, active: false };
+    }
+
+    const effectiveTime = Math.max(0, clipTimeMs - delay);
+    const progress = duration > 0 ? effectiveTime / duration : 1;
+    const state = evaluateOverlayAnimationCurve(curve, progress);
+    const active = clipTimeMs < (delay + duration);
+    return { state, active };
+}
+
+function computeOverlayExitAnimationState(animationSettings, direction, clipDurationMs, clipTimeMs, exitConfig) {
+    const sanitizedDirection = sanitizeAnimationDirection(direction);
+    if (sanitizedDirection !== 'out' && sanitizedDirection !== 'combo') {
+        return null;
+    }
+
+    const config = exitConfig || getPreviewImageExitConfig({
+        clipDurationMs,
+        settingsOverride: animationSettings,
+    });
+    if (!config) {
+        return null;
+    }
+
+    const presetKey = sanitizedDirection === 'combo'
+        ? sanitizeComboExitPreset(animationSettings?.comboOutPreset)
+        : sanitizeExitPreset(animationSettings?.outPreset);
+
+    if (!presetKey || presetKey === 'none') {
+        return { state: OVERLAY_ANIMATION_IDENTITY, active: false, hasStarted: false };
+    }
+
+    const curve = OVERLAY_EXIT_ANIMATION_CURVES[presetKey]
+        || OVERLAY_EXIT_ANIMATION_CURVES.fade;
+    const totalWindow = Math.min(
+        clipDurationMs,
+        Math.max(0, Number(config.totalDuration) || 0),
+    );
+    if (totalWindow <= 0) {
+        return null;
+    }
+
+    const delay = Math.max(0, Number(config.delay) || 0);
+    let duration = Math.max(0, Number(config.duration) || 0);
+    if (duration <= 0 && totalWindow > delay) {
+        duration = totalWindow - delay;
+    }
+
+    const windowStart = Math.max(0, clipDurationMs - totalWindow);
+    const animationStart = windowStart + delay;
+    if (clipTimeMs < windowStart) {
+        return { state: OVERLAY_ANIMATION_IDENTITY, active: false, hasStarted: false };
+    }
+
+    if (duration <= 0) {
+        return {
+            state: evaluateOverlayAnimationCurve(curve, 1),
+            active: false,
+            hasStarted: clipTimeMs >= windowStart,
+        };
+    }
+
+    const effectiveTime = clipTimeMs - animationStart;
+    const progress = effectiveTime <= 0 ? 0 : effectiveTime / duration;
+    const state = evaluateOverlayAnimationCurve(curve, progress);
+    const active = clipTimeMs < (animationStart + duration);
+    return { state, active, hasStarted: clipTimeMs >= windowStart };
+}
+
+function computeOverlayAnimationTransform(descriptor, clipDurationMs, clipTimeMs) {
+    if (!descriptor || clipDurationMs <= 0) {
+        return OVERLAY_ANIMATION_IDENTITY;
+    }
+
+    const animationSettings = descriptor.animationSettings
+        || getTimelineItemAnimationSettings(descriptor.item);
+    const direction = sanitizeAnimationDirection(animationSettings?.direction);
+    if (direction === 'none') {
+        return OVERLAY_ANIMATION_IDENTITY;
+    }
+
+    const exitState = computeOverlayExitAnimationState(
+        animationSettings,
+        direction,
+        clipDurationMs,
+        clipTimeMs,
+        descriptor.exitConfig || null,
+    );
+
+    if (direction === 'out' && exitState) {
+        return exitState.state;
+    }
+
+    const entranceState = computeOverlayEntranceAnimationState(
+        animationSettings,
+        direction,
+        clipDurationMs,
+        clipTimeMs,
+    );
+
+    if (exitState && (exitState.active || exitState.hasStarted)) {
+        return exitState.state;
+    }
+
+    if (entranceState) {
+        return entranceState.state;
+    }
+
+    if (exitState) {
+        return exitState.state;
+    }
+
+    return OVERLAY_ANIMATION_IDENTITY;
+}
+
+function applyOverlayAnimationTransform(entry, transformState) {
+    if (!entry || !entry.image) {
+        return;
+    }
+
+    const target = transformState || OVERLAY_ANIMATION_IDENTITY;
+    const translateX = Number.isFinite(target.translateX) ? target.translateX : 0;
+    const translateY = Number.isFinite(target.translateY) ? target.translateY : 0;
+    const scale = Number.isFinite(target.scale) ? target.scale : 1;
+    const rotate = Number.isFinite(target.rotate) ? target.rotate : 0;
+
+    const previous = entry.renderedAnimation;
+    if (!previous || previous.translateX !== translateX) {
+        entry.image.style.setProperty(
+            '--overlay-animation-translate-x',
+            formatOverlayAnimationPercent(translateX),
+        );
+    }
+    if (!previous || previous.translateY !== translateY) {
+        entry.image.style.setProperty(
+            '--overlay-animation-translate-y',
+            formatOverlayAnimationPercent(translateY),
+        );
+    }
+    if (!previous || previous.scale !== scale) {
+        entry.image.style.setProperty(
+            '--overlay-animation-scale',
+            formatOverlayAnimationScale(scale),
+        );
+    }
+    if (!previous || previous.rotate !== rotate) {
+        entry.image.style.setProperty(
+            '--overlay-animation-rotation',
+            formatOverlayAnimationRotation(rotate),
+        );
+    }
+
+    entry.renderedAnimation = {
+        translateX,
+        translateY,
+        scale,
+        rotate,
+    };
+}
+
+function resetOverlayAnimationState(entry) {
+    if (!entry || !entry.image) {
+        return;
+    }
+
+    entry.image.style.setProperty('--overlay-animation-translate-x', '0%');
+    entry.image.style.setProperty('--overlay-animation-translate-y', '0%');
+    entry.image.style.setProperty('--overlay-animation-scale', '1');
+    entry.image.style.setProperty('--overlay-animation-rotation', '0deg');
+    entry.renderedAnimation = {
+        translateX: 0,
+        translateY: 0,
+        scale: 1,
+        rotate: 0,
+    };
 }
 
 function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {

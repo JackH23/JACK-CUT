@@ -417,6 +417,7 @@
                 renderedOpacity: null,
                 renderedZIndex: null,
                 renderedRotation: null,
+                renderedAnimation: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -490,6 +491,7 @@
         entry.renderedOpacity = null;
         entry.renderedZIndex = null;
         entry.renderedRotation = null;
+        resetOverlayAnimationState(entry);
 
         if (entry.layer) {
             entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
@@ -643,6 +645,18 @@
         if (image) {
             image.style.opacity = '1';
         }
+
+        const clipDurationMs = Math.max(0, Number(descriptor.clipDuration) || 0);
+        const progressFraction = clampProgress(
+            Number.isFinite(descriptor.progress) ? descriptor.progress : 0,
+        );
+        const clipTimeMs = clipDurationMs * progressFraction;
+        const animationTransform = computeOverlayAnimationTransform(
+            descriptor,
+            clipDurationMs,
+            clipTimeMs,
+        );
+        applyOverlayAnimationTransform(entry, animationTransform);
 
         const isActiveItem = descriptor.item === activeTimelineItem;
         const isPointerTarget = overlayPointerState.pointerId !== null
