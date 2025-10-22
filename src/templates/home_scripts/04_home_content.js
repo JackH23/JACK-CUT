@@ -87,23 +87,27 @@ function getTimelineLaneFromEvent(event) {
 function updateActiveTimelineIndicators() {
     applyTimelineProgressGeometry();
 
+    const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+        ? getTimelineLaneEntryCache()
+        : null;
+    const totalDuration = getTotalTimelineDuration(laneCache);
+
     if (isTimelinePlaying) {
-        updatePlaybackTimeDisplay(playbackDisplayCurrentMs, getTotalTimelineDuration());
+        updatePlaybackTimeDisplay(playbackDisplayCurrentMs, totalDuration);
         return;
     }
 
     if (activeTimelineItem) {
-        const startTime = getTimelineItemStartTime(activeTimelineItem);
+        const startTime = getTimelineItemStartTime(activeTimelineItem, laneCache);
         const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
         const clipProgress = getActiveClipProgress();
         const currentTime = startTime + (clipDuration * clipProgress);
-        const total = getTotalTimelineDuration();
-        const fraction = total > 0 ? clampProgress(currentTime / total) : 0;
+        const fraction = totalDuration > 0 ? clampProgress(currentTime / totalDuration) : 0;
         resetTimelineProgressLine(fraction);
-        updatePlaybackTimeDisplay(currentTime, total);
+        updatePlaybackTimeDisplay(currentTime, totalDuration);
     } else {
         resetTimelineProgressLine();
-        updatePlaybackTimeDisplay(0, getTotalTimelineDuration());
+        updatePlaybackTimeDisplay(0, totalDuration);
     }
 
     if (!isTimelinePlaying) {
@@ -195,6 +199,10 @@ function scheduleTimelineLaneReflow(lane) {
         return;
     }
 
+    if (typeof invalidateTimelineLaneEntriesCache === 'function') {
+        invalidateTimelineLaneEntriesCache();
+    }
+
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
         reflowTimelineLane(lane);
         return;
@@ -219,6 +227,10 @@ function flushTimelineLaneReflow(lane) {
         return;
     }
 
+    if (typeof invalidateTimelineLaneEntriesCache === 'function') {
+        invalidateTimelineLaneEntriesCache();
+    }
+
     if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
         const handle = pendingTimelineLaneReflows.get(lane);
         if (handle !== undefined) {
@@ -237,6 +249,10 @@ function flushTimelineLaneReflow(lane) {
 }
 
 function flushAllTimelineLaneReflows() {
+    if (typeof invalidateTimelineLaneEntriesCache === 'function') {
+        invalidateTimelineLaneEntriesCache();
+    }
+
     const entries = Array.from(pendingTimelineLaneReflows.entries());
     pendingTimelineLaneReflows.clear();
 

@@ -381,9 +381,12 @@ function setTimelineProgressForActiveClip(progress) {
         return;
     }
 
+    const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+        ? getTimelineLaneEntryCache()
+        : null;
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(activeTimelineItem));
-    const startTime = getTimelineItemStartTime(activeTimelineItem);
-    const totalDuration = getTotalTimelineDuration();
+    const startTime = getTimelineItemStartTime(activeTimelineItem, laneCache);
+    const totalDuration = getTotalTimelineDuration(laneCache);
     const targetTime = startTime + (clipDuration * clampProgress(progress));
     const fraction = totalDuration > 0 ? clampProgress(targetTime / totalDuration) : 0;
 
@@ -1662,12 +1665,15 @@ function pasteTimelineClipboard() {
     let startOffsetMs = timelineClipboardSnapshot.startOffsetMs;
 
     if (baseItem) {
+        const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+            ? getTimelineLaneEntryCache()
+            : null;
         laneIndex = resolveLaneIndex(baseItem.dataset?.laneIndex);
         const lane = baseItem.closest('.timeline-lane');
         if (lane) {
             childIndex = Array.from(lane.children).indexOf(baseItem) + 1;
         }
-        const baseStart = getTimelineItemStartTime(baseItem);
+        const baseStart = getTimelineItemStartTime(baseItem, laneCache);
         const baseDuration = getTimelineItemPlaybackDuration(baseItem);
         if (Number.isFinite(baseStart) && Number.isFinite(baseDuration)) {
             startOffsetMs = Math.max(0, Math.round(baseStart + baseDuration));
@@ -1860,7 +1866,14 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
     const fileType = timelineItem.dataset.fileType || '';
     const objectURL = timelineItem.dataset.objectUrl;
 
-    const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
+    const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+        ? getTimelineLaneEntryCache()
+        : null;
+    const overlayEntries = getOverlayEntriesForTimelineItem(
+        timelineItem,
+        overlayEntriesOverride,
+        laneCache,
+    );
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
 
     if (!objectURL) {
@@ -3812,7 +3825,14 @@ async function playTimelineItem(
 
     setActiveTimelineItem(timelineItem);
 
-    const overlayEntries = getOverlayEntriesForTimelineItem(timelineItem, overlayEntriesOverride);
+    const laneCache = (typeof getTimelineLaneEntryCache === 'function')
+        ? getTimelineLaneEntryCache()
+        : null;
+    const overlayEntries = getOverlayEntriesForTimelineItem(
+        timelineItem,
+        overlayEntriesOverride,
+        laneCache,
+    );
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
     applyCanvasSettingsToPreview(timelineItem);
 
