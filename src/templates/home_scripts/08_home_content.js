@@ -964,9 +964,13 @@ function prepareExportPlaybackContext(existingItems = null) {
         ? existingItems
         : getTimelineItems();
     const playbackState = getTimelinePlaybackSegments();
+    const mutationVersion = (typeof getTimelinePlaybackMutationVersion === 'function')
+        ? getTimelinePlaybackMutationVersion()
+        : 0;
     pendingExportPlaybackContext = {
         timelineItems,
         playbackState,
+        version: mutationVersion,
     };
     return pendingExportPlaybackContext;
 }
@@ -1279,7 +1283,16 @@ async function handleConfirmExport() {
         return;
     }
 
-    const playbackContext = pendingExportPlaybackContext || prepareExportPlaybackContext();
+    const mutationVersion = (typeof getTimelinePlaybackMutationVersion === 'function')
+        ? getTimelinePlaybackMutationVersion()
+        : null;
+    const pendingContextVersion = Number.isFinite(pendingExportPlaybackContext?.version)
+        ? pendingExportPlaybackContext.version
+        : null;
+    let playbackContext = pendingExportPlaybackContext;
+    if (!playbackContext || (mutationVersion !== null && mutationVersion !== pendingContextVersion)) {
+        playbackContext = prepareExportPlaybackContext();
+    }
     const timelineItems = Array.isArray(playbackContext?.timelineItems)
         ? playbackContext.timelineItems
         : getTimelineItems();

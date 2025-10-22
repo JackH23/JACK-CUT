@@ -1585,7 +1585,7 @@ function restoreTimelineItemFromSnapshot(snapshot, options = {}) {
     scheduleTimelineLaneReflow(lane);
     updateTimelineEmptyState();
     updateActiveTimelineIndicators();
-    renderExportSummary(getTimelineItems(), null);
+    markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
 
     const resolvedObjectUrl = newItem.dataset.objectUrl || snapshot.objectUrl || '';
@@ -1758,7 +1758,7 @@ function removeTimelineItem(timelineItem, options = {}) {
     cleanupEmptyTimelineLanes();
     updateTimelineEmptyState();
     updateActiveTimelineIndicators();
-    renderExportSummary(getTimelineItems(), null);
+    markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
 
     if (recordUndo && snapshot) {
@@ -3261,6 +3261,8 @@ async function addToTimeline(file, objectURL) {
     initializeTimelineItem(timelineItem);
     updateTimelineEmptyState();
 
+    markExportPlaybackContextDirty({ refreshSummary: true });
+
     registerTimelineItemInteractions(timelineItem, removeButton);
 
     pushTimelineUndoEntry({
@@ -3721,7 +3723,7 @@ async function addDefaultTextOverlayToTimeline() {
     scrollTimelineItemIntoView(timelineItem);
     updateTimelineEmptyState();
     updateActiveTimelineIndicators();
-    renderExportSummary(getTimelineItems(), null);
+    markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
     loadPreviewFromTimeline(activeTimelineItem);
 
