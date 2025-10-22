@@ -334,6 +334,66 @@ function startPreviewMirroring(width, height) {
     };
 }
 
+let activeOverlayWindowState = {
+    item: null,
+    windowStart: null,
+    windowEnd: null,
+    anchorTime: null,
+};
+
+function resetActiveOverlayWindowState() {
+    activeOverlayWindowState = {
+        item: null,
+        windowStart: null,
+        windowEnd: null,
+        anchorTime: null,
+    };
+}
+
+function updateActiveOverlayWindowState(timelineItem, windowStart, windowEnd, anchorTime) {
+    activeOverlayWindowState = {
+        item: timelineItem || null,
+        windowStart: Number.isFinite(windowStart) ? windowStart : null,
+        windowEnd: Number.isFinite(windowEnd) ? windowEnd : null,
+        anchorTime: Number.isFinite(anchorTime) ? anchorTime : null,
+    };
+}
+
+function getActiveOverlayWindowState() {
+    return activeOverlayWindowState;
+}
+
+function shouldRefreshOverlayWindowForTimelineTime(timelineItem, timelineTime) {
+    if (!timelineItem || !Number.isFinite(timelineTime)) {
+        return true;
+    }
+
+    const state = activeOverlayWindowState;
+    if (!state || state.item !== timelineItem) {
+        return true;
+    }
+
+    if (!Number.isFinite(state.windowStart) || !Number.isFinite(state.windowEnd)) {
+        return true;
+    }
+
+    const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_WINDOW_SLACK_MS) || 0);
+    const paddedStart = state.windowStart - tolerance;
+    const paddedEnd = state.windowEnd + tolerance;
+
+    if (timelineTime >= paddedStart && timelineTime <= paddedEnd) {
+        return false;
+    }
+
+    const clipStart = getTimelineItemStartTime(timelineItem);
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+    const clipEnd = clipStart + clipDuration;
+    const expandedClipStart = clipStart - tolerance;
+    const expandedClipEnd = clipEnd + tolerance;
+
+    return timelineTime < expandedClipStart || timelineTime > expandedClipEnd;
+}
+
 function updatePlaybackTimeDisplay(currentMs, totalMs) {
     playbackDisplayCurrentMs = Math.max(0, Math.floor(Number(currentMs) || 0));
     playbackDisplayTotalMs = Math.max(0, Math.floor(Number(totalMs) || 0));
@@ -342,7 +402,13 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
 
     if (!playbackTimeDisplay) {
         if (shouldRefreshOverlay) {
-            refreshActiveOverlayLayers();
+            const needsRefresh = shouldRefreshOverlayWindowForTimelineTime(
+                activeTimelineItem,
+                playbackDisplayCurrentMs,
+            );
+            if (needsRefresh) {
+                refreshActiveOverlayLayers();
+            }
         }
         return;
     }
@@ -363,7 +429,13 @@ function updatePlaybackTimeDisplay(currentMs, totalMs) {
     }
 
     if (shouldRefreshOverlay) {
-        refreshActiveOverlayLayers();
+        const needsRefresh = shouldRefreshOverlayWindowForTimelineTime(
+            activeTimelineItem,
+            clampedCurrent,
+        );
+        if (needsRefresh) {
+            refreshActiveOverlayLayers();
+        }
     }
 }
 

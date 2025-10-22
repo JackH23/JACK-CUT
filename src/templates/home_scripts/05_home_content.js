@@ -2035,6 +2035,11 @@ function clearPreviewOverlayLayers() {
     previewOverlayStack.setAttribute('hidden', '');
     previewOverlayStack.setAttribute('aria-hidden', 'true');
 
+    activeOverlayDescriptorCache = [];
+    if (typeof resetActiveOverlayWindowState === 'function') {
+        resetActiveOverlayWindowState();
+    }
+
     lastOverlayRenderTimestamp = null;
 }
 
@@ -2700,7 +2705,46 @@ function resetOverlayAnimationState(entry) {
     };
 }
 
-function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
+let activeOverlayDescriptorCache = [];
+
+function normalizeOverlayRenderOptions(input) {
+    if (Array.isArray(input)) {
+        return {
+            entries: input,
+            descriptors: null,
+            laneCache: null,
+        };
+    }
+    if (!input || typeof input !== 'object') {
+        return {
+            entries: [],
+            descriptors: null,
+            laneCache: null,
+        };
+    }
+    return {
+        entries: Array.isArray(input.entries) ? input.entries : [],
+        descriptors: Array.isArray(input.descriptors) ? input.descriptors : null,
+        laneCache: input.laneCache || null,
+    };
+}
+
+function extractOverlayDescriptorCacheEntry(descriptor) {
+    if (!descriptor || !descriptor.item) {
+        return null;
+    }
+    return {
+        item: descriptor.item,
+        laneIndex: descriptor.laneIndex,
+        start: descriptor.start,
+        end: descriptor.end,
+        clipDuration: descriptor.clipDuration,
+        animationSettings: descriptor.animationSettings,
+        exitConfig: descriptor.exitConfig,
+    };
+}
+
+function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
@@ -2763,9 +2807,42 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
     const expandedWindowStart = timelineWindowStart - OVERLAY_TIMELINE_WINDOW_SLACK_MS;
     const expandedWindowEnd = timelineWindowEnd + OVERLAY_TIMELINE_WINDOW_SLACK_MS;
 
-    const overlayEntries = (Array.isArray(entries) ? entries : [])
+    if (typeof updateActiveOverlayWindowState === 'function') {
+        updateActiveOverlayWindowState(
+            primaryTimelineItem,
+            expandedWindowStart,
+            expandedWindowEnd,
+            safeTimelineNow,
+        );
+    }
+
+    const normalizedOptions = normalizeOverlayRenderOptions(options ?? {});
+    const descriptorCacheInput = (normalizedOptions.descriptors && normalizedOptions.descriptors.length)
+        ? normalizedOptions.descriptors
+        : activeOverlayDescriptorCache;
+    const cachedDescriptorMap = (descriptorCacheInput && descriptorCacheInput.length)
+        ? new Map(descriptorCacheInput.map((descriptor) => [descriptor.item, descriptor]))
+        : null;
+    let entrySource = (normalizedOptions.entries && normalizedOptions.entries.length)
+        ? normalizedOptions.entries
+        : (descriptorCacheInput || []);
+
+    if ((!entrySource || entrySource.length === 0) && normalizedOptions.laneCache) {
+        try {
+            entrySource = getOverlayEntriesForTimelineItem(
+                primaryTimelineItem,
+                null,
+                normalizedOptions.laneCache,
+            );
+        } catch (error) {
+            entrySource = entrySource || [];
+        }
+    }
+
+    const overlayEntries = (Array.isArray(entrySource) ? entrySource : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {
+            const cached = cachedDescriptorMap?.get(entry.item) || null;
             const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);
             const start = Number.isFinite(entry.start)
                 ? entry.start
@@ -2783,10 +2860,10 @@ function renderPreviewOverlayLayers(primaryTimelineItem, entries = []) {
                 start,
                 end,
             };
-            
+
             const explicitClipDuration = Number.isFinite(entry.clipDuration)
                 ? Math.max(0, Number(entry.clipDuration) || 0)
-                : null;
+                : (Number.isFinite(cached?.clipDuration) ? Math.max(0, Number(cached.clipDuration) || 0) : null);
             const explicitSampleTime = Number.isFinite(entry.sampleTime)
                 ? Number(entry.sampleTime)
                 : null;
