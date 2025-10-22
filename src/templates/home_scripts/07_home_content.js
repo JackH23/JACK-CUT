@@ -1791,13 +1791,125 @@ function removeTimelineItem(timelineItem, options = {}) {
     return true;
 }
 
+const TEXT_LAYER_DUPLICATE_OFFSET_FRACTION = 0.02;
+
+function offsetTextLayerTransform(dataset) {
+    if (!dataset || typeof dataset.previewImageTransform !== 'string') {
+        return;
+    }
+
+    let transform;
+    try {
+        transform = JSON.parse(dataset.previewImageTransform);
+    } catch (error) {
+        transform = null;
+    }
+
+    if (!transform || typeof transform !== 'object') {
+        return;
+    }
+
+    const offset = TEXT_LAYER_DUPLICATE_OFFSET_FRACTION;
+
+    const width = Number.isFinite(transform.width) ? transform.width : 0;
+    const height = Number.isFinite(transform.height) ? transform.height : 0;
+    const maxLeft = Math.max(0, 1 - Math.max(0, width));
+    const maxTop = Math.max(0, 1 - Math.max(0, height));
+
+    const originalLeft = Number.isFinite(transform.left) ? transform.left : 0;
+    const originalTop = Number.isFinite(transform.top) ? transform.top : 0;
+
+    let nextLeft = originalLeft + offset;
+    let nextTop = originalTop + offset;
+
+    if (nextLeft > maxLeft) {
+        nextLeft = Math.max(0, originalLeft - offset);
+    }
+    if (nextTop > maxTop) {
+        nextTop = Math.max(0, originalTop - offset);
+    }
+
+    const clampedLeft = Math.min(Math.max(nextLeft, 0), maxLeft);
+    const clampedTop = Math.min(Math.max(nextTop, 0), maxTop);
+
+    if (Number.isFinite(clampedLeft)) {
+        transform.left = clampedLeft;
+    }
+    if (Number.isFinite(clampedTop)) {
+        transform.top = clampedTop;
+    }
+
+    dataset.previewImageTransform = JSON.stringify(transform);
+}
+
+function duplicateActiveTextTimelineItem() {
+    if (!activeTimelineItem || !activeTimelineItem.isConnected) {
+        return false;
+    }
+
+    if (typeof isDefaultTextTimelineItem !== 'function'
+        || !isDefaultTextTimelineItem(activeTimelineItem)) {
+        return false;
+    }
+
+    const snapshot = createTimelineItemSnapshot(activeTimelineItem);
+    if (!snapshot) {
+        return false;
+    }
+
+    const datasetCopy = snapshot.dataset ? { ...snapshot.dataset } : {};
+    offsetTextLayerTransform(datasetCopy);
+
+    const lane = activeTimelineItem.closest('.timeline-lane');
+    const laneIndex = lane ? resolveLaneIndex(lane.dataset.laneIndex) : snapshot.laneIndex;
+    let childIndex = snapshot.childIndex;
+    if (lane) {
+        const siblings = Array.from(lane.children);
+        const baseIndex = siblings.indexOf(activeTimelineItem);
+        childIndex = baseIndex >= 0 ? baseIndex + 1 : siblings.length;
+    }
+
+    const duplicateSnapshot = {
+        ...snapshot,
+        dataset: datasetCopy,
+        laneIndex,
+        childIndex,
+    };
+
+    const newItem = restoreTimelineItemFromSnapshot(duplicateSnapshot, {
+        laneIndex,
+        childIndex,
+        startOffsetMs: snapshot.startOffsetMs,
+        activate: true,
+        focus: true,
+        loadPreview: true,
+        scrollIntoView: true,
+    });
+
+    if (!newItem) {
+        return false;
+    }
+
+    pushTimelineUndoEntry({
+        type: 'duplicate-text-item',
+        undo: () => {
+            if (newItem && newItem.isConnected) {
+                removeTimelineItem(newItem, { recordUndo: false });
+            }
+        },
+    });
+
+    return true;
+}
+
 const TIMELINE_SHORTCUT_HANDLERS = Object.freeze({
     c: () => copyActiveTimelineItemToClipboard(),
     v: () => pasteTimelineClipboard(),
     z: (event) => (event.shiftKey ? false : undoLastTimelineAction()),
+    d: () => duplicateActiveTextTimelineItem(),
 });
 
-const DEFAULT_TEXT_SHORTCUT_KEYS = new Set(['c', 'v', 'z']);
+const DEFAULT_TEXT_SHORTCUT_KEYS = new Set(['c', 'v', 'z', 'd']);
 
 function handleTimelineKeyboardShortcuts(event) {
     if (!event || event.defaultPrevented || event.repeat) {
