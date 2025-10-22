@@ -233,7 +233,7 @@ function drawPreviewImageToExportCanvas() {
     return true;
 }
 
-function startPreviewMirroring(width, height) {
+function startPreviewMirroring(width, height, options = {}) {
     if (!exportMirrorContext) {
         throw new Error('Unable to access export canvas context.');
     }
@@ -243,11 +243,28 @@ function startPreviewMirroring(width, height) {
 
     let stopped = false;
     let rafId = 0;
+    let videoFrameRequestId = 0;
+    let lastDrawTimestamp = 0;
+    const frameRate = Math.max(1, Math.min(60, Math.round(options.frameRate) || 30));
+    const frameInterval = 1000 / frameRate;
+    const useVideoFrameCallbacks = Boolean(
+        options.useVideoFrameCallback !== false
+        && previewVideo
+        && typeof previewVideo.requestVideoFrameCallback === 'function'
+        && typeof previewVideo.cancelVideoFrameCallback === 'function'
+    );
 
-    const drawFrame = () => {
+    const drawFrame = (timestamp = performance.now()) => {
         if (stopped) {
             return;
         }
+
+        if (timestamp - lastDrawTimestamp < frameInterval - 0.5) {
+            scheduleNextFrame();
+            return;
+        }
+
+        lastDrawTimestamp = timestamp;
 
         exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
         exportMirrorContext.fillStyle = '#000000';
@@ -320,16 +337,42 @@ function startPreviewMirroring(width, height) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
         }
 
-        rafId = window.requestAnimationFrame(drawFrame);
+        scheduleNextFrame();
     };
 
-    drawFrame();
+    function scheduleNextFrame() {
+        if (stopped) {
+            return;
+        }
+
+        if (useVideoFrameCallbacks
+            && !previewVideo.hidden
+            && !previewVideo.paused
+            && !previewVideo.ended) {
+            videoFrameRequestId = previewVideo.requestVideoFrameCallback((now) => {
+                drawFrame(now);
+            });
+            return;
+        }
+
+        rafId = window.requestAnimationFrame(drawFrame);
+    }
+
+    drawFrame(performance.now());
 
     return () => {
         stopped = true;
         if (rafId) {
             window.cancelAnimationFrame(rafId);
             rafId = 0;
+        }
+        if (useVideoFrameCallbacks && videoFrameRequestId) {
+            try {
+                previewVideo.cancelVideoFrameCallback(videoFrameRequestId);
+            } catch (error) {
+                // Ignore cleanup errors for browsers that partially implement the API.
+            }
+            videoFrameRequestId = 0;
         }
     };
 }

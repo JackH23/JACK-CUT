@@ -1737,6 +1737,8 @@ function removeTimelineItem(timelineItem, options = {}) {
         decrementTimelineObjectUrlUsage(objectUrl);
         if (fileType.startsWith('image/')) {
             releaseTimelineImage(objectUrl);
+        } else if (fileType.startsWith('video/')) {
+            releaseTimelineVideo(objectUrl);
         }
         if (!hasStagedUpload) {
             try {
