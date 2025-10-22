@@ -531,6 +531,24 @@ function normalizeTimelinePlaybackSyncSource(source) {
     return normalized;
 }
 
+function getTimelinePlaybackSyncSourceTime(source) {
+    if (!source || typeof source.getTimelineTime !== 'function') {
+        return Number.NaN;
+    }
+    try {
+        return Number(source.getTimelineTime());
+    } catch (error) {
+        return Number.NaN;
+    }
+}
+
+function refreshTimelinePlaybackSyncFallbackFromSource(source) {
+    const timelineTime = getTimelinePlaybackSyncSourceTime(source);
+    if (Number.isFinite(timelineTime)) {
+        updateTimelinePlaybackSyncFallback(timelineTime);
+    }
+}
+
 function setTimelinePlaybackSyncSource(source) {
     const normalized = normalizeTimelinePlaybackSyncSource(source);
     if (!normalized) {
@@ -542,10 +560,12 @@ function setTimelinePlaybackSyncSource(source) {
 
     if (timelinePlaybackSyncSource && timelinePlaybackSyncSource.ref === normalized.ref) {
         timelinePlaybackSyncSource = normalized;
+        refreshTimelinePlaybackSyncFallbackFromSource(timelinePlaybackSyncSource);
         return timelinePlaybackSyncSource;
     }
 
     if (timelinePlaybackSyncSource && timelinePlaybackSyncSource.priority > normalized.priority) {
+        refreshTimelinePlaybackSyncFallbackFromSource(timelinePlaybackSyncSource);
         return timelinePlaybackSyncSource;
     }
 
@@ -558,6 +578,7 @@ function setTimelinePlaybackSyncSource(source) {
     }
 
     timelinePlaybackSyncSource = normalized;
+    refreshTimelinePlaybackSyncFallbackFromSource(timelinePlaybackSyncSource);
     return timelinePlaybackSyncSource;
 }
 
@@ -570,6 +591,7 @@ function clearTimelinePlaybackSyncSource(source) {
     }
     const current = timelinePlaybackSyncSource;
     timelinePlaybackSyncSource = null;
+    refreshTimelinePlaybackSyncFallbackFromSource(current);
     if (current && typeof current.cleanup === 'function') {
         try {
             current.cleanup();

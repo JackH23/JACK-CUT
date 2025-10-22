@@ -324,7 +324,13 @@
 
         await new Promise((resolve) => {
             let resolved = false;
-            const startTimestamp = performance.now() - initialElapsed;
+            const clipTimelineStart = Math.max(
+                0,
+                Math.round(Number(getTimelineItemStartTime(timelineItem)) || 0),
+            );
+            const resumeClipElapsed = initialElapsed;
+            const resumeTimelineTime = clipTimelineStart + resumeClipElapsed;
+            const playbackStartTimestamp = performance.now();
             let animationFrameId = 0;
             let exitAnimationRequested = false;
             let exitAnimationStarted = false;
@@ -398,17 +404,25 @@
                 }
 
                 const now = performance.now();
-                const elapsed = Math.max(0, Math.min(now - startTimestamp, clipDuration));
-                const elapsedSinceResume = Math.max(0, elapsed - initialElapsed);
+                const wallElapsed = Math.max(0, now - playbackStartTimestamp);
+                const fallbackTimelineTime = resumeTimelineTime + wallElapsed;
+                const syncedTimelineTime = typeof getTimelinePlaybackSyncedElapsed === 'function'
+                    ? getTimelinePlaybackSyncedElapsed(fallbackTimelineTime, now)
+                    : fallbackTimelineTime;
+                const clipElapsed = Math.max(
+                    0,
+                    Math.min(clipDuration, syncedTimelineTime - clipTimelineStart),
+                );
+                const elapsedSinceResume = Math.max(0, clipElapsed - resumeClipElapsed);
                 const playbackProgress = clipDuration > 0
-                    ? clampProgress(elapsed / clipDuration)
+                    ? clampProgress(clipElapsed / clipDuration)
                     : 0;
 
                 setActiveClipProgress(playbackProgress, { source: 'image-playback' });
 
                 if (exitConfig && !exitAnimationRequested) {
                     const shouldStartExit = clipPlaysToEnd
-                        && (safeEffectiveDuration === 0 || elapsed >= exitStartTime);
+                        && (safeEffectiveDuration === 0 || clipElapsed >= exitStartTime);
                     if (shouldStartExit) {
                         startExitAnimation();
                     }
@@ -637,6 +651,9 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             }
             
             syncPreviewAudioOverlay(segment.items || [], segmentStartTime);
+            if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+                updateTimelinePlaybackSyncFallback(segmentStartTime);
+            }
             const startFraction = getTimelineFractionForTime(segmentStartTime);
             const endFraction = getTimelineFractionForTime(end);
             const remainingDuration = pendingResumeTime !== null
