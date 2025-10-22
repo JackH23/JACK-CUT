@@ -801,6 +801,8 @@ function getActiveOverlayLayerSnapshots() {
 
         const group = entry.layerGroup === 'below' ? 'below' : 'above';
 
+        const animation = entry.renderedAnimation || null;
+
         snapshots.push({
             image,
             frame: {
@@ -815,6 +817,14 @@ function getActiveOverlayLayerSnapshots() {
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
             priority: groupPriority[group] ?? 1,
+            animation: animation
+                ? {
+                    translateX: Number.isFinite(animation.translateX) ? animation.translateX : 0,
+                    translateY: Number.isFinite(animation.translateY) ? animation.translateY : 0,
+                    scale: Number.isFinite(animation.scale) ? animation.scale : 1,
+                    rotate: Number.isFinite(animation.rotate) ? animation.rotate : 0,
+                }
+                : null,
         });
     });
 
@@ -864,17 +874,41 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
                 return;
             }
 
-            const rotationRadians = Number.isFinite(frame.rotation)
-                ? (frame.rotation * Math.PI) / 180
+            const baseRotationDegrees = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+            const animationState = snapshot.animation || null;
+            const animationTranslateX = Number.isFinite(animationState?.translateX)
+                ? animationState.translateX
                 : 0;
+            const animationTranslateY = Number.isFinite(animationState?.translateY)
+                ? animationState.translateY
+                : 0;
+            const animationScale = Number.isFinite(animationState?.scale)
+                ? animationState.scale
+                : 1;
+            const animationRotateDegrees = Number.isFinite(animationState?.rotate)
+                ? animationState.rotate
+                : 0;
+            
+            const totalRotationRadians = ((baseRotationDegrees + animationRotateDegrees) * Math.PI) / 180;
+            const translateXPixels = (animationTranslateX / 100) * frame.width;
+            const translateYPixels = (animationTranslateY / 100) * frame.height;
+            const effectiveScale = animationScale > 0 ? animationScale : 0;
+            const centerX = frame.width / 2;
+            const centerY = frame.height / 2;
 
             exportMirrorContext.save();
             exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-            exportMirrorContext.translate(frame.left + (frame.width / 2), frame.top + (frame.height / 2));
-            if (rotationRadians !== 0) {
-                exportMirrorContext.rotate(rotationRadians);
+            exportMirrorContext.translate(frame.left + centerX, frame.top + centerY);
+            if (totalRotationRadians !== 0) {
+                exportMirrorContext.rotate(totalRotationRadians);
             }
-            exportMirrorContext.translate(-(frame.width / 2), -(frame.height / 2));
+            if (translateXPixels !== 0 || translateYPixels !== 0) {
+                exportMirrorContext.translate(translateXPixels, translateYPixels);
+            }
+            if (effectiveScale !== 1) {
+                exportMirrorContext.scale(effectiveScale, effectiveScale);
+            }
+            exportMirrorContext.translate(-centerX, -centerY);
 
             const radius = Math.max(0, snapshot.borderRadius || 0);
             if (radius > 0) {
