@@ -14,9 +14,13 @@
             }
             if (entry.animationSettings !== undefined) {
                 descriptor.animationSettings = entry.animationSettings;
+            } else if (cached && cached.animationSettings !== undefined) {
+                descriptor.animationSettings = cached.animationSettings;
             }
             if ('exitConfig' in entry) {
                 descriptor.exitConfig = entry.exitConfig;
+            } else if (cached && cached.exitConfig !== undefined) {
+                descriptor.exitConfig = cached.exitConfig;
             }
 
             if (!Number.isFinite(descriptor.sampleTime)) {
@@ -755,7 +759,12 @@
         previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
 
+    activeOverlayDescriptorCache = overlayEntries
+        .map((descriptor) => extractOverlayDescriptorCacheEntry(descriptor))
+        .filter((descriptor) => descriptor && descriptor.item);
+
     lastOverlayRenderTimestamp = safeTimelineNow;
+    return overlayEntries;
 }
 
 function getActiveOverlayLayerSnapshots() {
@@ -1289,7 +1298,11 @@ function refreshActiveOverlayLayers() {
         ? getTimelineLaneEntryCache()
         : null;
     const entries = getOverlayEntriesForTimelineItem(activeTimelineItem, null, laneCache);
-    renderPreviewOverlayLayers(activeTimelineItem, entries);
+    renderPreviewOverlayLayers(activeTimelineItem, {
+        entries,
+        laneCache,
+        descriptors: activeOverlayDescriptorCache,
+    });
 }
 
 function getOverlayEntriesForTimelineItem(
