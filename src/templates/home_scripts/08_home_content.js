@@ -177,6 +177,10 @@
 
                 await seekToStartOffset();
 
+                if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+                    updateTimelinePlaybackSyncFallback(resumeTimelineTime);
+                }
+
                 try {
                     const playPromise = previewVideo.play();
                     if (playPromise && typeof playPromise.then === 'function') {
@@ -331,6 +335,9 @@
             const resumeClipElapsed = initialElapsed;
             const resumeTimelineTime = clipTimelineStart + resumeClipElapsed;
             const playbackStartTimestamp = performance.now();
+            if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+                updateTimelinePlaybackSyncFallback(resumeTimelineTime);
+            }
             let animationFrameId = 0;
             let exitAnimationRequested = false;
             let exitAnimationStarted = false;

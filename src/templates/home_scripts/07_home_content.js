@@ -3102,6 +3102,10 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             // Ignore seek errors.
         }
 
+        if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+            updateTimelinePlaybackSyncFallback(audioEntry.start + offsetMs);
+        }
+
         previewAudio.play().catch((error) => {
             console.warn('Unable to start audio clip playback.', error);
         });
@@ -3121,6 +3125,10 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
 
     if (previewAudio.paused) {
         previewAudio.play().catch(() => {});
+    }
+
+    if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+        updateTimelinePlaybackSyncFallback(audioEntry.start + offsetMs);
     }
 
     applyAudioSyncSource();
