@@ -1425,6 +1425,30 @@ function sanitizeTimelineItemDataset(dataset) {
     return sanitized;
 }
 
+function generateTimelineInstanceId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+
+    const randomPart = Math.random().toString(36).slice(2, 10);
+    const timePart = Date.now().toString(36);
+    return `timeline-item-${timePart}-${randomPart}`;
+}
+
+function assignTimelineInstanceId(timelineItem, options = {}) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return null;
+    }
+
+    if (!options.force && timelineItem.dataset.timelineInstanceId) {
+        return timelineItem.dataset.timelineInstanceId;
+    }
+
+    const id = generateTimelineInstanceId();
+    timelineItem.dataset.timelineInstanceId = id;
+    return id;
+}
+
 function incrementTimelineObjectUrlUsage(objectURL) {
     if (!objectURL) {
         return;
@@ -1565,6 +1589,12 @@ function restoreTimelineItemFromSnapshot(snapshot, options = {}) {
         }
     });
 
+    if (options.preserveInstanceId === false) {
+        delete newItem.dataset.timelineInstanceId;
+    }
+
+    assignTimelineInstanceId(newItem);
+
     newItem.dataset.laneIndex = lane.dataset.laneIndex || String(targetLaneIndex);
     newItem.dataset.startOffsetMs = String(startOffsetMs);
 
@@ -1638,10 +1668,28 @@ function undoLastTimelineAction() {
     return true;
 }
 
+function commitActiveTextTimelineItemEdits() {
+    if (!activeTimelineItem
+        || typeof isDefaultTextTimelineItem !== 'function'
+        || !isDefaultTextTimelineItem(activeTimelineItem)
+        || typeof commitPreviewTextEditorContent !== 'function') {
+        return;
+    }
+
+    if (typeof previewTextEditorState === 'object'
+        && previewTextEditorState
+        && previewTextEditorState.isEnabled
+        && previewTextEditorState.currentItem === activeTimelineItem) {
+        commitPreviewTextEditorContent({ force: true });
+    }
+}
+
 function copyActiveTimelineItemToClipboard() {
     if (!activeTimelineItem || !activeTimelineItem.isConnected) {
         return false;
     }
+
+    commitActiveTextTimelineItemEdits();
 
     const snapshot = createTimelineItemSnapshot(activeTimelineItem);
     if (!snapshot) {
@@ -1673,12 +1721,25 @@ function pasteTimelineClipboard() {
         const laneCache = (typeof getTimelineLaneEntryCache === 'function')
             ? getTimelineLaneEntryCache()
             : null;
-        laneIndex = resolveLaneIndex(baseItem.dataset?.laneIndex);
-        const lane = baseItem.closest('.timeline-lane');
-        if (lane) {
-            childIndex = Array.from(lane.children).indexOf(baseItem) + 1;
-        }
-        if (!isTextLayerSnapshot) {
+        const baseLaneIndex = resolveLaneIndex(baseItem.dataset?.laneIndex);
+        const baseLane = baseItem.closest('.timeline-lane');
+        const baseChildIndex = baseLane ? Array.from(baseLane.children).indexOf(baseItem) : -1;
+        const baseIsTextItem = baseItem.classList?.contains('timeline-item--text');
+
+        if (isTextLayerSnapshot) {
+            if (baseIsTextItem && baseLane) {
+                laneIndex = baseLaneIndex;
+                childIndex = baseChildIndex >= 0 ? baseChildIndex + 1 : baseLane.children.length;
+            } else {
+                laneIndex = timelineClipboardSnapshot.laneIndex;
+                childIndex = timelineClipboardSnapshot.childIndex;
+            }
+            startOffsetMs = timelineClipboardSnapshot.startOffsetMs;
+        } else {
+            laneIndex = baseLaneIndex;
+            if (baseLane) {
+                childIndex = baseChildIndex + 1;
+            }
             const baseStart = getTimelineItemStartTime(baseItem, laneCache);
             const baseDuration = getTimelineItemPlaybackDuration(baseItem);
             if (Number.isFinite(baseStart) && Number.isFinite(baseDuration)) {
@@ -1700,6 +1761,7 @@ function pasteTimelineClipboard() {
         focus: true,
         loadPreview: true,
         scrollIntoView: true,
+        preserveInstanceId: false,
     });
 
     if (!newItem) {
@@ -1852,6 +1914,8 @@ function duplicateActiveTextTimelineItem() {
         return false;
     }
 
+    commitActiveTextTimelineItemEdits();
+
     const snapshot = createTimelineItemSnapshot(activeTimelineItem);
     if (!snapshot) {
         return false;
@@ -1884,6 +1948,7 @@ function duplicateActiveTextTimelineItem() {
         focus: true,
         loadPreview: true,
         scrollIntoView: true,
+        preserveInstanceId: false,
     });
 
     if (!newItem) {
@@ -3282,6 +3347,8 @@ async function addToTimeline(file, objectURL) {
     timelineItem.dataset.objectUrl = objectURL;
     timelineItem.dataset.displayName = file.name;
 
+    assignTimelineInstanceId(timelineItem);
+
     const label = document.createElement('span');
     label.textContent = file.name;
 
@@ -3788,6 +3855,8 @@ async function addDefaultTextOverlayToTimeline() {
     );
     timelineItem.dataset.previewImageTransform = JSON.stringify(initialTransform);
     timelineItem.dataset.autoFitText = 'true';
+
+    assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
