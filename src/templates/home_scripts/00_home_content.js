@@ -170,6 +170,8 @@ const canvasBlurInput = document.getElementById('canvas-background-blur');
 const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const canvasBlurExpandToggle = document.getElementById('canvas-background-blur-expand');
 const canvasBlurExpandContainer = document.getElementById('canvas-background-blur-expand-container');
+const canvasBlurApplyAllButton = document.getElementById('canvas-background-blur-apply-all');
+const canvasBlurApplyStatus = document.getElementById('canvas-background-blur-apply-status');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
@@ -432,6 +434,9 @@ let previewEntranceAnimationState = {
 let comboPreviewExitTimeoutId = 0;
 let animationComboApplyStatusTimer = 0;
 let imageDurationApplyStatusTimer = 0;
+let canvasBlurApplyStatusTimer = 0;
+let canvasBlurApplyInFlight = false;
+let toastContainerElement = null;
 
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);

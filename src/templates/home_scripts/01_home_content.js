@@ -72,6 +72,7 @@ function syncCanvasControlsToTimelineItem(timelineItem) {
 
     syncCanvasBlurControlState(timelineItem || null);
     syncCanvasCustomImageControls(timelineItem || null);
+    refreshCanvasBlurApplyAllAvailability();
 }
 
 function setCanvasBackdropVisibility(isVisible) {
@@ -232,6 +233,229 @@ function clearPreviewCanvasBackdrop() {
             previewCanvasImage.removeAttribute('src');
         }
     }
+}
+
+const CANVAS_BLUR_APPLY_EMPTY_STATE_MESSAGE = 'Add image clips to this layer to use Apply All.';
+const CANVAS_BLUR_APPLY_SELECT_MESSAGE = 'Select a clip to copy its background blur.';
+const CANVAS_BLUR_APPLY_NEED_TARGET_MESSAGE = 'No other image clips in this layer.';
+const CANVAS_BLUR_APPLY_ALREADY_APPLIED_MESSAGE = 'All image clips in this layer already use these blur settings.';
+
+function parseTimelineLaneIndex(value) {
+    const numeric = Number.parseInt(typeof value === 'string' ? value : `${value ?? ''}`, 10);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function setCanvasBlurApplyStatus(message, options = {}) {
+    if (!canvasBlurApplyStatus) {
+        return;
+    }
+
+    window.clearTimeout(canvasBlurApplyStatusTimer);
+    canvasBlurApplyStatusTimer = 0;
+
+    const nextMessage = message || '';
+    canvasBlurApplyStatus.textContent = nextMessage;
+
+    if (!nextMessage || options.persist) {
+        return;
+    }
+
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 4000;
+    canvasBlurApplyStatusTimer = window.setTimeout(() => {
+        if (canvasBlurApplyStatus && canvasBlurApplyStatus.textContent === nextMessage) {
+            canvasBlurApplyStatus.textContent = '';
+        }
+        canvasBlurApplyStatusTimer = 0;
+    }, Math.max(0, timeoutMs));
+}
+
+function ensureToastContainer() {
+    if (toastContainerElement && toastContainerElement.isConnected) {
+        return toastContainerElement;
+    }
+    if (typeof document === 'undefined' || !document.body) {
+        return null;
+    }
+    const container = document.createElement('div');
+    container.className = 'app-toast-container';
+    document.body.appendChild(container);
+    toastContainerElement = container;
+    return container;
+}
+
+function showAppToast(message, options = {}) {
+    if (!message) {
+        return;
+    }
+    const container = ensureToastContainer();
+    if (!container) {
+        return;
+    }
+
+    const { durationMs = 2600, maxVisible = 3 } = options;
+    const normalizedLimit = Number(maxVisible);
+    const maxVisibleToUse = Math.max(
+        1,
+        Number.isFinite(normalizedLimit) ? Math.floor(normalizedLimit) : 3,
+    );
+    while (container.children.length >= maxVisibleToUse) {
+        container.removeChild(container.firstElementChild);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'app-toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('is-visible');
+    });
+
+    const normalizedDuration = Number(durationMs);
+    const hideAfter = Math.max(
+        0,
+        Number.isFinite(normalizedDuration) ? normalizedDuration : 2600,
+    );
+    window.setTimeout(() => {
+        toast.classList.remove('is-visible');
+    }, hideAfter);
+
+    window.setTimeout(() => {
+        if (toast.parentElement) {
+            toast.parentElement.removeChild(toast);
+        }
+    }, hideAfter + 400);
+}
+
+function refreshCanvasBlurApplyAllAvailability() {
+    if (!canvasBlurApplyAllButton) {
+        return;
+    }
+
+    if (canvasBlurApplyInFlight) {
+        canvasBlurApplyAllButton.disabled = true;
+        return;
+    }
+
+    const canCollectTimelineItems = typeof getTimelineItems === 'function';
+    const timelineItems = timelineTrack && canCollectTimelineItems ? getTimelineItems() : [];
+    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+    if (!imageItems.length) {
+        canvasBlurApplyAllButton.disabled = true;
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_EMPTY_STATE_MESSAGE, { persist: true });
+        return;
+    }
+
+    const activeIsClip = isImageTimelineItem(activeTimelineItem) || isVideoTimelineItem(activeTimelineItem);
+    if (!activeIsClip) {
+        canvasBlurApplyAllButton.disabled = true;
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_SELECT_MESSAGE, { persist: true });
+        return;
+    }
+
+    const activeLaneIndex = parseTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+    const targetCount = imageItems.filter((item) => item !== activeTimelineItem
+        && parseTimelineLaneIndex(item.dataset?.laneIndex) === activeLaneIndex).length;
+
+    canvasBlurApplyAllButton.disabled = targetCount === 0;
+
+    if (targetCount === 0) {
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_NEED_TARGET_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (canvasBlurApplyStatus) {
+        const current = canvasBlurApplyStatus.textContent || '';
+        if (
+            current === CANVAS_BLUR_APPLY_EMPTY_STATE_MESSAGE
+            || current === CANVAS_BLUR_APPLY_SELECT_MESSAGE
+            || current === CANVAS_BLUR_APPLY_NEED_TARGET_MESSAGE
+        ) {
+            setCanvasBlurApplyStatus('');
+        }
+    }
+}
+
+function handleCanvasBlurApplyAllClick() {
+    if (!canvasBlurApplyAllButton || canvasBlurApplyAllButton.disabled || canvasBlurApplyInFlight) {
+        return;
+    }
+
+    if (!activeTimelineItem
+        || (!isImageTimelineItem(activeTimelineItem) && !isVideoTimelineItem(activeTimelineItem))) {
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        refreshCanvasBlurApplyAllAvailability();
+        return;
+    }
+
+    if (typeof getTimelineItems !== 'function') {
+        return;
+    }
+
+    const activeLaneIndex = parseTimelineLaneIndex(activeTimelineItem.dataset?.laneIndex);
+    const timelineItems = getTimelineItems();
+    const targets = timelineItems.filter((item) => item !== activeTimelineItem
+        && isImageTimelineItem(item)
+        && parseTimelineLaneIndex(item.dataset?.laneIndex) === activeLaneIndex);
+
+    if (!targets.length) {
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_NEED_TARGET_MESSAGE, { timeoutMs: 3200 });
+        refreshCanvasBlurApplyAllAvailability();
+        return;
+    }
+
+    const activeSettings = getTimelineItemCanvasSettings(activeTimelineItem);
+    const blurValue = clampCanvasBlur(activeSettings.blur);
+    const expandEnabled = Boolean(activeSettings.expandBlur);
+    const sourceMode = sanitizeCanvasMode(activeSettings.mode);
+    const modeToApply = sourceMode === 'custom' ? null : sourceMode;
+
+    canvasBlurApplyInFlight = true;
+    canvasBlurApplyAllButton.disabled = true;
+
+    let appliedCount = 0;
+
+    targets.forEach((timelineItem) => {
+        const currentSettings = getTimelineItemCanvasSettings(timelineItem);
+        const nextSettings = {};
+        let changed = false;
+
+        if (modeToApply && currentSettings.mode !== modeToApply) {
+            nextSettings.mode = modeToApply;
+            changed = true;
+        }
+
+        if (currentSettings.blur !== blurValue) {
+            nextSettings.blur = blurValue;
+            changed = true;
+        }
+
+        if (Boolean(currentSettings.expandBlur) !== expandEnabled) {
+            nextSettings.expandBlur = expandEnabled;
+            changed = true;
+        }
+
+        if (!changed) {
+            return;
+        }
+
+        persistTimelineItemCanvasSettings(timelineItem, nextSettings);
+        appliedCount += 1;
+    });
+
+    canvasBlurApplyInFlight = false;
+
+    if (appliedCount === 0) {
+        setCanvasBlurApplyStatus(CANVAS_BLUR_APPLY_ALREADY_APPLIED_MESSAGE, { timeoutMs: 3200 });
+    } else {
+        const pluralSuffix = appliedCount === 1 ? '' : 's';
+        const message = `Applied background blur to ${appliedCount} image clip${pluralSuffix}.`;
+        setCanvasBlurApplyStatus(message, { timeoutMs: 3200 });
+        showAppToast(message, { durationMs: 2600 });
+        markExportPlaybackContextDirty({ refreshSummary: true });
+    }
+
+    refreshCanvasBlurApplyAllAvailability();
 }
 
 function applyCanvasSettingsToPreview(timelineItem) {
@@ -511,6 +735,12 @@ if (canvasBlurExpandToggle) {
 
     canvasBlurExpandToggle.addEventListener('change', handleCanvasBlurExpandChange);
 }
+
+if (canvasBlurApplyAllButton) {
+    canvasBlurApplyAllButton.addEventListener('click', handleCanvasBlurApplyAllClick);
+}
+
+refreshCanvasBlurApplyAllAvailability();
 
 if (previewCanvasVideo) {
     const refreshBackdropFromCanvasVideo = () => {

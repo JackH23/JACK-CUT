@@ -793,6 +793,7 @@ function handleImageDurationApplyAllClick() {
     if (!isImageTimelineItem(activeTimelineItem)) {
         setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
         refreshImageDurationApplyAllAvailability();
+        refreshCanvasBlurApplyAllAvailability();
         return;
     }
 
@@ -806,6 +807,7 @@ function handleImageDurationApplyAllClick() {
     if (!(targetDuration > 0)) {
         setImageDurationApplyStatus('The selected image has no duration to copy.', { timeoutMs: 3200 });
         refreshImageDurationApplyAllAvailability();
+        refreshCanvasBlurApplyAllAvailability();
         return;
     }
 
@@ -836,6 +838,7 @@ function handleImageDurationApplyAllClick() {
     }
 
     refreshImageDurationApplyAllAvailability();
+    refreshCanvasBlurApplyAllAvailability();
 }
 
 function persistActiveTimelineAnimationDirection(direction) {
