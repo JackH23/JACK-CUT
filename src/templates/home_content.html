@@ -620,6 +620,19 @@
                                     <label for="canvas-background-blur">Background blur</label>
                                     <input type="range" id="canvas-background-blur" min="0" max="40" step="1" value="0">
                                     <div class="slider-readout" id="canvas-background-blur-value">Off</div>
+                                    <div
+                                        class="canvas-blur-expand"
+                                        id="canvas-background-blur-expand-container"
+                                        hidden
+                                    >
+                                        <label class="canvas-blur-expand__toggle" for="canvas-background-blur-expand">
+                                            <input type="checkbox" id="canvas-background-blur-expand" role="switch">
+                                            <span>Fill preview viewport with blur</span>
+                                        </label>
+                                        <p class="canvas-blur-expand__description">
+                                            Extends the blurred backdrop so it reaches the preview edges.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
