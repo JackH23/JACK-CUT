@@ -2012,7 +2012,8 @@ function handleTimelineKeyboardShortcuts(event) {
             && DEFAULT_TEXT_SHORTCUT_KEYS.has(key),
     );
 
-    if (allowTextEditorShortcut && typeof window !== 'undefined' && typeof window.getSelection === 'function') {
+    let selectionWithinEditor = false;
+    if (targetIsPreviewTextEditor && typeof window !== 'undefined' && typeof window.getSelection === 'function') {
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed) {
             const anchorElement = selection.anchorNode instanceof Element
@@ -2021,12 +2022,13 @@ function handleTimelineKeyboardShortcuts(event) {
             const focusElement = selection.focusNode instanceof Element
                 ? selection.focusNode
                 : selection.focusNode?.parentElement;
-            const selectionWithinEditor = (anchorElement && previewTextEditor.contains(anchorElement))
+            selectionWithinEditor = (anchorElement && previewTextEditor.contains(anchorElement))
                 || (focusElement && previewTextEditor.contains(focusElement));
-            if (selectionWithinEditor) {
-                allowTextEditorShortcut = false;
-            }
         }
+    }
+
+    if (allowTextEditorShortcut && selectionWithinEditor && key !== 'c' && key !== 'v') {
+        allowTextEditorShortcut = false;
     }
 
     if (!allowTextEditorShortcut && isTimelineShortcutTargetEditable(event.target)) {
@@ -2039,7 +2041,10 @@ function handleTimelineKeyboardShortcuts(event) {
 
     const handled = handler(event) === true;
     if (handled) {
-        event.preventDefault();
+        const allowDefaultCopy = targetIsPreviewTextEditor && key === 'c' && selectionWithinEditor;
+        if (!allowDefaultCopy) {
+            event.preventDefault();
+        }
     }
 }
 
