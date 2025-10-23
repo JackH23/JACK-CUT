@@ -507,7 +507,7 @@ const MIN_IMAGE_DURATION = 400;
 const MIN_AUDIO_DURATION = 400;
 const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
 const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
-const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';
+const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to this layer to copy this duration.';
 const TIMELINE_DURATION_PER_PIXEL_DEFAULT = 12;
 const TIMELINE_DURATION_PER_PIXEL_MIN = 2;
 const TIMELINE_DURATION_PER_PIXEL_MAX = 600;
@@ -746,6 +746,22 @@ function setImageDurationApplyStatus(message, options = {}) {
     }, Math.max(0, timeoutMs));
 }
 
+function resolveTimelineLaneIndex(value) {
+    if (typeof parseTimelineLaneIndex === 'function') {
+        try {
+            const parsed = parseTimelineLaneIndex(value);
+            if (Number.isFinite(parsed)) {
+                return parsed;
+            }
+        } catch (error) {
+            // Ignore parse errors from the shared parser and fall back to manual parsing.
+        }
+    }
+
+    const numeric = Number.parseInt(typeof value === 'string' ? value : `${value ?? ''}`, 10);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function refreshImageDurationApplyAllAvailability() {
     if (!imageDurationApplyAllButton) {
         return;
@@ -755,7 +771,10 @@ function refreshImageDurationApplyAllAvailability() {
     const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
     const hasImages = imageItems.length > 0;
     const activeIsImage = isImageTimelineItem(activeTimelineItem);
-    const hasTargets = imageItems.length > 1;
+    const activeLaneIndex = resolveTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+    const targetCount = imageItems.filter((item) => item !== activeTimelineItem
+        && resolveTimelineLaneIndex(item.dataset?.laneIndex) === activeLaneIndex).length;
+    const hasTargets = targetCount > 0;
 
     imageDurationApplyAllButton.disabled = !(activeIsImage && hasTargets);
 
@@ -812,12 +831,21 @@ function handleImageDurationApplyAllClick() {
     }
 
     const timelineItems = getTimelineItems();
+    const activeLaneIndex = resolveTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+    const targets = timelineItems.filter((timelineItem) => timelineItem !== activeTimelineItem
+        && isImageTimelineItem(timelineItem)
+        && resolveTimelineLaneIndex(timelineItem.dataset?.laneIndex) === activeLaneIndex);
+
+    if (!targets.length) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, { timeoutMs: 3200 });
+        refreshImageDurationApplyAllAvailability();
+        refreshCanvasBlurApplyAllAvailability();
+        return;
+    }
+
     let appliedCount = 0;
 
-    timelineItems.forEach((timelineItem) => {
-        if (!isImageTimelineItem(timelineItem) || timelineItem === activeTimelineItem) {
-            return;
-        }
+    targets.forEach((timelineItem) => {
 
         const currentDuration = Math.max(0, Math.round(Number(timelineItem.dataset.imageDuration) || 0));
         if (currentDuration === targetDuration) {
@@ -829,11 +857,23 @@ function handleImageDurationApplyAllClick() {
     });
 
     if (appliedCount === 0) {
-        setImageDurationApplyStatus('All images already use this duration.', { timeoutMs: 3200 });
+        setImageDurationApplyStatus('All image clips in this layer already use this duration.', { timeoutMs: 3200 });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
-        setImageDurationApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+        setImageDurationApplyStatus(`Applied to ${appliedCount} image${pluralSuffix} in this layer.`, { timeoutMs: 3200 });
+        if (typeof showAppToast === 'function') {
+            showAppToast('Applied to all clips in layer');
+        }
         updateActiveTimelineIndicators();
+        if (typeof refreshTimelinePlaybackSyncFallbackFromSource === 'function') {
+            const playbackSource = typeof getTimelinePlaybackSyncSource === 'function'
+                ? getTimelinePlaybackSyncSource()
+                : null;
+            refreshTimelinePlaybackSyncFallbackFromSource(playbackSource);
+        }
+        if (typeof refreshActiveOverlayLayers === 'function') {
+            refreshActiveOverlayLayers();
+        }
         renderExportSummary(getTimelineItems(), null);
     }
 
