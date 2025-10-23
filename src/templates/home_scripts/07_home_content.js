@@ -1240,6 +1240,7 @@ updateActiveTimelineIndicators();
 renderKeyframeTrack(activeTimelineItem);
 updateImageRotationControlState();
 refreshImageDurationApplyAllAvailability();
+refreshCanvasBlurApplyAllAvailability();
 
 function stopTimelinePlayback(resetButton = true, resetProgress = true, options = {}) {
     const preservePauseState = options && options.preservePauseState === true;
@@ -1338,6 +1339,7 @@ function setActiveTimelineItem(item, options = {}) {
     syncCanvasControlsToTimelineItem(activeTimelineItem);
     syncTextEffectsControlsToTimelineItem(activeTimelineItem);
     refreshImageDurationApplyAllAvailability();
+    refreshCanvasBlurApplyAllAvailability();
     const nextProgress = clipProgressOverride !== null
         ? clipProgressOverride
         : (isSameItem ? getActiveClipProgress() : 0);
@@ -1641,6 +1643,7 @@ function restoreTimelineItemFromSnapshot(snapshot, options = {}) {
     updateActiveTimelineIndicators();
     markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
+    refreshCanvasBlurApplyAllAvailability();
 
     const resolvedObjectUrl = newItem.dataset.objectUrl || snapshot.objectUrl || '';
     if (resolvedObjectUrl) {
@@ -1859,6 +1862,7 @@ function removeTimelineItem(timelineItem, options = {}) {
     updateActiveTimelineIndicators();
     markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
+    refreshCanvasBlurApplyAllAvailability();
 
     if (recordUndo && snapshot) {
         pushTimelineUndoEntry({
@@ -3948,6 +3952,7 @@ async function addDefaultTextOverlayToTimeline() {
     updateActiveTimelineIndicators();
     markExportPlaybackContextDirty({ refreshSummary: true });
     refreshImageDurationApplyAllAvailability();
+    refreshCanvasBlurApplyAllAvailability();
     loadPreviewFromTimeline(activeTimelineItem);
 
     return timelineItem;

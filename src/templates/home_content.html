@@ -617,7 +617,25 @@
                             <div class="info-item">
                                 <div class="info-icon">🌫️</div>
                                 <div class="canvas-blur-controls">
-                                    <label for="canvas-background-blur">Background blur</label>
+                                    <div class="canvas-blur-header">
+                                        <label for="canvas-background-blur">Background blur</label>
+                                        <div class="canvas-blur-actions">
+                                            <button
+                                                type="button"
+                                                class="canvas-blur-apply-button"
+                                                id="canvas-background-blur-apply-all"
+                                                disabled
+                                            >
+                                                Apply All
+                                            </button>
+                                            <span
+                                                class="canvas-blur-apply-status"
+                                                id="canvas-background-blur-apply-status"
+                                                role="status"
+                                                aria-live="polite"
+                                            ></span>
+                                        </div>
+                                    </div>
                                     <input type="range" id="canvas-background-blur" min="0" max="40" step="1" value="0">
                                     <div class="slider-readout" id="canvas-background-blur-value">Off</div>
                                     <div
