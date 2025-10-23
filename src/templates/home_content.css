@@ -2910,13 +2910,28 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     background: rgba(15, 23, 42, 0.6);
 }
 
+.timeline-overview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.timeline-overview-header h2 {
+    margin: 0;
+    flex: 1 1 auto;
+}
+
 .timeline-controls {
     display: flex;
     justify-content: flex-end;
     align-items: center;
     flex-wrap: wrap;
-    gap: 12px;
-    margin: 12px 0;
+    gap: 16px;
+    margin: 0;
+    flex: 0 0 auto;
 }
 
 .timeline-magnet-toggle {
