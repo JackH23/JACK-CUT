@@ -1522,6 +1522,8 @@ function handlePreviewViewportResized() {
     const width = Math.max(0, previewViewport.clientWidth);
     const height = Math.max(0, previewViewport.clientHeight);
 
+    refreshCanvasBackdropExpansion();
+
     if (creativeControlsPanel) {
         const panelRect = creativeControlsPanel.getBoundingClientRect();
         const availableHeight = Math.max(

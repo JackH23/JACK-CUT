@@ -1,6 +1,7 @@
         canvasBlurInput.setAttribute('aria-disabled', 'true');
         canvasBlurInput.value = '0';
         updateCanvasBlurReadout(0, { disabled: true });
+        updateCanvasBlurExpandUI({ blur: 0, disabled: true, expandEnabled: false });
         return;
     }
 
@@ -15,6 +16,11 @@
     const blurValue = isDisabled ? 0 : settings.blur;
     canvasBlurInput.value = String(blurValue);
     updateCanvasBlurReadout(blurValue, { disabled: isDisabled });
+    updateCanvasBlurExpandUI({
+        blur: blurValue,
+        disabled: isDisabled,
+        expandEnabled: Boolean(settings.expandBlur),
+    });
 }
 
 function syncCanvasCustomImageControls(timelineItem) {
@@ -91,6 +97,114 @@ function applyCanvasBlurToPreview(blur) {
     previewCanvasBackdrop.style.setProperty('--canvas-blur-radius', `${clamped}px`);
 }
 
+function getCanvasBackdropContentAspectRatio() {
+    if (!previewCanvasBackdrop) {
+        return null;
+    }
+
+    const source = previewCanvasBackdrop.dataset.source;
+
+    if (source === 'video' && previewCanvasVideo) {
+        const width = previewCanvasVideo.videoWidth;
+        const height = previewCanvasVideo.videoHeight;
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+            return width / height;
+        }
+    }
+
+    if (previewCanvasImage && source === 'image') {
+        const width = previewCanvasImage.naturalWidth;
+        const height = previewCanvasImage.naturalHeight;
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+            return width / height;
+        }
+    }
+
+    if (previewVideo) {
+        const width = previewVideo.videoWidth;
+        const height = previewVideo.videoHeight;
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+            return width / height;
+        }
+    }
+
+    if (previewImage) {
+        const width = previewImage.naturalWidth;
+        const height = previewImage.naturalHeight;
+        if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+            return width / height;
+        }
+    }
+
+    return null;
+}
+
+function refreshCanvasBackdropExpansion(options = {}) {
+    if (!previewCanvasBackdrop) {
+        return;
+    }
+
+    const {
+        timelineItem: providedTimelineItem = activeTimelineItem,
+        blurOverride = null,
+        expandOverride = null,
+    } = options;
+
+    const viewportWidth = Math.max(0, previewViewport?.clientWidth || 0);
+    const viewportHeight = Math.max(0, previewViewport?.clientHeight || 0);
+
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+        previewCanvasBackdrop.style.removeProperty('--canvas-backdrop-scale');
+        return;
+    }
+
+    const timelineItem = providedTimelineItem && providedTimelineItem.isConnected
+        ? providedTimelineItem
+        : activeTimelineItem;
+    const isClip = timelineItem
+        ? (isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem))
+        : false;
+    const settings = timelineItem ? getTimelineItemCanvasSettings(timelineItem) : null;
+    const mode = settings?.mode || 'none';
+    const blurValue = blurOverride !== null && blurOverride !== undefined
+        ? clampCanvasBlur(blurOverride)
+        : clampCanvasBlur(settings?.blur ?? 0);
+    const expandEnabled = expandOverride !== null && expandOverride !== undefined
+        ? Boolean(expandOverride)
+        : Boolean(settings?.expandBlur);
+
+    if (!isClip || mode === 'none' || !expandEnabled || blurValue <= CANVAS_BLUR_MIN) {
+        previewCanvasBackdrop.style.removeProperty('--canvas-backdrop-scale');
+        return;
+    }
+
+    const aspect = getCanvasBackdropContentAspectRatio();
+    const viewportAspect = viewportWidth / viewportHeight;
+
+    let displayWidth = viewportWidth;
+    let displayHeight = viewportHeight;
+
+    if (Number.isFinite(aspect) && aspect > 0) {
+        if (viewportAspect > aspect) {
+            displayHeight = viewportHeight;
+            displayWidth = viewportHeight * aspect;
+        } else {
+            displayWidth = viewportWidth;
+            displayHeight = viewportWidth / aspect;
+        }
+    }
+
+    const scaleX = displayWidth > 0 ? viewportWidth / displayWidth : 1;
+    const scaleY = displayHeight > 0 ? viewportHeight / displayHeight : 1;
+    const resolvedScale = Math.max(
+        DEFAULT_CANVAS_BACKDROP_SCALE,
+        Number.isFinite(scaleX) ? scaleX : 1,
+        Number.isFinite(scaleY) ? scaleY : 1,
+    );
+
+    previewCanvasBackdrop.style.setProperty('--canvas-backdrop-scale', resolvedScale.toFixed(4));
+}
+
 function pausePreviewCanvasVideo() {
     if (previewCanvasVideo && !previewCanvasVideo.paused) {
         previewCanvasVideo.pause();
@@ -103,6 +217,7 @@ function clearPreviewCanvasBackdrop() {
     }
     applyCanvasBlurToPreview(0);
     setCanvasBackdropVisibility(false);
+    refreshCanvasBackdropExpansion({ timelineItem: null, blurOverride: 0, expandOverride: false });
     if (previewCanvasVideo) {
         previewCanvasVideo.pause();
         previewCanvasVideo.hidden = true;
@@ -138,7 +253,11 @@ function applyCanvasSettingsToPreview(timelineItem) {
 
     applyCanvasBlurToPreview(settings.blur);
     previewCanvasBackdrop.dataset.mode = settings.mode;
-    previewCanvasBackdrop.dataset.source = isVideoTimelineItem(timelineItem) ? 'video' : 'image';
+    if (settings.mode === 'custom') {
+        previewCanvasBackdrop.dataset.source = 'image';
+    } else {
+        previewCanvasBackdrop.dataset.source = isVideoTimelineItem(timelineItem) ? 'video' : 'image';
+    }
 
     if (settings.mode === 'custom') {
         const url = settings.customImageUrl;
@@ -161,6 +280,7 @@ function applyCanvasSettingsToPreview(timelineItem) {
             previewCanvasImage.hidden = false;
         }
         setCanvasBackdropVisibility(true);
+        refreshCanvasBackdropExpansion({ timelineItem, blurOverride: settings.blur });
         return;
     }
 
@@ -205,6 +325,7 @@ function applyCanvasSettingsToPreview(timelineItem) {
 
     syncCanvasVideoToPreview();
     setCanvasBackdropVisibility(true);
+    refreshCanvasBackdropExpansion({ timelineItem, blurOverride: settings.blur });
 }
 
 function isCanvasBackdropUsingClipVideo() {
@@ -363,15 +484,48 @@ if (canvasBlurInput) {
         }
         persistTimelineItemCanvasSettings(activeTimelineItem, { blur: clamped });
         applyCanvasBlurToPreview(clamped);
+        refreshCanvasBackdropExpansion({ timelineItem: activeTimelineItem, blurOverride: clamped });
+        updateCanvasBlurExpandUI({
+            blur: clamped,
+            disabled: isDisabled,
+            expandEnabled: Boolean(canvasBlurExpandToggle?.checked),
+        });
     };
 
     canvasBlurInput.addEventListener('input', handleCanvasBlurUpdate);
     canvasBlurInput.addEventListener('change', handleCanvasBlurUpdate);
 }
 
+if (canvasBlurExpandToggle) {
+    const handleCanvasBlurExpandChange = () => {
+        if (!activeTimelineItem || canvasBlurExpandToggle.disabled) {
+            return;
+        }
+        const isChecked = canvasBlurExpandToggle.checked;
+        persistTimelineItemCanvasSettings(activeTimelineItem, { expandBlur: isChecked });
+        refreshCanvasBackdropExpansion({
+            timelineItem: activeTimelineItem,
+            expandOverride: isChecked,
+        });
+    };
+
+    canvasBlurExpandToggle.addEventListener('change', handleCanvasBlurExpandChange);
+}
+
 if (previewCanvasVideo) {
+    const refreshBackdropFromCanvasVideo = () => {
+        refreshCanvasBackdropExpansion();
+    };
     previewCanvasVideo.addEventListener('loadeddata', () => {
         syncCanvasVideoToPreview();
+        refreshCanvasBackdropExpansion();
+    });
+    previewCanvasVideo.addEventListener('loadedmetadata', refreshBackdropFromCanvasVideo);
+}
+
+if (previewCanvasImage) {
+    previewCanvasImage.addEventListener('load', () => {
+        refreshCanvasBackdropExpansion();
     });
 }
 
@@ -381,12 +535,24 @@ if (previewVideo) {
     };
     previewVideo.addEventListener('timeupdate', syncCanvasWithPreview);
     previewVideo.addEventListener('seeked', syncCanvasWithPreview);
-    previewVideo.addEventListener('loadeddata', syncCanvasWithPreview);
+    previewVideo.addEventListener('loadeddata', () => {
+        syncCanvasWithPreview();
+        refreshCanvasBackdropExpansion();
+    });
     previewVideo.addEventListener('play', syncCanvasWithPreview);
     previewVideo.addEventListener('pause', () => {
         if (!isTimelinePlaying && isCanvasBackdropUsingClipVideo()) {
             pausePreviewCanvasVideo();
         }
+    });
+    previewVideo.addEventListener('loadedmetadata', () => {
+        refreshCanvasBackdropExpansion();
+    });
+}
+
+if (previewImage) {
+    previewImage.addEventListener('load', () => {
+        refreshCanvasBackdropExpansion();
     });
 }
 
