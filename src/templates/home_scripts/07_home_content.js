@@ -1553,7 +1553,31 @@ function refreshTimelineItemSnapshotResources(timelineItem, snapshot) {
             }
         }
     } else if (fileType.startsWith('image/svg')) {
+        const snapshotDataset = snapshot?.dataset || {};
+        const snapshotTransform = typeof snapshotDataset.previewImageTransform === 'string'
+            ? snapshotDataset.previewImageTransform
+            : '';
+        const snapshotAutoFit = Object.prototype.hasOwnProperty.call(snapshotDataset, 'autoFitText')
+            ? snapshotDataset.autoFitText
+            : undefined;
+
         regenerateDefaultTextOverlayAssets(timelineItem);
+
+        if (typeof snapshotAutoFit === 'string') {
+            timelineItem.dataset.autoFitText = snapshotAutoFit;
+        }
+
+        if (snapshotTransform) {
+            timelineItem.dataset.previewImageTransform = snapshotTransform;
+            if (timelineItem === activeTimelineItem) {
+                if (typeof tryRestorePreviewImageTransform === 'function') {
+                    tryRestorePreviewImageTransform(timelineItem);
+                }
+                if (typeof refreshActiveOverlayLayers === 'function') {
+                    refreshActiveOverlayLayers();
+                }
+            }
+        }
     }
 }
 
