@@ -2916,7 +2916,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     align-items: center;
     flex-wrap: wrap;
     gap: 12px;
-    margin-top: 8px;
+    margin: 12px 0;
 }
 
 .timeline-magnet-toggle {
