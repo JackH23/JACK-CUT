@@ -1691,6 +1691,10 @@ function copyActiveTimelineItemToClipboard() {
 
     commitActiveTextTimelineItemEdits();
 
+    if (typeof persistPreviewImageTransformForActiveTimelineItem === 'function') {
+        persistPreviewImageTransformForActiveTimelineItem({ allowKeyframeUpdate: true });
+    }
+
     const snapshot = createTimelineItemSnapshot(activeTimelineItem);
     if (!snapshot) {
         return false;
