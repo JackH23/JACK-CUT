@@ -1072,6 +1072,78 @@ function setAnimationComboApplyStatus(message, options = {}) {
     }, Math.max(0, timeoutMs));
 }
 
+function getLaneIndexForTimelineItem(timelineItem, laneCache = null) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const datasetLaneValue = timelineItem.dataset?.laneIndex;
+    if (datasetLaneValue !== undefined) {
+        const datasetLaneIndex = Number(datasetLaneValue);
+        if (Number.isFinite(datasetLaneIndex)) {
+            return datasetLaneIndex;
+        }
+    }
+
+    const resolvedCache = laneCache
+        || (typeof resolveTimelineLaneEntryCache === 'function'
+            ? resolveTimelineLaneEntryCache()
+            : null);
+
+    if (resolvedCache?.byItem instanceof Map) {
+        const entry = resolvedCache.byItem.get(timelineItem) || null;
+        if (entry && Number.isFinite(entry.laneIndex)) {
+            return Number(entry.laneIndex);
+        }
+    }
+
+    return null;
+}
+
+function getTimelineItemsInSameLane(timelineItem, options = {}) {
+    if (!timelineItem) {
+        return [];
+    }
+
+    const { timelineItems = null, laneCache = null } = options;
+    const resolvedCache = laneCache
+        || (typeof resolveTimelineLaneEntryCache === 'function'
+            ? resolveTimelineLaneEntryCache()
+            : null);
+
+    const items = Array.isArray(timelineItems) ? timelineItems : getTimelineItems();
+    if (!items.length) {
+        return [];
+    }
+
+    const laneIndex = getLaneIndexForTimelineItem(timelineItem, resolvedCache);
+    if (!Number.isFinite(laneIndex)) {
+        return [];
+    }
+
+    let laneItems = [];
+    if (resolvedCache?.byLaneIndex instanceof Map) {
+        const entries = resolvedCache.byLaneIndex.get(laneIndex) || [];
+        laneItems = entries
+            .map((entry) => entry?.item || null)
+            .filter((item) => item && item.isConnected);
+    }
+
+    if (!laneItems.length) {
+        laneItems = items.filter((item) => {
+            const itemLaneIndex = getLaneIndexForTimelineItem(item, resolvedCache);
+            return Number.isFinite(itemLaneIndex) && itemLaneIndex === laneIndex;
+        });
+    }
+
+    if (!laneItems.length) {
+        return [];
+    }
+
+    const validItems = new Set(items);
+    return laneItems.filter((item) => validItems.has(item));
+}
+
 function refreshComboApplyAllAvailability() {
     if (!animationComboApplyAllButton || !timelineTrack) {
         return;
@@ -1079,15 +1151,25 @@ function refreshComboApplyAllAvailability() {
 
     const timelineItems = getTimelineItems();
     const hasImages = timelineItems.some((item) => isImageTimelineItem(item));
-    animationComboApplyAllButton.disabled = !hasImages;
+    const activeIsImage = isImageTimelineItem(activeTimelineItem);
+
+    animationComboApplyAllButton.disabled = !activeIsImage;
 
     if (!hasImages) {
         setAnimationComboApplyStatus(COMBO_APPLY_EMPTY_STATE_MESSAGE, { persist: true });
         return;
     }
 
+    if (!activeIsImage) {
+        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, { persist: true });
+        return;
+    }
+
     if (animationComboApplyStatus
-        && animationComboApplyStatus.textContent === COMBO_APPLY_EMPTY_STATE_MESSAGE
+        && (
+            animationComboApplyStatus.textContent === COMBO_APPLY_EMPTY_STATE_MESSAGE
+            || animationComboApplyStatus.textContent === COMBO_APPLY_SELECT_MESSAGE
+        )
     ) {
         setAnimationComboApplyStatus('');
     }
@@ -1167,10 +1249,23 @@ function handleComboApplyAllClick() {
         return;
     }
 
-    const timelineItems = getTimelineItems();
-    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        refreshComboApplyAllAvailability();
+        return;
+    }
 
-    if (!imageItems.length) {
+    const timelineItems = getTimelineItems();
+    const laneCache = typeof resolveTimelineLaneEntryCache === 'function'
+        ? resolveTimelineLaneEntryCache()
+        : null;
+    const layerItems = getTimelineItemsInSameLane(activeTimelineItem, {
+        timelineItems,
+        laneCache,
+    });
+
+    if (!layerItems.length) {
+        setAnimationComboApplyStatus('No clips found in this layer to update.', { timeoutMs: 3200 });
         refreshComboApplyAllAvailability();
         return;
     }
@@ -1178,7 +1273,7 @@ function handleComboApplyAllClick() {
     const settings = getCurrentComboAnimationSettingsFromControls();
     let appliedCount = 0;
 
-    imageItems.forEach((timelineItem) => {
+    layerItems.forEach((timelineItem) => {
         if (applyComboSettingsToTimelineItem(timelineItem, settings)) {
             appliedCount += 1;
         }
@@ -1187,10 +1282,21 @@ function handleComboApplyAllClick() {
     refreshComboApplyAllAvailability();
 
     if (appliedCount === 0) {
-        setAnimationComboApplyStatus('All images already use this combo animation.', { timeoutMs: 3200 });
+        setAnimationComboApplyStatus(COMBO_APPLY_LAYER_UNCHANGED_MESSAGE, { timeoutMs: 3200 });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
-        setAnimationComboApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+        const laneIndex = getLaneIndexForTimelineItem(activeTimelineItem, laneCache);
+        const layerLabel = Number.isFinite(laneIndex) ? `Layer ${laneIndex + 1}` : 'this layer';
+        setAnimationComboApplyStatus(
+            `Applied to ${appliedCount} clip${pluralSuffix} on ${layerLabel}.`,
+            { timeoutMs: 3200 },
+        );
+        if (typeof markExportPlaybackContextDirty === 'function') {
+            markExportPlaybackContextDirty({ refreshSummary: true });
+        } else {
+            renderExportSummary(getTimelineItems(), null);
+        }
+        updateActiveTimelineIndicators();
     }
 
     syncAnimationControlsToTimelineItem(activeTimelineItem);
