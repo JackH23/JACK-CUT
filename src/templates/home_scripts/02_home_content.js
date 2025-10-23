@@ -507,7 +507,8 @@ const MIN_IMAGE_DURATION = 400;
 const MIN_AUDIO_DURATION = 400;
 const IMAGE_DURATION_APPLY_EMPTY_STATE_MESSAGE = 'Add an image clip to enable Apply All.';
 const IMAGE_DURATION_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its duration.';
-const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to copy this duration.';
+const IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE = 'Add another image clip to this layer to copy this duration.';
+const IMAGE_DURATION_APPLY_ALREADY_APPLIED_MESSAGE = 'All images in this layer already use this duration.';
 const TIMELINE_DURATION_PER_PIXEL_DEFAULT = 12;
 const TIMELINE_DURATION_PER_PIXEL_MIN = 2;
 const TIMELINE_DURATION_PER_PIXEL_MAX = 600;
@@ -718,6 +719,59 @@ function syncAnimationControlsToTimelineItem(timelineItem) {
     refreshComboApplyAllAvailability();
 }
 
+const TIMELINE_ITEM_DURATION_FEEDBACK_CLASS = 'timeline-item--duration-applied';
+const TIMELINE_ITEM_DURATION_FEEDBACK_TIMEOUT_MS = 900;
+const timelineItemDurationFeedbackTimers = new WeakMap();
+
+function normalizeLaneIndex(value) {
+    const normalized = Number.parseInt(typeof value === 'string' ? value : `${value ?? ''}`, 10);
+    return Number.isFinite(normalized) ? normalized : 0;
+}
+
+function getTimelineItemLaneIndex(timelineItem) {
+    if (!timelineItem) {
+        return 0;
+    }
+
+    const datasetLaneIndex = timelineItem.dataset?.laneIndex;
+    if (typeof parseTimelineLaneIndex === 'function') {
+        if (datasetLaneIndex !== undefined) {
+            return parseTimelineLaneIndex(datasetLaneIndex);
+        }
+        const parentLaneValue = timelineItem.closest?.('.timeline-lane')?.dataset?.laneIndex;
+        return parseTimelineLaneIndex(parentLaneValue);
+    }
+
+    if (datasetLaneIndex !== undefined) {
+        return normalizeLaneIndex(datasetLaneIndex);
+    }
+
+    const fallbackLaneValue = timelineItem.closest?.('.timeline-lane')?.dataset?.laneIndex;
+    return normalizeLaneIndex(fallbackLaneValue);
+}
+
+function flashTimelineItemDurationFeedback(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+
+    if (timelineItemDurationFeedbackTimers.has(timelineItem)) {
+        window.clearTimeout(timelineItemDurationFeedbackTimers.get(timelineItem));
+        timelineItemDurationFeedbackTimers.delete(timelineItem);
+    }
+
+    timelineItem.classList.remove(TIMELINE_ITEM_DURATION_FEEDBACK_CLASS);
+    void timelineItem.offsetWidth;
+    timelineItem.classList.add(TIMELINE_ITEM_DURATION_FEEDBACK_CLASS);
+
+    const timer = window.setTimeout(() => {
+        timelineItem.classList.remove(TIMELINE_ITEM_DURATION_FEEDBACK_CLASS);
+        timelineItemDurationFeedbackTimers.delete(timelineItem);
+    }, TIMELINE_ITEM_DURATION_FEEDBACK_TIMEOUT_MS);
+
+    timelineItemDurationFeedbackTimers.set(timelineItem, timer);
+}
+
 function setImageDurationApplyStatus(message, options = {}) {
     if (!imageDurationApplyStatus) {
         return;
@@ -755,7 +809,10 @@ function refreshImageDurationApplyAllAvailability() {
     const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
     const hasImages = imageItems.length > 0;
     const activeIsImage = isImageTimelineItem(activeTimelineItem);
-    const hasTargets = imageItems.length > 1;
+    const activeLaneIndex = getTimelineItemLaneIndex(activeTimelineItem);
+    const sameLaneTargets = imageItems.filter((item) => item !== activeTimelineItem
+        && getTimelineItemLaneIndex(item) === activeLaneIndex);
+    const hasTargets = sameLaneTargets.length > 0;
 
     imageDurationApplyAllButton.disabled = !(activeIsImage && hasTargets);
 
@@ -810,12 +867,22 @@ function handleImageDurationApplyAllClick() {
     }
 
     const timelineItems = getTimelineItems();
+    const activeLaneIndex = getTimelineItemLaneIndex(activeTimelineItem);
+    const sameLaneTargets = timelineItems.filter((timelineItem) => isImageTimelineItem(timelineItem)
+        && timelineItem !== activeTimelineItem
+        && getTimelineItemLaneIndex(timelineItem) === activeLaneIndex);
+
+    if (!sameLaneTargets.length) {
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, { timeoutMs: 3200 });
+        refreshImageDurationApplyAllAvailability();
+        refreshCanvasBlurApplyAllAvailability();
+        return;
+    }
+
+    const updatedItems = [];
     let appliedCount = 0;
 
-    timelineItems.forEach((timelineItem) => {
-        if (!isImageTimelineItem(timelineItem) || timelineItem === activeTimelineItem) {
-            return;
-        }
+    sameLaneTargets.forEach((timelineItem) => {
 
         const currentDuration = Math.max(0, Math.round(Number(timelineItem.dataset.imageDuration) || 0));
         if (currentDuration === targetDuration) {
@@ -824,15 +891,23 @@ function handleImageDurationApplyAllClick() {
 
         setTimelineItemDuration(timelineItem, 'imageDuration', targetDuration, { markCustom: true });
         appliedCount += 1;
+        updatedItems.push(timelineItem);
     });
 
     if (appliedCount === 0) {
-        setImageDurationApplyStatus('All images already use this duration.', { timeoutMs: 3200 });
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_ALREADY_APPLIED_MESSAGE, { timeoutMs: 3200 });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
-        setImageDurationApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+        const feedbackMessage = `Applied to ${appliedCount} image${pluralSuffix} in this layer.`;
+        setImageDurationApplyStatus(feedbackMessage, { timeoutMs: 3200 });
         updateActiveTimelineIndicators();
         renderExportSummary(getTimelineItems(), null);
+        updatedItems.forEach((item) => {
+            flashTimelineItemDurationFeedback(item);
+        });
+        if (typeof showAppToast === 'function') {
+            showAppToast(feedbackMessage);
+        }
     }
 
     refreshImageDurationApplyAllAvailability();
