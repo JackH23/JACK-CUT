@@ -898,6 +898,9 @@ const DEFAULT_ENTRANCE_TIMING = 'medium';
 const DEFAULT_EXIT_PRESET = 'fade';
 const DEFAULT_EXIT_DELAY = 'none';
 const COMBO_APPLY_EMPTY_STATE_MESSAGE = 'Add images to apply animations.';
+const COMBO_APPLY_SELECT_MESSAGE = 'Select an image clip to copy its animation.';
+const COMBO_APPLY_NEED_TARGET_MESSAGE = 'No other image clips in this layer.';
+const COMBO_APPLY_ALREADY_APPLIED_MESSAGE = 'All image clips in this layer already use this animation.';
 
 function sanitizeAnimationDirection(value) {
     const normalized = typeof value === 'string' ? value.toLowerCase() : '';

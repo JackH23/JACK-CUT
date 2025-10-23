@@ -1046,16 +1046,37 @@ function refreshComboApplyAllAvailability() {
     }
 
     const timelineItems = getTimelineItems();
-    const hasImages = timelineItems.some((item) => isImageTimelineItem(item));
-    animationComboApplyAllButton.disabled = !hasImages;
+    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+    const hasImages = imageItems.length > 0;
+    const activeIsImage = isImageTimelineItem(activeTimelineItem);
+    const activeLaneIndex = resolveTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+    const targetCount = imageItems.filter((item) => item !== activeTimelineItem
+        && resolveTimelineLaneIndex(item.dataset?.laneIndex) === activeLaneIndex).length;
+    const hasTargets = targetCount > 0;
+
+    animationComboApplyAllButton.disabled = !(activeIsImage && hasTargets);
 
     if (!hasImages) {
         setAnimationComboApplyStatus(COMBO_APPLY_EMPTY_STATE_MESSAGE, { persist: true });
         return;
     }
 
+    if (!activeIsImage) {
+        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, { persist: true });
+        return;
+    }
+
+    if (!hasTargets) {
+        setAnimationComboApplyStatus(COMBO_APPLY_NEED_TARGET_MESSAGE, { persist: true });
+        return;
+    }
+
     if (animationComboApplyStatus
-        && animationComboApplyStatus.textContent === COMBO_APPLY_EMPTY_STATE_MESSAGE
+        && (
+            animationComboApplyStatus.textContent === COMBO_APPLY_EMPTY_STATE_MESSAGE
+            || animationComboApplyStatus.textContent === COMBO_APPLY_SELECT_MESSAGE
+            || animationComboApplyStatus.textContent === COMBO_APPLY_NEED_TARGET_MESSAGE
+        )
     ) {
         setAnimationComboApplyStatus('');
     }
@@ -1135,10 +1156,20 @@ function handleComboApplyAllClick() {
         return;
     }
 
-    const timelineItems = getTimelineItems();
-    const imageItems = timelineItems.filter((item) => isImageTimelineItem(item));
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        refreshComboApplyAllAvailability();
+        return;
+    }
 
-    if (!imageItems.length) {
+    const timelineItems = getTimelineItems();
+    const activeLaneIndex = resolveTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+    const targets = timelineItems.filter((timelineItem) => timelineItem !== activeTimelineItem
+        && isImageTimelineItem(timelineItem)
+        && resolveTimelineLaneIndex(timelineItem.dataset?.laneIndex) === activeLaneIndex);
+
+    if (!targets.length) {
+        setAnimationComboApplyStatus(COMBO_APPLY_NEED_TARGET_MESSAGE, { timeoutMs: 3200 });
         refreshComboApplyAllAvailability();
         return;
     }
@@ -1146,7 +1177,7 @@ function handleComboApplyAllClick() {
     const settings = getCurrentComboAnimationSettingsFromControls();
     let appliedCount = 0;
 
-    imageItems.forEach((timelineItem) => {
+    targets.forEach((timelineItem) => {
         if (applyComboSettingsToTimelineItem(timelineItem, settings)) {
             appliedCount += 1;
         }
@@ -1155,10 +1186,34 @@ function handleComboApplyAllClick() {
     refreshComboApplyAllAvailability();
 
     if (appliedCount === 0) {
-        setAnimationComboApplyStatus('All images already use this combo animation.', { timeoutMs: 3200 });
+        setAnimationComboApplyStatus(COMBO_APPLY_ALREADY_APPLIED_MESSAGE, { timeoutMs: 3200 });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
-        setAnimationComboApplyStatus(`Applied to ${appliedCount} image${pluralSuffix}.`, { timeoutMs: 3200 });
+        const successMessage = `Applied to ${appliedCount} image${pluralSuffix} in this layer.`;
+        setAnimationComboApplyStatus(successMessage, { timeoutMs: 3200 });
+        if (typeof showAppToast === 'function') {
+            showAppToast('Applied animation to all clips in layer');
+        }
+        if (typeof updateActiveTimelineIndicators === 'function') {
+            updateActiveTimelineIndicators();
+        }
+        if (typeof refreshTimelinePlaybackSyncFallbackFromSource === 'function') {
+            const playbackSource = typeof getTimelinePlaybackSyncSource === 'function'
+                ? getTimelinePlaybackSyncSource()
+                : null;
+            refreshTimelinePlaybackSyncFallbackFromSource(playbackSource);
+        }
+        if (typeof refreshActiveOverlayLayers === 'function') {
+            refreshActiveOverlayLayers();
+        }
+        if (typeof markExportPlaybackContextDirty === 'function') {
+            markExportPlaybackContextDirty({ refreshSummary: true });
+        } else if (typeof renderExportSummary === 'function') {
+            renderExportSummary(getTimelineItems(), null);
+        }
+        if (typeof refreshImageDurationApplyAllAvailability === 'function') {
+            refreshImageDurationApplyAllAvailability();
+        }
     }
 
     syncAnimationControlsToTimelineItem(activeTimelineItem);
