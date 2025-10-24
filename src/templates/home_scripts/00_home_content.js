@@ -9,6 +9,9 @@ const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
 const previewImage = document.getElementById('preview-image');
+const PREVIEW_IMAGE_BLUR_PRECISION = 2;
+const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
+let lastPreviewImageBlurValue = null;
 const previewImageLayer = document.getElementById('preview-image-layer');
 const previewImageFrame = document.getElementById('preview-image-frame');
 const previewTextEditor = document.getElementById('preview-text-editor');
@@ -97,18 +100,37 @@ if (previewImage) {
     }
 }
 
+function formatBlurRadius(value, precision = PREVIEW_IMAGE_BLUR_PRECISION) {
+    const safePrecision = Math.max(0, Math.min(6, Math.round(Number(precision) || 0)));
+    if (safePrecision === 0) {
+        return String(Math.round(value));
+    }
+    return value.toFixed(safePrecision).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+}
+
 function applyImageBlurToPreview(blur) {
     if (!previewImage) {
+        lastPreviewImageBlurValue = null;
         return;
     }
 
-    const clamped = clampImageBlur(blur);
-    const blurValue = `${clamped}px`;
+    const clamped = clampImageBlur(blur, {
+        snapToInteger: false,
+        precision: PREVIEW_IMAGE_BLUR_PRECISION,
+    });
 
-    previewImage.style.setProperty('--preview-image-blur', blurValue);
+    if (lastPreviewImageBlurValue !== null
+        && Math.abs(clamped - lastPreviewImageBlurValue) <= PREVIEW_IMAGE_BLUR_EPSILON) {
+        return;
+    }
+
+    lastPreviewImageBlurValue = clamped;
+    const blurValue = formatBlurRadius(clamped);
+
+    previewImage.style.setProperty('--preview-image-blur', `${blurValue}px`);
 
     if (clamped > 0) {
-        previewImage.style.filter = `blur(${blurValue})`;
+        previewImage.style.filter = `blur(${blurValue}px)`;
     } else {
         previewImage.style.removeProperty('filter');
     }
@@ -1433,15 +1455,30 @@ function clampCanvasBlur(value) {
     );
 }
 
-function clampImageBlur(value) {
+function clampImageBlur(value, options = {}) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
         return IMAGE_BLUR_MIN;
     }
-    return Math.min(
-        Math.max(Math.round(numeric), IMAGE_BLUR_MIN),
+
+    const clamped = Math.min(
+        Math.max(numeric, IMAGE_BLUR_MIN),
         IMAGE_BLUR_MAX,
     );
+
+    const { snapToInteger = true, precision = PREVIEW_IMAGE_BLUR_PRECISION } = options;
+
+    if (snapToInteger) {
+        return Math.round(clamped);
+    }
+
+    const safePrecision = Math.max(0, Math.min(6, Math.round(Number(precision) || 0)));
+    if (safePrecision === 0) {
+        return Math.round(clamped);
+    }
+
+    const factor = 10 ** safePrecision;
+    return Math.round(clamped * factor) / factor;
 }
 
 function getTimelineItemImageBlur(timelineItem, progress = null) {
@@ -1465,7 +1502,10 @@ function getTimelineItemImageBlur(timelineItem, progress = null) {
 
             const firstEntry = keyframes[0];
             if (firstEntry && Number.isFinite(firstEntry.blur)) {
-                return clampImageBlur(firstEntry.blur);
+                return clampImageBlur(firstEntry.blur, {
+                    snapToInteger: false,
+                    precision: PREVIEW_IMAGE_BLUR_PRECISION,
+                });
             }
         }
     }
@@ -1475,7 +1515,10 @@ function getTimelineItemImageBlur(timelineItem, progress = null) {
     if (!Number.isFinite(rawBlur)) {
         return DEFAULT_IMAGE_BLUR;
     }
-    return clampImageBlur(rawBlur);
+    return clampImageBlur(rawBlur, {
+        snapToInteger: false,
+        precision: PREVIEW_IMAGE_BLUR_PRECISION,
+    });
 }
 
 function persistTimelineItemImageBlur(timelineItem, blur) {
@@ -1523,8 +1566,11 @@ function updateImageBlurReadout(value, options = {}) {
         return;
     }
 
-    const clamped = clampImageBlur(value);
-    imageBlurValue.textContent = clamped <= 0 ? 'Off' : `${clamped}px`;
+    const clamped = clampImageBlur(value, {
+        snapToInteger: false,
+        precision: PREVIEW_IMAGE_BLUR_PRECISION,
+    });
+    imageBlurValue.textContent = clamped <= 0 ? 'Off' : `${formatBlurRadius(clamped)}px`;
 }
 
 function updateCanvasBlurExpandUI({ blur = 0, disabled = true, expandEnabled = false } = {}) {

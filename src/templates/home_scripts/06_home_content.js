@@ -2025,13 +2025,34 @@ function storeTimelineImageKeyframes(timelineItem, keyframes) {
     }
 }
 
+const imageBlurKeyframeCache = new WeakMap();
+
+function getCachedImageBlurKeyframes(timelineItem) {
+    if (!timelineItem || !imageBlurKeyframeCache.has(timelineItem)) {
+        return null;
+    }
+    return imageBlurKeyframeCache.get(timelineItem) || [];
+}
+
+function setImageBlurKeyframeCache(timelineItem, keyframes) {
+    if (!timelineItem) {
+        return;
+    }
+
+    if (Array.isArray(keyframes)) {
+        imageBlurKeyframeCache.set(timelineItem, keyframes);
+    } else {
+        imageBlurKeyframeCache.delete(timelineItem);
+    }
+}
+
 function sanitizeImageBlurKeyframeEntry(entry) {
     if (!entry || typeof entry !== 'object') {
         return null;
     }
 
     const progress = clampProgress(Number(entry.progress));
-    const blur = clampImageBlur(entry.blur);
+    const blur = clampImageBlur(entry.blur, { snapToInteger: false });
 
     if (!Number.isFinite(progress) || !Number.isFinite(blur)) {
         return null;
@@ -2040,28 +2061,32 @@ function sanitizeImageBlurKeyframeEntry(entry) {
     return { progress, blur };
 }
 
+function normalizeImageBlurKeyframes(keyframes) {
+    return (Array.isArray(keyframes) ? keyframes : [])
+        .map(sanitizeImageBlurKeyframeEntry)
+        .filter(Boolean)
+        .sort((a, b) => a.progress - b.progress);
+}
+
 function evaluateImageBlurKeyframes(keyframes, progress = 0) {
     if (!Array.isArray(keyframes) || !keyframes.length) {
         return DEFAULT_IMAGE_BLUR;
     }
 
     const safeProgress = clampProgress(Number(progress) || 0);
-    const sorted = keyframes
-        .map(sanitizeImageBlurKeyframeEntry)
-        .filter(Boolean)
-        .sort((a, b) => a.progress - b.progress);
+    const sorted = normalizeImageBlurKeyframes(keyframes);
 
     if (!sorted.length) {
         return DEFAULT_IMAGE_BLUR;
     }
 
     if (sorted.length === 1) {
-        return clampImageBlur(sorted[0].blur);
+        return clampImageBlur(sorted[0].blur, { snapToInteger: false });
     }
 
     const first = sorted[0];
     if (safeProgress <= first.progress + KEYFRAME_PROGRESS_TOLERANCE) {
-        return clampImageBlur(first.blur);
+        return clampImageBlur(first.blur, { snapToInteger: false });
     }
 
     for (let index = 1; index < sorted.length; index += 1) {
@@ -2073,24 +2098,24 @@ function evaluateImageBlurKeyframes(keyframes, progress = 0) {
         if (safeProgress <= current.progress + KEYFRAME_PROGRESS_TOLERANCE) {
             const previous = sorted[index - 1];
             if (!previous) {
-                return clampImageBlur(current.blur);
+                return clampImageBlur(current.blur, { snapToInteger: false });
             }
 
             const span = current.progress - previous.progress;
             if (Math.abs(span) <= KEYFRAME_PROGRESS_TOLERANCE) {
-                return clampImageBlur(current.blur);
+                return clampImageBlur(current.blur, { snapToInteger: false });
             }
 
             const ratio = (safeProgress - previous.progress) / span;
             const easedRatio = easeKeyframeProgress(ratio);
             const interpolated = previous.blur
                 + ((current.blur - previous.blur) * easedRatio);
-            return clampImageBlur(interpolated);
+            return clampImageBlur(interpolated, { snapToInteger: false });
         }
     }
 
     const last = sorted[sorted.length - 1];
-    return clampImageBlur(last.blur);
+    return clampImageBlur(last.blur, { snapToInteger: false });
 }
 
 function getTimelineItemImageBlurKeyframes(timelineItem) {
@@ -2098,8 +2123,14 @@ function getTimelineItemImageBlurKeyframes(timelineItem) {
         return [];
     }
 
+    const cached = getCachedImageBlurKeyframes(timelineItem);
+    if (cached !== null) {
+        return cached;
+    }
+
     const raw = timelineItem?.dataset?.imageBlurKeyframes || '';
     if (!raw) {
+        setImageBlurKeyframeCache(timelineItem, []);
         return [];
     }
 
@@ -2108,12 +2139,12 @@ function getTimelineItemImageBlurKeyframes(timelineItem) {
         if (!Array.isArray(parsed)) {
             return [];
         }
-        return parsed
-            .map(sanitizeImageBlurKeyframeEntry)
-            .filter(Boolean)
-            .sort((a, b) => a.progress - b.progress);
+        const normalized = normalizeImageBlurKeyframes(parsed);
+        setImageBlurKeyframeCache(timelineItem, normalized);
+        return normalized;
     } catch (error) {
         console.warn('Unable to parse stored image blur keyframes.', error);
+        setImageBlurKeyframeCache(timelineItem, []);
         return [];
     }
 }
@@ -2123,10 +2154,7 @@ function storeTimelineItemImageBlurKeyframes(timelineItem, keyframes) {
         return;
     }
 
-    const sanitized = (Array.isArray(keyframes) ? keyframes : [])
-        .map(sanitizeImageBlurKeyframeEntry)
-        .filter(Boolean)
-        .sort((a, b) => a.progress - b.progress);
+    const sanitized = normalizeImageBlurKeyframes(keyframes);
 
     if (sanitized.length) {
         try {
@@ -2139,16 +2167,18 @@ function storeTimelineItemImageBlurKeyframes(timelineItem, keyframes) {
         if (baseline <= IMAGE_BLUR_MIN) {
             delete timelineItem.dataset.imageBlur;
         } else {
-            timelineItem.dataset.imageBlur = String(clampImageBlur(baseline));
+            timelineItem.dataset.imageBlur = String(clampImageBlur(baseline, { snapToInteger: false }));
         }
+        setImageBlurKeyframeCache(timelineItem, sanitized);
     } else {
         delete timelineItem.dataset.imageBlurKeyframes;
+        setImageBlurKeyframeCache(timelineItem, []);
     }
 }
 
 function upsertTimelineItemImageBlurKeyframe(keyframes, progress, blur) {
     const safeProgress = clampProgress(Number(progress));
-    const safeBlur = clampImageBlur(blur);
+    const safeBlur = clampImageBlur(blur, { snapToInteger: false });
     const next = Array.isArray(keyframes)
         ? keyframes.map(sanitizeImageBlurKeyframeEntry).filter(Boolean)
         : [];
