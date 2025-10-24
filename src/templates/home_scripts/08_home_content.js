@@ -901,6 +901,183 @@ function createSilentAudioKeepAlive(audioContext, destinationNode) {
     }
 }
 
+function waitForDuration(durationMs) {
+    const safeDuration = Math.max(0, Math.round(Number(durationMs) || 0));
+    if (safeDuration <= 0) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, safeDuration);
+    });
+}
+
+function waitForPreviewImageReady(timeoutMs = 1200) {
+    if (!previewImage || previewImage.hidden) {
+        return Promise.resolve();
+    }
+
+    if (previewImage.complete && previewImage.naturalWidth > 0) {
+        return Promise.resolve();
+    }
+
+    const safeTimeout = Math.max(0, Math.round(Number(timeoutMs) || 0));
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let safeTimeoutHandle = 0;
+
+        const finalize = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (safeTimeoutHandle) {
+                window.clearTimeout(safeTimeoutHandle);
+            }
+            previewImage.removeEventListener('load', finalize);
+            previewImage.removeEventListener('error', finalize);
+            resolve();
+        };
+
+        previewImage.addEventListener('load', finalize, { once: true });
+        previewImage.addEventListener('error', finalize, { once: true });
+        if (safeTimeout > 0) {
+            safeTimeoutHandle = window.setTimeout(finalize, safeTimeout);
+        }
+
+        if (previewImage.complete && previewImage.naturalWidth > 0) {
+            finalize();
+        }
+    });
+}
+
+function seekMediaElementTo(mediaElement, timeSeconds, options = {}) {
+    if (!mediaElement || !Number.isFinite(timeSeconds)) {
+        return Promise.resolve();
+    }
+
+    const timeoutMs = Math.max(0, Math.round(Number(options.timeoutMs) || 0));
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = 0;
+
+        const cleanup = () => {
+            mediaElement.removeEventListener('seeked', handleSeeked);
+            mediaElement.removeEventListener('error', handleError);
+            mediaElement.removeEventListener('loadeddata', handleLoadedData);
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+
+        const finalize = () => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            resolve();
+        };
+
+        const handleSeeked = () => {
+            finalize();
+        };
+
+        const handleError = () => {
+            finalize();
+        };
+
+        const handleLoadedData = () => {
+            finalize();
+        };
+
+        mediaElement.addEventListener('seeked', handleSeeked);
+        mediaElement.addEventListener('error', handleError);
+        mediaElement.addEventListener('loadeddata', handleLoadedData);
+
+        if (timeoutMs > 0) {
+            timeoutId = window.setTimeout(finalize, timeoutMs);
+        }
+
+        try {
+            mediaElement.currentTime = timeSeconds;
+            if (Math.abs((mediaElement.currentTime || 0) - timeSeconds) < 0.01) {
+                finalize();
+            }
+        } catch (error) {
+            finalize();
+        }
+    });
+}
+
+async function primeExportStartFrame(playbackContext, options = {}) {
+    const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
+    const segments = Array.isArray(playbackState?.segments) ? playbackState.segments : [];
+    const frameRate = Math.max(1, Math.min(60, Math.round(options.frameRate) || 30));
+
+    seekTimelineToFraction(0);
+
+    const firstPlayableSegment = segments.find((segment) => segment && Number(segment.duration) > 0)
+        || segments[0]
+        || null;
+
+    const activeItem = firstPlayableSegment?.item || activeTimelineItem || null;
+
+    if (!activeItem) {
+        await waitForNextFrame();
+        return;
+    }
+
+    const fileType = activeItem.dataset.fileType || '';
+    const laneCache = playbackState?.laneCache || null;
+    const clipStartTime = Number.isFinite(firstPlayableSegment?.start)
+        ? getTimelineItemStartTime(activeItem, laneCache)
+        : 0;
+    const segmentStart = Number.isFinite(firstPlayableSegment?.start)
+        ? firstPlayableSegment.start
+        : (clipStartTime || 0);
+    const startOffsetMs = Math.max(0, Math.round(segmentStart - (clipStartTime || 0)));
+
+    if (fileType.startsWith('video/')) {
+        const targetTimeSeconds = startOffsetMs / 1000;
+        previewVideo.pause();
+        try {
+            await waitForMediaReady(previewVideo);
+        } catch (error) {
+            console.warn('First clip video could not buffer before export.', error);
+        }
+        await seekMediaElementTo(previewVideo, targetTimeSeconds, { timeoutMs: 900 });
+        previewVideo.pause();
+    } else if (fileType.startsWith('image/')) {
+        await waitForPreviewImageReady(1500);
+        applyActiveImageKeyframe({ reason: 'export-pre-roll' });
+        applyActiveImageBlurKeyframe({ reason: 'export-pre-roll' });
+    } else {
+        refreshActiveOverlayLayers();
+    }
+
+    const warmupFrames = Math.max(1, Math.min(4, Math.round(frameRate / 24)));
+    for (let index = 0; index < warmupFrames; index += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await waitForNextFrame();
+    }
+}
+
+async function runExportPreRoll(preRollMs, frameRate) {
+    const safePreRoll = Math.max(0, Math.round(Number(preRollMs) || 0));
+    const warmupFrames = Math.max(2, Math.round((Math.max(1, frameRate) / 1000) * Math.max(safePreRoll, 16)));
+    const delayPromise = waitForDuration(safePreRoll);
+    for (let index = 0; index < warmupFrames; index += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await waitForNextFrame();
+    }
+    await delayPromise;
+}
+
+const EXPORT_PRE_ROLL_MS = 80;
+
 function waitForNextFrame() {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
         return Promise.resolve();
@@ -1647,6 +1824,8 @@ async function handleConfirmExport() {
     const captureFrameRate = Math.max(1, Math.min(60, Math.round(encodingConfig.frameRate) || 30));
     const readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
 
+    await primeExportStartFrame(playbackContext, { frameRate: captureFrameRate });
+
     if (exportDialogStatus) {
         exportDialogStatus.dataset.state = 'progress';
         exportDialogStatus.innerHTML = `
@@ -1668,6 +1847,7 @@ async function handleConfirmExport() {
         stopMirroring = startPreviewMirroring(resolution.width, resolution.height, {
             frameRate: captureFrameRate,
         });
+        await runExportPreRoll(EXPORT_PRE_ROLL_MS, captureFrameRate);
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
