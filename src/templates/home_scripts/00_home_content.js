@@ -96,6 +96,16 @@ if (previewImage) {
         // Some browsers do not support setting the decoding hint.
     }
 }
+
+function applyImageBlurToPreview(blur) {
+    if (!previewImage) {
+        return;
+    }
+
+    const clamped = clampImageBlur(blur);
+    previewImage.style.setProperty('--preview-image-blur', `${clamped}px`);
+}
+applyImageBlurToPreview(0);
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -170,6 +180,10 @@ const canvasBlurInput = document.getElementById('canvas-background-blur');
 const canvasBlurValue = document.getElementById('canvas-background-blur-value');
 const canvasBlurExpandToggle = document.getElementById('canvas-background-blur-expand');
 const canvasBlurExpandContainer = document.getElementById('canvas-background-blur-expand-container');
+const imageBlurControls = document.getElementById('image-blur-controls');
+const imageBlurInput = document.getElementById('image-blur');
+const imageBlurValue = document.getElementById('image-blur-value');
+const imageBlurApplyButton = document.getElementById('image-blur-apply');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
@@ -243,6 +257,9 @@ const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
 const DEFAULT_CANVAS_BLUR = 18;
 const CANVAS_BLUR_MIN = 0;
 const CANVAS_BLUR_MAX = 40;
+const DEFAULT_IMAGE_BLUR = 0;
+const IMAGE_BLUR_MIN = 0;
+const IMAGE_BLUR_MAX = 40;
 const DEFAULT_CANVAS_BACKDROP_SCALE = 1.08;
 const timelineCanvasCustomImageUrls = new WeakMap();
 
@@ -1402,6 +1419,55 @@ function clampCanvasBlur(value) {
     );
 }
 
+function clampImageBlur(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return IMAGE_BLUR_MIN;
+    }
+    return Math.min(
+        Math.max(Math.round(numeric), IMAGE_BLUR_MIN),
+        IMAGE_BLUR_MAX,
+    );
+}
+
+function getTimelineItemImageBlur(timelineItem) {
+    const isImageItem = typeof isImageTimelineItem === 'function'
+        ? isImageTimelineItem(timelineItem)
+        : Boolean(timelineItem?.dataset?.fileType?.startsWith?.('image/'));
+
+    if (!isImageItem) {
+        return DEFAULT_IMAGE_BLUR;
+    }
+
+    const dataset = timelineItem?.dataset || {};
+    const rawBlur = Number(dataset.imageBlur);
+    if (!Number.isFinite(rawBlur)) {
+        return DEFAULT_IMAGE_BLUR;
+    }
+    return clampImageBlur(rawBlur);
+}
+
+function persistTimelineItemImageBlur(timelineItem, blur) {
+    if (!timelineItem?.dataset) {
+        return;
+    }
+
+    const isImageItem = typeof isImageTimelineItem === 'function'
+        ? isImageTimelineItem(timelineItem)
+        : Boolean(timelineItem.dataset?.fileType?.startsWith?.('image/'));
+
+    if (!isImageItem) {
+        return;
+    }
+
+    const clamped = clampImageBlur(blur);
+    if (clamped <= IMAGE_BLUR_MIN) {
+        delete timelineItem.dataset.imageBlur;
+    } else {
+        timelineItem.dataset.imageBlur = String(clamped);
+    }
+}
+
 function updateCanvasBlurReadout(value, options = {}) {
     if (!canvasBlurValue) {
         return;
@@ -1413,6 +1479,21 @@ function updateCanvasBlurReadout(value, options = {}) {
     }
     const clamped = clampCanvasBlur(value);
     canvasBlurValue.textContent = clamped <= 0 ? 'Off' : `${clamped}px`;
+}
+
+function updateImageBlurReadout(value, options = {}) {
+    if (!imageBlurValue) {
+        return;
+    }
+
+    const { disabled = false } = options;
+    if (disabled) {
+        imageBlurValue.textContent = 'Disabled';
+        return;
+    }
+
+    const clamped = clampImageBlur(value);
+    imageBlurValue.textContent = clamped <= 0 ? 'Off' : `${clamped}px`;
 }
 
 function updateCanvasBlurExpandUI({ blur = 0, disabled = true, expandEnabled = false } = {}) {
