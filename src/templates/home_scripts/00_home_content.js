@@ -103,7 +103,15 @@ function applyImageBlurToPreview(blur) {
     }
 
     const clamped = clampImageBlur(blur);
-    previewImage.style.setProperty('--preview-image-blur', `${clamped}px`);
+    const blurValue = `${clamped}px`;
+
+    previewImage.style.setProperty('--preview-image-blur', blurValue);
+
+    if (clamped > 0) {
+        previewImage.style.filter = `blur(${blurValue})`;
+    } else {
+        previewImage.style.removeProperty('filter');
+    }
 }
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');

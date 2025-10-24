@@ -139,6 +139,48 @@ function parseCanvasBackdropBlurRadius() {
     return blur;
 }
 
+function parsePreviewImageBlurRadius(computedStyleOverride = null) {
+    if (!previewImage) {
+        return 0;
+    }
+
+    let blur = Number.parseFloat(
+        previewImage.style?.getPropertyValue?.('--preview-image-blur') || '',
+    );
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        const styleSource = computedStyleOverride
+            || (window.getComputedStyle ? window.getComputedStyle(previewImage) : null);
+
+        if (styleSource) {
+            const variableValue = styleSource.getPropertyValue?.('--preview-image-blur') || '';
+            const parsedVariable = Number.parseFloat(variableValue);
+
+            if (Number.isFinite(parsedVariable) && parsedVariable >= 0) {
+                blur = parsedVariable;
+            } else {
+                const filterValue = styleSource.filter || styleSource.webkitFilter || '';
+                const match = typeof filterValue === 'string'
+                    ? filterValue.match(/blur\(([^)]+)\)/i)
+                    : null;
+
+                if (match) {
+                    const parsedFilter = Number.parseFloat(match[1]);
+                    if (Number.isFinite(parsedFilter) && parsedFilter >= 0) {
+                        blur = parsedFilter;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        blur = 0;
+    }
+
+    return blur;
+}
+
 function ensureCanvasBackdropSnapshotContext(width, height) {
     const safeWidth = Math.max(1, Math.round(Number(width) || 0));
     const safeHeight = Math.max(1, Math.round(Number(height) || 0));
@@ -458,9 +500,11 @@ function drawPreviewImageToExportCanvas() {
 
     let computedOpacity = 1;
     let cssMatrix = null;
+    let blurRadius = 0;
+    let computedStyle = null;
 
     if (window.getComputedStyle) {
-        const computedStyle = window.getComputedStyle(previewImage);
+        computedStyle = window.getComputedStyle(previewImage);
         if (computedStyle) {
             const opacityValue = Number.parseFloat(computedStyle.opacity);
             if (Number.isFinite(opacityValue)) {
@@ -469,6 +513,7 @@ function drawPreviewImageToExportCanvas() {
             cssMatrix = parseCssTransformMatrix(
                 computedStyle.transform || computedStyle.webkitTransform || '',
             );
+            blurRadius = parsePreviewImageBlurRadius(computedStyle);
         }
     }
 
@@ -496,6 +541,9 @@ function drawPreviewImageToExportCanvas() {
         exportMirrorContext.globalAlpha *= computedOpacity;
     }
 
+    const filterValue = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
+    exportMirrorContext.filter = filterValue;
+
     exportMirrorContext.drawImage(
         previewImage,
         0,
@@ -503,6 +551,7 @@ function drawPreviewImageToExportCanvas() {
         drawWidth,
         drawHeight,
     );
+    exportMirrorContext.filter = 'none';
     exportMirrorContext.restore();
 
     exportMirrorContext.restore();
