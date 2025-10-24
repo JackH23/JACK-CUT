@@ -421,6 +421,7 @@
                 renderedOpacity: null,
                 renderedZIndex: null,
                 renderedRotation: null,
+                renderedBlur: null,
                 renderedAnimation: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
@@ -495,6 +496,10 @@
         entry.renderedOpacity = null;
         entry.renderedZIndex = null;
         entry.renderedRotation = null;
+        entry.renderedBlur = null;
+        if (entry.image) {
+            entry.image.style.removeProperty('--preview-overlay-blur');
+        }
         resetOverlayAnimationState(entry);
 
         if (entry.layer) {
@@ -648,6 +653,28 @@
         entry.opacity = nextOpacity;
         if (image) {
             image.style.opacity = '1';
+
+            const hasBlurState = typeof canvasImageBlurState === 'object'
+                && canvasImageBlurState !== null;
+            const pendingBlur = hasBlurState && canvasImageBlurState.timelineItem === descriptor.item
+                ? canvasImageBlurState.pendingValue
+                : null;
+            const blurSource = pendingBlur !== null && pendingBlur !== undefined
+                ? pendingBlur
+                : getTimelineItemImageBlur(descriptor.item);
+            const resolvedBlur = clampPreviewImageBlur(blurSource);
+
+            if (resolvedBlur <= PREVIEW_IMAGE_BLUR_MIN) {
+                if (entry.renderedBlur !== PREVIEW_IMAGE_BLUR_MIN) {
+                    image.style.removeProperty('--preview-overlay-blur');
+                    entry.renderedBlur = PREVIEW_IMAGE_BLUR_MIN;
+                }
+            } else if (entry.renderedBlur !== resolvedBlur) {
+                image.style.setProperty('--preview-overlay-blur', `${resolvedBlur}px`);
+                entry.renderedBlur = resolvedBlur;
+            }
+        } else {
+            entry.renderedBlur = PREVIEW_IMAGE_BLUR_MIN;
         }
 
         const clipDurationMs = Math.max(0, Number(descriptor.clipDuration) || 0);
@@ -825,6 +852,7 @@ function getActiveOverlayLayerSnapshots() {
             zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+            blur: Number.isFinite(entry.renderedBlur) ? Math.max(entry.renderedBlur, 0) : 0,
             priority: groupPriority[group] ?? 1,
             animation: animation
                 ? {
@@ -933,7 +961,15 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             const offsetX = (frame.width - drawWidth) / 2;
             const offsetY = (frame.height - drawHeight) / 2;
 
+            const blurRadius = Number.isFinite(snapshot.blur) ? Math.max(snapshot.blur, 0) : 0;
+            if (blurRadius > PREVIEW_IMAGE_BLUR_MIN) {
+                exportMirrorContext.filter = `blur(${blurRadius}px)`;
+            } else {
+                exportMirrorContext.filter = 'none';
+            }
+
             exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+            exportMirrorContext.filter = 'none';
             exportMirrorContext.restore();
         });
 }
