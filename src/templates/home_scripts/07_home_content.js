@@ -521,9 +521,18 @@ function createActiveTimelineKeyframe(progressOverride = null) {
     updateActiveKeyframeMarker(targetProgress);
 
     const percent = Math.round(targetProgress * 100);
-    showKeyframeStatus(hasExisting
+    const statusMessage = hasExisting
         ? `Keyframe updated at ${percent}%`
-        : `Keyframe added at ${percent}%`);
+        : `Keyframe added at ${percent}%`;
+    showKeyframeStatus(statusMessage);
+    flashKeyframeMarkerAtProgress(targetProgress);
+
+    return {
+        progress: targetProgress,
+        percent,
+        wasUpdate: hasExisting,
+        message: statusMessage,
+    };
 }
 
 function deleteActiveTimelineKeyframe(progressOverride = null) {

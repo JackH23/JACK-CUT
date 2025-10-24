@@ -1572,7 +1572,123 @@ if (previewAspectSelect) {
 
 updateTimelineZoomDisplay();
 
-const handleAddKeyframeClick = () => {
+const KEYFRAME_BUTTON_FEEDBACK_RESET_MS = 1600;
+const KEYFRAME_MARKER_HIGHLIGHT_DURATION_MS = 900;
+const keyframeButtonFeedbackTimers = new WeakMap();
+const keyframeMarkerHighlightTimers = new WeakMap();
+
+function applyKeyframeButtonFeedback(button, feedback = {}) {
+    if (!button) {
+        return;
+    }
+
+    const label = button.querySelector('[data-keyframe-button-label]');
+    if (!label) {
+        return;
+    }
+
+    const storedDefaultLabel = button.dataset.defaultLabel;
+    const defaultLabel = storedDefaultLabel && storedDefaultLabel.trim()
+        ? storedDefaultLabel.trim()
+        : (label.textContent || '').trim() || 'Add keyframe';
+    button.dataset.defaultLabel = defaultLabel;
+
+    const existingTimer = keyframeButtonFeedbackTimers.get(button);
+    if (existingTimer) {
+        window.clearTimeout(existingTimer);
+        keyframeButtonFeedbackTimers.delete(button);
+    }
+
+    const { wasUpdate = false, percent = null, message = '' } = feedback;
+    const baseMessage = message && message.trim()
+        ? message.trim()
+        : wasUpdate
+            ? 'Keyframe updated'
+            : 'Keyframe added';
+    const displayMessage = (!message || !message.includes('%')) && Number.isFinite(percent)
+        ? `${baseMessage} (${percent}%)`
+        : baseMessage;
+
+    label.textContent = displayMessage;
+    button.classList.add('is-feedback-active');
+    button.classList.toggle('is-feedback-updated', Boolean(wasUpdate));
+
+    const timer = window.setTimeout(() => {
+        label.textContent = button.dataset.defaultLabel || defaultLabel;
+        button.classList.remove('is-feedback-active', 'is-feedback-updated');
+        keyframeButtonFeedbackTimers.delete(button);
+    }, KEYFRAME_BUTTON_FEEDBACK_RESET_MS);
+
+    keyframeButtonFeedbackTimers.set(button, timer);
+}
+
+function flashKeyframeMarkerAtProgress(progress) {
+    if (!keyframeTrack) {
+        return;
+    }
+
+    const clamped = clampProgress(Number(progress) || 0);
+
+    const scheduleDelay = (callback, delay) => {
+        if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+            return window.setTimeout(callback, delay);
+        }
+        return setTimeout(callback, delay);
+    };
+
+    const findTargetMarker = () => {
+        const markers = Array.from(keyframeTrack.querySelectorAll('.keyframe-marker'));
+        return markers.find((marker) => {
+            const markerProgress = Number(marker.dataset.progress);
+            return Number.isFinite(markerProgress)
+                && Math.abs(markerProgress - clamped) <= KEYFRAME_PROGRESS_TOLERANCE * 2;
+        }) || null;
+    };
+
+    const highlightMarker = (attempt = 0) => {
+        const marker = findTargetMarker();
+        if (!marker) {
+            if (attempt < 3) {
+                scheduleDelay(() => {
+                    highlightMarker(attempt + 1);
+                }, 60);
+            }
+            return;
+        }
+
+        const existingTimeout = keyframeMarkerHighlightTimers.get(marker);
+        if (existingTimeout) {
+            window.clearTimeout(existingTimeout);
+            keyframeMarkerHighlightTimers.delete(marker);
+        }
+
+        marker.classList.remove('is-highlighted');
+        // Force reflow so the animation restarts reliably.
+        void marker.offsetWidth; // eslint-disable-line no-unused-expressions
+        marker.classList.add('is-highlighted');
+
+        const timeout = scheduleDelay(() => {
+            marker.classList.remove('is-highlighted');
+            keyframeMarkerHighlightTimers.delete(marker);
+        }, KEYFRAME_MARKER_HIGHLIGHT_DURATION_MS);
+
+        keyframeMarkerHighlightTimers.set(marker, timeout);
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+            highlightMarker();
+        });
+        return;
+    }
+
+    highlightMarker();
+}
+
+const handleAddKeyframeClick = (event) => {
+    const triggerButton = event && event.currentTarget instanceof HTMLElement
+        ? event.currentTarget
+        : null;
     if (!isImageTimelineItem(activeTimelineItem)) {
         showKeyframeStatus('Select an image clip to add keyframes.');
         return;
@@ -1581,7 +1697,10 @@ const handleAddKeyframeClick = () => {
         queuePreviewImageFrameReset();
         return;
     }
-    createActiveTimelineKeyframe();
+    const result = createActiveTimelineKeyframe();
+    if (triggerButton && result) {
+        applyKeyframeButtonFeedback(triggerButton, result);
+    }
 };
 
 if (addKeyframeButton) {
