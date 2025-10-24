@@ -1305,6 +1305,7 @@ function clearPreview() {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
+    applyPreviewImageBlur(0);
     clearPreviewCanvasBackdrop();
     clearPreviewOverlayLayers();
     commitPreviewTextEditorContent({ force: true });
@@ -2112,6 +2113,8 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         stopTimelinePlayback();
     }
 
+    applyPreviewImageBlur(0);
+
     if (fileType.startsWith('video/')) {
         const audioSettings = getTimelineItemAudioSettings(timelineItem);
         setPreviewMode('has-video');
@@ -2137,6 +2140,13 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         void revealPreviewImageSource(objectURL, { immediate: true });
         resetPreviewScroll();
         playVideoButton.textContent = 'Play Back';
+        const pendingBlur = canvasImageBlurState.timelineItem === timelineItem
+            ? canvasImageBlurState.pendingValue
+            : null;
+        const imageBlur = pendingBlur !== null
+            ? pendingBlur
+            : getTimelineItemImageBlur(timelineItem);
+        applyPreviewImageBlur(imageBlur);
         applyActiveImageKeyframe({ deferReset: true });
     } else if (fileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });

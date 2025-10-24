@@ -1250,6 +1250,32 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border: 1px solid rgba(148, 163, 184, 0.24);
 }
 
+.canvas-image-blur {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.38), rgba(30, 41, 59, 0.45));
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.36);
+}
+
+.canvas-image-blur__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.canvas-image-blur-empty {
+    margin: 0;
+    padding-top: 6px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
 .canvas-blur-expand {
     display: flex;
     flex-direction: column;
@@ -2640,7 +2666,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     user-select: none;
     pointer-events: none;
     transform-origin: center;
-    transition: transform 0.2s ease;
+    filter: blur(var(--preview-image-blur, 0px));
+    transition: transform 0.2s ease, filter 0.2s ease;
 }
 
 .preview-resize-handle {
