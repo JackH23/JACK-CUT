@@ -571,13 +571,84 @@ if (imageBlurInput) {
 }
 
 if (imageBlurApplyButton) {
+    const resolveLaneIndexSafe = (laneValue) => {
+        if (laneValue === undefined || laneValue === null || laneValue === '') {
+            return null;
+        }
+        if (typeof resolveLaneIndex === 'function') {
+            return resolveLaneIndex(laneValue);
+        }
+        const parsed = Number.parseInt(String(laneValue), 10);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const findLaneElementByIndex = (laneIndex) => {
+        if (!Number.isFinite(laneIndex) || typeof getTimelineLanes !== 'function') {
+            return null;
+        }
+        return getTimelineLanes().find((lane) => (
+            resolveLaneIndexSafe(lane?.dataset?.laneIndex) === laneIndex
+        )) || null;
+    };
+
     imageBlurApplyButton.addEventListener('click', () => {
         if (imageBlurApplyButton.disabled) {
             return;
         }
+
         const clamped = applyImageBlurFromControl();
-        if (activeTimelineItem && isImageTimelineItem(activeTimelineItem)) {
-            persistTimelineItemImageBlur(activeTimelineItem, clamped);
+        if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+
+        persistTimelineItemImageBlur(activeTimelineItem, clamped);
+
+        let laneElement = activeTimelineItem.closest('.timeline-lane');
+        const laneIndex = resolveLaneIndexSafe(activeTimelineItem.dataset?.laneIndex);
+        if (!laneElement && Number.isFinite(laneIndex)) {
+            laneElement = findLaneElementByIndex(laneIndex);
+        }
+
+        if (!laneElement) {
+            return;
+        }
+
+        const previewObjectUrl = (previewImage && !previewImage.hidden)
+            ? (previewImage.currentSrc || previewImage.src || '')
+            : '';
+        let shouldUpdatePreview = false;
+
+        const laneItems = Array.from(laneElement.querySelectorAll('.timeline-item'));
+        laneItems.forEach((timelineItem) => {
+            if (timelineItem === activeTimelineItem) {
+                return;
+            }
+            if (timelineItem.classList?.contains('timeline-item--drag-preview')) {
+                return;
+            }
+            if (!isImageTimelineItem(timelineItem)) {
+                return;
+            }
+
+            persistTimelineItemImageBlur(timelineItem, clamped);
+
+            if (!shouldUpdatePreview && previewObjectUrl) {
+                const itemObjectUrl = timelineItem.dataset?.objectUrl || '';
+                if (itemObjectUrl && itemObjectUrl === previewObjectUrl) {
+                    shouldUpdatePreview = true;
+                }
+            }
+        });
+
+        if (!shouldUpdatePreview && previewObjectUrl) {
+            const activeObjectUrl = activeTimelineItem.dataset?.objectUrl || '';
+            if (activeObjectUrl && activeObjectUrl === previewObjectUrl) {
+                shouldUpdatePreview = true;
+            }
+        }
+
+        if (shouldUpdatePreview) {
+            applyImageBlurToPreview(clamped);
         }
     });
 }
