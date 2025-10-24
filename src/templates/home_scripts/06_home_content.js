@@ -1689,23 +1689,22 @@ if (imageBlurKeyframeTrack) {
             }
         }
 
+        const metrics = getKeyframeTrackMetrics(imageBlurKeyframeTrack);
+        if (!metrics) {
+            return;
+        }
+
         const progress = getKeyframeTrackProgressFromClientX(
             event.clientX,
             imageBlurKeyframeTrack,
+            metrics,
         );
         if (progress === null) {
             return;
         }
 
         event.preventDefault();
-        setActiveClipProgress(progress, { source: 'image-blur-keyframe-track', syncTimeline: true });
-        if (typeof imageBlurKeyframeTrack.focus === 'function') {
-            try {
-                imageBlurKeyframeTrack.focus({ preventScroll: true });
-            } catch (error) {
-                imageBlurKeyframeTrack.focus();
-            }
-        }
+        beginImageBlurKeyframeTrackScrub(progress, event, metrics);
     });
 
     imageBlurKeyframeTrack.addEventListener('keydown', (event) => {

@@ -32,6 +32,7 @@ function updateKeyframeControlsState() {
             || blurControlsHidden
             || blurInputDisabled;
         if (shouldDisableBlurTrack) {
+            cancelImageBlurKeyframeTrackScrub();
             imageBlurKeyframeTrack.setAttribute('data-disabled', 'true');
             imageBlurKeyframeTrack.setAttribute('aria-disabled', 'true');
             imageBlurKeyframeTrack.tabIndex = -1;
@@ -63,6 +64,36 @@ function resetImageBlurKeyframePointerState() {
     imageBlurKeyframePointerState.startProgress = 0;
     imageBlurKeyframePointerState.pointerOffsetProgress = 0;
     imageBlurKeyframePointerState.didMove = false;
+}
+
+function resetImageBlurTrackPointerState() {
+    imageBlurTrackPointerState.pointerId = null;
+    imageBlurTrackPointerState.startProgress = 0;
+    imageBlurTrackPointerState.lastProgress = null;
+    imageBlurTrackPointerState.didScrub = false;
+}
+
+function cancelImageBlurKeyframeTrackScrub() {
+    const pointerId = imageBlurTrackPointerState.pointerId;
+
+    if (imageBlurKeyframeTrack) {
+        if (pointerId !== null
+            && typeof imageBlurKeyframeTrack.releasePointerCapture === 'function'
+        ) {
+            try {
+                if (typeof imageBlurKeyframeTrack.hasPointerCapture !== 'function'
+                    || imageBlurKeyframeTrack.hasPointerCapture(pointerId)
+                ) {
+                    imageBlurKeyframeTrack.releasePointerCapture(pointerId);
+                }
+            } catch (error) {
+                // Ignore release errors (element may have been detached).
+            }
+        }
+        imageBlurKeyframeTrack.removeAttribute('data-scrubbing');
+    }
+
+    resetImageBlurTrackPointerState();
 }
 
 function cloneImageBlurKeyframeEntry(entry) {
@@ -537,7 +568,7 @@ function cancelImageBlurKeyframePointerDrag() {
     resetImageBlurKeyframePointerState();
 }
 
-function getKeyframeTrackProgressFromClientX(clientX, trackElement = keyframeTrack) {
+function getKeyframeTrackMetrics(trackElement) {
     if (!trackElement) {
         return null;
     }
@@ -563,10 +594,224 @@ function getKeyframeTrackProgressFromClientX(clientX, trackElement = keyframeTra
         return null;
     }
 
-    const rawOffset = clientX - rect.left - paddingLeft;
-    const clampedOffset = Math.min(Math.max(rawOffset, 0), effectiveWidth);
-    const progress = effectiveWidth > 0 ? clampedOffset / effectiveWidth : 0;
+    return {
+        rect,
+        paddingLeft,
+        paddingRight,
+        effectiveWidth,
+    };
+}
+
+function getKeyframeTrackProgressFromClientX(clientX, trackElement = keyframeTrack, metricsOverride = null) {
+    const metrics = metricsOverride || getKeyframeTrackMetrics(trackElement);
+    if (!metrics) {
+        return null;
+    }
+
+    const rawOffset = clientX - metrics.rect.left - metrics.paddingLeft;
+    const clampedOffset = Math.min(Math.max(rawOffset, 0), metrics.effectiveWidth);
+    const progress = metrics.effectiveWidth > 0 ? clampedOffset / metrics.effectiveWidth : 0;
     return clampProgress(progress);
+}
+
+function snapProgressToImageBlurKeyframes(progress, trackElement, metricsOverride = null) {
+    const value = Number(progress);
+    if (!Number.isFinite(value)) {
+        return clampProgress(0);
+    }
+
+    if (!trackElement || !isImageTimelineItem(activeTimelineItem)) {
+        return clampProgress(value);
+    }
+
+    const keyframes = getTimelineItemImageBlurKeyframes(activeTimelineItem);
+    if (!Array.isArray(keyframes) || !keyframes.length) {
+        return clampProgress(value);
+    }
+
+    const metrics = metricsOverride || getKeyframeTrackMetrics(trackElement);
+    if (!metrics) {
+        return clampProgress(value);
+    }
+
+    const thresholdPx = Math.max(0, Number(IMAGE_BLUR_TRACK_SNAP_THRESHOLD_PX) || 0);
+    let snappedProgress = value;
+    let smallestDistance = Number.POSITIVE_INFINITY;
+
+    keyframes.forEach((entry) => {
+        const keyframeProgress = Number(entry?.progress);
+        if (!Number.isFinite(keyframeProgress)) {
+            return;
+        }
+        const distancePx = Math.abs(keyframeProgress - value) * metrics.effectiveWidth;
+        if (distancePx <= thresholdPx && distancePx < smallestDistance) {
+            smallestDistance = distancePx;
+            snappedProgress = keyframeProgress;
+        }
+    });
+
+    return clampProgress(snappedProgress);
+}
+
+function applyImageBlurTrackScrub(progress, options = {}) {
+    if (!imageBlurKeyframeTrack) {
+        return null;
+    }
+
+    const numeric = Number(progress);
+    if (!Number.isFinite(numeric)) {
+        return null;
+    }
+
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return null;
+    }
+
+    const metrics = options.metrics || null;
+    const snapped = snapProgressToImageBlurKeyframes(numeric, imageBlurKeyframeTrack, metrics);
+    const clamped = clampProgress(Number.isFinite(snapped) ? snapped : numeric);
+    const previous = imageBlurTrackPointerState.lastProgress;
+
+    if (options.skipDuplicate && Number.isFinite(previous)
+        && Math.abs(previous - clamped) <= KEYFRAME_DRAG_UPDATE_EPSILON
+    ) {
+        return previous;
+    }
+
+    imageBlurTrackPointerState.lastProgress = clamped;
+    setActiveClipProgress(clamped, {
+        source: options.source || 'image-blur-keyframe-track',
+        syncTimeline: true,
+    });
+    return clamped;
+}
+
+function beginImageBlurKeyframeTrackScrub(progress, event, metrics = null) {
+    if (!imageBlurKeyframeTrack) {
+        return;
+    }
+
+    const numeric = Number(progress);
+    if (!Number.isFinite(numeric)) {
+        return;
+    }
+
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        return;
+    }
+
+    if (imageBlurTrackPointerState.pointerId !== null) {
+        cancelImageBlurKeyframeTrackScrub();
+    }
+
+    resetImageBlurTrackPointerState();
+
+    const pointerId = Number.isFinite(event?.pointerId) ? event.pointerId : null;
+    imageBlurTrackPointerState.pointerId = pointerId;
+
+    if (pointerId !== null
+        && typeof imageBlurKeyframeTrack.setPointerCapture === 'function'
+    ) {
+        try {
+            imageBlurKeyframeTrack.setPointerCapture(pointerId);
+        } catch (error) {
+            // Ignore inability to capture the pointer.
+        }
+    }
+
+    imageBlurKeyframeTrack.setAttribute('data-scrubbing', 'true');
+
+    if (typeof imageBlurKeyframeTrack.focus === 'function') {
+        try {
+            imageBlurKeyframeTrack.focus({ preventScroll: true });
+        } catch (error) {
+            imageBlurKeyframeTrack.focus();
+        }
+    }
+
+    const applied = applyImageBlurTrackScrub(numeric, {
+        source: 'image-blur-keyframe-track',
+        metrics,
+        skipDuplicate: false,
+    });
+
+    if (Number.isFinite(applied)) {
+        imageBlurTrackPointerState.startProgress = applied;
+    } else {
+        const activeProgress = getActiveClipProgress();
+        imageBlurTrackPointerState.startProgress = Number.isFinite(activeProgress)
+            ? clampProgress(activeProgress)
+            : 0;
+    }
+}
+
+function handleImageBlurKeyframeTrackPointerMove(event) {
+    if (imageBlurTrackPointerState.pointerId === null
+        || event.pointerId !== imageBlurTrackPointerState.pointerId
+        || !imageBlurKeyframeTrack
+    ) {
+        return;
+    }
+
+    const metrics = getKeyframeTrackMetrics(imageBlurKeyframeTrack);
+    if (!metrics) {
+        return;
+    }
+
+    const progress = getKeyframeTrackProgressFromClientX(
+        event.clientX,
+        imageBlurKeyframeTrack,
+        metrics,
+    );
+
+    if (progress === null) {
+        return;
+    }
+
+    event.preventDefault();
+
+    const applied = applyImageBlurTrackScrub(progress, {
+        source: 'image-blur-keyframe-track-drag',
+        metrics,
+        skipDuplicate: true,
+    });
+
+    if (Number.isFinite(applied)) {
+        const moved = Math.abs(applied - imageBlurTrackPointerState.startProgress)
+            >= KEYFRAME_DRAG_EPSILON;
+        imageBlurTrackPointerState.didScrub = imageBlurTrackPointerState.didScrub || moved;
+    }
+}
+
+function finalizeImageBlurKeyframeTrackScrub(event) {
+    if (imageBlurTrackPointerState.pointerId === null
+        || event.pointerId !== imageBlurTrackPointerState.pointerId
+    ) {
+        return;
+    }
+
+    event.preventDefault();
+
+    const finalProgress = Number.isFinite(imageBlurTrackPointerState.lastProgress)
+        ? imageBlurTrackPointerState.lastProgress
+        : getActiveClipProgress();
+    const didScrub = imageBlurTrackPointerState.didScrub;
+
+    if (Number.isFinite(finalProgress) && didScrub) {
+        applyImageBlurTrackScrub(finalProgress, {
+            source: 'image-blur-keyframe-track-drag-end',
+            skipDuplicate: false,
+        });
+    }
+
+    cancelImageBlurKeyframeTrackScrub();
+}
+
+
+if (imageBlurKeyframeTrack) {
+    imageBlurKeyframeTrack.addEventListener('pointermove', handleImageBlurKeyframeTrackPointerMove);
+    imageBlurKeyframeTrack.addEventListener('pointerup', finalizeImageBlurKeyframeTrackScrub);
+    imageBlurKeyframeTrack.addEventListener('pointercancel', finalizeImageBlurKeyframeTrackScrub);
 }
 
 function renderKeyframeTrack(timelineItem) {
@@ -680,6 +925,10 @@ function renderImageBlurKeyframeTrack(timelineItem) {
 
     if (imageBlurKeyframePointerState.pointerId !== null) {
         cancelImageBlurKeyframePointerDrag();
+    }
+
+    if (imageBlurTrackPointerState.pointerId !== null) {
+        cancelImageBlurKeyframeTrackScrub();
     }
 
     imageBlurKeyframeTrack.innerHTML = '';
@@ -913,6 +1162,7 @@ function setActiveClipProgress(progress, options = {}) {
         updateActiveKeyframeMarker(0);
         updateImageBlurKeyframeTrackPlayhead(0);
         updateActiveImageBlurKeyframeMarker(0);
+        cancelImageBlurKeyframeTrackScrub();
         updateImageRotationControlState();
         applyImageBlurToPreview(0);
         refreshActiveOverlayLayers();
