@@ -1039,15 +1039,15 @@ async function warmupExportPlaybackContext(playbackContext, options = {}) {
         return emptySummary;
     }
 
-    const tasks = descriptors.map((descriptor) => {
+    const runDescriptor = async (descriptor) => {
         const { objectUrl, fileType } = descriptor;
         if (!objectUrl) {
-            return Promise.resolve({ ok: true, descriptor });
+            return { ok: true, descriptor };
         }
 
         if (signal?.aborted) {
             const abortReason = signal.reason || new DOMException('Export warmup aborted.', 'AbortError');
-            return Promise.resolve({ ok: false, descriptor, error: abortReason });
+            return { ok: false, descriptor, error: abortReason };
         }
 
         let basePromise = Promise.resolve();
@@ -1063,9 +1063,38 @@ async function warmupExportPlaybackContext(playbackContext, options = {}) {
             new Error('Timed out while preparing media for export.'),
         ).then(() => ({ ok: true, descriptor }))
             .catch((error) => ({ ok: false, descriptor, error }));
-    });
+    };
 
-    const results = await Promise.all(tasks);
+    const maxConcurrentPreloads = 4;
+    const workerCount = Math.min(maxConcurrentPreloads, descriptors.length);
+    const results = new Array(descriptors.length);
+    let nextIndex = 0;
+
+    const workers = [];
+    const getNextIndex = () => {
+        if (nextIndex >= descriptors.length) {
+            return null;
+        }
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        return currentIndex;
+    };
+
+    for (let i = 0; i < workerCount; i += 1) {
+        workers.push((async () => {
+            while (true) {
+                const currentIndex = getNextIndex();
+                if (currentIndex === null) {
+                    return;
+                }
+
+                const descriptor = descriptors[currentIndex];
+                results[currentIndex] = await runDescriptor(descriptor);
+            }
+        })());
+    }
+
+    await Promise.all(workers);
     const succeeded = results.filter((result) => result.ok).length;
     const failed = results.length - succeeded;
     const summary = { total: results.length, succeeded, failed };
