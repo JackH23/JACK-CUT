@@ -159,7 +159,14 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         return;
     }
 
-    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
+    const blurForKeyframe = typeof getCurrentPreviewImageBlur === 'function'
+        ? getCurrentPreviewImageBlur()
+        : DEFAULT_IMAGE_BLUR;
+
+    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, {
+        transform: normalized,
+        blur: blurForKeyframe,
+    });
     const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
 
     if (serializedUpdatedKeyframes === serializedExistingKeyframes) {

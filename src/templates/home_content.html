@@ -643,7 +643,19 @@
                                         <input type="range" id="image-blur" min="0" max="40" step="1" value="0" disabled>
                                         <div class="slider-readout" id="image-blur-value">Off</div>
                                     </div>
-                                    <button type="button" id="image-blur-apply" class="image-blur-apply" disabled>Apply</button>
+                                    <div class="image-blur-controls__actions">
+                                        <button
+                                            type="button"
+                                            class="keyframe-button"
+                                            id="image-blur-add-keyframe"
+                                            aria-describedby="keyframe-status"
+                                            disabled
+                                        >
+                                            <span aria-hidden="true">◆</span>
+                                            Add keyframe
+                                        </button>
+                                        <button type="button" id="image-blur-apply" class="image-blur-apply" disabled>Apply</button>
+                                    </div>
                                     <span
                                         class="image-blur-apply-status"
                                         id="image-blur-apply-status"
