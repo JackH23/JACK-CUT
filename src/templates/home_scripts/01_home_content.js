@@ -71,6 +71,7 @@ function syncCanvasControlsToTimelineItem(timelineItem) {
     }
 
     syncCanvasBlurControlState(timelineItem || null);
+    syncCanvasImageBlurControls(timelineItem || null);
     syncCanvasCustomImageControls(timelineItem || null);
     refreshCanvasBlurApplyAllAvailability();
 }
@@ -734,6 +735,50 @@ if (canvasBlurExpandToggle) {
     };
 
     canvasBlurExpandToggle.addEventListener('change', handleCanvasBlurExpandChange);
+}
+
+if (canvasImageBlurInput) {
+    const handleCanvasImageBlurUpdate = () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            canvasImageBlurState.timelineItem = null;
+            canvasImageBlurState.pendingValue = null;
+            applyPreviewImageBlur(0);
+            syncCanvasImageBlurControls(null);
+            return;
+        }
+
+        const clamped = clampPreviewImageBlur(canvasImageBlurInput.value);
+        canvasImageBlurInput.value = String(clamped);
+        const stored = getTimelineItemImageBlur(activeTimelineItem);
+        canvasImageBlurState.timelineItem = activeTimelineItem;
+        canvasImageBlurState.pendingValue = clamped === stored ? null : clamped;
+        syncCanvasImageBlurControls(activeTimelineItem);
+    };
+
+    canvasImageBlurInput.addEventListener('input', handleCanvasImageBlurUpdate);
+    canvasImageBlurInput.addEventListener('change', handleCanvasImageBlurUpdate);
+}
+
+if (canvasImageBlurApplyButton) {
+    canvasImageBlurApplyButton.addEventListener('click', () => {
+        if (!isImageTimelineItem(activeTimelineItem) || canvasImageBlurApplyButton.disabled) {
+            return;
+        }
+
+        const pendingValue = canvasImageBlurState.timelineItem === activeTimelineItem
+            ? canvasImageBlurState.pendingValue
+            : null;
+        const sliderValue = canvasImageBlurInput ? canvasImageBlurInput.value : PREVIEW_IMAGE_BLUR_MIN;
+        const resolved = pendingValue !== null
+            ? pendingValue
+            : clampPreviewImageBlur(sliderValue);
+
+        persistTimelineItemImageBlur(activeTimelineItem, resolved);
+        canvasImageBlurState.timelineItem = activeTimelineItem;
+        canvasImageBlurState.pendingValue = null;
+        applyPreviewImageBlur(resolved);
+        syncCanvasImageBlurControls(activeTimelineItem);
+    });
 }
 
 if (canvasBlurApplyAllButton) {

@@ -172,6 +172,11 @@ const canvasBlurExpandToggle = document.getElementById('canvas-background-blur-e
 const canvasBlurExpandContainer = document.getElementById('canvas-background-blur-expand-container');
 const canvasBlurApplyAllButton = document.getElementById('canvas-background-blur-apply-all');
 const canvasBlurApplyStatus = document.getElementById('canvas-background-blur-apply-status');
+const canvasImageBlurContainer = document.getElementById('canvas-image-blur-container');
+const canvasImageBlurInput = document.getElementById('canvas-image-blur');
+const canvasImageBlurValue = document.getElementById('canvas-image-blur-value');
+const canvasImageBlurApplyButton = document.getElementById('canvas-image-blur-apply');
+const canvasImageBlurEmptyState = document.getElementById('canvas-image-blur-empty');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
@@ -246,6 +251,13 @@ const DEFAULT_CANVAS_BLUR = 18;
 const CANVAS_BLUR_MIN = 0;
 const CANVAS_BLUR_MAX = 40;
 const DEFAULT_CANVAS_BACKDROP_SCALE = 1.08;
+const PREVIEW_IMAGE_BLUR_MIN = 0;
+const PREVIEW_IMAGE_BLUR_MAX = 40;
+const CANVAS_IMAGE_BLUR_EMPTY_MESSAGE = 'No image selected in timeline.';
+const canvasImageBlurState = {
+    timelineItem: null,
+    pendingValue: null,
+};
 const timelineCanvasCustomImageUrls = new WeakMap();
 
 const ENTRANCE_ANIMATION_PRESETS = {
@@ -1443,6 +1455,113 @@ function updateCanvasBlurExpandUI({ blur = 0, disabled = true, expandEnabled = f
 
     if (canvasBlurExpandContainer) {
         canvasBlurExpandContainer.hidden = !shouldReveal;
+    }
+}
+
+function clampPreviewImageBlur(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return PREVIEW_IMAGE_BLUR_MIN;
+    }
+    return Math.min(
+        Math.max(Math.round(numeric), PREVIEW_IMAGE_BLUR_MIN),
+        PREVIEW_IMAGE_BLUR_MAX,
+    );
+}
+
+function updateCanvasImageBlurReadout(value) {
+    if (!canvasImageBlurValue) {
+        return;
+    }
+    const clamped = clampPreviewImageBlur(value);
+    canvasImageBlurValue.textContent = clamped <= PREVIEW_IMAGE_BLUR_MIN ? 'Off' : `${clamped}px`;
+}
+
+function applyPreviewImageBlur(blur) {
+    if (!previewImage) {
+        return;
+    }
+    const clamped = clampPreviewImageBlur(blur);
+    if (clamped <= PREVIEW_IMAGE_BLUR_MIN) {
+        previewImage.style.removeProperty('--preview-image-blur');
+        return;
+    }
+    previewImage.style.setProperty('--preview-image-blur', `${clamped}px`);
+}
+
+function getTimelineItemImageBlur(timelineItem) {
+    if (!timelineItem?.dataset) {
+        return PREVIEW_IMAGE_BLUR_MIN;
+    }
+    const raw = Number.parseInt(timelineItem.dataset.previewImageBlur ?? '', 10);
+    if (!Number.isFinite(raw)) {
+        return PREVIEW_IMAGE_BLUR_MIN;
+    }
+    return clampPreviewImageBlur(raw);
+}
+
+function persistTimelineItemImageBlur(timelineItem, blur) {
+    if (!timelineItem?.dataset) {
+        return;
+    }
+    const clamped = clampPreviewImageBlur(blur);
+    if (clamped <= PREVIEW_IMAGE_BLUR_MIN) {
+        delete timelineItem.dataset.previewImageBlur;
+    } else {
+        timelineItem.dataset.previewImageBlur = String(clamped);
+    }
+}
+
+function syncCanvasImageBlurControls(timelineItem) {
+    if (!canvasImageBlurContainer || !canvasImageBlurInput || !canvasImageBlurValue) {
+        if (canvasImageBlurEmptyState) {
+            canvasImageBlurEmptyState.hidden = true;
+        }
+        return;
+    }
+
+    const isImage = isImageTimelineItem(timelineItem);
+    if (!isImage) {
+        canvasImageBlurContainer.hidden = true;
+        canvasImageBlurInput.disabled = true;
+        canvasImageBlurInput.setAttribute('aria-disabled', 'true');
+        canvasImageBlurInput.value = '0';
+        updateCanvasImageBlurReadout(0);
+        if (canvasImageBlurApplyButton) {
+            canvasImageBlurApplyButton.disabled = true;
+        }
+        if (canvasImageBlurEmptyState) {
+            canvasImageBlurEmptyState.hidden = false;
+            canvasImageBlurEmptyState.textContent = CANVAS_IMAGE_BLUR_EMPTY_MESSAGE;
+        }
+        applyPreviewImageBlur(0);
+        canvasImageBlurState.timelineItem = null;
+        canvasImageBlurState.pendingValue = null;
+        return;
+    }
+
+    if (canvasImageBlurState.timelineItem !== timelineItem) {
+        canvasImageBlurState.timelineItem = timelineItem;
+        canvasImageBlurState.pendingValue = null;
+    }
+
+    canvasImageBlurContainer.hidden = false;
+    canvasImageBlurInput.disabled = false;
+    canvasImageBlurInput.removeAttribute('aria-disabled');
+    if (canvasImageBlurEmptyState) {
+        canvasImageBlurEmptyState.hidden = true;
+    }
+
+    const storedBlur = getTimelineItemImageBlur(timelineItem);
+    const pendingValue = canvasImageBlurState.pendingValue;
+    const effectiveBlur = pendingValue !== null ? pendingValue : storedBlur;
+
+    canvasImageBlurInput.value = String(effectiveBlur);
+    updateCanvasImageBlurReadout(effectiveBlur);
+    applyPreviewImageBlur(effectiveBlur);
+
+    if (canvasImageBlurApplyButton) {
+        canvasImageBlurApplyButton.disabled = pendingValue === null || pendingValue === storedBlur;
     }
 }
 
