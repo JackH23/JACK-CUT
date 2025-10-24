@@ -110,6 +110,7 @@ let shouldResetImageFrameOnNextViewportUpdate = false;
 let previewGuidesHideTimeout = null;
 let activeClipProgress = 0;
 let keyframeStatusTimeout = null;
+let imageBlurKeyframeStatusTimeout = null;
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'
@@ -476,6 +477,17 @@ const keyframeMarkerPointerState = {
     didMove: false,
 };
 
+const imageBlurKeyframePointerState = {
+    pointerId: null,
+    marker: null,
+    timelineItem: null,
+    keyframes: null,
+    entry: null,
+    startProgress: 0,
+    pointerOffsetProgress: 0,
+    didMove: false,
+};
+
 const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
 const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
 const PREVIEW_GUIDE_NEAR_THRESHOLD = Math.max(PREVIEW_IMAGE_SNAP_THRESHOLD, 14);
@@ -498,6 +510,7 @@ const KEYFRAME_PROGRESS_TOLERANCE = 0.002;
 const KEYFRAME_DRAG_EPSILON = 0.0001;
 const KEYFRAME_DRAG_UPDATE_EPSILON = 0.00001;
 const KEYFRAME_STATUS_TIMEOUT_MS = 2600;
+const IMAGE_BLUR_KEYFRAME_STATUS_TIMEOUT_MS = 2600;
 const KEYFRAME_TRACK_KEY_STEP = 0.05;
 const KEYFRAME_TRACK_KEY_LARGE_STEP = 0.15;
 const MIN_ROTATION_DEGREES = -180;

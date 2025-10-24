@@ -167,7 +167,7 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     }
 
     storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
-    renderKeyframeTrack(activeTimelineItem);
+    renderImageKeyframeTracks(activeTimelineItem);
 }
 
 let previewImageFrameUpdateHandle = 0;
