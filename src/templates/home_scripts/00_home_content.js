@@ -105,7 +105,6 @@ function applyImageBlurToPreview(blur) {
     const clamped = clampImageBlur(blur);
     previewImage.style.setProperty('--preview-image-blur', `${clamped}px`);
 }
-applyImageBlurToPreview(0);
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -262,6 +261,8 @@ const IMAGE_BLUR_MIN = 0;
 const IMAGE_BLUR_MAX = 40;
 const DEFAULT_CANVAS_BACKDROP_SCALE = 1.08;
 const timelineCanvasCustomImageUrls = new WeakMap();
+
+applyImageBlurToPreview(0);
 
 const ENTRANCE_ANIMATION_PRESETS = {
     fade: {
