@@ -1269,6 +1269,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-wrap: wrap;
 }
 
+.canvas-image-blur__actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 2px;
+}
+
+.canvas-image-blur__keyframe-button {
+    align-self: flex-end;
+}
+
 .canvas-image-blur-empty {
     margin: 0;
     padding-top: 6px;

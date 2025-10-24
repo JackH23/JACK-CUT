@@ -1,12 +1,16 @@
 
 function updateKeyframeControlsState() {
+    const shouldDisable = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
     if (addKeyframeButton) {
-        addKeyframeButton.disabled = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
+        addKeyframeButton.disabled = shouldDisable;
+    }
+    if (canvasImageBlurKeyframeButton) {
+        canvasImageBlurKeyframeButton.disabled = shouldDisable;
     }
     if (!keyframeTrack) {
         return;
     }
-    const shouldDisableTrack = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
+    const shouldDisableTrack = shouldDisable;
     if (shouldDisableTrack) {
         keyframeTrack.setAttribute('data-disabled', 'true');
         keyframeTrack.setAttribute('aria-disabled', 'true');
@@ -40,9 +44,21 @@ function cloneKeyframeEntry(entry) {
         return null;
     }
 
+    const blurSource = Object.prototype.hasOwnProperty.call(entry, 'blur')
+        ? entry.blur
+        : transform.blur;
+    const blur = Number.isFinite(blurSource)
+        ? clampPreviewImageBlur(blurSource)
+        : transform.blur;
+    const transformWithBlur = {
+        ...transform,
+        blur,
+    };
+
     return {
         progress: clampProgress(Number(entry.progress)),
-        transform,
+        transform: transformWithBlur,
+        blur,
     };
 }
 
@@ -399,11 +415,13 @@ function setTimelineProgressForActiveClip(progress) {
 function applyActiveImageKeyframe(options = {}) {
     if (!isImageTimelineItem(activeTimelineItem)) {
         updateImageRotationControlState();
+        syncCanvasImageBlurControls(null);
         return;
     }
 
     const progress = getActiveClipProgress();
     const keyframeTransform = getTimelineItemKeyframeTransformAtProgress(activeTimelineItem, progress);
+    let blurOverride = null;
 
     if (keyframeTransform) {
         const applied = applyNormalizedPreviewImageTransform(keyframeTransform);
@@ -412,6 +430,9 @@ function applyActiveImageKeyframe(options = {}) {
             schedulePreviewViewportSizeUpdate();
         } else {
             pendingPreviewImageTransform = null;
+        }
+        if (Number.isFinite(keyframeTransform.blur)) {
+            blurOverride = clampPreviewImageBlurFloat(keyframeTransform.blur);
         }
     } else {
         const stored = getStoredPreviewImageTransform(activeTimelineItem);
@@ -425,6 +446,15 @@ function applyActiveImageKeyframe(options = {}) {
         } else if (!options.deferReset) {
             queuePreviewImageFrameReset();
         }
+    }
+
+    if (blurOverride !== null) {
+        syncCanvasImageBlurControls(activeTimelineItem, {
+            blurOverride,
+            disableApply: true,
+        });
+    } else {
+        syncCanvasImageBlurControls(activeTimelineItem);
     }
 
     updateActiveKeyframeMarker(progress);

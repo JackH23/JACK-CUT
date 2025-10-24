@@ -753,6 +753,7 @@ if (canvasImageBlurInput) {
         canvasImageBlurState.timelineItem = activeTimelineItem;
         canvasImageBlurState.pendingValue = clamped === stored ? null : clamped;
         syncCanvasImageBlurControls(activeTimelineItem);
+        persistPreviewImageTransformForActiveTimelineItem({ allowKeyframeUpdate: true });
     };
 
     canvasImageBlurInput.addEventListener('input', handleCanvasImageBlurUpdate);

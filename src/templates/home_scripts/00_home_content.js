@@ -176,6 +176,7 @@ const canvasImageBlurContainer = document.getElementById('canvas-image-blur-cont
 const canvasImageBlurInput = document.getElementById('canvas-image-blur');
 const canvasImageBlurValue = document.getElementById('canvas-image-blur-value');
 const canvasImageBlurApplyButton = document.getElementById('canvas-image-blur-apply');
+const canvasImageBlurKeyframeButton = document.getElementById('canvas-image-blur-keyframe');
 const canvasImageBlurEmptyState = document.getElementById('canvas-image-blur-empty');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
@@ -1469,6 +1470,17 @@ function clampPreviewImageBlur(value) {
     );
 }
 
+function clampPreviewImageBlurFloat(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return PREVIEW_IMAGE_BLUR_MIN;
+    }
+    return Math.min(
+        Math.max(numeric, PREVIEW_IMAGE_BLUR_MIN),
+        PREVIEW_IMAGE_BLUR_MAX,
+    );
+}
+
 function updateCanvasImageBlurReadout(value) {
     if (!canvasImageBlurValue) {
         return;
@@ -1477,11 +1489,14 @@ function updateCanvasImageBlurReadout(value) {
     canvasImageBlurValue.textContent = clamped <= PREVIEW_IMAGE_BLUR_MIN ? 'Off' : `${clamped}px`;
 }
 
-function applyPreviewImageBlur(blur) {
+function applyPreviewImageBlur(blur, options = {}) {
     if (!previewImage) {
         return;
     }
-    const clamped = clampPreviewImageBlur(blur);
+    const allowFractional = Boolean(options.allowFractional);
+    const clamped = allowFractional
+        ? clampPreviewImageBlurFloat(blur)
+        : clampPreviewImageBlur(blur);
     if (clamped <= PREVIEW_IMAGE_BLUR_MIN) {
         previewImage.style.removeProperty('--preview-image-blur');
         return;
@@ -1512,7 +1527,7 @@ function persistTimelineItemImageBlur(timelineItem, blur) {
     }
 }
 
-function syncCanvasImageBlurControls(timelineItem) {
+function syncCanvasImageBlurControls(timelineItem, options = {}) {
     if (!canvasImageBlurContainer || !canvasImageBlurInput || !canvasImageBlurValue) {
         if (canvasImageBlurEmptyState) {
             canvasImageBlurEmptyState.hidden = true;
@@ -1552,16 +1567,32 @@ function syncCanvasImageBlurControls(timelineItem) {
         canvasImageBlurEmptyState.hidden = true;
     }
 
-    const storedBlur = getTimelineItemImageBlur(timelineItem);
-    const pendingValue = canvasImageBlurState.pendingValue;
-    const effectiveBlur = pendingValue !== null ? pendingValue : storedBlur;
+    const { blurOverride = null, disableApply = false } = options || {};
+    const hasOverride = Number.isFinite(blurOverride);
+    const overrideBlur = hasOverride ? clampPreviewImageBlurFloat(blurOverride) : null;
 
-    canvasImageBlurInput.value = String(effectiveBlur);
+    const storedBlur = getTimelineItemImageBlur(timelineItem);
+    if (hasOverride && canvasImageBlurState.timelineItem === timelineItem) {
+        canvasImageBlurState.pendingValue = null;
+    }
+    const pendingValue = hasOverride ? null : canvasImageBlurState.pendingValue;
+    const effectiveBlur = hasOverride
+        ? overrideBlur
+        : (pendingValue !== null ? pendingValue : storedBlur);
+    const sliderValue = hasOverride
+        ? clampPreviewImageBlur(overrideBlur)
+        : clampPreviewImageBlur(effectiveBlur);
+
+    canvasImageBlurInput.value = String(sliderValue);
     updateCanvasImageBlurReadout(effectiveBlur);
-    applyPreviewImageBlur(effectiveBlur);
+    applyPreviewImageBlur(effectiveBlur, { allowFractional: hasOverride });
 
     if (canvasImageBlurApplyButton) {
-        canvasImageBlurApplyButton.disabled = pendingValue === null || pendingValue === storedBlur;
+        if (hasOverride || disableApply) {
+            canvasImageBlurApplyButton.disabled = true;
+        } else {
+            canvasImageBlurApplyButton.disabled = pendingValue === null || pendingValue === storedBlur;
+        }
     }
 }
 

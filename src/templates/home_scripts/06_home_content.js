@@ -571,6 +571,9 @@
         const normalizedTransform = overlayProgress !== null
             ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
             : null;
+        const keyframeBlur = normalizedTransform && Number.isFinite(normalizedTransform.blur)
+            ? clampPreviewImageBlurFloat(normalizedTransform.blur)
+            : null;
 
         const frame = resolveOverlayFramePixels(
             descriptor.item,
@@ -661,15 +664,17 @@
                 : null;
             const blurSource = pendingBlur !== null && pendingBlur !== undefined
                 ? pendingBlur
-                : getTimelineItemImageBlur(descriptor.item);
-            const resolvedBlur = clampPreviewImageBlur(blurSource);
+                : (keyframeBlur !== null ? keyframeBlur : getTimelineItemImageBlur(descriptor.item));
+            const resolvedBlur = clampPreviewImageBlurFloat(blurSource);
+            const blurChanged = entry.renderedBlur === null
+                || Math.abs(entry.renderedBlur - resolvedBlur) > 0.01;
 
             if (resolvedBlur <= PREVIEW_IMAGE_BLUR_MIN) {
                 if (entry.renderedBlur !== PREVIEW_IMAGE_BLUR_MIN) {
                     image.style.removeProperty('--preview-overlay-blur');
                     entry.renderedBlur = PREVIEW_IMAGE_BLUR_MIN;
                 }
-            } else if (entry.renderedBlur !== resolvedBlur) {
+            } else if (blurChanged) {
                 image.style.setProperty('--preview-overlay-blur', `${resolvedBlur}px`);
                 entry.renderedBlur = resolvedBlur;
             }
@@ -1591,6 +1596,20 @@ if (addKeyframeButton) {
     });
 }
 
+if (canvasImageBlurKeyframeButton) {
+    canvasImageBlurKeyframeButton.addEventListener('click', () => {
+        if (!isImageTimelineItem(activeTimelineItem)) {
+            showKeyframeStatus('Select an image clip to add keyframes.');
+            return;
+        }
+        if (!previewImageTransform) {
+            queuePreviewImageFrameReset();
+            return;
+        }
+        createActiveTimelineKeyframe();
+    });
+}
+
 if (imageRotationInput) {
     imageRotationInput.addEventListener('input', (event) => {
         if (!isImageTimelineItem(activeTimelineItem) || !previewImageTransform) {
@@ -1831,6 +1850,7 @@ function sanitizeNormalizedKeyframeTransform(transform) {
 
     const width = Number(transform.width);
     const height = Number(transform.height);
+    const blur = Number(transform.blur);
 
     const normalized = {
         left: Number(transform.left),
@@ -1843,6 +1863,7 @@ function sanitizeNormalizedKeyframeTransform(transform) {
                 ? width / height
                 : 1),
         rotation: clampRotation(transform.rotation),
+        blur: Number.isFinite(blur) ? clampPreviewImageBlur(blur) : PREVIEW_IMAGE_BLUR_MIN,
     };
 
     const values = [
@@ -1852,6 +1873,7 @@ function sanitizeNormalizedKeyframeTransform(transform) {
         normalized.height,
         normalized.aspectRatio,
         normalized.rotation,
+        normalized.blur,
     ];
 
     if (!values.every((value) => Number.isFinite(value))) {
@@ -1880,9 +1902,21 @@ function sanitizeKeyframeEntry(entry) {
         return null;
     }
 
+    const blurSource = Object.prototype.hasOwnProperty.call(entry, 'blur')
+        ? entry.blur
+        : transformSource?.blur;
+    const sanitizedBlur = Number.isFinite(blurSource)
+        ? clampPreviewImageBlur(blurSource)
+        : transform.blur;
+    const transformWithBlur = {
+        ...transform,
+        blur: sanitizedBlur,
+    };
+
     return {
         progress,
-        transform,
+        transform: transformWithBlur,
+        blur: sanitizedBlur,
     };
 }
 
@@ -1961,11 +1995,23 @@ function upsertTimelineImageKeyframe(keyframes, progress, normalizedTransform) {
         return Array.isArray(keyframes) ? [...keyframes] : [];
     }
 
+    const blurSource = normalizedTransform && Object.prototype.hasOwnProperty.call(normalizedTransform, 'blur')
+        ? normalizedTransform.blur
+        : transform.blur;
+    const blur = Number.isFinite(blurSource)
+        ? clampPreviewImageBlur(blurSource)
+        : transform.blur;
+    const transformWithBlur = {
+        ...transform,
+        blur,
+    };
+
     const next = Array.isArray(keyframes) ? [...keyframes] : [];
     const existingIndex = next.findIndex((entry) => Math.abs(entry.progress - safeProgress) <= KEYFRAME_PROGRESS_TOLERANCE);
     const entry = {
         progress: safeProgress,
-        transform,
+        transform: transformWithBlur,
+        blur,
     };
 
     if (existingIndex >= 0) {
@@ -2006,7 +2052,17 @@ function interpolateNormalizedTransforms(startTransform, endTransform, t) {
         return start || end || null;
     }
 
-    return {
+    const startBlur = Number.isFinite(start.blur) ? clampPreviewImageBlurFloat(start.blur) : null;
+    const endBlur = Number.isFinite(end.blur) ? clampPreviewImageBlurFloat(end.blur) : null;
+    let interpolatedBlur = null;
+
+    if (startBlur !== null || endBlur !== null) {
+        const resolvedStart = startBlur !== null ? startBlur : (endBlur !== null ? endBlur : PREVIEW_IMAGE_BLUR_MIN);
+        const resolvedEnd = endBlur !== null ? endBlur : resolvedStart;
+        interpolatedBlur = clampPreviewImageBlurFloat(resolvedStart + ((resolvedEnd - resolvedStart) * easedRatio));
+    }
+
+    const result = {
         left: lerp(start.left, end.left),
         top: lerp(start.top, end.top),
         width: lerp(start.width, end.width),
@@ -2014,6 +2070,12 @@ function interpolateNormalizedTransforms(startTransform, endTransform, t) {
         aspectRatio: lerp(start.aspectRatio, end.aspectRatio),
         rotation: interpolateRotationDegrees(start.rotation, end.rotation, easedRatio),
     };
+
+    if (interpolatedBlur !== null) {
+        result.blur = interpolatedBlur;
+    }
+
+    return result;
 }
 
 function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
