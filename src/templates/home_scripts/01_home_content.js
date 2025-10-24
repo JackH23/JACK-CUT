@@ -55,6 +55,37 @@ function syncCanvasCustomImageControls(timelineItem) {
     }
 }
 
+function syncImageBlurControlState(timelineItem) {
+    if (!imageBlurControls || !imageBlurInput || !imageBlurValue || !imageBlurApplyButton) {
+        return;
+    }
+
+    const isImageItem = typeof isImageTimelineItem === 'function'
+        ? isImageTimelineItem(timelineItem)
+        : Boolean(timelineItem?.dataset?.fileType?.startsWith?.('image/'));
+
+    if (!isImageItem) {
+        imageBlurControls.hidden = true;
+        imageBlurInput.disabled = true;
+        imageBlurInput.setAttribute('aria-disabled', 'true');
+        imageBlurInput.value = String(DEFAULT_IMAGE_BLUR);
+        imageBlurApplyButton.disabled = true;
+        updateImageBlurReadout(DEFAULT_IMAGE_BLUR, { disabled: true });
+        applyImageBlurToPreview(0);
+        return;
+    }
+
+    imageBlurControls.hidden = false;
+    imageBlurInput.disabled = false;
+    imageBlurInput.removeAttribute('aria-disabled');
+    imageBlurApplyButton.disabled = false;
+
+    const blurValue = getTimelineItemImageBlur(timelineItem);
+    imageBlurInput.value = String(blurValue);
+    updateImageBlurReadout(blurValue);
+    applyImageBlurToPreview(blurValue);
+}
+
 function syncCanvasControlsToTimelineItem(timelineItem) {
     if (canvasBackgroundModeSelect) {
         const isClip = isImageTimelineItem(timelineItem) || isVideoTimelineItem(timelineItem);
@@ -72,6 +103,7 @@ function syncCanvasControlsToTimelineItem(timelineItem) {
 
     syncCanvasBlurControlState(timelineItem || null);
     syncCanvasCustomImageControls(timelineItem || null);
+    syncImageBlurControlState(timelineItem || null);
 }
 
 function setCanvasBackdropVisibility(isVisible) {
@@ -510,6 +542,44 @@ if (canvasBlurExpandToggle) {
     };
 
     canvasBlurExpandToggle.addEventListener('change', handleCanvasBlurExpandChange);
+}
+
+const applyImageBlurFromControl = () => {
+    if (!imageBlurInput) {
+        return DEFAULT_IMAGE_BLUR;
+    }
+
+    const rawValue = imageBlurInput.value;
+    const clamped = clampImageBlur(rawValue);
+    imageBlurInput.value = String(clamped);
+    const isDisabled = imageBlurInput.disabled || imageBlurControls?.hidden;
+    updateImageBlurReadout(clamped, { disabled: isDisabled });
+
+    if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem) || isDisabled) {
+        applyImageBlurToPreview(0);
+        return clamped;
+    }
+
+    applyImageBlurToPreview(clamped);
+    persistTimelineItemImageBlur(activeTimelineItem, clamped);
+    return clamped;
+};
+
+if (imageBlurInput) {
+    imageBlurInput.addEventListener('input', applyImageBlurFromControl);
+    imageBlurInput.addEventListener('change', applyImageBlurFromControl);
+}
+
+if (imageBlurApplyButton) {
+    imageBlurApplyButton.addEventListener('click', () => {
+        if (imageBlurApplyButton.disabled) {
+            return;
+        }
+        const clamped = applyImageBlurFromControl();
+        if (activeTimelineItem && isImageTimelineItem(activeTimelineItem)) {
+            persistTimelineItemImageBlur(activeTimelineItem, clamped);
+        }
+    });
 }
 
 if (previewCanvasVideo) {

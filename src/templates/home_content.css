@@ -1124,7 +1124,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .canvas-background-mode,
 .canvas-custom-image,
-.canvas-blur-controls {
+.canvas-blur-controls,
+.image-blur-controls {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1275,6 +1276,52 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     font-size: 0.82rem;
     color: var(--text-secondary);
     line-height: 1.45;
+}
+
+.image-blur-controls[hidden] {
+    display: none;
+}
+
+.image-blur-controls__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.image-blur-controls__row input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    accent-color: rgba(124, 58, 237, 0.85);
+}
+
+.image-blur-controls .slider-readout {
+    min-width: 64px;
+    text-align: center;
+}
+
+.image-blur-apply {
+    align-self: flex-start;
+    padding: 6px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(124, 58, 237, 0.45);
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(56, 189, 248, 0.28));
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: border 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.image-blur-apply:not(:disabled):hover {
+    border-color: rgba(124, 58, 237, 0.65);
+    transform: translateY(-1px);
+}
+
+.image-blur-apply:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .audio-master-control {
@@ -2099,8 +2146,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     --exit-animation-duration: 520ms;
     --exit-animation-delay: 0ms;
     --exit-animation-easing: cubic-bezier(0.4, 0, 0.2, 1);
+    --preview-image-blur: 0px;
     opacity: 0;
     transform: rotate(var(--preview-image-rotation, 0deg));
+    filter: blur(var(--preview-image-blur, 0px));
     transition: opacity 180ms ease;
     will-change: transform, opacity;
 }

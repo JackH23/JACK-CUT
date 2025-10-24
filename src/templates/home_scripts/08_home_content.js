@@ -279,6 +279,7 @@
 
         syncPreviewAudioOverlay(overlayEntries, segmentStartTime);
         playVideoButton.textContent = 'Play Back';
+        applyImageBlurToPreview(0);
         await waitForGapDuration(effectiveDuration);
     } else if (fileType.startsWith('image/')) {
         const rawClipDuration = Number(timelineItem.dataset.imageDuration);
@@ -318,6 +319,8 @@
         previewVideo.removeAttribute('src');
         setPreviewImageVisibility(true);
         previewPlaceholder.hidden = true;
+        const imageBlurAmount = getTimelineItemImageBlur(timelineItem);
+        applyImageBlurToPreview(imageBlurAmount);
         await revealPreviewImageSource(objectURL, {
             clipDurationMs: animationClipDuration,
             entranceConfigOverride,
