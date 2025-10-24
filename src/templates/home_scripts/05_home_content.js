@@ -94,7 +94,13 @@ function applyStoredPreviewImageTransform(storedTransform, viewportSizeOverride 
     }
 
     const viewportSize = viewportSizeOverride || getPreviewViewportSize();
-    return applyNormalizedPreviewImageTransform(storedTransform, { viewportSize });
+    const applied = applyNormalizedPreviewImageTransform(storedTransform, { viewportSize });
+
+    if (Number.isFinite(storedTransform.blur)) {
+        applyPreviewImageBlur(storedTransform.blur, { allowFractional: true });
+    }
+
+    return applied;
 }
 
 function tryRestorePreviewImageTransform(timelineItem) {
@@ -131,6 +137,12 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         return;
     }
 
+    const keyframeBlur = clampPreviewImageBlur(parsePreviewImageBlurRadius());
+    const normalizedForKeyframe = {
+        ...normalized,
+        blur: keyframeBlur,
+    };
+
     activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
 
     const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
@@ -159,7 +171,11 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         return;
     }
 
-    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
+    const updatedKeyframes = upsertTimelineImageKeyframe(
+        existingKeyframes,
+        targetProgress,
+        normalizedForKeyframe,
+    );
     const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
 
     if (serializedUpdatedKeyframes === serializedExistingKeyframes) {
