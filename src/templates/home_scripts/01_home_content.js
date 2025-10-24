@@ -140,9 +140,11 @@ function syncImageBlurControlState(timelineItem) {
         ? getActiveClipProgress()
         : 0;
     const blurValue = getTimelineItemImageBlur(timelineItem, activeProgress);
-    imageBlurInput.value = String(blurValue);
-    updateImageBlurReadout(blurValue);
-    applyImageBlurToPreview(blurValue);
+    const previewBlur = clampImageBlur(blurValue, { snapToInteger: false });
+    const sliderValue = clampImageBlur(previewBlur);
+    imageBlurInput.value = String(sliderValue);
+    updateImageBlurReadout(previewBlur);
+    applyImageBlurToPreview(previewBlur);
 }
 
 function syncCanvasControlsToTimelineItem(timelineItem) {

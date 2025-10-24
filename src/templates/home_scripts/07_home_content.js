@@ -447,6 +447,9 @@ function handleImageBlurKeyframeMarkerPointerMove(event) {
         } catch (error) {
             console.warn('Unable to serialize dragged blur keyframes.', error);
         }
+        if (typeof setImageBlurKeyframeCache === 'function') {
+            setImageBlurKeyframeCache(timelineItem, keyframes);
+        }
     }
 
     marker.dataset.progress = String(clamped);
@@ -820,13 +823,14 @@ function applyActiveImageBlurKeyframe(options = {}) {
 
     const progress = getActiveClipProgress();
     const blurValue = getTimelineItemImageBlur(activeTimelineItem, progress);
-    const clamped = clampImageBlur(blurValue);
-    applyImageBlurToPreview(clamped);
+    const previewBlur = clampImageBlur(blurValue, { snapToInteger: false });
+    applyImageBlurToPreview(previewBlur);
 
     if (imageBlurInput) {
-        imageBlurInput.value = String(clamped);
+        const sliderValue = clampImageBlur(previewBlur);
+        imageBlurInput.value = String(sliderValue);
         const isDisabled = imageBlurInput.disabled || imageBlurControls?.hidden;
-        updateImageBlurReadout(clamped, { disabled: isDisabled });
+        updateImageBlurReadout(previewBlur, { disabled: isDisabled });
     }
 
     updateImageBlurKeyframeTrackPlayhead(progress);
