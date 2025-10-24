@@ -319,7 +319,7 @@
         previewVideo.removeAttribute('src');
         setPreviewImageVisibility(true);
         previewPlaceholder.hidden = true;
-        const imageBlurAmount = getTimelineItemImageBlur(timelineItem);
+        const imageBlurAmount = getTimelineItemImageBlur(timelineItem, initialProgress);
         applyImageBlurToPreview(imageBlurAmount);
         await revealPreviewImageSource(objectURL, {
             clipDurationMs: animationClipDuration,

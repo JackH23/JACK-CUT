@@ -136,7 +136,10 @@ function syncImageBlurControlState(timelineItem) {
     imageBlurApplyButton.disabled = false;
     setImageBlurApplyStatus('');
 
-    const blurValue = getTimelineItemImageBlur(timelineItem);
+    const activeProgress = typeof getActiveClipProgress === 'function'
+        ? getActiveClipProgress()
+        : 0;
+    const blurValue = getTimelineItemImageBlur(timelineItem, activeProgress);
     imageBlurInput.value = String(blurValue);
     updateImageBlurReadout(blurValue);
     applyImageBlurToPreview(blurValue);
@@ -622,8 +625,53 @@ const applyImageBlurFromControl = () => {
 };
 
 if (imageBlurInput) {
-    imageBlurInput.addEventListener('input', applyImageBlurFromControl);
-    imageBlurInput.addEventListener('change', applyImageBlurFromControl);
+    const updateActiveBlurKeyframeFromControl = (event, clampedValue) => {
+        if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+            return;
+        }
+        if (typeof getTimelineItemImageBlurKeyframes !== 'function') {
+            return;
+        }
+        const keyframes = getTimelineItemImageBlurKeyframes(activeTimelineItem);
+        if (!Array.isArray(keyframes) || !keyframes.length) {
+            return;
+        }
+        const progress = typeof getActiveClipProgress === 'function'
+            ? getActiveClipProgress()
+            : 0;
+        const targetIndex = keyframes.findIndex((entry) => Math.abs(entry.progress - progress)
+            <= (typeof KEYFRAME_PROGRESS_TOLERANCE === 'number'
+                ? KEYFRAME_PROGRESS_TOLERANCE * 2
+                : 0.004));
+        if (targetIndex === -1) {
+            return;
+        }
+
+        const nextKeyframes = [...keyframes];
+        nextKeyframes[targetIndex] = {
+            ...nextKeyframes[targetIndex],
+            blur: clampedValue,
+        };
+
+        if (typeof storeTimelineItemImageBlurKeyframes === 'function') {
+            storeTimelineItemImageBlurKeyframes(activeTimelineItem, nextKeyframes);
+        }
+
+        if (event?.type === 'change'
+            && typeof showImageBlurKeyframeStatus === 'function'
+        ) {
+            const percent = Math.round((Number.isFinite(progress) ? progress : 0) * 100);
+            showImageBlurKeyframeStatus(`Keyframe updated at ${percent}%`);
+        }
+    };
+
+    const handleImageBlurInput = (event) => {
+        const clamped = applyImageBlurFromControl();
+        updateActiveBlurKeyframeFromControl(event, clamped);
+    };
+
+    imageBlurInput.addEventListener('input', handleImageBlurInput);
+    imageBlurInput.addEventListener('change', handleImageBlurInput);
 }
 
 if (imageBlurApplyButton) {
@@ -653,8 +701,11 @@ if (imageBlurApplyButton) {
         }
 
         const activeIsImage = Boolean(activeTimelineItem && isImageTimelineItem(activeTimelineItem));
+        const activeProgress = typeof getActiveClipProgress === 'function'
+            ? getActiveClipProgress()
+            : 0;
         const previousActiveBlur = activeIsImage
-            ? getTimelineItemImageBlur(activeTimelineItem)
+            ? getTimelineItemImageBlur(activeTimelineItem, activeProgress)
             : null;
 
         const clamped = applyImageBlurFromControl();
@@ -705,7 +756,7 @@ if (imageBlurApplyButton) {
                 return;
             }
 
-            const previousBlur = getTimelineItemImageBlur(timelineItem);
+            const previousBlur = getTimelineItemImageBlur(timelineItem, 0);
             if (previousBlur === clamped) {
                 return;
             }

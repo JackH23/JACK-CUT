@@ -1299,6 +1299,23 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     text-align: center;
 }
 
+.image-blur-keyframe-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.image-blur-keyframe-controls .keyframe-actions {
+    justify-content: space-between;
+}
+
+.image-blur-keyframe-controls .keyframe-status {
+    min-height: 1.2em;
+}
+
 .image-blur-apply {
     align-self: flex-start;
     padding: 6px 14px;

@@ -192,6 +192,9 @@ const imageBlurControls = document.getElementById('image-blur-controls');
 const imageBlurInput = document.getElementById('image-blur');
 const imageBlurValue = document.getElementById('image-blur-value');
 const imageBlurApplyButton = document.getElementById('image-blur-apply');
+const imageBlurAddKeyframeButton = document.getElementById('image-blur-add-keyframe');
+const imageBlurKeyframeTrack = document.getElementById('image-blur-keyframe-track');
+const imageBlurKeyframeStatus = document.getElementById('image-blur-keyframe-status');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
@@ -1441,13 +1444,30 @@ function clampImageBlur(value) {
     );
 }
 
-function getTimelineItemImageBlur(timelineItem) {
+function getTimelineItemImageBlur(timelineItem, progress = null) {
     const isImageItem = typeof isImageTimelineItem === 'function'
         ? isImageTimelineItem(timelineItem)
         : Boolean(timelineItem?.dataset?.fileType?.startsWith?.('image/'));
 
     if (!isImageItem) {
         return DEFAULT_IMAGE_BLUR;
+    }
+
+    if (typeof getTimelineItemImageBlurKeyframes === 'function') {
+        const keyframes = getTimelineItemImageBlurKeyframes(timelineItem);
+
+        if (Array.isArray(keyframes) && keyframes.length) {
+            const targetProgress = Number.isFinite(progress) ? progress : 0;
+
+            if (typeof evaluateImageBlurKeyframes === 'function') {
+                return evaluateImageBlurKeyframes(keyframes, targetProgress);
+            }
+
+            const firstEntry = keyframes[0];
+            if (firstEntry && Number.isFinite(firstEntry.blur)) {
+                return clampImageBlur(firstEntry.blur);
+            }
+        }
     }
 
     const dataset = timelineItem?.dataset || {};
