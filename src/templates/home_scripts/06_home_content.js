@@ -418,6 +418,7 @@
                 opacity: 1,
                 lastTimelineTime: null,
                 renderedFrame: null,
+                renderedBlur: 0,
                 renderedOpacity: null,
                 renderedZIndex: null,
                 renderedRotation: null,
@@ -563,9 +564,10 @@
         }
 
         const overlayProgress = Number.isFinite(descriptor.progress) ? descriptor.progress : null;
-        const normalizedTransform = overlayProgress !== null
-            ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
+        const overlayState = overlayProgress !== null
+            ? getTimelineItemKeyframeStateAtProgress(descriptor.item, overlayProgress)
             : null;
+        const normalizedTransform = overlayState ? overlayState.transform : null;
 
         const frame = resolveOverlayFramePixels(
             descriptor.item,
@@ -648,6 +650,22 @@
         entry.opacity = nextOpacity;
         if (image) {
             image.style.opacity = '1';
+            let blurRadius = null;
+            if (overlayState && Number.isFinite(overlayState.blur)) {
+                blurRadius = clampImageBlur(overlayState.blur);
+            } else {
+                blurRadius = getTimelineItemImageBlur(descriptor.item);
+            }
+
+            const resolvedBlur = clampImageBlur(blurRadius);
+            if (entry.renderedBlur !== resolvedBlur) {
+                if (resolvedBlur > IMAGE_BLUR_MIN) {
+                    image.style.filter = `blur(${resolvedBlur}px)`;
+                } else {
+                    image.style.removeProperty('filter');
+                }
+                entry.renderedBlur = resolvedBlur;
+            }
         }
 
         const clipDurationMs = Math.max(0, Number(descriptor.clipDuration) || 0);
@@ -825,6 +843,9 @@ function getActiveOverlayLayerSnapshots() {
             zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
             borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
             opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+            blur: Number.isFinite(entry.renderedBlur)
+                ? clampImageBlur(entry.renderedBlur)
+                : 0,
             priority: groupPriority[group] ?? 1,
             animation: animation
                 ? {
@@ -933,7 +954,17 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             const offsetX = (frame.width - drawWidth) / 2;
             const offsetY = (frame.height - drawHeight) / 2;
 
+            const blurRadius = Number.isFinite(snapshot.blur)
+                ? clampImageBlur(snapshot.blur)
+                : 0;
+            if (blurRadius > IMAGE_BLUR_MIN) {
+                exportMirrorContext.filter = `blur(${blurRadius}px)`;
+            } else {
+                exportMirrorContext.filter = 'none';
+            }
+
             exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+            exportMirrorContext.filter = 'none';
             exportMirrorContext.restore();
         });
 }
@@ -1541,18 +1572,24 @@ if (previewAspectSelect) {
 
 updateTimelineZoomDisplay();
 
+const handleAddKeyframeClick = () => {
+    if (!isImageTimelineItem(activeTimelineItem)) {
+        showKeyframeStatus('Select an image clip to add keyframes.');
+        return;
+    }
+    if (!previewImageTransform) {
+        queuePreviewImageFrameReset();
+        return;
+    }
+    createActiveTimelineKeyframe();
+};
+
 if (addKeyframeButton) {
-    addKeyframeButton.addEventListener('click', () => {
-        if (!isImageTimelineItem(activeTimelineItem)) {
-            showKeyframeStatus('Select an image clip to add keyframes.');
-            return;
-        }
-        if (!previewImageTransform) {
-            queuePreviewImageFrameReset();
-            return;
-        }
-        createActiveTimelineKeyframe();
-    });
+    addKeyframeButton.addEventListener('click', handleAddKeyframeClick);
+}
+
+if (imageBlurAddKeyframeButton) {
+    imageBlurAddKeyframeButton.addEventListener('click', handleAddKeyframeClick);
 }
 
 if (imageRotationInput) {
@@ -1788,6 +1825,25 @@ function denormalizePreviewImageTransform(normalized, viewportSize) {
     };
 }
 
+function getCurrentPreviewImageBlur() {
+    if (imageBlurInput && !imageBlurInput.disabled && !(imageBlurControls?.hidden)) {
+        return clampImageBlur(imageBlurInput.value);
+    }
+
+    if (typeof parsePreviewImageBlurRadius === 'function') {
+        const parsed = clampImageBlur(parsePreviewImageBlurRadius());
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+
+    if (activeTimelineItem && typeof getTimelineItemImageBlur === 'function') {
+        return getTimelineItemImageBlur(activeTimelineItem);
+    }
+
+    return DEFAULT_IMAGE_BLUR;
+}
+
 function sanitizeNormalizedKeyframeTransform(transform) {
     if (!transform) {
         return null;
@@ -1844,9 +1900,13 @@ function sanitizeKeyframeEntry(entry) {
         return null;
     }
 
+    const hasBlur = Object.prototype.hasOwnProperty.call(entry, 'blur');
+    const blur = hasBlur ? clampImageBlur(entry.blur) : DEFAULT_IMAGE_BLUR;
+
     return {
         progress,
         transform,
+        blur,
     };
 }
 
@@ -1917,19 +1977,29 @@ function storeTimelineImageKeyframes(timelineItem, keyframes) {
     }
 }
 
-function upsertTimelineImageKeyframe(keyframes, progress, normalizedTransform) {
+function upsertTimelineImageKeyframe(keyframes, progress, payload = {}) {
     const safeProgress = clampProgress(Number(progress));
-    const transform = sanitizeNormalizedKeyframeTransform(normalizedTransform);
-
-    if (!transform) {
-        return Array.isArray(keyframes) ? [...keyframes] : [];
-    }
-
     const next = Array.isArray(keyframes) ? [...keyframes] : [];
     const existingIndex = next.findIndex((entry) => Math.abs(entry.progress - safeProgress) <= KEYFRAME_PROGRESS_TOLERANCE);
+
+    const sourceEntry = existingIndex >= 0 ? next[existingIndex] : null;
+    const sanitizedTransform = payload && payload.transform
+        ? sanitizeNormalizedKeyframeTransform(payload.transform)
+        : sanitizeNormalizedKeyframeTransform(sourceEntry?.transform);
+
+    if (!sanitizedTransform) {
+        return next;
+    }
+
+    const hasBlur = payload && Object.prototype.hasOwnProperty.call(payload, 'blur');
+    const resolvedBlur = hasBlur
+        ? clampImageBlur(payload.blur)
+        : clampImageBlur(sourceEntry?.blur ?? DEFAULT_IMAGE_BLUR);
+
     const entry = {
         progress: safeProgress,
-        transform,
+        transform: sanitizedTransform,
+        blur: resolvedBlur,
     };
 
     if (existingIndex >= 0) {
@@ -1980,7 +2050,43 @@ function interpolateNormalizedTransforms(startTransform, endTransform, t) {
     };
 }
 
-function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
+function cloneKeyframeState(entry) {
+    if (!entry) {
+        return null;
+    }
+
+    const transform = sanitizeNormalizedKeyframeTransform(entry.transform);
+    const blur = Number.isFinite(entry.blur) ? clampImageBlur(entry.blur) : DEFAULT_IMAGE_BLUR;
+
+    return {
+        transform,
+        blur,
+    };
+}
+
+function interpolateKeyframeState(previousEntry, nextEntry, t) {
+    const transform = interpolateNormalizedTransforms(previousEntry?.transform, nextEntry?.transform, t)
+        || sanitizeNormalizedKeyframeTransform(nextEntry?.transform)
+        || sanitizeNormalizedKeyframeTransform(previousEntry?.transform)
+        || null;
+
+    const ratio = Number.isFinite(t) ? clampProgress(t) : 0;
+    const easedRatio = easeKeyframeProgress(ratio);
+    const startBlur = Number.isFinite(previousEntry?.blur)
+        ? clampImageBlur(previousEntry.blur)
+        : DEFAULT_IMAGE_BLUR;
+    const endBlur = Number.isFinite(nextEntry?.blur)
+        ? clampImageBlur(nextEntry.blur)
+        : DEFAULT_IMAGE_BLUR;
+    const interpolatedBlur = clampImageBlur(Math.round(startBlur + ((endBlur - startBlur) * easedRatio)));
+
+    return {
+        transform,
+        blur: interpolatedBlur,
+    };
+}
+
+function getTimelineItemKeyframeStateAtProgress(timelineItem, progress) {
     const keyframes = getTimelineItemImageKeyframes(timelineItem);
     if (!keyframes.length) {
         return null;
@@ -1989,7 +2095,7 @@ function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
     const safeProgress = clampProgress(progress);
 
     if (keyframes.length === 1) {
-        return keyframes[0].transform;
+        return cloneKeyframeState(keyframes[0]);
     }
 
     for (let index = 0; index < keyframes.length; index += 1) {
@@ -2000,25 +2106,38 @@ function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
 
         if (safeProgress <= current.progress + KEYFRAME_PROGRESS_TOLERANCE) {
             if (index === 0) {
-                return current.transform;
+                return cloneKeyframeState(current);
             }
 
             const previous = keyframes[index - 1];
             if (!previous) {
-                return current.transform;
+                return cloneKeyframeState(current);
             }
 
             const span = current.progress - previous.progress;
             if (Math.abs(span) <= KEYFRAME_PROGRESS_TOLERANCE) {
-                return current.transform;
+                return cloneKeyframeState(current);
             }
 
             const localT = (safeProgress - previous.progress) / span;
-            return interpolateNormalizedTransforms(previous.transform, current.transform, localT);
+            return interpolateKeyframeState(previous, current, localT);
         }
     }
 
-    return keyframes[keyframes.length - 1].transform;
+    return cloneKeyframeState(keyframes[keyframes.length - 1]);
+}
+
+function getTimelineItemKeyframeTransformAtProgress(timelineItem, progress) {
+    const state = getTimelineItemKeyframeStateAtProgress(timelineItem, progress);
+    return state ? state.transform : null;
+}
+
+function getTimelineItemKeyframeBlurAtProgress(timelineItem, progress) {
+    const state = getTimelineItemKeyframeStateAtProgress(timelineItem, progress);
+    if (!state) {
+        return null;
+    }
+    return clampImageBlur(state.blur);
 }
 
 function applyNormalizedPreviewImageTransform(normalized, options = {}) {

@@ -1299,6 +1299,22 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     text-align: center;
 }
 
+.image-blur-controls__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.image-blur-controls__actions .keyframe-button {
+    flex: 1 1 180px;
+    justify-content: center;
+}
+
+.image-blur-controls__actions .image-blur-apply {
+    flex: 0 0 auto;
+}
+
 .image-blur-apply {
     align-self: flex-start;
     padding: 6px 14px;

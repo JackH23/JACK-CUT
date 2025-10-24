@@ -136,7 +136,17 @@ function syncImageBlurControlState(timelineItem) {
     imageBlurApplyButton.disabled = false;
     setImageBlurApplyStatus('');
 
-    const blurValue = getTimelineItemImageBlur(timelineItem);
+    let blurValue = getTimelineItemImageBlur(timelineItem);
+    if (typeof getTimelineItemKeyframeBlurAtProgress === 'function') {
+        const progress = typeof getActiveClipProgress === 'function'
+            ? getActiveClipProgress()
+            : null;
+        const keyframeBlur = getTimelineItemKeyframeBlurAtProgress(timelineItem, progress);
+        if (Number.isFinite(keyframeBlur)) {
+            blurValue = keyframeBlur;
+        }
+    }
+
     imageBlurInput.value = String(blurValue);
     updateImageBlurReadout(blurValue);
     applyImageBlurToPreview(blurValue);
@@ -617,7 +627,7 @@ const applyImageBlurFromControl = () => {
     }
 
     applyImageBlurToPreview(clamped);
-    persistTimelineItemImageBlur(activeTimelineItem, clamped);
+    persistTimelineItemImageBlur(activeTimelineItem, clamped, { allowKeyframeUpdate: true });
     return clamped;
 };
 

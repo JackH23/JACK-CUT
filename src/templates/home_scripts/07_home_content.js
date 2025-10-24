@@ -3,6 +3,9 @@ function updateKeyframeControlsState() {
     if (addKeyframeButton) {
         addKeyframeButton.disabled = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
     }
+    if (imageBlurAddKeyframeButton) {
+        imageBlurAddKeyframeButton.disabled = !isImageTimelineItem(activeTimelineItem) || isTimelinePlaying;
+    }
     if (!keyframeTrack) {
         return;
     }
@@ -403,7 +406,8 @@ function applyActiveImageKeyframe(options = {}) {
     }
 
     const progress = getActiveClipProgress();
-    const keyframeTransform = getTimelineItemKeyframeTransformAtProgress(activeTimelineItem, progress);
+    const keyframeState = getTimelineItemKeyframeStateAtProgress(activeTimelineItem, progress);
+    const keyframeTransform = keyframeState ? keyframeState.transform : null;
 
     if (keyframeTransform) {
         const applied = applyNormalizedPreviewImageTransform(keyframeTransform);
@@ -426,6 +430,28 @@ function applyActiveImageKeyframe(options = {}) {
             queuePreviewImageFrameReset();
         }
     }
+
+    let appliedBlur = null;
+    if (keyframeState && Number.isFinite(keyframeState.blur)) {
+        appliedBlur = clampImageBlur(keyframeState.blur);
+    } else {
+        appliedBlur = getTimelineItemImageBlur(activeTimelineItem);
+    }
+
+    applyImageBlurToPreview(appliedBlur);
+
+    if (imageBlurInput) {
+        const isActiveControl = document.activeElement === imageBlurInput
+            && typeof imageBlurInput.matches === 'function'
+            && imageBlurInput.matches(':active');
+        if (!isActiveControl) {
+            imageBlurInput.value = String(appliedBlur);
+        }
+    }
+
+    updateImageBlurReadout(appliedBlur, {
+        disabled: Boolean(imageBlurInput?.disabled || imageBlurControls?.hidden),
+    });
 
     updateActiveKeyframeMarker(progress);
 }
@@ -479,6 +505,14 @@ function createActiveTimelineKeyframe(progressOverride = null) {
     const hasExisting = existing.some((entry) => Math.abs(entry.progress - targetProgress) <= KEYFRAME_PROGRESS_TOLERANCE);
 
     persistPreviewImageTransformForActiveTimelineItem({
+        forceKeyframe: true,
+        progressOverride: targetProgress,
+    });
+
+    const blurForKeyframe = typeof getCurrentPreviewImageBlur === 'function'
+        ? getCurrentPreviewImageBlur()
+        : getTimelineItemImageBlur(activeTimelineItem);
+    persistTimelineItemImageBlur(activeTimelineItem, blurForKeyframe, {
         forceKeyframe: true,
         progressOverride: targetProgress,
     });

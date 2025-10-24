@@ -192,6 +192,7 @@ const imageBlurControls = document.getElementById('image-blur-controls');
 const imageBlurInput = document.getElementById('image-blur');
 const imageBlurValue = document.getElementById('image-blur-value');
 const imageBlurApplyButton = document.getElementById('image-blur-apply');
+const imageBlurAddKeyframeButton = document.getElementById('image-blur-add-keyframe');
 const settingsTabs = Array.from(document.querySelectorAll('.settings-tab'));
 const settingsSections = Array.from(document.querySelectorAll('.settings-section'));
 const textTemplateCard = document.querySelector('.text-template-card');
@@ -1458,7 +1459,7 @@ function getTimelineItemImageBlur(timelineItem) {
     return clampImageBlur(rawBlur);
 }
 
-function persistTimelineItemImageBlur(timelineItem, blur) {
+function persistTimelineItemImageBlur(timelineItem, blur, options = {}) {
     if (!timelineItem?.dataset) {
         return;
     }
@@ -1476,6 +1477,75 @@ function persistTimelineItemImageBlur(timelineItem, blur) {
         delete timelineItem.dataset.imageBlur;
     } else {
         timelineItem.dataset.imageBlur = String(clamped);
+    }
+
+    const supportsKeyframes = typeof getTimelineItemImageKeyframes === 'function'
+        && typeof upsertTimelineImageKeyframe === 'function'
+        && typeof storeTimelineImageKeyframes === 'function';
+
+    if (!supportsKeyframes) {
+        return;
+    }
+
+    const allowKeyframeUpdate = Boolean(options.allowKeyframeUpdate);
+    const forceKeyframe = Boolean(options.forceKeyframe);
+
+    if (!allowKeyframeUpdate && !forceKeyframe) {
+        return;
+    }
+
+    const existingKeyframes = getTimelineItemImageKeyframes(timelineItem);
+    if (!existingKeyframes.length && !forceKeyframe) {
+        return;
+    }
+
+    const hasProgressOverride = Object.prototype.hasOwnProperty.call(options, 'progressOverride');
+    const progressCandidate = hasProgressOverride
+        ? options.progressOverride
+        : (typeof getActiveClipProgress === 'function' ? getActiveClipProgress() : null);
+    const targetProgress = Number.isFinite(progressCandidate)
+        ? clampProgress(progressCandidate)
+        : null;
+
+    if (!Number.isFinite(targetProgress)) {
+        return;
+    }
+
+    let shouldPersistKeyframe = forceKeyframe;
+    if (!shouldPersistKeyframe && allowKeyframeUpdate && existingKeyframes.length) {
+        shouldPersistKeyframe = existingKeyframes.some(
+            (entry) => Math.abs(entry.progress - targetProgress) <= KEYFRAME_PROGRESS_TOLERANCE,
+        );
+    }
+
+    if (!shouldPersistKeyframe) {
+        return;
+    }
+
+    const viewportSize = typeof getPreviewViewportSize === 'function'
+        ? getPreviewViewportSize()
+        : { width: 0, height: 0 };
+    const normalizedTransform = previewImageTransform
+        && typeof normalizePreviewImageTransform === 'function'
+        ? normalizePreviewImageTransform(previewImageTransform, viewportSize)
+        : null;
+
+    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, {
+        transform: normalizedTransform,
+        blur: clamped,
+    });
+
+    const serializedExisting = JSON.stringify(existingKeyframes);
+    const serializedUpdated = JSON.stringify(updatedKeyframes);
+
+    if (serializedExisting === serializedUpdated) {
+        return;
+    }
+
+    storeTimelineImageKeyframes(timelineItem, updatedKeyframes);
+
+    if (typeof renderKeyframeTrack === 'function') {
+        renderKeyframeTrack(timelineItem);
     }
 }
 
