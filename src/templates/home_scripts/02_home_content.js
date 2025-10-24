@@ -474,6 +474,7 @@ const keyframeMarkerPointerState = {
     startProgress: 0,
     pointerOffsetProgress: 0,
     didMove: false,
+    track: null,
 };
 
 const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;

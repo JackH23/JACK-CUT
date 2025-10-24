@@ -135,8 +135,11 @@ const exportDialogStatus = document.getElementById('export-dialog-status');
 const confirmExportButton = document.getElementById('confirm-export-button');
 const cancelExportButton = document.getElementById('cancel-export-button');
 const addKeyframeButton = document.getElementById('add-keyframe-button');
-const keyframeTrack = document.getElementById('keyframe-track');
+const keyframeTrackList = Array.from(document.querySelectorAll('[data-keyframe-track="image"]'));
+const keyframeTrack = keyframeTrackList[0] || null;
 const keyframeStatus = document.getElementById('keyframe-status');
+const canvasImageBlurKeyframeStatus = document.getElementById('canvas-image-blur-keyframe-status');
+const keyframeStatusElements = [keyframeStatus, canvasImageBlurKeyframeStatus].filter(Boolean);
 const animationDirectionSelect = document.getElementById('animation-direction');
 const animationModeContainers = animationDirectionSelect
     ? Array.from(document.querySelectorAll('[data-animation-mode]'))

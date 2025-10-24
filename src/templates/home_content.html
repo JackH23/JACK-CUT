@@ -187,7 +187,16 @@
                                             <span class="keyframe-status" id="keyframe-status" role="status" aria-live="polite"></span>
                                         </div>
                                     </div>
-                                    <div class="keyframe-track" id="keyframe-track" role="list" aria-labelledby="keyframe-animation-label" data-disabled="true" aria-disabled="true" tabindex="-1"></div>
+                                    <div
+                                        class="keyframe-track"
+                                        id="keyframe-track"
+                                        role="list"
+                                        aria-labelledby="keyframe-animation-label"
+                                        data-disabled="true"
+                                        aria-disabled="true"
+                                        tabindex="-1"
+                                        data-keyframe-track="image"
+                                    ></div>
                                 </div>
                             </div>
                             <div class="info-item rotation-info">
@@ -681,15 +690,38 @@
                                 >
                                 <div class="slider-readout" id="canvas-image-blur-value">Off</div>
                                 <div class="canvas-image-blur__actions">
-                                    <button
-                                        type="button"
-                                        class="keyframe-button canvas-image-blur__keyframe-button"
-                                        id="canvas-image-blur-keyframe"
-                                        aria-describedby="keyframe-status"
-                                    >
-                                        <span aria-hidden="true">◆</span>
-                                        Add keyframe
-                                    </button>
+                                    <div class="canvas-image-blur__keyframes">
+                                        <div class="canvas-image-blur__keyframes-header">
+                                            <label id="canvas-image-blur-keyframe-label">Keyframe animation</label>
+                                            <div class="keyframe-actions">
+                                                <button
+                                                    type="button"
+                                                    class="keyframe-button canvas-image-blur__keyframe-button"
+                                                    id="canvas-image-blur-keyframe"
+                                                    aria-describedby="keyframe-status canvas-image-blur-keyframe-status"
+                                                >
+                                                    <span aria-hidden="true">◆</span>
+                                                    Add keyframe
+                                                </button>
+                                                <span
+                                                    class="keyframe-status"
+                                                    id="canvas-image-blur-keyframe-status"
+                                                    role="status"
+                                                    aria-live="polite"
+                                                ></span>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="keyframe-track"
+                                            id="canvas-image-blur-keyframe-track"
+                                            role="list"
+                                            aria-labelledby="canvas-image-blur-keyframe-label"
+                                            data-disabled="true"
+                                            aria-disabled="true"
+                                            tabindex="-1"
+                                            data-keyframe-track="image"
+                                        ></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

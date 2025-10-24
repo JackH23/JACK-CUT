@@ -1623,91 +1623,105 @@ if (imageRotationInput) {
     });
 }
 
-if (keyframeTrack) {
-    keyframeTrack.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0 && event.pointerType !== 'touch') {
-            return;
-        }
-        if (keyframeTrack.hasAttribute('data-disabled')
-            || !isImageTimelineItem(activeTimelineItem)
-            || isTimelinePlaying
-        ) {
-            return;
-        }
-        if (event.target && typeof event.target.closest === 'function') {
-            const marker = event.target.closest('.keyframe-marker');
-            if (marker) {
-                return;
-            }
-        }
-        const progress = getKeyframeTrackProgressFromClientX(event.clientX);
-        if (progress === null) {
-            return;
-        }
-        event.preventDefault();
-        setActiveClipProgress(progress, { source: 'keyframe-track', syncTimeline: true });
-        if (typeof keyframeTrack.focus === 'function') {
-            try {
-                keyframeTrack.focus({ preventScroll: true });
-            } catch (error) {
-                keyframeTrack.focus();
-            }
-        }
+const initializedKeyframeTracks = new Set();
+getKeyframeTrackElements().forEach((track) => {
+    if (!track || initializedKeyframeTracks.has(track)) {
+        return;
+    }
+    initializedKeyframeTracks.add(track);
+    track.addEventListener('pointerdown', (event) => {
+        handleKeyframeTrackPointerDown(event, track);
     });
-
-    keyframeTrack.addEventListener('keydown', (event) => {
-        if (keyframeTrack.hasAttribute('data-disabled')
-            || !isImageTimelineItem(activeTimelineItem)
-            || isTimelinePlaying
-        ) {
-            return;
-        }
-
-        if ((event.key === 'Delete' || event.key === 'Backspace')
-            && !event.altKey
-            && !event.metaKey
-            && !event.ctrlKey
-        ) {
-            const didDelete = deleteActiveTimelineKeyframe();
-            if (didDelete) {
-                event.preventDefault();
-            }
-            return;
-        }
-
-        const { key } = event;
-        let handled = false;
-        let nextProgress = getActiveClipProgress();
-
-        if (key === 'ArrowLeft' || key === 'ArrowDown') {
-            const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
-            nextProgress = clampProgress(nextProgress - step);
-            handled = true;
-        } else if (key === 'ArrowRight' || key === 'ArrowUp') {
-            const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
-            nextProgress = clampProgress(nextProgress + step);
-            handled = true;
-        } else if (key === 'Home') {
-            nextProgress = 0;
-            handled = true;
-        } else if (key === 'End') {
-            nextProgress = 1;
-            handled = true;
-        } else if (key === 'PageUp') {
-            nextProgress = clampProgress(nextProgress + KEYFRAME_TRACK_KEY_LARGE_STEP);
-            handled = true;
-        } else if (key === 'PageDown') {
-            nextProgress = clampProgress(nextProgress - KEYFRAME_TRACK_KEY_LARGE_STEP);
-            handled = true;
-        }
-
-        if (!handled) {
-            return;
-        }
-
-        event.preventDefault();
-        setActiveClipProgress(nextProgress, { source: 'keyframe-track-key', syncTimeline: true });
+    track.addEventListener('keydown', (event) => {
+        handleKeyframeTrackKeyDown(event, track);
     });
+});
+
+function handleKeyframeTrackPointerDown(event, track) {
+    if (event.button !== 0 && event.pointerType !== 'touch') {
+        return;
+    }
+    if (!track
+        || track.hasAttribute('data-disabled')
+        || !isImageTimelineItem(activeTimelineItem)
+        || isTimelinePlaying
+    ) {
+        return;
+    }
+    if (event.target && typeof event.target.closest === 'function') {
+        const marker = event.target.closest('.keyframe-marker');
+        if (marker) {
+            return;
+        }
+    }
+    const progress = getKeyframeTrackProgressFromClientX(event.clientX, track);
+    if (progress === null) {
+        return;
+    }
+    event.preventDefault();
+    setActiveClipProgress(progress, { source: 'keyframe-track', syncTimeline: true });
+    if (typeof track.focus === 'function') {
+        try {
+            track.focus({ preventScroll: true });
+        } catch (error) {
+            track.focus();
+        }
+    }
+}
+
+function handleKeyframeTrackKeyDown(event, track) {
+    if (!track
+        || track.hasAttribute('data-disabled')
+        || !isImageTimelineItem(activeTimelineItem)
+        || isTimelinePlaying
+    ) {
+        return;
+    }
+
+    if ((event.key === 'Delete' || event.key === 'Backspace')
+        && !event.altKey
+        && !event.metaKey
+        && !event.ctrlKey
+    ) {
+        const didDelete = deleteActiveTimelineKeyframe();
+        if (didDelete) {
+            event.preventDefault();
+        }
+        return;
+    }
+
+    const { key } = event;
+    let handled = false;
+    let nextProgress = getActiveClipProgress();
+
+    if (key === 'ArrowLeft' || key === 'ArrowDown') {
+        const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
+        nextProgress = clampProgress(nextProgress - step);
+        handled = true;
+    } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+        const step = event.shiftKey ? KEYFRAME_TRACK_KEY_LARGE_STEP : KEYFRAME_TRACK_KEY_STEP;
+        nextProgress = clampProgress(nextProgress + step);
+        handled = true;
+    } else if (key === 'Home') {
+        nextProgress = 0;
+        handled = true;
+    } else if (key === 'End') {
+        nextProgress = 1;
+        handled = true;
+    } else if (key === 'PageUp') {
+        nextProgress = clampProgress(nextProgress + KEYFRAME_TRACK_KEY_LARGE_STEP);
+        handled = true;
+    } else if (key === 'PageDown') {
+        nextProgress = clampProgress(nextProgress - KEYFRAME_TRACK_KEY_LARGE_STEP);
+        handled = true;
+    }
+
+    if (!handled) {
+        return;
+    }
+
+    event.preventDefault();
+    setActiveClipProgress(nextProgress, { source: 'keyframe-track-key', syncTimeline: true });
 }
 
 function clampProgress(value) {
@@ -2155,41 +2169,62 @@ function getActiveClipProgress() {
     return clampProgress(activeClipProgress);
 }
 
+function getKeyframeTrackElements() {
+    if (Array.isArray(keyframeTrackList) && keyframeTrackList.length) {
+        return keyframeTrackList.filter(Boolean);
+    }
+    return keyframeTrack ? [keyframeTrack].filter(Boolean) : [];
+}
+
 function updateKeyframeTrackPlayhead(progress = activeClipProgress) {
-    if (!keyframeTrack) {
+    const tracks = getKeyframeTrackElements();
+    if (!tracks.length) {
         return;
     }
     const clamped = clampProgress(Number(progress) || 0);
-    keyframeTrack.style.setProperty('--keyframe-playhead', String(clamped));
+    tracks.forEach((track) => {
+        track.style.setProperty('--keyframe-playhead', String(clamped));
+    });
 }
 
 function updateActiveKeyframeMarker(progress = activeClipProgress) {
-    if (!keyframeTrack) {
+    const tracks = getKeyframeTrackElements();
+    if (!tracks.length) {
         return;
     }
     const clamped = clampProgress(Number(progress) || 0);
-    const markers = Array.from(keyframeTrack.querySelectorAll('.keyframe-marker'));
-    markers.forEach((marker) => {
-        const markerProgress = Number(marker.dataset.progress);
-        const isActive = Number.isFinite(markerProgress)
-            && Math.abs(markerProgress - clamped) <= KEYFRAME_PROGRESS_TOLERANCE * 2;
-        marker.classList.toggle('is-active', isActive);
+    tracks.forEach((track) => {
+        const markers = Array.from(track.querySelectorAll('.keyframe-marker'));
+        markers.forEach((marker) => {
+            const markerProgress = Number(marker.dataset.progress);
+            const isActive = Number.isFinite(markerProgress)
+                && Math.abs(markerProgress - clamped) <= KEYFRAME_PROGRESS_TOLERANCE * 2;
+            marker.classList.toggle('is-active', isActive);
+        });
     });
 }
 
 function showKeyframeStatus(message) {
-    if (!keyframeStatus) {
+    if (!keyframeStatusElements.length) {
         return;
     }
     if (keyframeStatusTimeout) {
         window.clearTimeout(keyframeStatusTimeout);
         keyframeStatusTimeout = null;
     }
-    keyframeStatus.textContent = message || '';
+    setKeyframeStatusText(message || '');
     if (message) {
         keyframeStatusTimeout = window.setTimeout(() => {
-            keyframeStatus.textContent = '';
+            setKeyframeStatusText('');
             keyframeStatusTimeout = null;
         }, KEYFRAME_STATUS_TIMEOUT_MS);
     }
+}
+
+function setKeyframeStatusText(text) {
+    keyframeStatusElements.forEach((element) => {
+        if (element) {
+            element.textContent = text;
+        }
+    });
 }

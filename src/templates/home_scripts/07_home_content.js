@@ -7,19 +7,28 @@ function updateKeyframeControlsState() {
     if (canvasImageBlurKeyframeButton) {
         canvasImageBlurKeyframeButton.disabled = shouldDisable;
     }
-    if (!keyframeTrack) {
-        return;
+    const tracks = getAllKeyframeTracks();
+    tracks.forEach((track) => {
+        if (!track) {
+            return;
+        }
+        if (shouldDisable) {
+            track.setAttribute('data-disabled', 'true');
+            track.setAttribute('aria-disabled', 'true');
+            track.tabIndex = -1;
+        } else {
+            track.removeAttribute('data-disabled');
+            track.removeAttribute('aria-disabled');
+            track.tabIndex = 0;
+        }
+    });
+}
+
+function getAllKeyframeTracks() {
+    if (Array.isArray(keyframeTrackList) && keyframeTrackList.length) {
+        return keyframeTrackList.filter(Boolean);
     }
-    const shouldDisableTrack = shouldDisable;
-    if (shouldDisableTrack) {
-        keyframeTrack.setAttribute('data-disabled', 'true');
-        keyframeTrack.setAttribute('aria-disabled', 'true');
-        keyframeTrack.tabIndex = -1;
-    } else {
-        keyframeTrack.removeAttribute('data-disabled');
-        keyframeTrack.removeAttribute('aria-disabled');
-        keyframeTrack.tabIndex = 0;
-    }
+    return keyframeTrack ? [keyframeTrack].filter(Boolean) : [];
 }
 
 function resetKeyframeMarkerPointerState() {
@@ -31,6 +40,7 @@ function resetKeyframeMarkerPointerState() {
     keyframeMarkerPointerState.startProgress = 0;
     keyframeMarkerPointerState.pointerOffsetProgress = 0;
     keyframeMarkerPointerState.didMove = false;
+    keyframeMarkerPointerState.track = null;
 }
 
 function cloneKeyframeEntry(entry) {
@@ -62,7 +72,7 @@ function cloneKeyframeEntry(entry) {
     };
 }
 
-function handleKeyframeMarkerPointerDown(event, keyframeEntry) {
+function handleKeyframeMarkerPointerDown(event, keyframeEntry, track) {
     if (keyframeMarkerPointerState.pointerId !== null) {
         return;
     }
@@ -71,8 +81,8 @@ function handleKeyframeMarkerPointerDown(event, keyframeEntry) {
         return;
     }
 
-    if (!keyframeTrack
-        || keyframeTrack.hasAttribute('data-disabled')
+    if (!track
+        || track.hasAttribute('data-disabled')
         || isTimelinePlaying
         || !isImageTimelineItem(activeTimelineItem)
         || !activeTimelineItem
@@ -116,7 +126,7 @@ function handleKeyframeMarkerPointerDown(event, keyframeEntry) {
     keyframeMarkerPointerState.keyframes = clonedKeyframes;
     keyframeMarkerPointerState.entry = entry;
     keyframeMarkerPointerState.startProgress = entry.progress;
-    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX);
+    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX, track);
     const pointerOffsetProgress = Number.isFinite(pointerProgress)
         ? clampProgress(pointerProgress) - entry.progress
         : 0;
@@ -124,6 +134,7 @@ function handleKeyframeMarkerPointerDown(event, keyframeEntry) {
         ? pointerOffsetProgress
         : 0;
     keyframeMarkerPointerState.didMove = false;
+    keyframeMarkerPointerState.track = track;
 
     if (typeof marker.setPointerCapture === 'function') {
         try {
@@ -156,13 +167,14 @@ function handleKeyframeMarkerPointerMove(event) {
         entry,
         startProgress,
         pointerOffsetProgress,
+        track,
     } = keyframeMarkerPointerState;
 
-    if (!marker || !timelineItem || !keyframes || !entry) {
+    if (!marker || !timelineItem || !keyframes || !entry || !track) {
         return;
     }
 
-    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX);
+    const pointerProgress = getKeyframeTrackProgressFromClientX(event.clientX, track);
 
     if (pointerProgress === null) {
         return;
@@ -282,12 +294,13 @@ function cancelKeyframeMarkerPointerDrag() {
     resetKeyframeMarkerPointerState();
 }
 
-function getKeyframeTrackProgressFromClientX(clientX) {
-    if (!keyframeTrack) {
+function getKeyframeTrackProgressFromClientX(clientX, trackOverride = null) {
+    const track = trackOverride || keyframeTrack;
+    if (!track) {
         return null;
     }
 
-    const rect = keyframeTrack.getBoundingClientRect();
+    const rect = track.getBoundingClientRect();
 
     if (!rect || rect.width <= 0) {
         return null;
@@ -297,7 +310,7 @@ function getKeyframeTrackProgressFromClientX(clientX) {
     let paddingRight = 0;
 
     if (window.getComputedStyle) {
-        const computed = window.getComputedStyle(keyframeTrack);
+        const computed = window.getComputedStyle(track);
         paddingLeft = Number.parseFloat(computed.paddingLeft) || 0;
         paddingRight = Number.parseFloat(computed.paddingRight) || 0;
     }
@@ -315,7 +328,8 @@ function getKeyframeTrackProgressFromClientX(clientX) {
 }
 
 function renderKeyframeTrack(timelineItem) {
-    if (!keyframeTrack) {
+    const tracks = getAllKeyframeTracks();
+    if (!tracks.length) {
         return;
     }
 
@@ -323,60 +337,78 @@ function renderKeyframeTrack(timelineItem) {
         cancelKeyframeMarkerPointerDrag();
     }
 
-    keyframeTrack.innerHTML = '';
+    tracks.forEach((track) => {
+        track.innerHTML = '';
+        track.removeAttribute('data-empty');
+    });
+
     updateKeyframeTrackPlayhead();
     updateKeyframeControlsState();
 
     if (!timelineItem || !isImageTimelineItem(timelineItem)) {
-        keyframeTrack.setAttribute('data-empty', 'true');
-        const message = document.createElement('span');
-        message.className = 'keyframe-track__empty';
-        message.textContent = 'Select an image clip to add keyframes.';
-        keyframeTrack.appendChild(message);
+        tracks.forEach((track) => {
+            track.setAttribute('data-empty', 'true');
+            const message = document.createElement('span');
+            message.className = 'keyframe-track__empty';
+            message.textContent = 'Select an image clip to add keyframes.';
+            track.appendChild(message);
+        });
         updateActiveKeyframeMarker(0);
         return;
     }
 
     const keyframes = getTimelineItemImageKeyframes(timelineItem);
     if (!keyframes.length) {
-        keyframeTrack.setAttribute('data-empty', 'true');
-        const message = document.createElement('span');
-        message.className = 'keyframe-track__empty';
-        message.textContent = 'No keyframes yet.';
-        keyframeTrack.appendChild(message);
+        tracks.forEach((track) => {
+            track.setAttribute('data-empty', 'true');
+            const message = document.createElement('span');
+            message.className = 'keyframe-track__empty';
+            message.textContent = 'No keyframes yet.';
+            track.appendChild(message);
+        });
         updateActiveKeyframeMarker();
         return;
     }
-
-    keyframeTrack.removeAttribute('data-empty');
 
     keyframes.forEach((keyframe) => {
         if (!keyframe) {
             return;
         }
-        const marker = document.createElement('button');
-        marker.type = 'button';
-        marker.className = 'keyframe-marker';
-        marker.setAttribute('role', 'listitem');
-        marker.dataset.progress = String(keyframe.progress);
-        marker.style.setProperty('--keyframe-progress', String(keyframe.progress));
-        marker.setAttribute('aria-label', `Keyframe at ${Math.round(keyframe.progress * 100)}%`);
-        marker.addEventListener('pointerdown', (event) => {
-            handleKeyframeMarkerPointerDown(event, keyframe);
-        });
-        marker.addEventListener('click', () => {
-            if (isTimelinePlaying) {
-                return;
+        tracks.forEach((track) => {
+            const marker = createKeyframeMarkerElement(keyframe, track);
+            if (marker) {
+                track.appendChild(marker);
             }
-            setActiveClipProgress(keyframe.progress, {
-                source: 'keyframe-marker',
-                syncTimeline: true,
-            });
         });
-        keyframeTrack.appendChild(marker);
     });
 
     updateActiveKeyframeMarker();
+}
+
+function createKeyframeMarkerElement(keyframe, track) {
+    if (!track) {
+        return null;
+    }
+    const marker = document.createElement('button');
+    marker.type = 'button';
+    marker.className = 'keyframe-marker';
+    marker.setAttribute('role', 'listitem');
+    marker.dataset.progress = String(keyframe.progress);
+    marker.style.setProperty('--keyframe-progress', String(keyframe.progress));
+    marker.setAttribute('aria-label', `Keyframe at ${Math.round(keyframe.progress * 100)}%`);
+    marker.addEventListener('pointerdown', (event) => {
+        handleKeyframeMarkerPointerDown(event, keyframe, track);
+    });
+    marker.addEventListener('click', () => {
+        if (isTimelinePlaying) {
+            return;
+        }
+        setActiveClipProgress(keyframe.progress, {
+            source: 'keyframe-marker',
+            syncTimeline: true,
+        });
+    });
+    return marker;
 }
 
 function updateImageRotationControlState() {
