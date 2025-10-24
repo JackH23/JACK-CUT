@@ -773,11 +773,52 @@ if (canvasImageBlurApplyButton) {
             ? pendingValue
             : clampPreviewImageBlur(sliderValue);
 
-        persistTimelineItemImageBlur(activeTimelineItem, resolved);
+        const activeLaneIndex = parseTimelineLaneIndex(activeTimelineItem?.dataset?.laneIndex);
+        let targets = [activeTimelineItem];
+
+        if (typeof getTimelineItems === 'function') {
+            const timelineItems = getTimelineItems();
+            if (Array.isArray(timelineItems) && timelineItems.length) {
+                targets = timelineItems.filter((timelineItem) => isImageTimelineItem(timelineItem)
+                    && parseTimelineLaneIndex(timelineItem?.dataset?.laneIndex) === activeLaneIndex);
+            }
+        }
+
+        if (!targets.length) {
+            targets = [activeTimelineItem];
+        } else if (!targets.includes(activeTimelineItem)) {
+            targets.unshift(activeTimelineItem);
+        }
+
+        const uniqueTargets = [];
+        const seenTargets = new Set();
+        targets.forEach((timelineItem) => {
+            if (timelineItem && !seenTargets.has(timelineItem)) {
+                seenTargets.add(timelineItem);
+                uniqueTargets.push(timelineItem);
+            }
+        });
+
+        let changedCount = 0;
+        uniqueTargets.forEach((timelineItem) => {
+            const previousBlur = getTimelineItemImageBlur(timelineItem);
+            persistTimelineItemImageBlur(timelineItem, resolved);
+            if (previousBlur !== resolved) {
+                changedCount += 1;
+            }
+        });
+
         canvasImageBlurState.timelineItem = activeTimelineItem;
         canvasImageBlurState.pendingValue = null;
         applyPreviewImageBlur(resolved);
         syncCanvasImageBlurControls(activeTimelineItem);
+
+        if (changedCount > 0) {
+            markExportPlaybackContextDirty({ refreshSummary: true });
+            const pluralSuffix = changedCount === 1 ? '' : 's';
+            const message = `Applied image blur to ${changedCount} clip${pluralSuffix} in this layer.`;
+            showAppToast(message, { durationMs: 2600 });
+        }
     });
 }
 
