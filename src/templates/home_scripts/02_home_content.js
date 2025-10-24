@@ -84,6 +84,7 @@ let isTimelinePlaying = false;
 let isTimelinePaused = false;
 let timelinePauseState = null;
 let timelinePlaybackAbort = null;
+let isTimelineExportPlaybackActive = false;
 let currentPreviewAspectRatio = 16 / 9;
 let previewViewportResizeFrame = null;
 let timelineIndicatorResizeFrame = null;
@@ -111,6 +112,14 @@ let previewGuidesHideTimeout = null;
 let activeClipProgress = 0;
 let keyframeStatusTimeout = null;
 let imageBlurKeyframeStatusTimeout = null;
+
+function setTimelineExportPlaybackActive(active) {
+    isTimelineExportPlaybackActive = active === true;
+}
+
+function isTimelineExportPlaybackGuardActive() {
+    return isTimelineExportPlaybackActive;
+}
 
 const MEDIA_READY_STATE_ENOUGH = typeof HTMLMediaElement !== 'undefined'
     && typeof HTMLMediaElement.HAVE_ENOUGH_DATA === 'number'

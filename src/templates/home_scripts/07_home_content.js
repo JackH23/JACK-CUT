@@ -2039,6 +2039,12 @@ function updateTimelinePauseStateFromTime(targetTimeMs, playbackState = null) {
 }
 
 function applyManualTimelineSeek(fraction, options = {}) {
+    if (typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive()
+    ) {
+        return;
+    }
+
     const { commit = false, playbackState = null } = options;
 
     const clamped = clampProgress(Number.isFinite(fraction) ? fraction : 0);
@@ -2071,6 +2077,11 @@ function handleTimelinePlayheadPointerDown(event) {
     if (event.button !== undefined && event.button !== 0) {
         return;
     }
+    if (typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive()
+    ) {
+        return;
+    }
 
     event.preventDefault();
     timelinePlayheadDragState.pointerId = event.pointerId;
@@ -2092,6 +2103,12 @@ function handleTimelinePlayheadPointerDown(event) {
 }
 
 function handleTimelinePlayheadPointerMove(event) {
+    if (typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive()
+    ) {
+        return;
+    }
+
     if (timelinePlayheadDragState.pointerId !== event.pointerId) {
         return;
     }
@@ -2102,6 +2119,8 @@ function handleTimelinePlayheadPointerMove(event) {
 }
 
 function finalizeTimelinePlayheadDrag(event) {
+    const exportGuardActive = typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive();
     if (timelinePlayheadDragState.pointerId !== event.pointerId) {
         return;
     }
@@ -2115,6 +2134,11 @@ function finalizeTimelinePlayheadDrag(event) {
     }
 
     event.preventDefault();
+    if (exportGuardActive) {
+        timelinePlayheadDragState.pointerId = null;
+        timelinePlayheadDragState.lastFraction = null;
+        return;
+    }
     const fraction = timelinePlayheadDragState.lastFraction !== null
         ? timelinePlayheadDragState.lastFraction
         : getTimelineProgressFraction();
@@ -2929,6 +2953,11 @@ const DEFAULT_TEXT_SHORTCUT_KEYS = new Set(['c', 'v', 'z', 'd']);
 
 function handleTimelineKeyboardShortcuts(event) {
     if (!event || event.defaultPrevented || event.repeat) {
+        return;
+    }
+    if (typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive()
+    ) {
         return;
     }
 

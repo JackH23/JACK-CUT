@@ -77,7 +77,10 @@
                 }
                 playbackStarted = true;
 
-                if (!isTimelinePlaying) {
+                const exportPlaybackActive = typeof isTimelineExportPlaybackGuardActive === 'function'
+                    ? isTimelineExportPlaybackGuardActive()
+                    : false;
+                if (!isTimelinePlaying && !exportPlaybackActive) {
                     finalize();
                     return;
                 }
@@ -177,7 +180,7 @@
 
                 await seekToStartOffset();
 
-                if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+                if (!exportPlaybackActive && typeof updateTimelinePlaybackSyncFallback === 'function') {
                     updateTimelinePlaybackSyncFallback(resumeTimelineTime);
                 }
 
@@ -338,7 +341,10 @@
             const resumeClipElapsed = initialElapsed;
             const resumeTimelineTime = clipTimelineStart + resumeClipElapsed;
             const playbackStartTimestamp = performance.now();
-            if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+            const exportPlaybackActive = typeof isTimelineExportPlaybackGuardActive === 'function'
+                ? isTimelineExportPlaybackGuardActive()
+                : false;
+            if (!exportPlaybackActive && typeof updateTimelinePlaybackSyncFallback === 'function') {
                 updateTimelinePlaybackSyncFallback(resumeTimelineTime);
             }
             let animationFrameId = 0;
@@ -409,7 +415,10 @@
                 : Number.POSITIVE_INFINITY;
 
             const step = () => {
-                if (resolved || !isTimelinePlaying) {
+                const exportPlaybackActive = typeof isTimelineExportPlaybackGuardActive === 'function'
+                    ? isTimelineExportPlaybackGuardActive()
+                    : false;
+                if (resolved || (!isTimelinePlaying && !exportPlaybackActive)) {
                     return;
                 }
 
@@ -438,7 +447,9 @@
                     }
                 }
 
-                if (elapsedSinceResume < safeEffectiveDuration && isTimelinePlaying) {
+                if (elapsedSinceResume < safeEffectiveDuration
+                    && (isTimelinePlaying || exportPlaybackActive)
+                ) {
                     animationFrameId = window.requestAnimationFrame(step);
                 }
             };
@@ -540,7 +551,23 @@ function waitForGapDuration(durationMs) {
     });
 }
 
-async function playTimelineSequence(startIndex = 0, resumeOptions = null, playbackContext = null) {
+async function playTimelineSequence(
+    startIndex = 0,
+    resumeOptions = null,
+    playbackContext = null,
+    options = null,
+) {
+    const playbackOptions = options || {};
+    const exportMode = playbackOptions.exportMode === true;
+    const shouldMutateUi = !exportMode;
+    const isExportPlaybackActive = () => (
+        exportMode
+            ? (typeof isTimelineExportPlaybackGuardActive === 'function'
+                ? isTimelineExportPlaybackGuardActive()
+                : true)
+            : false
+    );
+    const isPlaybackAllowed = () => isTimelinePlaying || isExportPlaybackActive();
     const timelineItems = Array.isArray(playbackContext?.timelineItems)
         ? playbackContext.timelineItems
         : getTimelineItems();
@@ -596,19 +623,21 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
 
     isTimelinePaused = false;
     timelinePauseState = null;
-    isTimelinePlaying = true;
-    playVideoButton.textContent = 'Pause playback';
-    updateKeyframeControlsState();
-    resetTimelineProgressLine(getTimelineFractionForTime(startElapsed, laneCache));
-    updatePlaybackTimeDisplay(startElapsed, totalDuration);
-    startPlaybackClock(startElapsed, totalDuration);
+    if (shouldMutateUi) {
+        isTimelinePlaying = true;
+        playVideoButton.textContent = 'Pause playback';
+        updateKeyframeControlsState();
+        resetTimelineProgressLine(getTimelineFractionForTime(startElapsed, laneCache));
+        updatePlaybackTimeDisplay(startElapsed, totalDuration);
+        startPlaybackClock(startElapsed, totalDuration);
+    }
 
     let completedNaturally = true;
     let pendingResumeTime = resumeTimeMs;
 
     try {
         for (let index = initialSegmentIndex; index < segments.length; index += 1) {
-            if (!isTimelinePlaying) {
+            if (!isPlaybackAllowed()) {
                 completedNaturally = false;
                 break;
             }
@@ -662,15 +691,21 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             }
             
             syncPreviewAudioOverlay(segment.items || [], segmentStartTime);
-            if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+            if (!exportMode && typeof updateTimelinePlaybackSyncFallback === 'function') {
                 updateTimelinePlaybackSyncFallback(segmentStartTime);
             }
-            const startFraction = getTimelineFractionForTime(segmentStartTime, laneCache);
-            const endFraction = getTimelineFractionForTime(end, laneCache);
+            let startFraction = null;
+            let endFraction = null;
+            if (!exportMode) {
+                startFraction = getTimelineFractionForTime(segmentStartTime, laneCache);
+                endFraction = getTimelineFractionForTime(end, laneCache);
+            }
             const remainingDuration = pendingResumeTime !== null
                 ? Math.max(0, Math.round(end - segmentStartTime))
                 : duration;
-            animateTimelineProgress(startFraction, endFraction, remainingDuration);
+            if (!exportMode) {
+                animateTimelineProgress(startFraction, endFraction, remainingDuration);
+            }
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
                 await playTimelineItem(item, remainingDuration, segment.items || null, {
@@ -683,13 +718,15 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             pendingResumeTime = null;
         }
     } finally {
-        const preservePause = isTimelinePaused;
-        stopTimelinePlayback(!preservePause, !preservePause, { preservePauseState: preservePause });
-        if (completedNaturally && !isTimelinePaused) {
-            resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
-            updatePlaybackTimeDisplay(totalDuration, totalDuration);
-        } else if (!isTimelinePaused) {
-            updateActiveTimelineIndicators();
+        if (shouldMutateUi) {
+            const preservePause = isTimelinePaused;
+            stopTimelinePlayback(!preservePause, !preservePause, { preservePauseState: preservePause });
+            if (completedNaturally && !isTimelinePaused) {
+                resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
+                updatePlaybackTimeDisplay(totalDuration, totalDuration);
+            } else if (!isTimelinePaused) {
+                updateActiveTimelineIndicators();
+            }
         }
     }
 
@@ -1792,20 +1829,67 @@ async function handleConfirmExport() {
 
     stopTimelinePlayback();
 
+    const disablePreviewControlsForExport = () => {
+        const restoreSteps = [];
+
+        if (playVideoButton) {
+            const previousDisabled = playVideoButton.disabled;
+            const previousAriaDisabled = playVideoButton.getAttribute('aria-disabled');
+            playVideoButton.disabled = true;
+            playVideoButton.setAttribute('aria-disabled', 'true');
+            restoreSteps.push(() => {
+                playVideoButton.disabled = previousDisabled;
+                if (previousAriaDisabled === null) {
+                    playVideoButton.removeAttribute('aria-disabled');
+                } else {
+                    playVideoButton.setAttribute('aria-disabled', previousAriaDisabled);
+                }
+            });
+        }
+
+        [timelineTrack, timelinePlayheadLine].forEach((element) => {
+            if (!element) {
+                return;
+            }
+            const previousPointerEvents = element.style.pointerEvents;
+            element.style.pointerEvents = 'none';
+            restoreSteps.push(() => {
+                element.style.pointerEvents = previousPointerEvents || '';
+            });
+        });
+
+        return () => {
+            while (restoreSteps.length) {
+                const restoreStep = restoreSteps.pop();
+                try {
+                    restoreStep();
+                } catch (restoreError) {
+                    // Ignore restoration errors.
+                }
+            }
+        };
+    };
+
     let encodingConfig = playbackContext?.encodingConfig || null;
     let warmupSummary = null;
+    let restorePreviewControls = () => {};
     try {
-        warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500 });
-        if (warmupSummary?.failed > 0) {
-            console.warn('Some media items could not be prepared before export.', warmupSummary.failures);
-        } else if (warmupSummary?.total) {
-            console.info(`Prepared ${warmupSummary.succeeded}/${warmupSummary.total} media items for export.`);
+        restorePreviewControls = disablePreviewControlsForExport();
+        if (typeof setTimelineExportPlaybackActive === 'function') {
+            setTimelineExportPlaybackActive(true);
         }
-    } catch (warmupError) {
-        console.warn('Export warmup encountered an error.', warmupError);
-    }
 
-    try {
+        try {
+            warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500 });
+            if (warmupSummary?.failed > 0) {
+                console.warn('Some media items could not be prepared before export.', warmupSummary.failures);
+            } else if (warmupSummary?.total) {
+                console.info(`Prepared ${warmupSummary.succeeded}/${warmupSummary.total} media items for export.`);
+            }
+        } catch (warmupError) {
+            console.warn('Export warmup encountered an error.', warmupError);
+        }
+
         try {
             encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
                 frameRate: encodingConfig?.frameRate || 30,
@@ -2010,7 +2094,12 @@ async function handleConfirmExport() {
                     }
                     await recorderStarted;
                     await waitForNextFrame();
-                    const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
+                    const playbackCompleted = await playTimelineSequence(
+                        0,
+                        null,
+                        playbackContext,
+                        { exportMode: true },
+                    );
                     if (recorder.state !== 'inactive') {
                         recorder.stop();
                     }
@@ -2086,6 +2175,14 @@ async function handleConfirmExport() {
             exportDialogStatus.dataset.state = 'warning';
         }
     } finally {
+        if (typeof setTimelineExportPlaybackActive === 'function') {
+            setTimelineExportPlaybackActive(false);
+        }
+        try {
+            restorePreviewControls();
+        } catch (restoreError) {
+            console.warn('Failed to restore preview controls after export.', restoreError);
+        }
         resetExportPlaybackContext();
         confirmExportButton.disabled = false;
         confirmExportButton.textContent = originalLabel || 'Confirm export';
@@ -2127,6 +2224,12 @@ document.addEventListener('keydown', (event) => {
 });
 
 playVideoButton.addEventListener('click', () => {
+    if (typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive()
+    ) {
+        return;
+    }
+
     if (isTimelinePlaying) {
         pauseTimelinePlayback();
         return;
@@ -2163,7 +2266,9 @@ playVideoButton.addEventListener('click', () => {
 });
 
 previewVideo.addEventListener('ended', () => {
-    if (isTimelinePlaying) {
+    const exportPlaybackActive = typeof isTimelineExportPlaybackGuardActive === 'function'
+        && isTimelineExportPlaybackGuardActive();
+    if (isTimelinePlaying || exportPlaybackActive) {
         return;
     }
     playVideoButton.textContent = 'Play Back';
