@@ -1759,11 +1759,12 @@ async function handleConfirmExport() {
         return;
     }
 
-    const exportFormat = getSupportedExportFormat();
-    if (!exportFormat) {
+    const supportedFormats = getSupportedExportFormats();
+    if (!supportedFormats.length) {
         alert('Export is not supported by this browser. Try using a browser with MediaRecorder support for MP4 or WebM.');
         return;
     }
+    let exportFormat = supportedFormats[0];
 
     if (!exportMirrorContext) {
         alert('Unable to start export because the rendering context is unavailable.');
@@ -1805,144 +1806,278 @@ async function handleConfirmExport() {
     }
 
     try {
-        encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
-            frameRate: encodingConfig?.frameRate || 30,
-        });
-    } catch (encodingError) {
-        console.warn('Falling back to default export encoding configuration.', encodingError);
-        encodingConfig = {
-            mimeType: exportFormat.mimeType,
-            frameRate: 30,
-            videoBitsPerSecond: 6_000_000,
-            audioBitsPerSecond: 192_000,
-            timesliceMs: null,
-        };
-    }
+        try {
+            encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
+                frameRate: encodingConfig?.frameRate || 30,
+            });
+        } catch (encodingError) {
+            console.warn('Falling back to default export encoding configuration.', encodingError);
+            encodingConfig = {
+                mimeType: exportFormat.mimeType,
+                frameRate: 30,
+                videoBitsPerSecond: 6_000_000,
+                audioBitsPerSecond: 192_000,
+                timesliceMs: null,
+            };
+        }
 
-    playbackContext.encodingConfig = encodingConfig;
+        playbackContext.encodingConfig = encodingConfig;
 
-    const captureFrameRate = Math.max(1, Math.min(60, Math.round(encodingConfig.frameRate) || 30));
-    const readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
+        let captureFrameRate = Math.max(1, Math.min(60, Math.round(encodingConfig.frameRate) || 30));
+        let readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
 
-    await primeExportStartFrame(playbackContext, { frameRate: captureFrameRate });
+        await primeExportStartFrame(playbackContext, { frameRate: captureFrameRate });
 
-    if (exportDialogStatus) {
-        exportDialogStatus.dataset.state = 'progress';
-        exportDialogStatus.innerHTML = `
-            <span class="visually-hidden" role="status">Exporting timeline preview to ${exportFormat.label}…</span>
-            <div class="export-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Exporting timeline preview" aria-live="off">
-                <div class="export-progress__bar"></div>
-            </div>
-        `.trim();
-    }
+        if (exportDialogStatus) {
+            exportDialogStatus.dataset.state = 'progress';
+            exportDialogStatus.innerHTML = `
+                <span class="visually-hidden" role="status">Exporting timeline preview to ${exportFormat.label}…</span>
+                <div class="export-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Exporting timeline preview" aria-live="off">
+                    <div class="export-progress__bar"></div>
+                </div>
+            `.trim();
+        }
 
-    let stopMirroring = () => {};
-    let recorder = null;
-    let combinedStream = null;
-    const recordedChunks = [];
-    let exportAudioContext = null;
-    let audioAttachmentCleanup = null;
-
-    try {
+        let stopMirroring = () => {};
         stopMirroring = startPreviewMirroring(resolution.width, resolution.height, {
             frameRate: captureFrameRate,
         });
-        await runExportPreRoll(EXPORT_PRE_ROLL_MS, captureFrameRate);
-        if (typeof exportMirrorCanvas.captureStream !== 'function') {
-            throw new Error('Canvas captureStream is not supported in this browser.');
-        }
-        const canvasStream = exportMirrorCanvas.captureStream(captureFrameRate);
-        if (!canvasStream) {
-            throw new Error('Unable to access canvas capture stream.');
-        }
-        combinedStream = new MediaStream();
-        canvasStream.getVideoTracks().forEach((track) => {
-            combinedStream.addTrack(track);
-            if (typeof track.applyConstraints === 'function') {
-                track.applyConstraints({ frameRate: captureFrameRate }).catch(() => {});
-            }
-        });
+        let recorder = null;
+        let combinedStream = null;
+        let canvasStream = null;
+        const recordedChunks = [];
+        let exportAudioContext = null;
+        let audioAttachmentCleanup = null;
+        let exportBlob = null;
+        let lastError = null;
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
-        exportAudioContext = audioAttachment.audioContext;
-        if (typeof audioAttachment.cleanup === 'function') {
-            audioAttachmentCleanup = audioAttachment.cleanup;
-        }
-        if (!audioAttachment.success) {
-            console.warn('Unable to capture audio from preview video.', audioAttachment.error);
-        }
+        try {
+            for (let attemptIndex = 0; attemptIndex < supportedFormats.length; attemptIndex += 1) {
+                const candidate = supportedFormats[attemptIndex];
+                const isRetry = attemptIndex > 0;
 
-        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: readinessTimeout });
-        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: readinessTimeout });
+                if (isRetry) {
+                    exportFormat = candidate;
 
-        const recorderOptions = { mimeType: exportFormat.mimeType };
-        if (Number.isFinite(encodingConfig.videoBitsPerSecond)) {
-            recorderOptions.videoBitsPerSecond = encodingConfig.videoBitsPerSecond;
-        }
-        if (Number.isFinite(encodingConfig.audioBitsPerSecond)) {
-            recorderOptions.audioBitsPerSecond = encodingConfig.audioBitsPerSecond;
-        }
+                    try {
+                        encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
+                            frameRate: encodingConfig?.frameRate || playbackContext?.encodingConfig?.frameRate || 30,
+                        });
+                    } catch (encodingError) {
+                        console.warn('Falling back to default export encoding configuration.', encodingError);
+                        encodingConfig = {
+                            mimeType: exportFormat.mimeType,
+                            frameRate: captureFrameRate,
+                            videoBitsPerSecond: 6_000_000,
+                            audioBitsPerSecond: 192_000,
+                            timesliceMs: null,
+                        };
+                    }
 
-        recorder = new MediaRecorder(combinedStream, recorderOptions);
+                    playbackContext.encodingConfig = encodingConfig;
 
-        const recorderStarted = new Promise((resolve) => {
-            recorder.addEventListener('start', () => {
-                resolve();
-            }, { once: true });
-        });
+                    const nextCaptureFrameRate = Math.max(
+                        1,
+                        Math.min(60, Math.round(encodingConfig.frameRate) || captureFrameRate),
+                    );
+                    if (nextCaptureFrameRate !== captureFrameRate) {
+                        captureFrameRate = nextCaptureFrameRate;
+                        readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
+                        stopMirroring();
+                        stopMirroring = startPreviewMirroring(resolution.width, resolution.height, {
+                            frameRate: captureFrameRate,
+                        });
+                    }
 
-        const recordingPromise = new Promise((resolve, reject) => {
-            recorder.addEventListener('dataavailable', (event) => {
-                if (event.data && event.data.size > 0) {
-                    recordedChunks.push(event.data);
+                    if (exportDialogStatus) {
+                        exportDialogStatus.dataset.state = 'progress';
+                        exportDialogStatus.innerHTML = `
+                            <span class="visually-hidden" role="status">Retrying export using ${exportFormat.label}…</span>
+                            <div class="export-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Retrying export" aria-live="off">
+                                <div class="export-progress__bar"></div>
+                            </div>
+                        `.trim();
+                    }
+                } else {
+                    exportFormat = candidate;
                 }
-            });
-            recorder.addEventListener('stop', () => {
-                resolve(new Blob(recordedChunks, { type: exportFormat.mimeType }));
-            }, { once: true });
-            recorder.addEventListener('error', (event) => {
-                reject(event.error || new Error('Recording error.'));
-            }, { once: true });
-        });
 
-        const timesliceMs = Number.isFinite(encodingConfig.timesliceMs)
-            && encodingConfig.timesliceMs > 0
-            ? Math.max(0, Math.round(encodingConfig.timesliceMs))
-            : null;
-        if (timesliceMs) {
-            recorder.start(timesliceMs);
-        } else {
-            recorder.start();
+                if (typeof audioAttachmentCleanup === 'function') {
+                    try {
+                        audioAttachmentCleanup();
+                    } catch (cleanupError) {
+                        console.warn('Failed to cleanup audio attachment from previous attempt.', cleanupError);
+                    }
+                    audioAttachmentCleanup = null;
+                }
+                if (recorder && recorder.state !== 'inactive') {
+                    try {
+                        recorder.stop();
+                    } catch (stopError) {
+                        // Ignore
+                    }
+                }
+                recorder = null;
+                if (combinedStream) {
+                    combinedStream.getTracks().forEach((track) => track.stop());
+                }
+                combinedStream = null;
+                if (canvasStream) {
+                    canvasStream.getTracks().forEach((track) => track.stop());
+                }
+                canvasStream = null;
+                if (exportAudioContext) {
+                    try {
+                        if (typeof exportAudioContext.close === 'function') {
+                            exportAudioContext.close();
+                        }
+                    } catch (contextError) {
+                        // Ignore cleanup errors.
+                    }
+                }
+                exportAudioContext = null;
+                recordedChunks.length = 0;
+
+                try {
+                    await runExportPreRoll(EXPORT_PRE_ROLL_MS, captureFrameRate);
+                    if (typeof exportMirrorCanvas.captureStream !== 'function') {
+                        throw new Error('Canvas captureStream is not supported in this browser.');
+                    }
+                    canvasStream = exportMirrorCanvas.captureStream(captureFrameRate);
+                    if (!canvasStream) {
+                        throw new Error('Unable to access canvas capture stream.');
+                    }
+                    combinedStream = new MediaStream();
+                    canvasStream.getVideoTracks().forEach((track) => {
+                        combinedStream.addTrack(track);
+                        if (typeof track.applyConstraints === 'function') {
+                            track.applyConstraints({ frameRate: captureFrameRate }).catch(() => {});
+                        }
+                    });
+
+                    const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+                    exportAudioContext = audioAttachment.audioContext;
+                    if (typeof audioAttachment.cleanup === 'function') {
+                        audioAttachmentCleanup = audioAttachment.cleanup;
+                    } else {
+                        audioAttachmentCleanup = null;
+                    }
+                    if (!audioAttachment.success) {
+                        console.warn('Unable to capture audio from preview video.', audioAttachment.error);
+                    }
+
+                    await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: readinessTimeout });
+                    await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: readinessTimeout });
+
+                    const recorderOptions = { mimeType: exportFormat.mimeType };
+                    if (Number.isFinite(encodingConfig.videoBitsPerSecond)) {
+                        recorderOptions.videoBitsPerSecond = encodingConfig.videoBitsPerSecond;
+                    }
+                    if (Number.isFinite(encodingConfig.audioBitsPerSecond)) {
+                        recorderOptions.audioBitsPerSecond = encodingConfig.audioBitsPerSecond;
+                    }
+
+                    recorder = new MediaRecorder(combinedStream, recorderOptions);
+
+                    const recorderStarted = new Promise((resolve) => {
+                        recorder.addEventListener('start', () => {
+                            resolve();
+                        }, { once: true });
+                    });
+
+                    const recordingPromise = new Promise((resolve, reject) => {
+                        recorder.addEventListener('dataavailable', (event) => {
+                            if (event.data && event.data.size > 0) {
+                                recordedChunks.push(event.data);
+                            }
+                        });
+                        recorder.addEventListener('stop', () => {
+                            resolve(new Blob(recordedChunks, { type: exportFormat.mimeType }));
+                        }, { once: true });
+                        recorder.addEventListener('error', (event) => {
+                            reject(event.error || new Error('Recording error.'));
+                        }, { once: true });
+                    });
+
+                    const timesliceMs = Number.isFinite(encodingConfig.timesliceMs)
+                        && encodingConfig.timesliceMs > 0
+                        ? Math.max(0, Math.round(encodingConfig.timesliceMs))
+                        : null;
+                    if (timesliceMs) {
+                        recorder.start(timesliceMs);
+                    } else {
+                        recorder.start();
+                    }
+                    await recorderStarted;
+                    await waitForNextFrame();
+                    const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
+                    if (recorder.state !== 'inactive') {
+                        recorder.stop();
+                    }
+
+                    exportBlob = await recordingPromise;
+                    recordedChunks.length = 0;
+
+                    if (!playbackCompleted) {
+                        throw new Error('Timeline playback was interrupted before completion.');
+                    }
+
+                    break;
+                } catch (attemptError) {
+                    lastError = attemptError;
+                    console.warn(`Export attempt with ${exportFormat.label} failed.`, attemptError);
+                }
+            }
+
+            if (!exportBlob) {
+                throw lastError || new Error('Unable to export using the available formats.');
+            }
+
+            const downloadUrl = URL.createObjectURL(exportBlob);
+            const tempAnchor = document.createElement('a');
+            tempAnchor.href = downloadUrl;
+            tempAnchor.download = `timeline-export.${exportFormat.fileExtension}`;
+            document.body.appendChild(tempAnchor);
+            tempAnchor.click();
+            document.body.removeChild(tempAnchor);
+            window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+
+            if (exportDialogStatus) {
+                exportDialogStatus.textContent = `Export complete! Your ${exportFormat.fileExtension.toUpperCase()} download should begin shortly.`;
+                exportDialogStatus.dataset.state = 'ready';
+            }
+
+            closeExportDialog();
+        } finally {
+            if (typeof audioAttachmentCleanup === 'function') {
+                try {
+                    audioAttachmentCleanup();
+                } catch (cleanupError) {
+                    // Ignore cleanup errors.
+                }
+            }
+            if (recorder && recorder.state !== 'inactive') {
+                try {
+                    recorder.stop();
+                } catch (error) {
+                    // Ignore
+                }
+            }
+            if (combinedStream) {
+                combinedStream.getTracks().forEach((track) => track.stop());
+            }
+            if (canvasStream) {
+                canvasStream.getTracks().forEach((track) => track.stop());
+            }
+            if (exportAudioContext && typeof exportAudioContext.close === 'function') {
+                try {
+                    exportAudioContext.close();
+                } catch (error) {
+                    // Ignore cleanup errors.
+                }
+            }
+            stopMirroring();
         }
-        await recorderStarted;
-        await waitForNextFrame();
-        const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
-        if (recorder.state !== 'inactive') {
-            recorder.stop();
-        }
-
-        const exportBlob = await recordingPromise;
-        recordedChunks.length = 0;
-
-        if (!playbackCompleted) {
-            throw new Error('Timeline playback was interrupted before completion.');
-        }
-
-        const downloadUrl = URL.createObjectURL(exportBlob);
-        const tempAnchor = document.createElement('a');
-        tempAnchor.href = downloadUrl;
-        tempAnchor.download = `timeline-export.${exportFormat.fileExtension}`;
-        document.body.appendChild(tempAnchor);
-        tempAnchor.click();
-        document.body.removeChild(tempAnchor);
-        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-
-        if (exportDialogStatus) {
-            exportDialogStatus.textContent = `Export complete! Your ${exportFormat.fileExtension.toUpperCase()} download should begin shortly.`;
-            exportDialogStatus.dataset.state = 'ready';
-        }
-
-        closeExportDialog();
     } catch (error) {
         console.error('Failed to export timeline preview.', error);
         alert(`Export failed: ${error?.message || error}`);
@@ -1952,27 +2087,6 @@ async function handleConfirmExport() {
         }
     } finally {
         resetExportPlaybackContext();
-        if (typeof audioAttachmentCleanup === 'function') {
-            try {
-                audioAttachmentCleanup();
-            } catch (error) {
-                // Ignore cleanup errors.
-            }
-        }
-        if (recorder && recorder.state !== 'inactive') {
-            try {
-                recorder.stop();
-            } catch (error) {
-                // Ignore
-            }
-        }
-        if (combinedStream) {
-            combinedStream.getTracks().forEach((track) => track.stop());
-        }
-        recorder = null;
-        combinedStream = null;
-        exportAudioContext = null;
-        stopMirroring();
         confirmExportButton.disabled = false;
         confirmExportButton.textContent = originalLabel || 'Confirm export';
         isExportingTimeline = false;

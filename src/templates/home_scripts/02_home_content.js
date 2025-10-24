@@ -1538,20 +1538,31 @@ const EXPORT_FORMAT_CANDIDATES = [
     },
 ];
 
-function getSupportedExportFormat() {
+function getExportFormatCandidates() {
+    return EXPORT_FORMAT_CANDIDATES.slice();
+}
+
+function getSupportedExportFormats() {
     if (!window.MediaRecorder) {
-        return null;
+        return [];
     }
+
+    const supportedFormats = [];
     for (const candidate of EXPORT_FORMAT_CANDIDATES) {
         try {
             if (window.MediaRecorder.isTypeSupported(candidate.mimeType)) {
-                return candidate;
+                supportedFormats.push(candidate);
             }
         } catch (error) {
             // Continue to next candidate
         }
     }
-    return null;
+    return supportedFormats;
+}
+
+function getSupportedExportFormat() {
+    const [firstSupported] = getSupportedExportFormats();
+    return firstSupported || null;
 }
 
 function computeContainDimensions(sourceWidth, sourceHeight, targetWidth, targetHeight) {
