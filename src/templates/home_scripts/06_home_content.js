@@ -1599,19 +1599,20 @@ if (keyframeTrack) {
                 return;
             }
         }
-        const progress = getKeyframeTrackProgressFromClientX(event.clientX);
+        const metrics = getKeyframeTrackMetrics(keyframeTrack);
+        if (!metrics) {
+            return;
+        }
+        const progress = getKeyframeTrackProgressFromClientX(
+            event.clientX,
+            keyframeTrack,
+            metrics,
+        );
         if (progress === null) {
             return;
         }
         event.preventDefault();
-        setActiveClipProgress(progress, { source: 'keyframe-track', syncTimeline: true });
-        if (typeof keyframeTrack.focus === 'function') {
-            try {
-                keyframeTrack.focus({ preventScroll: true });
-            } catch (error) {
-                keyframeTrack.focus();
-            }
-        }
+        beginKeyframeTrackScrub(progress, event);
     });
 
     keyframeTrack.addEventListener('keydown', (event) => {

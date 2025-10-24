@@ -477,6 +477,13 @@ const keyframeMarkerPointerState = {
     didMove: false,
 };
 
+const keyframeTrackPointerState = {
+    pointerId: null,
+    startProgress: 0,
+    lastProgress: null,
+    didScrub: false,
+};
+
 const imageBlurKeyframePointerState = {
     pointerId: null,
     marker: null,
