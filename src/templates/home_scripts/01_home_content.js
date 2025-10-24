@@ -55,6 +55,60 @@ function syncCanvasCustomImageControls(timelineItem) {
     }
 }
 
+const TIMELINE_ITEM_BLUR_FEEDBACK_CLASS = 'timeline-item--blur-applied';
+const TIMELINE_ITEM_BLUR_FEEDBACK_TIMEOUT_MS = 900;
+const timelineItemBlurFeedbackTimers = new WeakMap();
+
+function setImageBlurApplyStatus(message, options = {}) {
+    if (!imageBlurApplyStatus) {
+        return;
+    }
+
+    window.clearTimeout(imageBlurApplyStatusTimer);
+    imageBlurApplyStatusTimer = 0;
+
+    const nextMessage = message || '';
+    imageBlurApplyStatus.textContent = nextMessage;
+
+    if (!nextMessage) {
+        return;
+    }
+
+    if (options.persist) {
+        return;
+    }
+
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 3200;
+    imageBlurApplyStatusTimer = window.setTimeout(() => {
+        if (imageBlurApplyStatus) {
+            imageBlurApplyStatus.textContent = '';
+        }
+        imageBlurApplyStatusTimer = 0;
+    }, Math.max(0, timeoutMs));
+}
+
+function flashTimelineItemBlurFeedback(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const existingTimer = timelineItemBlurFeedbackTimers.get(timelineItem);
+    if (existingTimer) {
+        window.clearTimeout(existingTimer);
+    }
+
+    timelineItem.classList.remove(TIMELINE_ITEM_BLUR_FEEDBACK_CLASS);
+    void timelineItem.offsetWidth;
+    timelineItem.classList.add(TIMELINE_ITEM_BLUR_FEEDBACK_CLASS);
+
+    const timer = window.setTimeout(() => {
+        timelineItem.classList.remove(TIMELINE_ITEM_BLUR_FEEDBACK_CLASS);
+        timelineItemBlurFeedbackTimers.delete(timelineItem);
+    }, TIMELINE_ITEM_BLUR_FEEDBACK_TIMEOUT_MS);
+
+    timelineItemBlurFeedbackTimers.set(timelineItem, timer);
+}
+
 function syncImageBlurControlState(timelineItem) {
     if (!imageBlurControls || !imageBlurInput || !imageBlurValue || !imageBlurApplyButton) {
         return;
@@ -72,6 +126,7 @@ function syncImageBlurControlState(timelineItem) {
         imageBlurApplyButton.disabled = true;
         updateImageBlurReadout(DEFAULT_IMAGE_BLUR, { disabled: true });
         applyImageBlurToPreview(0);
+        setImageBlurApplyStatus('Select an image clip to adjust blur.', { persist: true });
         return;
     }
 
@@ -79,6 +134,7 @@ function syncImageBlurControlState(timelineItem) {
     imageBlurInput.disabled = false;
     imageBlurInput.removeAttribute('aria-disabled');
     imageBlurApplyButton.disabled = false;
+    setImageBlurApplyStatus('');
 
     const blurValue = getTimelineItemImageBlur(timelineItem);
     imageBlurInput.value = String(blurValue);
@@ -596,12 +652,25 @@ if (imageBlurApplyButton) {
             return;
         }
 
+        const activeIsImage = Boolean(activeTimelineItem && isImageTimelineItem(activeTimelineItem));
+        const previousActiveBlur = activeIsImage
+            ? getTimelineItemImageBlur(activeTimelineItem)
+            : null;
+
         const clamped = applyImageBlurFromControl();
-        if (!activeTimelineItem || !isImageTimelineItem(activeTimelineItem)) {
+        if (!activeIsImage || !activeTimelineItem) {
+            setImageBlurApplyStatus('Select an image clip to apply blur.', { timeoutMs: 3200 });
             return;
         }
 
         persistTimelineItemImageBlur(activeTimelineItem, clamped);
+
+        let changedCount = 0;
+
+        if (previousActiveBlur !== clamped) {
+            changedCount += 1;
+            flashTimelineItemBlurFeedback(activeTimelineItem);
+        }
 
         let laneElement = activeTimelineItem.closest('.timeline-lane');
         const laneIndex = resolveLaneIndexSafe(activeTimelineItem.dataset?.laneIndex);
@@ -609,16 +678,22 @@ if (imageBlurApplyButton) {
             laneElement = findLaneElementByIndex(laneIndex);
         }
 
-        if (!laneElement) {
-            return;
-        }
-
         const previewObjectUrl = (previewImage && !previewImage.hidden)
             ? (previewImage.currentSrc || previewImage.src || '')
             : '';
         let shouldUpdatePreview = false;
 
-        const laneItems = Array.from(laneElement.querySelectorAll('.timeline-item'));
+        if (previousActiveBlur !== clamped && previewObjectUrl) {
+            const activeObjectUrl = activeTimelineItem.dataset?.objectUrl || '';
+            if (activeObjectUrl && activeObjectUrl === previewObjectUrl) {
+                shouldUpdatePreview = true;
+            }
+        }
+
+        const laneItems = laneElement
+            ? Array.from(laneElement.querySelectorAll('.timeline-item'))
+            : [];
+
         laneItems.forEach((timelineItem) => {
             if (timelineItem === activeTimelineItem) {
                 return;
@@ -630,7 +705,14 @@ if (imageBlurApplyButton) {
                 return;
             }
 
+            const previousBlur = getTimelineItemImageBlur(timelineItem);
+            if (previousBlur === clamped) {
+                return;
+            }
+
             persistTimelineItemImageBlur(timelineItem, clamped);
+            changedCount += 1;
+            flashTimelineItemBlurFeedback(timelineItem);
 
             if (!shouldUpdatePreview && previewObjectUrl) {
                 const itemObjectUrl = timelineItem.dataset?.objectUrl || '';
@@ -640,16 +722,19 @@ if (imageBlurApplyButton) {
             }
         });
 
-        if (!shouldUpdatePreview && previewObjectUrl) {
-            const activeObjectUrl = activeTimelineItem.dataset?.objectUrl || '';
-            if (activeObjectUrl && activeObjectUrl === previewObjectUrl) {
-                shouldUpdatePreview = true;
-            }
-        }
-
         if (shouldUpdatePreview) {
             applyImageBlurToPreview(clamped);
         }
+
+        if (changedCount > 0) {
+            const message = changedCount === 1
+                ? 'Applied blur to 1 image in this lane.'
+                : `Applied blur to ${changedCount} images in this lane.`;
+            setImageBlurApplyStatus(message, { timeoutMs: 3600 });
+            return;
+        }
+
+        setImageBlurApplyStatus('Blur already applied to this lane.', { timeoutMs: 3200 });
     });
 }
 
