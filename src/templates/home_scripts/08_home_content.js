@@ -693,6 +693,10 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
         }
     }
 
+    if (typeof renderExportSummary === 'function') {
+        renderExportSummary(timelineItems, completedNaturally, playbackState);
+    }
+
     return completedNaturally;
 }
 

@@ -870,6 +870,7 @@ function updatePreviewAspectLabel() {
 }
 
 let exportPlaybackContextMutationVersion = 0;
+let exportSummaryLastRenderedVersion = -1;
 
 function getTimelinePlaybackMutationVersion() {
     return exportPlaybackContextMutationVersion;
@@ -1009,6 +1010,8 @@ function renderExportSummary(timelineItems, playbackCompleted = null, playbackSt
             exportTimelineList.appendChild(list);
         }
     }
+
+    exportSummaryLastRenderedVersion = exportPlaybackContextMutationVersion;
 }
 
 function openExportDialog() {
@@ -2320,13 +2323,17 @@ function getTimelineFractionForTime(timeMs, laneCacheOrEntries = null) {
 function seekTimelineToFraction(fraction) {
     const { segments, totalDuration } = getTimelinePlaybackSegments();
     const clampedFraction = clampProgress(Number.isFinite(fraction) ? fraction : 0);
+    const shouldRefreshSummary = exportSummaryLastRenderedVersion
+        !== exportPlaybackContextMutationVersion;
 
     if (!segments.length || totalDuration <= 0) {
         setActiveTimelineItem(null);
         loadPreviewFromTimeline(null);
         resetTimelineProgressLine(0);
         updatePlaybackTimeDisplay(0, totalDuration);
-        renderExportSummary(getTimelineItems(), null);
+        if (shouldRefreshSummary) {
+            renderExportSummary(getTimelineItems(), null);
+        }
         return;
     }
 
@@ -2360,7 +2367,9 @@ function seekTimelineToFraction(fraction) {
     const safeFraction = totalDuration > 0 ? safeTarget / totalDuration : 0;
     resetTimelineProgressLine(safeFraction);
     updatePlaybackTimeDisplay(safeTarget, totalDuration);
-    renderExportSummary(getTimelineItems(), null);
+    if (shouldRefreshSummary) {
+        renderExportSummary(getTimelineItems(), null);
+    }
 }
 
 function scrollTimelineItemIntoView(timelineItem) {
