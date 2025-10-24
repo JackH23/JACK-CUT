@@ -1582,6 +1582,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     overflow: hidden;
     --keyframe-playhead: 0;
     cursor: pointer;
+    touch-action: none;
 }
 
 .keyframe-track::before {
@@ -1606,6 +1607,27 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     left: calc(12px + (var(--keyframe-playhead, 0) * (100% - 24px)));
     transform: translateX(-1px);
     transition: left 0.18s ease;
+}
+
+
+.keyframe-track[data-scrubbing="true"] {
+    cursor: grabbing;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.keyframe-track[data-scrubbing="true"]::before {
+    opacity: 0.9;
+}
+
+.keyframe-track[data-scrubbing="true"]::after {
+    transition: none;
+    background: rgba(56, 189, 248, 0.95);
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
+}
+
+.keyframe-track[data-scrubbing="true"] .keyframe-marker.is-active {
+    transform: translate(-50%, -50%) rotate(45deg) scale(1.18);
+    box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.22);
 }
 
 .keyframe-track[data-disabled="true"] {

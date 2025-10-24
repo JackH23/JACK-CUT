@@ -488,6 +488,13 @@ const imageBlurKeyframePointerState = {
     didMove: false,
 };
 
+const imageBlurTrackPointerState = {
+    pointerId: null,
+    startProgress: 0,
+    lastProgress: null,
+    didScrub: false,
+};
+
 const PREVIEW_IMAGE_SNAP_THRESHOLD = 12;
 const PREVIEW_ALIGNMENT_TOLERANCE = 0.75;
 const PREVIEW_GUIDE_NEAR_THRESHOLD = Math.max(PREVIEW_IMAGE_SNAP_THRESHOLD, 14);
@@ -513,6 +520,7 @@ const KEYFRAME_STATUS_TIMEOUT_MS = 2600;
 const IMAGE_BLUR_KEYFRAME_STATUS_TIMEOUT_MS = 2600;
 const KEYFRAME_TRACK_KEY_STEP = 0.05;
 const KEYFRAME_TRACK_KEY_LARGE_STEP = 0.15;
+const IMAGE_BLUR_TRACK_SNAP_THRESHOLD_PX = 8;
 const MIN_ROTATION_DEGREES = -180;
 const MAX_ROTATION_DEGREES = 180;
 const DEFAULT_VIDEO_DURATION = 3000;
