@@ -820,9 +820,54 @@ if (exportButton) {
     });
 }
 
+let exportAbortController = null;
+
+function abortActiveExport(reason = null) {
+    if (!exportAbortController) {
+        return;
+    }
+
+    const { signal } = exportAbortController;
+    if (signal.aborted) {
+        return;
+    }
+
+    const abortReason = reason
+        || new DOMException('Export aborted by user.', 'AbortError');
+    try {
+        exportAbortController.abort(abortReason);
+    } catch (error) {
+        // Ignore abort errors caused by invalid controller state.
+    }
+}
+
+function getAbortSignal(options) {
+    if (!options) {
+        return null;
+    }
+
+    if (typeof AbortSignal !== 'undefined' && options instanceof AbortSignal) {
+        return options;
+    }
+
+    if (typeof options === 'object' && options !== null) {
+        const { signal } = options;
+        if (typeof AbortSignal !== 'undefined' && signal instanceof AbortSignal) {
+            return signal;
+        }
+    }
+
+    return null;
+}
+
 if (cancelExportButton) {
     cancelExportButton.addEventListener('click', () => {
         if (isExportingTimeline) {
+            if (exportDialogStatus) {
+                exportDialogStatus.dataset.state = 'progress';
+                exportDialogStatus.textContent = 'Cancelling export…';
+            }
+            abortActiveExport(new DOMException('Export cancelled by user.', 'AbortError'));
             return;
         }
         closeExportDialog();
@@ -901,14 +946,40 @@ function createSilentAudioKeepAlive(audioContext, destinationNode) {
     }
 }
 
-function waitForDuration(durationMs) {
+function waitForDuration(durationMs, options = {}) {
     const safeDuration = Math.max(0, Math.round(Number(durationMs) || 0));
     if (safeDuration <= 0) {
         return Promise.resolve();
     }
 
+    const signal = getAbortSignal(options);
+
     return new Promise((resolve) => {
-        window.setTimeout(resolve, safeDuration);
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+
+        let timeoutId = 0;
+        const finalize = () => {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+                timeoutId = 0;
+            }
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort);
+            }
+            resolve();
+        };
+        const handleAbort = () => {
+            finalize();
+        };
+
+        timeoutId = window.setTimeout(finalize, safeDuration);
+
+        if (signal) {
+            signal.addEventListener('abort', handleAbort, { once: true });
+        }
     });
 }
 
@@ -958,8 +1029,14 @@ function seekMediaElementTo(mediaElement, timeSeconds, options = {}) {
     }
 
     const timeoutMs = Math.max(0, Math.round(Number(options.timeoutMs) || 0));
+    const signal = getAbortSignal(options);
 
     return new Promise((resolve) => {
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+
         let settled = false;
         let timeoutId = 0;
 
@@ -969,6 +1046,9 @@ function seekMediaElementTo(mediaElement, timeSeconds, options = {}) {
             mediaElement.removeEventListener('loadeddata', handleLoadedData);
             if (timeoutId) {
                 window.clearTimeout(timeoutId);
+            }
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort);
             }
         };
 
@@ -993,12 +1073,20 @@ function seekMediaElementTo(mediaElement, timeSeconds, options = {}) {
             finalize();
         };
 
+        const handleAbort = () => {
+            finalize();
+        };
+
         mediaElement.addEventListener('seeked', handleSeeked);
         mediaElement.addEventListener('error', handleError);
         mediaElement.addEventListener('loadeddata', handleLoadedData);
 
         if (timeoutMs > 0) {
             timeoutId = window.setTimeout(finalize, timeoutMs);
+        }
+
+        if (signal) {
+            signal.addEventListener('abort', handleAbort, { once: true });
         }
 
         try {
@@ -1013,11 +1101,16 @@ function seekMediaElementTo(mediaElement, timeSeconds, options = {}) {
 }
 
 async function primeExportStartFrame(playbackContext, options = {}) {
+    const signal = getAbortSignal(options);
     const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
     const segments = Array.isArray(playbackState?.segments) ? playbackState.segments : [];
     const frameRate = Math.max(1, Math.min(60, Math.round(options.frameRate) || 30));
 
     seekTimelineToFraction(0);
+
+    if (signal?.aborted) {
+        return;
+    }
 
     const firstPlayableSegment = segments.find((segment) => segment && Number(segment.duration) > 0)
         || segments[0]
@@ -1026,7 +1119,7 @@ async function primeExportStartFrame(playbackContext, options = {}) {
     const activeItem = firstPlayableSegment?.item || activeTimelineItem || null;
 
     if (!activeItem) {
-        await waitForNextFrame();
+        await waitForNextFrame({ signal });
         return;
     }
 
@@ -1044,14 +1137,26 @@ async function primeExportStartFrame(playbackContext, options = {}) {
         const targetTimeSeconds = startOffsetMs / 1000;
         previewVideo.pause();
         try {
-            await waitForMediaReady(previewVideo);
+            await waitForMediaReady(previewVideo, { signal });
+            if (signal?.aborted) {
+                return;
+            }
         } catch (error) {
+            if (signal?.aborted) {
+                return;
+            }
             console.warn('First clip video could not buffer before export.', error);
         }
-        await seekMediaElementTo(previewVideo, targetTimeSeconds, { timeoutMs: 900 });
+        await seekMediaElementTo(previewVideo, targetTimeSeconds, { timeoutMs: 900, signal });
+        if (signal?.aborted) {
+            return;
+        }
         previewVideo.pause();
     } else if (fileType.startsWith('image/')) {
         await waitForPreviewImageReady(1500);
+        if (signal?.aborted) {
+            return;
+        }
         applyActiveImageKeyframe({ reason: 'export-pre-roll' });
         applyActiveImageBlurKeyframe({ reason: 'export-pre-roll' });
     } else {
@@ -1061,30 +1166,68 @@ async function primeExportStartFrame(playbackContext, options = {}) {
     const warmupFrames = Math.max(1, Math.min(4, Math.round(frameRate / 24)));
     for (let index = 0; index < warmupFrames; index += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await waitForNextFrame();
+        await waitForNextFrame({ signal });
+        if (signal?.aborted) {
+            return;
+        }
     }
 }
 
-async function runExportPreRoll(preRollMs, frameRate) {
+async function runExportPreRoll(preRollMs, frameRate, options = {}) {
+    const signal = getAbortSignal(options);
     const safePreRoll = Math.max(0, Math.round(Number(preRollMs) || 0));
     const warmupFrames = Math.max(2, Math.round((Math.max(1, frameRate) / 1000) * Math.max(safePreRoll, 16)));
-    const delayPromise = waitForDuration(safePreRoll);
+    const delayPromise = waitForDuration(safePreRoll, { signal });
     for (let index = 0; index < warmupFrames; index += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await waitForNextFrame();
+        await waitForNextFrame({ signal });
+        if (signal?.aborted) {
+            break;
+        }
     }
     await delayPromise;
 }
 
 const EXPORT_PRE_ROLL_MS = 80;
 
-function waitForNextFrame() {
+function waitForNextFrame(options = null) {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
         return Promise.resolve();
     }
 
+    const signal = getAbortSignal(options);
+
     return new Promise((resolve) => {
-        window.requestAnimationFrame(() => resolve());
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+
+        let rafId = 0;
+        const finalize = () => {
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort);
+            }
+            if (rafId) {
+                window.cancelAnimationFrame(rafId);
+            }
+            resolve();
+        };
+
+        const handleAbort = () => {
+            finalize();
+        };
+
+        rafId = window.requestAnimationFrame(() => {
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort);
+            }
+            resolve();
+        });
+
+        if (signal) {
+            signal.addEventListener('abort', handleAbort, { once: true });
+        }
     });
 }
 
@@ -1093,7 +1236,8 @@ function waitForMediaStreamTracks(stream, options = {}) {
         return Promise.resolve();
     }
 
-    const { kind = 'audio', timeoutMs = 1500 } = options;
+    const { kind = 'audio', timeoutMs = 1500 } = options || {};
+    const signal = getAbortSignal(options);
     let tracks = [];
     if (kind === 'audio') {
         tracks = stream.getAudioTracks();
@@ -1108,7 +1252,13 @@ function waitForMediaStreamTracks(stream, options = {}) {
     }
 
     const waiters = tracks.map((track) => new Promise((resolve) => {
+        if (signal?.aborted) {
+            resolve();
+            return;
+        }
+
         let settled = false;
+        let timeoutId = 0;
         const finalize = () => {
             if (settled) {
                 return;
@@ -1116,6 +1266,12 @@ function waitForMediaStreamTracks(stream, options = {}) {
             settled = true;
             track.removeEventListener('unmute', handleUnmute);
             track.removeEventListener('ended', handleEnded);
+            if (signal) {
+                signal.removeEventListener('abort', handleAbort);
+            }
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
             resolve();
         };
         const handleUnmute = () => {
@@ -1124,6 +1280,9 @@ function waitForMediaStreamTracks(stream, options = {}) {
             }
         };
         const handleEnded = () => {
+            finalize();
+        };
+        const handleAbort = () => {
             finalize();
         };
 
@@ -1136,11 +1295,15 @@ function waitForMediaStreamTracks(stream, options = {}) {
         track.addEventListener('ended', handleEnded);
 
         if (timeoutMs > 0) {
-            window.setTimeout(finalize, timeoutMs);
+            timeoutId = window.setTimeout(finalize, timeoutMs);
+        }
+
+        if (signal) {
+            signal.addEventListener('abort', handleAbort, { once: true });
         }
     }));
 
-    return Promise.all(waiters).then(() => waitForNextFrame());
+    return Promise.all(waiters).then(() => waitForNextFrame({ signal }));
 }
 
 function withTimeout(promise, timeoutMs, fallbackError = new Error('Operation timed out.')) {
@@ -1201,7 +1364,8 @@ function collectTimelineExportMedia(timelineItems) {
 }
 
 async function warmupExportPlaybackContext(playbackContext, options = {}) {
-    const { timeoutMs = 4500, signal = null } = options;
+    const { timeoutMs = 4500 } = options || {};
+    const signal = getAbortSignal(options);
     if (!playbackContext) {
         return { total: 0, succeeded: 0, failed: 0 };
     }
@@ -1269,8 +1433,16 @@ async function warmupExportPlaybackContext(playbackContext, options = {}) {
                     return;
                 }
 
+                if (signal?.aborted) {
+                    return;
+                }
+
                 const descriptor = descriptors[currentIndex];
                 results[currentIndex] = await runDescriptor(descriptor);
+
+                if (signal?.aborted) {
+                    return;
+                }
             }
         })());
     }
@@ -1791,18 +1963,67 @@ async function handleConfirmExport() {
 
     stopTimelinePlayback();
 
+    if (exportAbortController?.signal && !exportAbortController.signal.aborted) {
+        abortActiveExport(new DOMException('Cancelling previous export.', 'AbortError'));
+    }
+
+    const abortController = new AbortController();
+    exportAbortController = abortController;
+    const { signal } = abortController;
+    const abortCleanups = [];
+
+    const registerAbortHandler = (handler) => {
+        if (typeof handler !== 'function') {
+            return () => {};
+        }
+
+        const wrapped = () => {
+            try {
+                handler();
+            } catch (error) {
+                // Ignore abort handler errors.
+            }
+        };
+
+        if (signal.aborted) {
+            wrapped();
+            return () => {};
+        }
+
+        signal.addEventListener('abort', wrapped);
+        return () => {
+            signal.removeEventListener('abort', wrapped);
+        };
+    };
+
+    const throwIfAborted = () => {
+        if (signal.aborted) {
+            throw signal.reason || new DOMException('Export aborted.', 'AbortError');
+        }
+    };
+
+    abortCleanups.push(registerAbortHandler(() => {
+        stopTimelinePlayback(false, true);
+    }));
+
     let encodingConfig = playbackContext?.encodingConfig || null;
     let warmupSummary = null;
     try {
-        warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500 });
+        warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500, signal });
+        throwIfAborted();
         if (warmupSummary?.failed > 0) {
             console.warn('Some media items could not be prepared before export.', warmupSummary.failures);
         } else if (warmupSummary?.total) {
             console.info(`Prepared ${warmupSummary.succeeded}/${warmupSummary.total} media items for export.`);
         }
     } catch (warmupError) {
+        if (signal.aborted) {
+            throw warmupError;
+        }
         console.warn('Export warmup encountered an error.', warmupError);
     }
+
+    throwIfAborted();
 
     try {
         encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
@@ -1819,12 +2040,15 @@ async function handleConfirmExport() {
         };
     }
 
+    throwIfAborted();
+
     playbackContext.encodingConfig = encodingConfig;
 
     const captureFrameRate = Math.max(1, Math.min(60, Math.round(encodingConfig.frameRate) || 30));
     const readinessTimeout = captureFrameRate > 30 ? 1200 : 1500;
 
-    await primeExportStartFrame(playbackContext, { frameRate: captureFrameRate });
+    await primeExportStartFrame(playbackContext, { frameRate: captureFrameRate, signal });
+    throwIfAborted();
 
     if (exportDialogStatus) {
         exportDialogStatus.dataset.state = 'progress';
@@ -1842,12 +2066,19 @@ async function handleConfirmExport() {
     const recordedChunks = [];
     let exportAudioContext = null;
     let audioAttachmentCleanup = null;
+    let recordingPromise = null;
 
     try {
         stopMirroring = startPreviewMirroring(resolution.width, resolution.height, {
             frameRate: captureFrameRate,
         });
-        await runExportPreRoll(EXPORT_PRE_ROLL_MS, captureFrameRate);
+        abortCleanups.push(registerAbortHandler(() => {
+            stopMirroring();
+        }));
+        throwIfAborted();
+
+        await runExportPreRoll(EXPORT_PRE_ROLL_MS, captureFrameRate, { signal });
+        throwIfAborted();
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
@@ -1856,6 +2087,17 @@ async function handleConfirmExport() {
             throw new Error('Unable to access canvas capture stream.');
         }
         combinedStream = new MediaStream();
+        abortCleanups.push(registerAbortHandler(() => {
+            if (combinedStream) {
+                combinedStream.getTracks().forEach((track) => {
+                    try {
+                        track.stop();
+                    } catch (trackError) {
+                        // Ignore track stop errors triggered during abort.
+                    }
+                });
+            }
+        }));
         canvasStream.getVideoTracks().forEach((track) => {
             combinedStream.addTrack(track);
             if (typeof track.applyConstraints === 'function') {
@@ -1871,9 +2113,22 @@ async function handleConfirmExport() {
         if (!audioAttachment.success) {
             console.warn('Unable to capture audio from preview video.', audioAttachment.error);
         }
+        abortCleanups.push(registerAbortHandler(() => {
+            if (typeof audioAttachmentCleanup === 'function') {
+                try {
+                    audioAttachmentCleanup();
+                } catch (cleanupError) {
+                    // Ignore cleanup errors triggered during abort.
+                }
+            }
+        }));
 
-        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: readinessTimeout });
-        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: readinessTimeout });
+        throwIfAborted();
+
+        await waitForMediaStreamTracks(combinedStream, { kind: 'audio', timeoutMs: readinessTimeout, signal });
+        throwIfAborted();
+        await waitForMediaStreamTracks(combinedStream, { kind: 'video', timeoutMs: readinessTimeout, signal });
+        throwIfAborted();
 
         const recorderOptions = { mimeType: exportFormat.mimeType };
         if (Number.isFinite(encodingConfig.videoBitsPerSecond)) {
@@ -1884,6 +2139,15 @@ async function handleConfirmExport() {
         }
 
         recorder = new MediaRecorder(combinedStream, recorderOptions);
+        abortCleanups.push(registerAbortHandler(() => {
+            if (recorder && recorder.state !== 'inactive') {
+                try {
+                    recorder.stop();
+                } catch (stopError) {
+                    // Ignore recorder stop errors triggered during abort.
+                }
+            }
+        }));
 
         const recorderStarted = new Promise((resolve) => {
             recorder.addEventListener('start', () => {
@@ -1891,7 +2155,7 @@ async function handleConfirmExport() {
             }, { once: true });
         });
 
-        const recordingPromise = new Promise((resolve, reject) => {
+        recordingPromise = new Promise((resolve, reject) => {
             recorder.addEventListener('dataavailable', (event) => {
                 if (event.data && event.data.size > 0) {
                     recordedChunks.push(event.data);
@@ -1915,7 +2179,9 @@ async function handleConfirmExport() {
             recorder.start();
         }
         await recorderStarted;
-        await waitForNextFrame();
+        throwIfAborted();
+        await waitForNextFrame({ signal });
+        throwIfAborted();
         const playbackCompleted = await playTimelineSequence(0, null, playbackContext);
         if (recorder.state !== 'inactive') {
             recorder.stop();
@@ -1924,7 +2190,12 @@ async function handleConfirmExport() {
         const exportBlob = await recordingPromise;
         recordedChunks.length = 0;
 
+        throwIfAborted();
+
         if (!playbackCompleted) {
+            if (signal.aborted) {
+                throw signal.reason || new DOMException('Export aborted.', 'AbortError');
+            }
             throw new Error('Timeline playback was interrupted before completion.');
         }
 
@@ -1944,11 +2215,21 @@ async function handleConfirmExport() {
 
         closeExportDialog();
     } catch (error) {
-        console.error('Failed to export timeline preview.', error);
-        alert(`Export failed: ${error?.message || error}`);
-        if (exportDialogStatus) {
-            exportDialogStatus.textContent = 'Export failed. Please try again.';
-            exportDialogStatus.dataset.state = 'warning';
+        const aborted = error?.name === 'AbortError' || signal.aborted;
+        if (aborted) {
+            console.info('Export cancelled.', error);
+            if (exportDialogStatus) {
+                exportDialogStatus.textContent = 'Export cancelled.';
+                exportDialogStatus.dataset.state = 'idle';
+            }
+            closeExportDialog();
+        } else {
+            console.error('Failed to export timeline preview.', error);
+            alert(`Export failed: ${error?.message || error}`);
+            if (exportDialogStatus) {
+                exportDialogStatus.textContent = 'Export failed. Please try again.';
+                exportDialogStatus.dataset.state = 'warning';
+            }
         }
     } finally {
         resetExportPlaybackContext();
@@ -1976,6 +2257,18 @@ async function handleConfirmExport() {
         confirmExportButton.disabled = false;
         confirmExportButton.textContent = originalLabel || 'Confirm export';
         isExportingTimeline = false;
+        abortCleanups.forEach((cleanup) => {
+            if (typeof cleanup === 'function') {
+                try {
+                    cleanup();
+                } catch (cleanupError) {
+                    // Ignore abort cleanup errors.
+                }
+            }
+        });
+        if (exportAbortController === abortController) {
+            exportAbortController = null;
+        }
     }
 }
 
