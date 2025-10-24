@@ -170,6 +170,7 @@ const animationComboApplyAllButton = document.getElementById('animation-combo-ap
 const animationComboApplyStatus = document.getElementById('animation-combo-apply-status');
 const imageDurationApplyAllButton = document.getElementById('image-duration-apply-all');
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
+const imageBlurApplyStatus = document.getElementById('image-blur-apply-status');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const masterVolumeInput = document.getElementById('video-volume');
@@ -458,6 +459,7 @@ let previewEntranceAnimationState = {
 let comboPreviewExitTimeoutId = 0;
 let animationComboApplyStatusTimer = 0;
 let imageDurationApplyStatusTimer = 0;
+let imageBlurApplyStatusTimer = 0;
 
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);

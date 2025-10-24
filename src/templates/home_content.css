@@ -1428,11 +1428,16 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .animation-combo-apply-status,
-.clip-duration-apply-status {
+.clip-duration-apply-status,
+.image-blur-apply-status {
     min-height: 1em;
     font-size: 0.75rem;
     letter-spacing: 0.02em;
     color: var(--text-secondary);
+}
+
+.image-blur-apply-status {
+    align-self: flex-start;
 }
 
 .animation-combo-section {
@@ -3137,6 +3142,27 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
     100% {
         box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.0);
+        border-color: rgba(148, 163, 184, 0.2);
+    }
+}
+
+.timeline-item--blur-applied {
+    animation: timeline-item-blur-feedback 900ms ease;
+}
+
+@keyframes timeline-item-blur-feedback {
+    0% {
+        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.0);
+        border-color: rgba(148, 163, 184, 0.2);
+    }
+
+    35% {
+        box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.26);
+        border-color: rgba(124, 58, 237, 0.68);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.0);
         border-color: rgba(148, 163, 184, 0.2);
     }
 }
