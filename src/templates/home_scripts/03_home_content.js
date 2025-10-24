@@ -139,6 +139,44 @@ function parseCanvasBackdropBlurRadius() {
     return blur;
 }
 
+function parsePreviewImageBlurRadius() {
+    if (!previewImage) {
+        return 0;
+    }
+
+    let blur = Number.parseFloat(
+        previewImage?.style?.getPropertyValue?.('--preview-image-blur') || '',
+    );
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        if (window.getComputedStyle) {
+            const computed = window.getComputedStyle(previewImage);
+            const cssVariableValue = computed?.getPropertyValue?.('--preview-image-blur') || '';
+            const parsedVariable = Number.parseFloat(cssVariableValue);
+            if (Number.isFinite(parsedVariable) && parsedVariable >= 0) {
+                blur = parsedVariable;
+            } else {
+                const filterValue = computed?.filter || computed?.webkitFilter || '';
+                const match = typeof filterValue === 'string'
+                    ? filterValue.match(/blur\(([^)]+)\)/i)
+                    : null;
+                if (match) {
+                    const parsedFilter = Number.parseFloat(match[1]);
+                    if (Number.isFinite(parsedFilter) && parsedFilter >= 0) {
+                        blur = parsedFilter;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        blur = 0;
+    }
+
+    return blur;
+}
+
 function ensureCanvasBackdropSnapshotContext(width, height) {
     const safeWidth = Math.max(1, Math.round(Number(width) || 0));
     const safeHeight = Math.max(1, Math.round(Number(height) || 0));
@@ -496,6 +534,13 @@ function drawPreviewImageToExportCanvas() {
         exportMirrorContext.globalAlpha *= computedOpacity;
     }
 
+    const blurRadius = parsePreviewImageBlurRadius();
+    if (blurRadius > 0) {
+        exportMirrorContext.filter = `blur(${blurRadius}px)`;
+    } else {
+        exportMirrorContext.filter = 'none';
+    }
+
     exportMirrorContext.drawImage(
         previewImage,
         0,
@@ -503,6 +548,10 @@ function drawPreviewImageToExportCanvas() {
         drawWidth,
         drawHeight,
     );
+
+    if (blurRadius > 0) {
+        exportMirrorContext.filter = 'none';
+    }
     exportMirrorContext.restore();
 
     exportMirrorContext.restore();
