@@ -213,7 +213,7 @@ function flushTimelineDragOverUpdate() {
 
 function preloadTimelineImage(objectURL) {
     if (!objectURL) {
-        return Promise.resolve(null);
+        return Promise.resolve();
     }
 
     if (timelineImagePreloadCache.has(objectURL)) {
@@ -224,21 +224,47 @@ function preloadTimelineImage(objectURL) {
         const image = new Image();
         image.decoding = 'async';
 
-        const finalize = () => {
-            resolve(image);
+        let settled = false;
+
+        const cleanup = () => {
+            image.removeEventListener('load', handleLoad);
+            image.removeEventListener('error', handleError);
+            image.src = '';
+            image.removeAttribute?.('src');
         };
 
-        image.addEventListener('load', () => {
-            if (typeof image.decode === 'function') {
-                image.decode().catch(() => {}).finally(finalize);
+        const finalize = () => {
+            if (settled) {
                 return;
             }
-            finalize();
-        }, { once: true });
+            settled = true;
+            cleanup();
+            resolve();
+        };
 
-        image.addEventListener('error', (event) => {
+        const handleLoad = () => {
+            let decodePromise = Promise.resolve();
+            if (typeof image.decode === 'function') {
+                try {
+                    decodePromise = image.decode();
+                } catch (decodeError) {
+                    decodePromise = Promise.reject(decodeError);
+                }
+            }
+            decodePromise.catch(() => {}).finally(finalize);
+        };
+
+        const handleError = (event) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
             reject(event?.error || new Error('Failed to preload image.'));
-        }, { once: true });
+        };
+
+        image.addEventListener('load', handleLoad, { once: true });
+        image.addEventListener('error', handleError, { once: true });
 
         image.src = objectURL;
     }).catch((error) => {
@@ -252,7 +278,7 @@ function preloadTimelineImage(objectURL) {
 
 function preloadTimelineVideo(objectURL) {
     if (!objectURL) {
-        return Promise.resolve(null);
+        return Promise.resolve();
     }
 
     if (timelineVideoPreloadCache.has(objectURL)) {
@@ -267,39 +293,49 @@ function preloadTimelineVideo(objectURL) {
 
         let settled = false;
 
-        const finalize = () => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            cleanup();
-            resolve(video);
-        };
-
-        const fail = (event) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            cleanup();
-            reject(event?.error || new Error('Failed to preload video.'));
-        };
-
         const cleanup = () => {
-            video.removeEventListener('loadeddata', finalize);
-            video.removeEventListener('canplay', finalize);
-            video.removeEventListener('error', fail);
+            video.removeEventListener('loadeddata', handleReady);
+            video.removeEventListener('canplay', handleReady);
+            video.removeEventListener('canplaythrough', handleReady);
+            video.removeEventListener('error', handleError);
+            if (typeof video.pause === 'function') {
+                video.pause();
+            }
+            video.removeAttribute?.('src');
+            try {
+                video.load();
+            } catch (error) {
+                // Ignore cleanup failures.
+            }
         };
 
-        video.addEventListener('loadeddata', finalize, { once: true });
-        video.addEventListener('canplay', finalize, { once: true });
-        video.addEventListener('error', fail, { once: true });
+        const settle = (callback) => (event) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            cleanup();
+            callback(event);
+        };
+
+        const handleReady = settle(() => {
+            resolve();
+        });
+
+        const handleError = settle((event) => {
+            reject(event?.error || new Error('Failed to preload video.'));
+        });
+
+        video.addEventListener('loadeddata', handleReady, { once: true });
+        video.addEventListener('canplay', handleReady, { once: true });
+        video.addEventListener('canplaythrough', handleReady, { once: true });
+        video.addEventListener('error', handleError, { once: true });
 
         try {
             video.src = objectURL;
             video.load();
         } catch (error) {
-            fail({ error });
+            handleError({ error });
         }
     }).catch((error) => {
         timelineVideoPreloadCache.delete(objectURL);
