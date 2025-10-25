@@ -2105,7 +2105,16 @@ async function handleConfirmExport() {
             }
         });
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        const previewAudioElements = typeof getPreviewAudioExportElements === 'function'
+            ? getPreviewAudioExportElements()
+            : [];
+        if (previewAudio && !previewAudioElements.includes(previewAudio)) {
+            previewAudioElements.push(previewAudio);
+        }
+        const audioAttachment = attachPreviewAudioToStream(
+            [previewVideo, ...previewAudioElements],
+            combinedStream,
+        );
         exportAudioContext = audioAttachment.audioContext;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;
