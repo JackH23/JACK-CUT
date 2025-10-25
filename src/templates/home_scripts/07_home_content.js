@@ -2771,6 +2771,9 @@ function removeTimelineItem(timelineItem, options = {}) {
 
     if (fileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });
+        if (typeof notifyTimelineAudioTracksChanged === 'function') {
+            notifyTimelineAudioTracksChanged({ activeItem: wasActive ? null : undefined });
+        }
     }
 
     if (wasActive) {
@@ -4653,6 +4656,10 @@ async function addToTimeline(file, objectURL) {
 
     setActiveTimelineItem(timelineItem);
     loadPreviewFromTimeline(timelineItem, null, { focusTextEditor: true });
+
+    if (file.type.startsWith('audio/') && typeof notifyTimelineAudioTracksChanged === 'function') {
+        notifyTimelineAudioTracksChanged({ activeItem: timelineItem });
+    }
 }
 
 function registerTimelineItemInteractions(timelineItem, removeButton) {

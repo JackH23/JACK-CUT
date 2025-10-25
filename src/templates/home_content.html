@@ -536,17 +536,33 @@
                                         >
                                         <div class="slider-readout" id="video-volume-value">80%</div>
                                     </div>
+                                    <div class="audio-master-control__meter">
+                                        <div class="audio-master-control__meter-header">
+                                            <span id="audio-level-meter-label">Live level</span>
+                                            <span class="audio-master-control__meter-readout" id="audio-level-meter-readout">-∞ dB</span>
+                                        </div>
+                                        <div
+                                            class="audio-master-control__meter-track"
+                                            id="audio-level-meter-track"
+                                            role="meter"
+                                            aria-valuemin="0"
+                                            aria-valuemax="1"
+                                            aria-valuenow="0"
+                                            aria-labelledby="audio-level-meter-label audio-level-meter-readout"
+                                        >
+                                            <div class="audio-master-control__meter-fill" id="audio-level-meter"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="info-item">
                                 <div class="info-icon">🎵</div>
                                 <div>
                                     <label for="audio-track">Audio track</label>
-                                    <select id="audio-track">
-                                        <option value="original" selected>Original track</option>
-                                        <option value="voice">Voice enhancement</option>
-                                        <option value="music">Music bed</option>
+                                    <select id="audio-track" aria-describedby="audio-track-hint">
+                                        <option value="" selected>Select an audio clip…</option>
                                     </select>
+                                    <p class="field-hint" id="audio-track-hint">Pick a timeline audio clip to adjust its volume and fades.</p>
                                 </div>
                             </div>
                             <div class="info-item">

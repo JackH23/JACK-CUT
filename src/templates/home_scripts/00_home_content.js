@@ -8,6 +8,10 @@ const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
+const audioTrackSelect = document.getElementById('audio-track');
+const audioLevelMeterFill = document.getElementById('audio-level-meter');
+const audioLevelMeterTrack = document.getElementById('audio-level-meter-track');
+const audioLevelMeterReadout = document.getElementById('audio-level-meter-readout');
 const previewImage = document.getElementById('preview-image');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
@@ -862,6 +866,169 @@ function clampVolume(value) {
 const mediaEnvelopeStates = new WeakMap();
 let sharedPreviewAudioContext = null;
 let sharedPreviewAudioDestination = null;
+let sharedPreviewAudioBus = null;
+let audioMeterAnimationFrameId = 0;
+let audioMeterBuffer = null;
+let pendingAudioTrackRefreshId = 0;
+let cachedAudioTrackKeys = [];
+let cachedAudioTrackMap = new Map();
+const AUDIO_METER_MIN_DB = -60;
+const AUDIO_METER_MAX_DB = 0;
+const AUDIO_METER_SMOOTHING = 0.55;
+
+function updateAudioLevelMeterVisual(level, db) {
+    const clampedLevel = Math.min(Math.max(level || 0, 0), 1);
+    if (audioLevelMeterFill) {
+        audioLevelMeterFill.style.setProperty('--audio-meter-level', `${Math.round(clampedLevel * 100)}%`);
+    }
+    if (audioLevelMeterTrack) {
+        audioLevelMeterTrack.setAttribute('aria-valuenow', clampedLevel.toFixed(3));
+    }
+    if (audioLevelMeterReadout) {
+        if (!Number.isFinite(db) || db <= AUDIO_METER_MIN_DB + 0.5) {
+            audioLevelMeterReadout.textContent = '-∞ dB';
+        } else {
+            audioLevelMeterReadout.textContent = `${db.toFixed(1)} dB`;
+        }
+    }
+}
+
+function ensureAudioLevelMeterLoop() {
+    if (audioMeterAnimationFrameId || typeof window === 'undefined') {
+        return;
+    }
+
+    const tick = () => {
+        audioMeterAnimationFrameId = window.requestAnimationFrame(tick);
+        const bus = sharedPreviewAudioBus;
+        if (!bus || !bus.analyser) {
+            updateAudioLevelMeterVisual(0, AUDIO_METER_MIN_DB);
+            return;
+        }
+
+        const analyser = bus.analyser;
+        const fftSize = analyser.fftSize;
+        if (!audioMeterBuffer || audioMeterBuffer.length !== fftSize) {
+            audioMeterBuffer = new Float32Array(fftSize);
+        }
+
+        analyser.getFloatTimeDomainData(audioMeterBuffer);
+        let sumSquares = 0;
+        for (let index = 0; index < audioMeterBuffer.length; index += 1) {
+            const sample = audioMeterBuffer[index];
+            if (Number.isFinite(sample)) {
+                sumSquares += sample * sample;
+            }
+        }
+
+        const rms = Math.sqrt(sumSquares / audioMeterBuffer.length) || 0;
+        const db = rms > 0 ? 20 * Math.log10(rms) : AUDIO_METER_MIN_DB;
+        const clampedDb = Math.max(AUDIO_METER_MIN_DB, Math.min(AUDIO_METER_MAX_DB, db));
+        const normalized = (clampedDb - AUDIO_METER_MIN_DB)
+            / (AUDIO_METER_MAX_DB - AUDIO_METER_MIN_DB);
+        bus.meterLevel = (bus.meterLevel * AUDIO_METER_SMOOTHING)
+            + (normalized * (1 - AUDIO_METER_SMOOTHING));
+        updateAudioLevelMeterVisual(bus.meterLevel, clampedDb);
+    };
+
+    audioMeterAnimationFrameId = window.requestAnimationFrame(tick);
+}
+
+function teardownPreviewAudioBus() {
+    if (!sharedPreviewAudioBus) {
+        return;
+    }
+    const bus = sharedPreviewAudioBus;
+    try {
+        bus.masterGain.disconnect();
+    } catch (error) {
+        // Ignore disconnect errors when resetting the mix bus.
+    }
+    try {
+        bus.compressor.disconnect();
+    } catch (error) {
+        // Ignore disconnect errors when resetting the mix bus.
+    }
+    try {
+        bus.mixGain.disconnect();
+    } catch (error) {
+        // Ignore disconnect errors when resetting the mix bus.
+    }
+    if (bus.previewDestinations) {
+        bus.previewDestinations.clear();
+    }
+    sharedPreviewAudioBus = null;
+    updateAudioLevelMeterVisual(0, AUDIO_METER_MIN_DB);
+}
+
+function getOrCreatePreviewAudioBus(audioContext) {
+    if (!audioContext) {
+        return null;
+    }
+
+    if (sharedPreviewAudioBus && sharedPreviewAudioBus.context !== audioContext) {
+        teardownPreviewAudioBus();
+    }
+
+    if (!sharedPreviewAudioBus) {
+        try {
+            const mixGain = audioContext.createGain();
+            mixGain.gain.value = 1;
+
+            const compressor = audioContext.createDynamicsCompressor();
+            compressor.threshold.value = -24;
+            compressor.knee.value = 18;
+            compressor.ratio.value = 3.2;
+            compressor.attack.value = 0.003;
+            compressor.release.value = 0.25;
+
+            const masterGain = audioContext.createGain();
+            masterGain.gain.value = 1;
+
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.6;
+
+            mixGain.connect(compressor);
+            compressor.connect(masterGain);
+            masterGain.connect(audioContext.destination);
+            masterGain.connect(analyser);
+
+            sharedPreviewAudioBus = {
+                context: audioContext,
+                mixGain,
+                compressor,
+                masterGain,
+                analyser,
+                previewDestinations: new Set(),
+                meterLevel: 0,
+            };
+
+            ensureAudioLevelMeterLoop();
+        } catch (error) {
+            sharedPreviewAudioBus = null;
+            return null;
+        }
+    }
+
+    return sharedPreviewAudioBus;
+}
+
+function connectPreviewAudioBusToDestination(destination) {
+    if (!sharedPreviewAudioBus || !destination) {
+        return;
+    }
+    const { masterGain, previewDestinations } = sharedPreviewAudioBus;
+    if (previewDestinations.has(destination)) {
+        return;
+    }
+    try {
+        masterGain.connect(destination);
+        previewDestinations.add(destination);
+    } catch (error) {
+        // Ignore failures when connecting the preview mix bus to export routing.
+    }
+}
 
 function getOrCreatePreviewAudioContext() {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
@@ -872,6 +1039,7 @@ function getOrCreatePreviewAudioContext() {
     if (sharedPreviewAudioContext && sharedPreviewAudioContext.state === 'closed') {
         sharedPreviewAudioContext = null;
         sharedPreviewAudioDestination = null;
+        teardownPreviewAudioBus();
     }
 
     if (!sharedPreviewAudioContext) {
@@ -906,6 +1074,8 @@ function getOrCreatePreviewAudioDestination() {
         }
     }
 
+    connectPreviewAudioBusToDestination(sharedPreviewAudioDestination);
+
     return sharedPreviewAudioDestination;
 }
 
@@ -927,17 +1097,10 @@ function disconnectMediaEnvelopeAudio(state) {
             // Ignore disconnect errors when cleaning up audio routing.
         }
     }
-    if (state.previewDestination && state.gainNode) {
-        try {
-            state.gainNode.disconnect(state.previewDestination);
-        } catch (error) {
-            // Ignore disconnect errors when cleaning up audio routing.
-        }
-    }
     state.gainNode = null;
     state.sourceNode = null;
     state.audioContext = null;
-    state.previewDestination = null;
+    state.audioBus = null;
 }
 
 function getMediaEnvelopeState(mediaElement) {
@@ -953,7 +1116,7 @@ function getMediaEnvelopeState(mediaElement) {
             audioContext: null,
             sourceNode: null,
             gainNode: null,
-            previewDestination: null,
+            audioBus: null,
         });
     }
     const state = mediaEnvelopeStates.get(mediaElement);
@@ -983,21 +1146,34 @@ function ensureMediaElementGainNode(mediaElement) {
         disconnectMediaEnvelopeAudio(state);
     }
 
+    const audioBus = getOrCreatePreviewAudioBus(audioContext);
+
+    if (state.audioBus && state.audioBus !== audioBus && state.gainNode) {
+        try {
+            state.gainNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors when retargeting audio routing.
+        }
+        state.audioBus = null;
+    }
+
     if (!state.sourceNode || !state.gainNode) {
         try {
             const sourceNode = audioContext.createMediaElementSource(mediaElement);
             const gainNode = audioContext.createGain();
             gainNode.gain.value = clampVolume(state.baseVolume);
             sourceNode.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            const previewDestination = getOrCreatePreviewAudioDestination();
-            if (previewDestination) {
+            if (audioBus && audioBus.mixGain) {
                 try {
-                    gainNode.connect(previewDestination);
-                    state.previewDestination = previewDestination;
+                    gainNode.connect(audioBus.mixGain);
                 } catch (error) {
-                    // Ignore connection errors to preview export destination.
+                    gainNode.connect(audioContext.destination);
                 }
+                connectPreviewAudioBusToDestination(getOrCreatePreviewAudioDestination());
+                state.audioBus = audioBus;
+            } else {
+                gainNode.connect(audioContext.destination);
+                state.audioBus = null;
             }
             state.audioContext = audioContext;
             state.sourceNode = sourceNode;
@@ -1006,16 +1182,38 @@ function ensureMediaElementGainNode(mediaElement) {
             disconnectMediaEnvelopeAudio(state);
             return null;
         }
-    }
-
-    const previewDestination = getOrCreatePreviewAudioDestination();
-    if (previewDestination && state.previewDestination !== previewDestination && state.gainNode) {
+    } else if (state.gainNode && audioBus && state.audioBus !== audioBus) {
         try {
-            state.gainNode.connect(previewDestination);
-            state.previewDestination = previewDestination;
+            state.gainNode.disconnect();
         } catch (error) {
-            // Ignore connection errors when reusing preview export destination.
+            // Ignore disconnect errors when updating the audio bus.
         }
+        try {
+            state.gainNode.connect(audioBus.mixGain);
+            state.audioBus = audioBus;
+            connectPreviewAudioBusToDestination(getOrCreatePreviewAudioDestination());
+        } catch (error) {
+            state.audioBus = null;
+            try {
+                state.gainNode.connect(audioContext.destination);
+            } catch (connectError) {
+                disconnectMediaEnvelopeAudio(state);
+                return null;
+            }
+        }
+    } else if (state.gainNode && !audioBus && state.audioBus) {
+        try {
+            state.gainNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors when falling back to direct output.
+        }
+        try {
+            state.gainNode.connect(audioContext.destination);
+        } catch (error) {
+            disconnectMediaEnvelopeAudio(state);
+            return null;
+        }
+        state.audioBus = null;
     }
 
     if (state.audioContext && state.audioContext.state === 'suspended') {
@@ -1339,6 +1537,150 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     }
 }
 
+function formatAudioTrackTimecode(milliseconds) {
+    const safeMs = Math.max(0, Math.round(Number(milliseconds) || 0));
+    const totalSeconds = Math.floor(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function collectTimelineAudioClips() {
+    if (typeof getTimelineItems !== 'function') {
+        return [];
+    }
+
+    const items = getTimelineItems();
+    const clips = [];
+
+    items.forEach((item) => {
+        if (!item || !isAudioTimelineItem(item)) {
+            return;
+        }
+
+        let identifier = item.dataset?.timelineInstanceId || '';
+        if (!identifier && typeof assignTimelineInstanceId === 'function') {
+            identifier = assignTimelineInstanceId(item);
+        }
+        if (!identifier) {
+            identifier = `audio-${clips.length + 1}`;
+        }
+
+        let startTime = 0;
+        if (typeof getTimelineItemStartTime === 'function') {
+            startTime = Math.max(0, Math.round(Number(getTimelineItemStartTime(item)) || 0));
+        }
+
+        const labelElement = item.querySelector('span');
+        const dataset = item.dataset || {};
+        const baseName = (dataset.displayName || dataset.fileName || (labelElement?.textContent || '')).trim()
+            || `Audio Clip ${clips.length + 1}`;
+
+        clips.push({
+            id: identifier,
+            item,
+            start: startTime,
+            baseName,
+        });
+    });
+
+    clips.sort((a, b) => {
+        if (a.start !== b.start) {
+            return a.start - b.start;
+        }
+        return a.baseName.localeCompare(b.baseName, undefined, { sensitivity: 'base' });
+    });
+
+    return clips.map((clip, index) => {
+        const timecode = Number.isFinite(clip.start)
+            ? formatAudioTrackTimecode(clip.start)
+            : '';
+        const label = timecode ? `${clip.baseName} (${timecode})` : clip.baseName;
+        return { ...clip, label, index };
+    });
+}
+
+function refreshAudioTrackSelector({ activeItem = null, force = false } = {}) {
+    if (!audioTrackSelect) {
+        return;
+    }
+
+    const clips = collectTimelineAudioClips();
+    cachedAudioTrackMap = new Map(clips.map((clip) => [clip.id, clip.item]));
+    const clipKeys = clips.map((clip) => clip.id);
+    const shouldRebuild = force
+        || clipKeys.length !== cachedAudioTrackKeys.length
+        || clipKeys.some((key, index) => key !== cachedAudioTrackKeys[index]);
+
+    const previousValue = audioTrackSelect.value;
+
+    if (shouldRebuild) {
+        audioTrackSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = clips.length ? 'Select an audio clip…' : 'No audio clips available';
+        audioTrackSelect.appendChild(placeholder);
+
+        clips.forEach((clip) => {
+            const option = document.createElement('option');
+            option.value = clip.id;
+            option.textContent = clip.label;
+            audioTrackSelect.appendChild(option);
+        });
+
+        cachedAudioTrackKeys = clipKeys;
+    }
+
+    const activeAudioItem = activeItem && isAudioTimelineItem(activeItem) ? activeItem : null;
+    const desiredValue = activeAudioItem?.dataset?.timelineInstanceId || '';
+    let nextValue = desiredValue;
+
+    if (nextValue && !cachedAudioTrackMap.has(nextValue)) {
+        nextValue = '';
+    }
+
+    if (!nextValue && previousValue && cachedAudioTrackMap.has(previousValue)) {
+        nextValue = previousValue;
+    }
+
+    audioTrackSelect.value = nextValue;
+
+    if (!nextValue) {
+        audioTrackSelect.selectedIndex = 0;
+    }
+
+    if (!clips.length) {
+        audioTrackSelect.disabled = true;
+        audioTrackSelect.setAttribute('aria-disabled', 'true');
+    } else {
+        audioTrackSelect.disabled = false;
+        audioTrackSelect.removeAttribute('aria-disabled');
+    }
+}
+
+function scheduleAudioTrackRefresh(options = {}) {
+    if (!audioTrackSelect || typeof window === 'undefined') {
+        return;
+    }
+
+    const defaultActiveItem = (typeof activeTimelineItem !== 'undefined') ? activeTimelineItem : null;
+    const { activeItem = defaultActiveItem, force = false } = options;
+
+    if (pendingAudioTrackRefreshId) {
+        window.cancelAnimationFrame(pendingAudioTrackRefreshId);
+        pendingAudioTrackRefreshId = 0;
+    }
+
+    pendingAudioTrackRefreshId = window.requestAnimationFrame(() => {
+        pendingAudioTrackRefreshId = 0;
+        refreshAudioTrackSelector({ activeItem, force });
+    });
+}
+
+function notifyTimelineAudioTracksChanged(options = {}) {
+    scheduleAudioTrackRefresh({ ...options, force: true });
+}
+
 function ensureTimelineAudioDefaults(timelineItem) {
     const supportsAudio = isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
     if (!supportsAudio || !timelineItem?.dataset) {
@@ -1376,6 +1718,28 @@ audioFadeControls.forEach((control) => {
     input.addEventListener('change', handleUpdate);
 });
 
+if (audioTrackSelect) {
+    audioTrackSelect.addEventListener('change', () => {
+        const selectedId = audioTrackSelect.value || '';
+        if (!selectedId) {
+            scheduleAudioTrackRefresh({
+                activeItem: (typeof activeTimelineItem !== 'undefined') ? activeTimelineItem : null,
+            });
+            return;
+        }
+
+        const targetItem = cachedAudioTrackMap.get(selectedId) || null;
+        if (targetItem && typeof setActiveTimelineItem === 'function') {
+            setActiveTimelineItem(targetItem, { focus: true });
+        } else if (!targetItem) {
+            scheduleAudioTrackRefresh({ force: true });
+        }
+    });
+}
+
+ensureAudioLevelMeterLoop();
+scheduleAudioTrackRefresh({ force: true });
+
 function syncAudioControlsToTimelineItem(timelineItem) {
     const isVideo = isVideoTimelineItem(timelineItem);
     const isAudio = isAudioTimelineItem(timelineItem);
@@ -1383,6 +1747,8 @@ function syncAudioControlsToTimelineItem(timelineItem) {
     const settings = supportsAudio
         ? getTimelineItemAudioSettings(timelineItem)
         : getDefaultAudioSettings();
+
+    scheduleAudioTrackRefresh({ activeItem: timelineItem });
 
     if (masterVolumeInput) {
         masterVolumeInput.disabled = !supportsAudio;

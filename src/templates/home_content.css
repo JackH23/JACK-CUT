@@ -1369,6 +1369,47 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     color: var(--text-secondary);
 }
 
+.audio-master-control__meter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.audio-master-control__meter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    color: rgba(148, 163, 184, 0.95);
+}
+
+.audio-master-control__meter-readout {
+    font-variant-numeric: tabular-nums;
+}
+
+.audio-master-control__meter-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(71, 85, 105, 0.4), rgba(15, 23, 42, 0.6));
+    overflow: hidden;
+}
+
+.audio-master-control__meter-fill {
+    position: absolute;
+    inset: 0;
+    width: var(--audio-meter-level, 0%);
+    background: linear-gradient(90deg, #38bdf8, #22d3ee, #a855f7);
+    transition: width 80ms ease-out;
+}
+
+.field-hint {
+    margin: 6px 0 0;
+    font-size: 0.75rem;
+    color: rgba(148, 163, 184, 0.9);
+}
+
 .animation-mode {
     display: flex;
     flex-direction: column;
