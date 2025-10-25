@@ -281,50 +281,80 @@ function preloadTimelineVideo(objectURL) {
         return Promise.resolve();
     }
 
-    if (timelineVideoPreloadCache.has(objectURL)) {
-        return timelineVideoPreloadCache.get(objectURL);
+    const cachedRecord = timelineVideoPreloadCache.get(objectURL);
+    if (cachedRecord?.promise) {
+        return cachedRecord.promise;
     }
 
-    const preloadPromise = new Promise((resolve, reject) => {
-        const video = document.createElement('video');
-        video.preload = 'auto';
-        video.muted = true;
-        video.playsInline = true;
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
 
-        let settled = false;
-
-        const cleanup = () => {
-            video.removeEventListener('loadeddata', handleReady);
-            video.removeEventListener('canplay', handleReady);
-            video.removeEventListener('canplaythrough', handleReady);
-            video.removeEventListener('error', handleError);
-            if (typeof video.pause === 'function') {
-                video.pause();
+    let removeListeners = null;
+    const record = {
+        element: video,
+        ready: false,
+        promise: null,
+        release() {
+            if (typeof removeListeners === 'function') {
+                removeListeners();
+                removeListeners = null;
             }
-            video.removeAttribute?.('src');
+            try {
+                video.pause();
+            } catch (pauseError) {
+                // Ignore pause errors triggered during release.
+            }
+            try {
+                video.removeAttribute?.('src');
+            } catch (removeError) {
+                // Ignore attribute removal failures on release.
+            }
             try {
                 video.load();
-            } catch (error) {
-                // Ignore cleanup failures.
+            } catch (loadError) {
+                // Ignore load reset failures on release.
             }
-        };
+        },
+    };
 
-        const settle = (callback) => (event) => {
+    const preloadPromise = new Promise((resolve, reject) => {
+        let settled = false;
+
+        const finalize = (callback) => (event) => {
             if (settled) {
                 return;
             }
             settled = true;
-            cleanup();
+            if (typeof removeListeners === 'function') {
+                removeListeners();
+                removeListeners = null;
+            }
+            try {
+                video.pause();
+            } catch (pauseError) {
+                // Ignore pause failures while settling the preload.
+            }
             callback(event);
         };
 
-        const handleReady = settle(() => {
+        const handleReady = finalize(() => {
+            record.ready = true;
             resolve();
         });
 
-        const handleError = settle((event) => {
+        const handleError = finalize((event) => {
+            record.ready = false;
             reject(event?.error || new Error('Failed to preload video.'));
         });
+
+        removeListeners = () => {
+            video.removeEventListener('loadeddata', handleReady);
+            video.removeEventListener('canplay', handleReady);
+            video.removeEventListener('canplaythrough', handleReady);
+            video.removeEventListener('error', handleError);
+        };
 
         video.addEventListener('loadeddata', handleReady, { once: true });
         video.addEventListener('canplay', handleReady, { once: true });
@@ -339,18 +369,64 @@ function preloadTimelineVideo(objectURL) {
         }
     }).catch((error) => {
         timelineVideoPreloadCache.delete(objectURL);
+        record.release();
         throw error;
+    }).finally(() => {
+        if (!record.ready) {
+            return;
+        }
+        try {
+            video.currentTime = 0;
+        } catch (seekError) {
+            // Ignore failures while rewinding the warm video element.
+        }
     });
 
-    timelineVideoPreloadCache.set(objectURL, preloadPromise);
-    return preloadPromise;
+    record.promise = preloadPromise.then(() => undefined);
+    timelineVideoPreloadCache.set(objectURL, record);
+    return record.promise;
+}
+
+function getPreloadedTimelineVideo(objectURL) {
+    if (!objectURL) {
+        return null;
+    }
+    const record = timelineVideoPreloadCache.get(objectURL);
+    return record?.element || null;
 }
 
 function releaseTimelineVideo(objectURL) {
     if (!objectURL) {
         return;
     }
+    const record = timelineVideoPreloadCache.get(objectURL);
+    if (!record) {
+        return;
+    }
     timelineVideoPreloadCache.delete(objectURL);
+    if (typeof record.release === 'function') {
+        record.release();
+        return;
+    }
+    const video = record.element;
+    if (!video) {
+        return;
+    }
+    try {
+        video.pause();
+    } catch (pauseError) {
+        // Ignore pause failures during release.
+    }
+    try {
+        video.removeAttribute?.('src');
+    } catch (removeError) {
+        // Ignore remove attribute failures during release.
+    }
+    try {
+        video.load();
+    } catch (loadError) {
+        // Ignore load reset failures during release.
+    }
 }
 
 function releaseTimelineImage(objectURL) {
@@ -358,6 +434,158 @@ function releaseTimelineImage(objectURL) {
         return;
     }
     timelineImagePreloadCache.delete(objectURL);
+}
+
+function preloadTimelineAudio(objectURL) {
+    if (!objectURL) {
+        return Promise.resolve();
+    }
+
+    const cachedRecord = timelineAudioPreloadCache.get(objectURL);
+    if (cachedRecord?.promise) {
+        return cachedRecord.promise;
+    }
+
+    const audio = document.createElement('audio');
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
+
+    let removeListeners = null;
+    const record = {
+        element: audio,
+        ready: false,
+        promise: null,
+        release() {
+            if (typeof removeListeners === 'function') {
+                removeListeners();
+                removeListeners = null;
+            }
+            try {
+                audio.pause();
+            } catch (pauseError) {
+                // Ignore pause errors triggered during release.
+            }
+            try {
+                audio.removeAttribute?.('src');
+            } catch (removeError) {
+                // Ignore attribute removal failures on release.
+            }
+            try {
+                audio.load();
+            } catch (loadError) {
+                // Ignore load reset failures on release.
+            }
+        },
+    };
+
+    const preloadPromise = new Promise((resolve, reject) => {
+        let settled = false;
+
+        const finalize = (callback) => (event) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (typeof removeListeners === 'function') {
+                removeListeners();
+                removeListeners = null;
+            }
+            try {
+                audio.pause();
+            } catch (pauseError) {
+                // Ignore pause failures during preload finalization.
+            }
+            callback(event);
+        };
+
+        const handleReady = finalize(() => {
+            record.ready = true;
+            resolve();
+        });
+
+        const handleError = finalize((event) => {
+            record.ready = false;
+            reject(event?.error || new Error('Failed to preload audio.'));
+        });
+
+        removeListeners = () => {
+            audio.removeEventListener('loadeddata', handleReady);
+            audio.removeEventListener('canplay', handleReady);
+            audio.removeEventListener('canplaythrough', handleReady);
+            audio.removeEventListener('error', handleError);
+        };
+
+        audio.addEventListener('loadeddata', handleReady, { once: true });
+        audio.addEventListener('canplay', handleReady, { once: true });
+        audio.addEventListener('canplaythrough', handleReady, { once: true });
+        audio.addEventListener('error', handleError, { once: true });
+
+        try {
+            audio.src = objectURL;
+            audio.load();
+        } catch (error) {
+            handleError({ error });
+        }
+    }).catch((error) => {
+        timelineAudioPreloadCache.delete(objectURL);
+        record.release();
+        throw error;
+    }).finally(() => {
+        if (!record.ready) {
+            return;
+        }
+        try {
+            audio.currentTime = 0;
+        } catch (seekError) {
+            // Ignore rewind failures for audio warmup elements.
+        }
+    });
+
+    record.promise = preloadPromise.then(() => undefined);
+    timelineAudioPreloadCache.set(objectURL, record);
+    return record.promise;
+}
+
+function getPreloadedTimelineAudio(objectURL) {
+    if (!objectURL) {
+        return null;
+    }
+    const record = timelineAudioPreloadCache.get(objectURL);
+    return record?.element || null;
+}
+
+function releaseTimelineAudio(objectURL) {
+    if (!objectURL) {
+        return;
+    }
+    const record = timelineAudioPreloadCache.get(objectURL);
+    if (!record) {
+        return;
+    }
+    timelineAudioPreloadCache.delete(objectURL);
+    if (typeof record.release === 'function') {
+        record.release();
+        return;
+    }
+    const audio = record.element;
+    if (!audio) {
+        return;
+    }
+    try {
+        audio.pause();
+    } catch (pauseError) {
+        // Ignore pause failures during release.
+    }
+    try {
+        audio.removeAttribute?.('src');
+    } catch (removeError) {
+        // Ignore attribute removal failures during release.
+    }
+    try {
+        audio.load();
+    } catch (loadError) {
+        // Ignore load reset failures during release.
+    }
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {

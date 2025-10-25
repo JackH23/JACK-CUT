@@ -2899,6 +2899,8 @@ function removeTimelineItem(timelineItem, options = {}) {
             releaseTimelineImage(objectUrl);
         } else if (fileType.startsWith('video/')) {
             releaseTimelineVideo(objectUrl);
+        } else if (fileType.startsWith('audio/')) {
+            releaseTimelineAudio(objectUrl);
         }
         if (!hasStagedUpload) {
             try {
@@ -5421,8 +5423,18 @@ async function playTimelineItem(
         resetPreviewScroll();
         setPreviewImageVisibility(false);
         previewImage.removeAttribute('src');
-        previewVideo.hidden = false;
-        previewPlaceholder.hidden = true;
+        previewVideo.hidden = true;
+        previewVideo.classList.add('is-buffering');
+        if (previewArea) {
+            previewArea.classList.add('is-buffering');
+        }
+        const placeholderState = previewPlaceholder
+            ? { hidden: previewPlaceholder.hidden, text: previewPlaceholder.textContent }
+            : null;
+        if (previewPlaceholder) {
+            previewPlaceholder.hidden = false;
+            previewPlaceholder.textContent = 'Preparing video preview…';
+        }
         applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
         if (typeof refreshPreviewAudioMix === 'function') {
             refreshPreviewAudioMix({
@@ -5430,6 +5442,7 @@ async function playTimelineItem(
                 activeItem: timelineItem,
             });
         }
+        preloadTimelineVideo(objectURL).catch(() => {});
 
         await new Promise((resolve) => {
             let resolved = false;
@@ -5438,5 +5451,24 @@ async function playTimelineItem(
             let onError = null;
             const abortController = new AbortController();
             let playbackStarted = false;
+
+            const clearBufferingState = () => {
+                previewVideo.classList.remove('is-buffering');
+                if (previewArea) {
+                    previewArea.classList.remove('is-buffering');
+                }
+            };
+
+            const restorePlaceholder = () => {
+                if (!previewPlaceholder) {
+                    return;
+                }
+                if (placeholderState && typeof placeholderState.text === 'string') {
+                    previewPlaceholder.textContent = placeholderState.text;
+                } else if (defaultPreviewPlaceholderText) {
+                    previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+                }
+                previewPlaceholder.hidden = true;
+            };
 
             const cleanup = () => {

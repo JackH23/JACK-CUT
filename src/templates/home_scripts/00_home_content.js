@@ -54,6 +54,7 @@ const previewResizeHandles = previewImageFrame
     : [];
 const timelineImagePreloadCache = new Map();
 const timelineVideoPreloadCache = new Map();
+const timelineAudioPreloadCache = new Map();
 const stagedUploadsByObjectUrl = new Map();
 const previewCard = document.querySelector('.preview-card');
 const previewOverlayStack = document.getElementById('preview-overlay-stack');

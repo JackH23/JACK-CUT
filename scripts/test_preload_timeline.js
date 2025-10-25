@@ -94,6 +94,8 @@ class MockVideo extends MockEventTarget {
         if (value) {
             setTimeout(() => {
                 this.dispatchEvent({ type: 'loadeddata' });
+                this.dispatchEvent({ type: 'canplay' });
+                this.dispatchEvent({ type: 'canplaythrough' });
             }, 0);
         }
     }
@@ -120,6 +122,49 @@ class MockVideo extends MockEventTarget {
 
 MockVideo.instances = [];
 
+class MockAudio extends MockEventTarget {
+    constructor() {
+        super();
+        this._src = '';
+        this.attributeRemoved = false;
+        this.loadCalls = 0;
+        this.pauseCalls = 0;
+        MockAudio.instances.push(this);
+    }
+
+    set src(value) {
+        this._src = value || '';
+        if (value) {
+            setTimeout(() => {
+                this.dispatchEvent({ type: 'loadeddata' });
+                this.dispatchEvent({ type: 'canplay' });
+                this.dispatchEvent({ type: 'canplaythrough' });
+            }, 0);
+        }
+    }
+
+    get src() {
+        return this._src;
+    }
+
+    load() {
+        this.loadCalls += 1;
+    }
+
+    pause() {
+        this.pauseCalls += 1;
+    }
+
+    removeAttribute(name) {
+        if (name === 'src') {
+            this.attributeRemoved = true;
+            this._src = '';
+        }
+    }
+}
+
+MockAudio.instances = [];
+
 const context = vm.createContext({
     console,
     setTimeout,
@@ -127,11 +172,15 @@ const context = vm.createContext({
     Promise,
     timelineImagePreloadCache: new Map(),
     timelineVideoPreloadCache: new Map(),
+    timelineAudioPreloadCache: new Map(),
     Image: MockImage,
     document: {
         createElement(tagName) {
             if (tagName === 'video') {
                 return new MockVideo();
+            }
+            if (tagName === 'audio') {
+                return new MockAudio();
             }
             throw new Error(`Unsupported element requested: ${tagName}`);
         },
@@ -140,12 +189,18 @@ const context = vm.createContext({
 
 const source = fs.readFileSync('src/templates/home_scripts/02_home_content.js', 'utf8');
 const imageStart = source.indexOf('function preloadTimelineImage');
-const releaseStart = source.indexOf('function releaseTimelineVideo');
-const snippet = source.slice(imageStart, releaseStart);
-const script = new vm.Script(`${snippet}\nthis.preloadTimelineImage = preloadTimelineImage;\nthis.preloadTimelineVideo = preloadTimelineVideo;`);
+const snippetEnd = source.indexOf('function waitForMediaReady');
+const snippet = source.slice(imageStart, snippetEnd);
+const script = new vm.Script(`${snippet}\nthis.preloadTimelineImage = preloadTimelineImage;\nthis.preloadTimelineVideo = preloadTimelineVideo;\nthis.releaseTimelineVideo = releaseTimelineVideo;\nthis.preloadTimelineAudio = preloadTimelineAudio;\nthis.releaseTimelineAudio = releaseTimelineAudio;`);
 script.runInContext(context);
 
-const { preloadTimelineImage, preloadTimelineVideo } = context;
+const {
+    preloadTimelineImage,
+    preloadTimelineVideo,
+    releaseTimelineVideo,
+    preloadTimelineAudio,
+    releaseTimelineAudio,
+} = context;
 
 (async () => {
     const firstImagePromise = preloadTimelineImage('image://example');
@@ -166,14 +221,35 @@ const { preloadTimelineImage, preloadTimelineVideo } = context;
     const firstVideoResult = await firstVideoPromise;
     assert.strictEqual(firstVideoResult, undefined, 'Video preload should resolve to void');
     const videoInstance = MockVideo.instances[0];
-    assert.ok(videoInstance.pauseCalls >= 1, 'Video should be paused during cleanup');
-    assert.ok(videoInstance.loadCalls >= 1, 'Video load should be invoked during cleanup');
-    assert.strictEqual(videoInstance.attributeRemoved, true, 'Video src attribute should be removed');
-    assert.strictEqual(videoInstance.src, '', 'Video src should be cleared after preload');
+    assert.ok(videoInstance.pauseCalls >= 1, 'Video should be paused during warmup');
+    assert.strictEqual(videoInstance.loadCalls, 1, 'Video load should be invoked once to buffer data');
+    assert.strictEqual(videoInstance.attributeRemoved, false, 'Video src should be retained after warmup');
+    assert.notStrictEqual(videoInstance.src, '', 'Video src should be kept for reuse after warmup');
 
     const secondVideoResult = await preloadTimelineVideo('video://example');
     assert.strictEqual(secondVideoResult, undefined, 'Cached video preload should resolve to void');
     assert.strictEqual(MockVideo.instances.length, 1, 'Video preload should reuse cached promise');
+
+    releaseTimelineVideo('video://example');
+    assert.strictEqual(videoInstance.attributeRemoved, true, 'Video src should be removed on release');
+    assert.ok(videoInstance.loadCalls >= 2, 'Video load should be invoked again during release');
+
+    const firstAudioPromise = preloadTimelineAudio('audio://example');
+    assert.strictEqual(MockAudio.instances.length, 1, 'Expected one audio preload instance');
+    const firstAudioResult = await firstAudioPromise;
+    assert.strictEqual(firstAudioResult, undefined, 'Audio preload should resolve to void');
+    const audioInstance = MockAudio.instances[0];
+    assert.ok(audioInstance.pauseCalls >= 1, 'Audio should be paused during warmup');
+    assert.strictEqual(audioInstance.loadCalls, 1, 'Audio load should be invoked once to buffer data');
+    assert.strictEqual(audioInstance.attributeRemoved, false, 'Audio src should be retained after warmup');
+
+    const secondAudioResult = await preloadTimelineAudio('audio://example');
+    assert.strictEqual(secondAudioResult, undefined, 'Cached audio preload should resolve to void');
+    assert.strictEqual(MockAudio.instances.length, 1, 'Audio preload should reuse cached promise');
+
+    releaseTimelineAudio('audio://example');
+    assert.strictEqual(audioInstance.attributeRemoved, true, 'Audio src should be removed on release');
+    assert.ok(audioInstance.loadCalls >= 2, 'Audio load should be invoked again during release');
 
     // eslint-disable-next-line no-console
     console.log('All preload timeline tests passed.');

@@ -7,6 +7,8 @@
                 if (!abortController.signal.aborted) {
                     abortController.abort();
                 }
+                clearBufferingState();
+                restorePlaceholder();
                 cancelPreviewAudioEnvelope({ restoreVolume: true });
             };
 
@@ -133,6 +135,10 @@
                     return;
                 }
 
+                clearBufferingState();
+                restorePlaceholder();
+                previewVideo.hidden = false;
+
                 const seekToStartOffset = () => new Promise((resolveSeek) => {
                     if (safeStartOffset <= 0) {
                         previewVideo.currentTime = 0;
@@ -182,6 +188,8 @@
                 });
 
                 await seekToStartOffset();
+
+                await ensurePreviewFrameSettled({ signal: abortController.signal });
 
                 if (typeof updateTimelinePlaybackSyncFallback === 'function') {
                     updateTimelinePlaybackSyncFallback(resumeTimelineTime);
@@ -270,6 +278,8 @@
             previewPlaceholder.hidden = false;
             previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
         }
+
+        preloadTimelineAudio(objectURL).catch(() => {});
 
         const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
         const remainingClipDuration = Math.max(0, clipDuration - startOffsetMs);
@@ -1142,24 +1152,101 @@ async function primeExportStartFrame(playbackContext, options = {}) {
     const startOffsetMs = Math.max(0, Math.round(segmentStart - (clipStartTime || 0)));
 
     if (fileType.startsWith('video/')) {
+        const objectUrl = activeItem.dataset.objectUrl || '';
         const targetTimeSeconds = startOffsetMs / 1000;
+        const placeholderSnapshot = previewPlaceholder
+            ? { hidden: previewPlaceholder.hidden, text: previewPlaceholder.textContent }
+            : null;
+        let bufferingActive = false;
+        const enterBuffering = (message) => {
+            bufferingActive = true;
+            previewVideo.classList.add('is-buffering');
+            previewVideo.hidden = true;
+            if (previewArea) {
+                previewArea.classList.add('is-buffering');
+            }
+            if (previewPlaceholder) {
+                previewPlaceholder.hidden = false;
+                previewPlaceholder.textContent = message;
+            }
+        };
+        const exitBuffering = (options = {}) => {
+            if (!bufferingActive) {
+                return;
+            }
+            bufferingActive = false;
+            previewVideo.classList.remove('is-buffering');
+            if (previewArea) {
+                previewArea.classList.remove('is-buffering');
+            }
+            if (previewPlaceholder) {
+                if (options.keepPlaceholderHidden) {
+                    previewPlaceholder.hidden = true;
+                } else if (placeholderSnapshot) {
+                    previewPlaceholder.hidden = placeholderSnapshot.hidden;
+                } else {
+                    previewPlaceholder.hidden = true;
+                }
+                if (placeholderSnapshot && typeof placeholderSnapshot.text === 'string') {
+                    previewPlaceholder.textContent = placeholderSnapshot.text;
+                } else if (!previewPlaceholder.hidden && defaultPreviewPlaceholderText) {
+                    previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+                }
+            }
+        };
+
+        enterBuffering('Preparing export preview…');
         previewVideo.pause();
+
+        if (objectUrl) {
+            try {
+                await preloadTimelineVideo(objectUrl);
+            } catch (warmupError) {
+                if (!signal?.aborted) {
+                    console.warn('First clip video could not buffer before export.', warmupError);
+                }
+            }
+            if (signal?.aborted) {
+                exitBuffering();
+                return;
+            }
+            if (previewVideo.src !== objectUrl) {
+                try {
+                    previewVideo.src = objectUrl;
+                    previewVideo.load();
+                } catch (setSourceError) {
+                    console.warn('Unable to prime export preview video source.', setSourceError);
+                }
+            }
+        }
+
         try {
             await waitForMediaReady(previewVideo, { signal });
             if (signal?.aborted) {
+                exitBuffering();
                 return;
             }
         } catch (error) {
+            exitBuffering();
             if (signal?.aborted) {
                 return;
             }
             console.warn('First clip video could not buffer before export.', error);
         }
+
         await seekMediaElementTo(previewVideo, targetTimeSeconds, { timeoutMs: 900, signal });
         if (signal?.aborted) {
+            exitBuffering();
             return;
         }
+
         previewVideo.pause();
+        previewVideo.hidden = false;
+        exitBuffering({ keepPlaceholderHidden: true });
+        await ensurePreviewFrameSettled({
+            signal,
+            frameCount: Math.max(2, Math.round(frameRate / 24)),
+        });
     } else if (fileType.startsWith('image/')) {
         await waitForPreviewImageReady(1500);
         if (signal?.aborted) {
@@ -1169,6 +1256,16 @@ async function primeExportStartFrame(playbackContext, options = {}) {
         applyActiveImageBlurKeyframe({ reason: 'export-pre-roll' });
     } else {
         refreshActiveOverlayLayers();
+        const objectUrl = activeItem.dataset.objectUrl || '';
+        if (objectUrl) {
+            try {
+                await preloadTimelineAudio(objectUrl);
+            } catch (error) {
+                if (!signal?.aborted) {
+                    console.warn('First clip audio could not buffer before export.', error);
+                }
+            }
+        }
     }
 
     const warmupFrames = Math.max(1, Math.min(4, Math.round(frameRate / 24)));
@@ -1197,6 +1294,18 @@ async function runExportPreRoll(preRollMs, frameRate, options = {}) {
 }
 
 const EXPORT_PRE_ROLL_MS = 80;
+
+function ensurePreviewFrameSettled(options = {}) {
+    const frameCount = Math.max(1, Math.round(Number(options?.frameCount) || 2));
+    const signal = getAbortSignal(options);
+
+    let sequence = Promise.resolve();
+    for (let index = 0; index < frameCount; index += 1) {
+        sequence = sequence.then(() => waitForNextFrame({ signal }));
+    }
+
+    return sequence;
+}
 
 function waitForNextFrame(options = null) {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
@@ -1408,6 +1517,8 @@ async function warmupExportPlaybackContext(playbackContext, options = {}) {
             basePromise = preloadTimelineImage(objectUrl);
         } else if (fileType.startsWith('video/')) {
             basePromise = preloadTimelineVideo(objectUrl);
+        } else if (fileType.startsWith('audio/')) {
+            basePromise = preloadTimelineAudio(objectUrl);
         }
 
         return withTimeout(
