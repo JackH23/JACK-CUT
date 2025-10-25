@@ -639,6 +639,9 @@ function initializeTimelineItem(timelineItem) {
     const fileType = timelineItem.dataset.fileType || '';
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
+        if (typeof attachTimelineItemVolumeControl === 'function') {
+            attachTimelineItemVolumeControl(timelineItem);
+        }
     }
     if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         attachResizeHandles(timelineItem);

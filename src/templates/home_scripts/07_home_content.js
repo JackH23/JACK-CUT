@@ -2278,6 +2278,123 @@ const TIMELINE_UNDO_STACK_LIMIT = 50;
 const timelineUndoStack = [];
 let timelineClipboardSnapshot = null;
 const timelineObjectUrlUsage = new Map();
+const timelineItemVolumeControls = new WeakMap();
+
+function getTimelineItemVolumeControlState(timelineItem) {
+    return timelineItemVolumeControls.get(timelineItem) || null;
+}
+
+function syncTimelineItemVolumeControl(timelineItem) {
+    const state = getTimelineItemVolumeControlState(timelineItem);
+    if (!timelineItem || !state) {
+        return;
+    }
+    const settings = getTimelineItemAudioSettings(timelineItem);
+    const percent = clampVolumePercent(settings.volumePercent);
+    state.input.value = String(percent);
+    state.input.setAttribute('aria-valuenow', String(percent));
+    state.input.setAttribute('aria-valuetext', formatMasterVolumeDisplay(percent));
+    state.value.textContent = formatMasterVolumeDisplay(percent);
+}
+
+function attachTimelineItemVolumeControl(timelineItem) {
+    if (!timelineItem || getTimelineItemVolumeControlState(timelineItem)) {
+        syncTimelineItemVolumeControl(timelineItem);
+        return getTimelineItemVolumeControlState(timelineItem)?.container || null;
+    }
+
+    const supportsAudio = (typeof isVideoTimelineItem === 'function' && isVideoTimelineItem(timelineItem))
+        || (typeof isAudioTimelineItem === 'function' && isAudioTimelineItem(timelineItem));
+
+    if (!supportsAudio) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'timeline-item-volume';
+    container.setAttribute('role', 'group');
+    container.setAttribute('aria-label', 'Clip volume');
+
+    const label = document.createElement('span');
+    label.className = 'timeline-item-volume__label';
+    label.textContent = 'Volume';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = String(AUDIO_VOLUME_MIN_PERCENT);
+    slider.max = String(AUDIO_VOLUME_MAX_PERCENT);
+    slider.step = '1';
+    slider.className = 'timeline-item-volume__slider';
+    slider.setAttribute('aria-label', 'Adjust clip volume');
+    slider.setAttribute('aria-valuemin', String(AUDIO_VOLUME_MIN_PERCENT));
+    slider.setAttribute('aria-valuemax', String(AUDIO_VOLUME_MAX_PERCENT));
+
+    const value = document.createElement('span');
+    value.className = 'timeline-item-volume__value';
+
+    const handleVolumeChange = (event) => {
+        if (!timelineItem || !event?.target) {
+            return;
+        }
+        const percent = clampVolumePercent(event.target.value);
+        slider.value = String(percent);
+        if (typeof persistTimelineItemAudioSettings === 'function') {
+            persistTimelineItemAudioSettings(timelineItem, { volumePercent: percent });
+        }
+        if (typeof activeTimelineItem !== 'undefined'
+            && timelineItem === activeTimelineItem
+            && masterVolumeInput
+        ) {
+            masterVolumeInput.value = String(percent);
+            if (typeof updateMasterVolumeReadout === 'function') {
+                updateMasterVolumeReadout(percent);
+            }
+        } else {
+            syncTimelineItemVolumeControl(timelineItem);
+        }
+    };
+
+    slider.addEventListener('input', handleVolumeChange);
+    slider.addEventListener('change', handleVolumeChange);
+
+    container.appendChild(label);
+    container.appendChild(slider);
+    container.appendChild(value);
+
+    const referenceNode = timelineItem.querySelector('.timeline-item-remove');
+    if (referenceNode) {
+        timelineItem.insertBefore(container, referenceNode);
+    } else {
+        timelineItem.appendChild(container);
+    }
+
+    timelineItemVolumeControls.set(timelineItem, {
+        container,
+        input: slider,
+        value,
+        handler: handleVolumeChange,
+    });
+
+    syncTimelineItemVolumeControl(timelineItem);
+
+    return container;
+}
+
+function detachTimelineItemVolumeControl(timelineItem) {
+    const state = getTimelineItemVolumeControlState(timelineItem);
+    if (!timelineItem || !state) {
+        return;
+    }
+
+    state.input.removeEventListener('input', state.handler);
+    state.input.removeEventListener('change', state.handler);
+
+    if (state.container && state.container.parentNode === timelineItem) {
+        timelineItem.removeChild(state.container);
+    }
+
+    timelineItemVolumeControls.delete(timelineItem);
+}
 const NON_TEXT_INPUT_TYPES = new Set([
     'button',
     'checkbox',
@@ -2745,6 +2862,9 @@ function removeTimelineItem(timelineItem, options = {}) {
     const wasActive = timelineItem === activeTimelineItem;
 
     detachAudioWaveformResizeObserver(timelineItem);
+    if (typeof detachTimelineItemVolumeControl === 'function') {
+        detachTimelineItemVolumeControl(timelineItem);
+    }
     releaseTimelineCanvasCustomImage(timelineItem);
     timelineItem.remove();
 
@@ -3083,6 +3203,16 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
     }
 
     applyCanvasSettingsToPreview(timelineItem);
+    if (typeof refreshPreviewAudioMix === 'function') {
+        const mixOptions = {
+            entries: overlayEntries,
+            activeItem: timelineItem,
+        };
+        if (fileType.startsWith('audio/')) {
+            mixOptions.overlayItem = timelineItem;
+        }
+        refreshPreviewAudioMix(mixOptions);
+    }
     const shouldFocusTextEditor = Boolean(options.focusTextEditor);
     const autoFocusTextEditor = options.autoFocus;
     const placeTextCursorAtEnd = options.placeTextCursorAtEnd !== false;
@@ -4085,6 +4215,10 @@ function stopPreviewAudio(options = {}) {
         clearTimelinePlaybackSyncSource(activeAudioOverlayEntry.syncSource);
     }
     activeAudioOverlayEntry = null;
+
+    if (typeof refreshPreviewAudioMix === 'function') {
+        refreshPreviewAudioMix();
+    }
 }
 
 function getAudioOverlayEntry(entries) {
@@ -4172,6 +4306,9 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     const normalizedSegmentTime = Number.isFinite(segmentStartTimeMs)
         ? Math.max(0, Math.round(segmentStartTimeMs))
         : null;
+    const activePlaybackItem = typeof activeTimelineItem !== 'undefined'
+        ? activeTimelineItem
+        : null;
 
     let audioEntry = normalizeAudioOverlayEntry(getAudioOverlayEntry(entries));
 
@@ -4194,6 +4331,12 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     }
 
     if (!audioEntry || !previewAudio) {
+        if (typeof refreshPreviewAudioMix === 'function') {
+            refreshPreviewAudioMix({
+                entries,
+                activeItem: activePlaybackItem,
+            });
+        }
         stopPreviewAudio({ resetTime: false });
         return;
     }
@@ -4208,6 +4351,17 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         ),
     );
     const objectURL = audioEntry.item?.dataset?.objectUrl || '';
+
+    const mix = typeof refreshPreviewAudioMix === 'function'
+        ? refreshPreviewAudioMix({
+            entries,
+            activeItem: activePlaybackItem,
+            overlayItem: audioEntry.item,
+        })
+        : null;
+    const overlayGain = (mix?.gainsByItem instanceof Map && mix.gainsByItem.has(audioEntry.item))
+        ? mix.gainsByItem.get(audioEntry.item)
+        : null;
 
     const needsRestart = !activeAudioOverlayEntry
         || activeAudioOverlayEntry.item !== audioEntry.item
@@ -4247,10 +4401,16 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         }
 
         const audioSettings = getTimelineItemAudioSettings(audioEntry.item);
-        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewAudio });
+        applyMasterVolumeToPreview(audioSettings.volumePercent, {
+            mediaElement: previewAudio,
+            mixGain: overlayGain,
+        });
         const remainingDuration = Math.max(0, clipDuration - offsetMs);
         if (remainingDuration > 0) {
-            applyPreviewAudioEnvelope(audioSettings, remainingDuration, { mediaElement: previewAudio });
+            applyPreviewAudioEnvelope(audioSettings, remainingDuration, {
+                mediaElement: previewAudio,
+                mixGain: overlayGain,
+            });
         } else {
             cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
         }
@@ -5002,6 +5162,12 @@ async function playTimelineItem(
         previewVideo.hidden = false;
         previewPlaceholder.hidden = true;
         applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
+        if (typeof refreshPreviewAudioMix === 'function') {
+            refreshPreviewAudioMix({
+                entries: overlayEntries,
+                activeItem: timelineItem,
+            });
+        }
 
         await new Promise((resolve) => {
             let resolved = false;
