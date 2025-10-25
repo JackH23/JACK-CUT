@@ -2286,7 +2286,18 @@ function getTimelineItemVolumeControlState(timelineItem) {
 
 function syncTimelineItemVolumeControl(timelineItem) {
     const state = getTimelineItemVolumeControlState(timelineItem);
-    if (!timelineItem || !state) {
+    if (!timelineItem) {
+        return;
+    }
+    const isAudioItem = (typeof isAudioTimelineItem === 'function')
+        && isAudioTimelineItem(timelineItem);
+    if (isAudioItem) {
+        if (state) {
+            detachTimelineItemVolumeControl(timelineItem);
+        }
+        return;
+    }
+    if (!state) {
         return;
     }
     const settings = getTimelineItemAudioSettings(timelineItem);
@@ -2303,8 +2314,17 @@ function attachTimelineItemVolumeControl(timelineItem) {
         return getTimelineItemVolumeControlState(timelineItem)?.container || null;
     }
 
-    const supportsAudio = (typeof isVideoTimelineItem === 'function' && isVideoTimelineItem(timelineItem))
-        || (typeof isAudioTimelineItem === 'function' && isAudioTimelineItem(timelineItem));
+    const isVideoItem = (typeof isVideoTimelineItem === 'function')
+        && isVideoTimelineItem(timelineItem);
+    const isAudioItem = (typeof isAudioTimelineItem === 'function')
+        && isAudioTimelineItem(timelineItem);
+
+    if (isAudioItem) {
+        detachTimelineItemVolumeControl(timelineItem);
+        return null;
+    }
+
+    const supportsAudio = isVideoItem;
 
     if (!supportsAudio) {
         return null;

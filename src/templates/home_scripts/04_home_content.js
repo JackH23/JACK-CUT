@@ -637,11 +637,18 @@ function initializeTimelineItem(timelineItem) {
     }
     enableTimelineItemDragging(timelineItem);
     const fileType = timelineItem.dataset.fileType || '';
-    if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
+    if (fileType.startsWith('audio/')) {
+        if (typeof detachTimelineItemVolumeControl === 'function') {
+            detachTimelineItemVolumeControl(timelineItem);
+        }
+    }
+    if (fileType.startsWith('video/')) {
         ensureTimelineAudioDefaults(timelineItem);
         if (typeof attachTimelineItemVolumeControl === 'function') {
             attachTimelineItemVolumeControl(timelineItem);
         }
+    } else if (fileType.startsWith('audio/')) {
+        ensureTimelineAudioDefaults(timelineItem);
     }
     if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         attachResizeHandles(timelineItem);
