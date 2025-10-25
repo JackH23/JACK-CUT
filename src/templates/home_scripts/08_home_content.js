@@ -2105,7 +2105,10 @@ async function handleConfirmExport() {
             }
         });
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        const previewAudioElements = typeof getPreviewAudioElementsForMixdown === 'function'
+            ? getPreviewAudioElementsForMixdown(true)
+            : [previewVideo, previewAudio].filter(Boolean);
+        const audioAttachment = attachPreviewAudioToStream(previewAudioElements, combinedStream);
         exportAudioContext = audioAttachment.audioContext;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;

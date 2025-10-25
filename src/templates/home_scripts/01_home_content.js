@@ -458,13 +458,26 @@ function syncCanvasVideoToPreview() {
 }
 
 if (masterVolumeInput) {
-    const handleMasterVolumeUpdate = () => {
+    const handleMasterVolumeChange = () => {
         if (masterVolumeInput.disabled) {
             return;
         }
         const percent = clampVolumePercent(masterVolumeInput.value);
-        masterVolumeInput.value = String(percent);
-        updateMasterVolumeReadout(percent);
+        setMasterVolumePercent(percent);
+    };
+
+    masterVolumeInput.addEventListener('input', handleMasterVolumeChange);
+    masterVolumeInput.addEventListener('change', handleMasterVolumeChange);
+}
+
+if (clipVolumeInput) {
+    const handleClipVolumeUpdate = () => {
+        if (clipVolumeInput.disabled) {
+            return;
+        }
+        const percent = clampVolumePercent(clipVolumeInput.value);
+        clipVolumeInput.value = String(percent);
+        updateClipVolumeReadout(percent);
         persistActiveTimelineAudioSettings({ volumePercent: percent });
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
         cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
@@ -478,8 +491,8 @@ if (masterVolumeInput) {
         }
     };
 
-    masterVolumeInput.addEventListener('input', handleMasterVolumeUpdate);
-    masterVolumeInput.addEventListener('change', handleMasterVolumeUpdate);
+    clipVolumeInput.addEventListener('input', handleClipVolumeUpdate);
+    clipVolumeInput.addEventListener('change', handleClipVolumeUpdate);
 }
 
 if (canvasBackgroundModeSelect) {
