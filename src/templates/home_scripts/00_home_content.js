@@ -1144,6 +1144,13 @@ function disconnectMediaEnvelopeAudio(state) {
             // Ignore disconnect errors when cleaning up audio routing.
         }
     }
+    if (state.envelopeNode) {
+        try {
+            state.envelopeNode.disconnect();
+        } catch (error) {
+            // Ignore disconnect errors when cleaning up audio routing.
+        }
+    }
     if (state.sourceNode) {
         try {
             state.sourceNode.disconnect();
@@ -1159,6 +1166,7 @@ function disconnectMediaEnvelopeAudio(state) {
         }
     }
     state.gainNode = null;
+    state.envelopeNode = null;
     state.sourceNode = null;
     state.audioContext = null;
     state.previewDestination = null;
@@ -1177,6 +1185,7 @@ function getMediaEnvelopeState(mediaElement) {
             audioContext: null,
             sourceNode: null,
             gainNode: null,
+            envelopeNode: null,
             previewDestination: null,
         });
     }
@@ -1207,12 +1216,16 @@ function ensureMediaElementGainNode(mediaElement) {
         disconnectMediaEnvelopeAudio(state);
     }
 
-    if (!state.sourceNode || !state.gainNode) {
+    if (!state.sourceNode || !state.gainNode || !state.envelopeNode) {
+        disconnectMediaEnvelopeAudio(state);
         try {
             const sourceNode = audioContext.createMediaElementSource(mediaElement);
+            const envelopeNode = audioContext.createGain();
+            envelopeNode.gain.value = 1;
             const gainNode = audioContext.createGain();
             gainNode.gain.value = clampVolume(state.baseVolume);
-            sourceNode.connect(gainNode);
+            sourceNode.connect(envelopeNode);
+            envelopeNode.connect(gainNode);
             gainNode.connect(audioContext.destination);
             const previewDestination = getOrCreatePreviewAudioDestination();
             if (previewDestination) {
@@ -1225,6 +1238,7 @@ function ensureMediaElementGainNode(mediaElement) {
             }
             state.audioContext = audioContext;
             state.sourceNode = sourceNode;
+            state.envelopeNode = envelopeNode;
             state.gainNode = gainNode;
         } catch (error) {
             disconnectMediaEnvelopeAudio(state);
@@ -1447,17 +1461,25 @@ function cancelPreviewAudioEnvelope(options = {}) {
         window.clearTimeout(state.fadeOutTimeoutId);
         state.fadeOutTimeoutId = 0;
     }
-    const gainNode = state.gainNode;
-    if (gainNode && (state.audioContext || gainNode.context)) {
+    const volumeNode = state.gainNode;
+    const envelopeNode = state.envelopeNode;
+    const audioNode = envelopeNode || volumeNode;
+    if (audioNode && (state.audioContext || audioNode.context)) {
         try {
-            const audioContext = state.audioContext || gainNode.context;
+            const audioContext = state.audioContext || audioNode.context;
             const now = audioContext.currentTime;
-            gainNode.gain.cancelScheduledValues(now);
-            if (restoreVolume) {
-                gainNode.gain.setValueAtTime(clampVolume(state.baseVolume), now);
-                if (target) {
-                    target.volume = 1;
+            audioNode.gain.cancelScheduledValues(now);
+            if (envelopeNode) {
+                audioNode.gain.setValueAtTime(1, now);
+                if (restoreVolume && volumeNode) {
+                    volumeNode.gain.cancelScheduledValues(now);
+                    volumeNode.gain.setValueAtTime(clampVolume(state.baseVolume), now);
                 }
+                } else if (restoreVolume) {
+                audioNode.gain.setValueAtTime(clampVolume(state.baseVolume), now);
+            }
+            if (restoreVolume && target) {
+                target.volume = 1;
             }
             return;
         } catch (error) {
@@ -1467,6 +1489,8 @@ function cancelPreviewAudioEnvelope(options = {}) {
 
     if (restoreVolume && target) {
         target.volume = clampVolume(state.baseVolume);
+    } else if (target && envelopeNode) {
+        target.volume = 1;
     }
 }
 
@@ -1498,15 +1522,23 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     target.muted = false;
 
     const gainNode = ensureMediaElementGainNode(target);
-    if (gainNode && (state?.audioContext || gainNode.context)) {
+    const envelopeNode = state?.envelopeNode || null;
+    const envelopeTarget = envelopeNode || gainNode;
+    if (envelopeTarget && (state?.audioContext || envelopeTarget.context)) {
         try {
-            const audioContext = state?.audioContext || gainNode.context;
+            const audioContext = state?.audioContext || envelopeTarget.context;
             const now = audioContext.currentTime;
-            const gainParam = gainNode.gain;
+            const gainParam = envelopeTarget.gain;
             const fadeInSeconds = fadeInMs > 0 ? fadeInMs / 1000 : 0;
             const fadeOutSeconds = fadeOutMs > 0 ? fadeOutMs / 1000 : 0;
             const clipSeconds = clipMs > 0 ? clipMs / 1000 : 0;
             const fadeInEndTime = fadeInSeconds > 0 ? now + fadeInSeconds : now;
+
+            if (gainNode && gainNode !== envelopeTarget) {
+                const baseParam = gainNode.gain;
+                baseParam.cancelScheduledValues(now);
+                baseParam.setValueAtTime(baseVolume, now);
+            }
 
             gainParam.cancelScheduledValues(now);
 
@@ -1518,16 +1550,19 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
 
             if (fadeInSeconds > 0) {
                 gainParam.setValueAtTime(0, now);
-                gainParam.linearRampToValueAtTime(baseVolume, fadeInEndTime);
+                const targetValue = envelopeNode ? 1 : baseVolume;
+                gainParam.linearRampToValueAtTime(targetValue, fadeInEndTime);
             } else {
-                gainParam.setValueAtTime(baseVolume, now);
+                const steadyValue = envelopeNode ? 1 : baseVolume;
+                gainParam.setValueAtTime(steadyValue, now);
             }
 
             if (fadeOutSeconds > 0 && clipSeconds > 0) {
                 const fadeOutStartTime = now + Math.max(0, clipSeconds - fadeOutSeconds);
                 const safeFadeOutStart = Math.max(fadeOutStartTime, fadeInEndTime, now);
                 const fadeOutEndTime = safeFadeOutStart + fadeOutSeconds;
-                gainParam.setValueAtTime(baseVolume, safeFadeOutStart);
+                const sustainValue = envelopeNode ? 1 : baseVolume;
+                gainParam.setValueAtTime(sustainValue, safeFadeOutStart);
                 gainParam.linearRampToValueAtTime(0, fadeOutEndTime);
             }
 
