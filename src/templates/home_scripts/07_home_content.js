@@ -4403,6 +4403,8 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
             applyPreviewAudioEnvelope(audioSettings, remainingDuration, {
                 mediaElement: element,
                 mixGain: overlayGain,
+                clipOffsetMs: offsetMs,
+                clipTotalDurationMs: clipDuration,
             });
         } else {
             cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
@@ -4668,6 +4670,8 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             applyPreviewAudioEnvelope(audioSettings, remainingDuration, {
                 mediaElement: previewAudio,
                 mixGain: overlayGain,
+                clipOffsetMs: offsetMs,
+                clipTotalDurationMs: clipDuration,
             });
         } else {
             cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });

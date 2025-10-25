@@ -202,6 +202,8 @@
                     }
                     applyPreviewAudioEnvelope(audioSettings, effectiveDuration, {
                         mixGain,
+                        clipOffsetMs: safeStartOffset,
+                        clipTotalDurationMs: targetDuration,
                     });
                     if (isTimelinePlaying) {
                         if (playbackSyncSource) {
