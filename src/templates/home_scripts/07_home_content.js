@@ -3633,15 +3633,17 @@ function ensureAudioTimelineLane() {
     if (!timelineLaneList) {
         return null;
     }
-    const lanes = getTimelineLanes();
-    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--audio'));
-    if (existing) {
-        return existing;
+    const targetIndex = Number.isFinite(AUDIO_TIMELINE_LAYER_INDEX)
+        && AUDIO_TIMELINE_LAYER_INDEX >= 0
+        ? AUDIO_TIMELINE_LAYER_INDEX
+        : Math.max(0, MAX_TIMELINE_STACK_LANES - 1);
+    const lane = ensureTimelineLane(targetIndex);
+    if (!lane) {
+        return null;
     }
-    const lane = document.createElement('div');
-    lane.className = 'timeline-lane timeline-lane--audio';
-    timelineLaneList.appendChild(lane);
-    refreshTimelineLaneIndices();
+    if (typeof applyTimelineLaneDefinition === 'function') {
+        applyTimelineLaneDefinition(lane, targetIndex);
+    }
     return lane;
 }
 

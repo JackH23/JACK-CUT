@@ -717,7 +717,7 @@ if (timelineTrack) {
     });
 }
 
-ensureTimelineLane(0);
+ensureTimelineLayerStack();
 updateTimelineEmptyState();
 reflowAllTimelineLanes();
 

@@ -579,7 +579,41 @@ const TIMELINE_DURATION_PER_PIXEL_MAX = 600;
 const TIMELINE_ZOOM_BUTTON_STEP = 1;
 const MIN_TIMELINE_ITEM_WIDTH = 96;
 const MIN_IMAGE_FRAME_SIZE = 96;
-const MAX_TIMELINE_STACK_LANES = 4;
+const TIMELINE_LAYER_DEFINITIONS = Object.freeze([
+    {
+        id: 'text',
+        label: 'Text Layer',
+        className: 'timeline-lane--text',
+    },
+    {
+        id: 'overlays',
+        label: 'Overlays & Effects',
+        className: 'timeline-lane--overlays',
+    },
+    {
+        id: 'visuals',
+        label: 'Image Layer',
+        className: 'timeline-lane--visuals',
+    },
+    {
+        id: 'background',
+        label: 'Background / Media Layer',
+        className: 'timeline-lane--background',
+    },
+    {
+        id: 'subtitles',
+        label: 'Subtitles & Transitions',
+        className: 'timeline-lane--subtitles',
+    },
+    {
+        id: 'audio',
+        label: 'Audio Layer',
+        className: 'timeline-lane--audio',
+    },
+]);
+const MAX_TIMELINE_STACK_LANES = TIMELINE_LAYER_DEFINITIONS.length;
+const AUDIO_TIMELINE_LAYER_INDEX = TIMELINE_LAYER_DEFINITIONS
+    .findIndex((definition) => definition.id === 'audio');
 const TIMELINE_LANE_INSERT_HOTZONE = 28;
 const TIMELINE_LANE_INSERT_SPACING = 32;
 const TIMELINE_AUTO_SCROLL_MARGIN = 72;

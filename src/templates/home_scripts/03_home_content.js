@@ -2386,10 +2386,63 @@ function getTimelineLanes() {
     return Array.from(timelineLaneList.querySelectorAll('.timeline-lane'));
 }
 
+function getTimelineLayerDefinition(index) {
+    if (!Array.isArray(TIMELINE_LAYER_DEFINITIONS)) {
+        return null;
+    }
+
+    const safeIndex = Number.isFinite(index) ? index : 0;
+    return TIMELINE_LAYER_DEFINITIONS[safeIndex] || null;
+}
+
+function applyTimelineLaneDefinition(lane, index) {
+    if (!lane) {
+        return;
+    }
+
+    const previousClasses = (lane.dataset.layerClassList || '')
+        .split(/\s+/)
+        .filter(Boolean);
+    previousClasses.forEach((className) => {
+        lane.classList.remove(className);
+    });
+
+    delete lane.dataset.layerClassList;
+    delete lane.dataset.layerRole;
+    delete lane.dataset.layerLabel;
+    delete lane.dataset.layerLocked;
+    lane.removeAttribute('data-layer-label');
+    lane.removeAttribute('aria-label');
+
+    const definition = getTimelineLayerDefinition(index);
+    if (!definition) {
+        return;
+    }
+
+    if (definition.className) {
+        definition.className.split(/\s+/).filter(Boolean).forEach((className) => {
+            lane.classList.add(className);
+        });
+        lane.dataset.layerClassList = definition.className;
+    }
+
+    if (definition.id) {
+        lane.dataset.layerRole = definition.id;
+        lane.dataset.layerLocked = 'true';
+    }
+
+    if (definition.label) {
+        lane.dataset.layerLabel = definition.label;
+        lane.setAttribute('data-layer-label', definition.label);
+        lane.setAttribute('aria-label', `${definition.label} timeline lane`);
+    }
+}
+
 function refreshTimelineLaneIndices() {
     getTimelineLanes().forEach((lane, index) => {
         const laneIndex = String(index);
         lane.dataset.laneIndex = laneIndex;
+        applyTimelineLaneDefinition(lane, index);
         lane.querySelectorAll('.timeline-item').forEach((item) => {
             item.dataset.laneIndex = laneIndex;
         });
@@ -2458,6 +2511,22 @@ function ensureTimelineLane(index = 0) {
     );
 }
 
+function ensureTimelineLayerStack() {
+    if (!timelineLaneList) {
+        return;
+    }
+
+    const definitions = Array.isArray(TIMELINE_LAYER_DEFINITIONS)
+        ? TIMELINE_LAYER_DEFINITIONS
+        : [];
+
+    definitions.forEach((_, index) => {
+        ensureTimelineLane(index);
+    });
+
+    refreshTimelineLaneIndices();
+}
+
 function cleanupEmptyTimelineLanes() {
     if (!timelineLaneList) {
         return;
@@ -2465,7 +2534,12 @@ function cleanupEmptyTimelineLanes() {
 
     const lanes = getTimelineLanes();
     lanes.forEach((lane) => {
-        if (lane && !lane.querySelector('.timeline-item') && lanes.length > 1) {
+        if (
+            lane
+            && !lane.querySelector('.timeline-item')
+            && lanes.length > 1
+            && lane.dataset.layerLocked !== 'true'
+        ) {
             if (pendingTimelineLaneReflows.has(lane)) {
                 const handle = pendingTimelineLaneReflows.get(lane);
                 if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
@@ -2477,6 +2551,7 @@ function cleanupEmptyTimelineLanes() {
         }
     });
     refreshTimelineLaneIndices();
+    ensureTimelineLayerStack();
     updateTimelineEmptyState();
 }
 
