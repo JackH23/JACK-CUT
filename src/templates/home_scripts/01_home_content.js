@@ -463,21 +463,8 @@ if (masterVolumeInput) {
             return;
         }
         const percent = clampVolumePercent(masterVolumeInput.value);
-        setMasterVolumePercent(percent);
-    };
-
-    masterVolumeInput.addEventListener('input', handleMasterVolumeChange);
-    masterVolumeInput.addEventListener('change', handleMasterVolumeChange);
-}
-
-if (clipVolumeInput) {
-    const handleClipVolumeUpdate = () => {
-        if (clipVolumeInput.disabled) {
-            return;
-        }
-        const percent = clampVolumePercent(clipVolumeInput.value);
-        clipVolumeInput.value = String(percent);
-        updateClipVolumeReadout(percent);
+        masterVolumeInput.value = String(percent);
+        updateMasterVolumeReadout(percent);
         persistActiveTimelineAudioSettings({ volumePercent: percent });
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
         cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
@@ -491,8 +478,8 @@ if (clipVolumeInput) {
         }
     };
 
-    clipVolumeInput.addEventListener('input', handleClipVolumeUpdate);
-    clipVolumeInput.addEventListener('change', handleClipVolumeUpdate);
+    masterVolumeInput.addEventListener('input', handleMasterVolumeChange);
+    masterVolumeInput.addEventListener('change', handleMasterVolumeChange);
 }
 
 if (canvasBackgroundModeSelect) {

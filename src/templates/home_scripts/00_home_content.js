@@ -197,8 +197,6 @@ const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const masterVolumeInput = document.getElementById('audio-master-volume');
 const masterVolumeValue = document.getElementById('audio-master-volume-value');
-const clipVolumeInput = document.getElementById('audio-clip-volume');
-const clipVolumeValue = document.getElementById('audio-clip-volume-value');
 const audioFadeInInput = document.getElementById('audio-fade-in');
 const audioFadeInValue = document.getElementById('audio-fade-in-value');
 const audioFadeOutInput = document.getElementById('audio-fade-out');
@@ -865,9 +863,6 @@ const mediaEnvelopeStates = new WeakMap();
 const mediaEnvelopeElements = new Set();
 let sharedPreviewAudioContext = null;
 let sharedPreviewAudioDestination = null;
-let previewMasterGainNode = null;
-let previewMasterGainContext = null;
-let masterVolumePercentState = DEFAULT_AUDIO_VOLUME_PERCENT;
 
 function getOrCreatePreviewAudioContext() {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
@@ -914,89 +909,6 @@ function getOrCreatePreviewAudioDestination() {
 
     return sharedPreviewAudioDestination;
 }
-
-function getMasterVolumeScalar() {
-    return clampVolume(masterVolumePercentState / 100);
-}
-
-function getOrCreatePreviewMasterGain(audioContext) {
-    if (!audioContext) {
-        return null;
-    }
-
-    if (previewMasterGainNode && previewMasterGainContext !== audioContext) {
-        try {
-            previewMasterGainNode.disconnect();
-        } catch (error) {
-            // Ignore disconnect errors while resetting the master gain graph.
-        }
-        previewMasterGainNode = null;
-        previewMasterGainContext = null;
-    }
-
-    if (!previewMasterGainNode) {
-        try {
-            const gainNode = audioContext.createGain();
-            gainNode.gain.value = getMasterVolumeScalar();
-            gainNode.connect(audioContext.destination);
-            const previewDestination = getOrCreatePreviewAudioDestination();
-            if (previewDestination) {
-                try {
-                    gainNode.connect(previewDestination);
-                } catch (error) {
-                    // Ignore connection errors when mirroring master gain to preview destination.
-                }
-            }
-            previewMasterGainNode = gainNode;
-            previewMasterGainContext = audioContext;
-        } catch (error) {
-            previewMasterGainNode = null;
-            previewMasterGainContext = null;
-            return null;
-        }
-    }
-
-    return previewMasterGainNode;
-}
-
-function updatePreviewMasterGainVolume() {
-    const masterGain = previewMasterGainNode;
-    const scalar = getMasterVolumeScalar();
-    if (masterGain && previewMasterGainContext) {
-        try {
-            const now = previewMasterGainContext.currentTime;
-            masterGain.gain.cancelScheduledValues(now);
-            masterGain.gain.setValueAtTime(scalar, now);
-        } catch (error) {
-            masterGain.gain.value = scalar;
-        }
-    }
-
-    mediaEnvelopeElements.forEach((element) => {
-        const state = mediaEnvelopeStates.get(element);
-        if (!state) {
-            return;
-        }
-        const clipPercent = clampVolumePercent(state.clipVolumePercent);
-        const effectiveVolume = clampVolume((clipPercent / 100) * scalar);
-        state.baseVolume = effectiveVolume;
-        if (!state.gainNode) {
-            element.volume = effectiveVolume;
-        }
-    });
-}
-
-function setMasterVolumePercent(percent) {
-    const clamped = clampVolumePercent(percent);
-    masterVolumePercentState = clamped;
-    if (masterVolumeInput) {
-        masterVolumeInput.value = String(clamped);
-    }
-    updateMasterVolumeReadout(clamped);
-    updatePreviewMasterGainVolume();
-}
-
-setMasterVolumePercent(masterVolumePercentState);
 
 function disconnectMediaEnvelopeAudio(state) {
     if (!state) {
@@ -1080,31 +992,18 @@ function ensureMediaElementGainNode(mediaElement) {
             const gainNode = audioContext.createGain();
             gainNode.gain.value = clampVolume(state.baseVolume);
             sourceNode.connect(gainNode);
-            let connected = false;
-            const masterGain = getOrCreatePreviewMasterGain(audioContext);
-            if (masterGain) {
+            gainNode.connect(audioContext.destination);
+            const previewDestination = getOrCreatePreviewAudioDestination();
+            if (previewDestination) {
                 try {
-                    gainNode.connect(masterGain);
-                    connected = true;
-                    state.previewDestination = getOrCreatePreviewAudioDestination() || null;
+                    gainNode.connect(previewDestination);
+                    state.previewDestination = previewDestination;
                 } catch (error) {
-                    connected = false;
-                }
-            }
-            if (!connected) {
-                gainNode.connect(audioContext.destination);
-                const previewDestination = getOrCreatePreviewAudioDestination();
-                if (previewDestination) {
-                    try {
-                        gainNode.connect(previewDestination);
-                        state.previewDestination = previewDestination;
-                    } catch (error) {
-                        // Ignore connection errors to preview export destination.
-                        state.previewDestination = null;
-                    }
-                } else {
+                    // Ignore connection errors to preview export destination.
                     state.previewDestination = null;
                 }
+                } else {
+                state.previewDestination = null;
             }
             state.audioContext = audioContext;
             state.sourceNode = sourceNode;
@@ -1116,8 +1015,7 @@ function ensureMediaElementGainNode(mediaElement) {
     }
 
     const previewDestination = getOrCreatePreviewAudioDestination();
-    const masterGain = state.audioContext ? getOrCreatePreviewMasterGain(state.audioContext) : null;
-    if (!masterGain && previewDestination && state.previewDestination !== previewDestination && state.gainNode) {
+    if (previewDestination && state.previewDestination !== previewDestination && state.gainNode) {
         try {
             state.gainNode.connect(previewDestination);
             state.previewDestination = previewDestination;
@@ -1250,31 +1148,12 @@ function updateMasterVolumeReadout(percent) {
     }
 }
 
-function updateClipVolumeReadout(percent, options = {}) {
-    const {
-        disabled = false,
-        disabledLabel = 'Media only',
-        disabledAriaText = 'Audio controls available for media clips',
-    } = options;
-    if (clipVolumeValue) {
-        clipVolumeValue.textContent = disabled
-            ? disabledLabel
-            : formatMasterVolumeDisplay(percent);
-    }
-    if (clipVolumeInput) {
-        clipVolumeInput.setAttribute('aria-valuemin', String(AUDIO_VOLUME_MIN_PERCENT));
-        clipVolumeInput.setAttribute('aria-valuemax', String(AUDIO_VOLUME_MAX_PERCENT));
-        if (disabled) {
-            clipVolumeInput.setAttribute('aria-valuenow', '0');
-            clipVolumeInput.setAttribute('aria-valuetext', disabledAriaText);
-        } else {
-            clipVolumeInput.setAttribute('aria-valuenow', String(percent));
-            clipVolumeInput.setAttribute(
-                'aria-valuetext',
-                formatMasterVolumeDisplay(percent),
-            );
-        }
-    }
+if (masterVolumeInput) {
+    const initialMasterPercent = clampVolumePercent(
+        masterVolumeInput.value || DEFAULT_AUDIO_VOLUME_PERCENT,
+    );
+    masterVolumeInput.value = String(initialMasterPercent);
+    updateMasterVolumeReadout(initialMasterPercent);
 }
 
 function applyMasterVolumeToPreview(volumePercent, options = {}) {
@@ -1283,8 +1162,7 @@ function applyMasterVolumeToPreview(volumePercent, options = {}) {
         return;
     }
     const clipPercent = clampVolumePercent(volumePercent);
-    const masterScalar = getMasterVolumeScalar();
-    const normalized = clampVolume((clipPercent / 100) * masterScalar);
+    const normalized = clampVolume(clipPercent / 100);
     const state = getMediaEnvelopeState(target);
     if (state) {
         state.baseVolume = normalized;
@@ -1362,8 +1240,7 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
 
     const normalizedSettings = settings || getDefaultAudioSettings();
     const clipPercent = clampVolumePercent(normalizedSettings.volumePercent);
-    const masterScalar = getMasterVolumeScalar();
-    const baseVolume = clampVolume((clipPercent / 100) * masterScalar);
+    const baseVolume = clampVolume(clipPercent / 100);
     const fadeInMs = sanitizeFadeMilliseconds(normalizedSettings.fadeInMs);
     const fadeOutMs = sanitizeFadeMilliseconds(normalizedSettings.fadeOutMs);
     const clipMs = Math.max(0, Math.round(Number(clipDurationMs) || 0));
@@ -1506,24 +1383,26 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         : getDefaultAudioSettings();
 
     if (masterVolumeInput) {
-        masterVolumeInput.disabled = false;
-        masterVolumeInput.removeAttribute('aria-disabled');
-        updateMasterVolumeReadout(masterVolumePercentState);
-    }
-
-    if (clipVolumeInput) {
-        clipVolumeInput.disabled = !supportsAudio;
-        if (supportsAudio) {
-            clipVolumeInput.removeAttribute('aria-disabled');
+        if (!supportsAudio) {
+            masterVolumeInput.disabled = true;
+            masterVolumeInput.setAttribute('aria-disabled', 'true');
+            masterVolumeInput.value = String(DEFAULT_AUDIO_VOLUME_PERCENT);
+            if (masterVolumeValue) {
+                masterVolumeValue.textContent = 'Select a clip';
+            }
+            masterVolumeInput.setAttribute('aria-valuemin', String(AUDIO_VOLUME_MIN_PERCENT));
+            masterVolumeInput.setAttribute('aria-valuemax', String(AUDIO_VOLUME_MAX_PERCENT));
+            masterVolumeInput.setAttribute('aria-valuenow', '0');
+            masterVolumeInput.setAttribute(
+                'aria-valuetext',
+                'Audio controls become available when a clip with sound is selected',
+            );
         } else {
-            clipVolumeInput.setAttribute('aria-disabled', 'true');
+            masterVolumeInput.disabled = false;
+            masterVolumeInput.removeAttribute('aria-disabled');
+            masterVolumeInput.value = String(settings.volumePercent);
+            updateMasterVolumeReadout(settings.volumePercent);
         }
-        clipVolumeInput.value = String(settings.volumePercent);
-        updateClipVolumeReadout(settings.volumePercent, {
-            disabled: !supportsAudio,
-            disabledLabel: 'Select a clip',
-            disabledAriaText: 'Audio controls become available when a clip with sound is selected',
-        });
     }
 
     audioFadeControls.forEach((control) => {

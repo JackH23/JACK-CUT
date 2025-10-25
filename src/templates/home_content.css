@@ -1363,12 +1363,6 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     text-align: right;
 }
 
-.audio-master-control__description {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
-
 .animation-mode {
     display: flex;
     flex-direction: column;
