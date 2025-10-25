@@ -2035,6 +2035,7 @@ function setPreviewImageVisibility(isVisible) {
             queuePreviewImageFrameReset();
         }
     } else {
+        cleanupPreviewTransitionBuffer();
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
