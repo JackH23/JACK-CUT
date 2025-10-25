@@ -9,6 +9,36 @@ const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
 let activeAudioOverlayEntry = null;
+const overlayAudioElementRegistry = new Map();
+
+function registerOverlayAudioElement(timelineItem, mediaElement) {
+    if (!timelineItem || !mediaElement) {
+        return;
+    }
+    overlayAudioElementRegistry.set(timelineItem, mediaElement);
+}
+
+function unregisterOverlayAudioElement(timelineItem, mediaElement = null) {
+    if (!timelineItem || !overlayAudioElementRegistry.has(timelineItem)) {
+        return;
+    }
+    const currentElement = overlayAudioElementRegistry.get(timelineItem);
+    if (mediaElement && currentElement && mediaElement !== currentElement) {
+        return;
+    }
+    overlayAudioElementRegistry.delete(timelineItem);
+}
+
+function getOverlayAudioElementForItem(timelineItem) {
+    if (!timelineItem) {
+        return null;
+    }
+    return overlayAudioElementRegistry.get(timelineItem) || null;
+}
+
+function getActiveOverlayAudioElements() {
+    return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
+}
 const previewImage = document.getElementById('preview-image');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
@@ -975,9 +1005,6 @@ function applyAudioMixToPreview(mix, context = {}) {
     const activeItem = context?.activeItem !== undefined
         ? context.activeItem
         : (typeof activeTimelineItem !== 'undefined' ? activeTimelineItem : null);
-    const overlayItem = context?.overlayItem !== undefined
-        ? context.overlayItem
-        : (typeof activeAudioOverlayEntry !== 'undefined' ? activeAudioOverlayEntry?.item || null : null);
 
     if (previewVideo && activeItem && isVideoTimelineEntry(activeItem)) {
         const settings = getTimelineItemAudioSettings(activeItem);
@@ -988,14 +1015,34 @@ function applyAudioMixToPreview(mix, context = {}) {
         });
     }
 
-    if (previewAudio && overlayItem && isAudioTimelineEntry(overlayItem)) {
+    const overlayItems = new Set();
+    if (Array.isArray(context?.overlayItems)) {
+        context.overlayItems.filter(Boolean).forEach((item) => overlayItems.add(item));
+    }
+    if (context?.overlayItem) {
+        overlayItems.add(context.overlayItem);
+    } else if (!overlayItems.size && typeof activeAudioOverlayEntry !== 'undefined' && activeAudioOverlayEntry?.item) {
+        overlayItems.add(activeAudioOverlayEntry.item);
+    }
+
+    overlayItems.forEach((overlayItem) => {
+        if (!overlayItem || !isAudioTimelineEntry(overlayItem)) {
+            return;
+        }
+        const mediaElement = typeof getOverlayAudioElementForItem === 'function'
+            ? getOverlayAudioElementForItem(overlayItem)
+            : null;
+        const targetElement = mediaElement || (overlayItem === (activeAudioOverlayEntry?.item) ? previewAudio : null);
+        if (!targetElement) {
+            return;
+        }
         const settings = getTimelineItemAudioSettings(overlayItem);
         const mixGain = gainsByItem.has(overlayItem) ? gainsByItem.get(overlayItem) : null;
         applyMasterVolumeToPreview(settings.volumePercent, {
-            mediaElement: previewAudio,
+            mediaElement: targetElement,
             mixGain,
         });
-    }
+    });
 
     return mix;
 }
@@ -1007,6 +1054,9 @@ function refreshPreviewAudioMix(options = {}) {
     const overlayItem = options?.overlayItem !== undefined
         ? options.overlayItem
         : (typeof activeAudioOverlayEntry !== 'undefined' ? activeAudioOverlayEntry?.item || null : null);
+    const overlayItems = Array.isArray(options?.overlayItems)
+        ? options.overlayItems.filter(Boolean)
+        : [];
 
     let candidateEntries = Array.isArray(options?.entries)
         ? options.entries
@@ -1020,7 +1070,7 @@ function refreshPreviewAudioMix(options = {}) {
     }
 
     const mix = computeTimelineAudioMix(candidateEntries || [], { fallbackItem: activeItem });
-    applyAudioMixToPreview(mix, { activeItem, overlayItem });
+    applyAudioMixToPreview(mix, { activeItem, overlayItem, overlayItems });
     return mix;
 }
 
