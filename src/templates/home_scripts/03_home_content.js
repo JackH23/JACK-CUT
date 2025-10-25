@@ -435,12 +435,7 @@ function getActivePreviewImageTransform(viewportWidth, viewportHeight) {
 }
 
 function drawPreviewImageToExportCanvas() {
-    if (!previewImage
-        || previewImage.hidden
-        || !previewImage.complete
-        || !previewImageFrame
-        || !previewViewport
-    ) {
+    if (!previewImageFrame || !previewViewport) {
         return false;
     }
 
@@ -451,14 +446,6 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const transform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
-    if (!transform) {
-        return false;
-    }
-
-    const naturalWidth = Math.max(1, previewImage.naturalWidth || 0);
-    const naturalHeight = Math.max(1, previewImage.naturalHeight || 0);
-
     const canvasWidth = Math.max(1, exportMirrorCanvas.width);
     const canvasHeight = Math.max(1, exportMirrorCanvas.height);
     const scaleX = canvasWidth / viewportWidth;
@@ -468,96 +455,131 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    exportMirrorContext.save();
-    exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-    exportMirrorContext.beginPath();
-    exportMirrorContext.rect(0, 0, viewportWidth, viewportHeight);
-    exportMirrorContext.clip();
+    const drawElementSnapshot = (element, transform) => {
+        if (!element || element.hidden || !element.complete || !transform) {
+            return false;
+        }
 
-    exportMirrorContext.save();
-    clipRoundRectPath(
-        exportMirrorContext,
-        transform.left,
-        transform.top,
-        transform.width,
-        transform.height,
-        getPreviewImageFrameBorderRadius(),
-    );
-    exportMirrorContext.clip();
+        const naturalWidth = Math.max(1, element.naturalWidth || 0);
+        const naturalHeight = Math.max(1, element.naturalHeight || 0);
+        const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
+        if (!Number.isFinite(scale) || scale <= 0) {
+            return false;
+        }
 
-    const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
-    if (!Number.isFinite(scale) || scale <= 0) {
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        return false;
-    }
+        const drawWidth = naturalWidth * scale;
+        const drawHeight = naturalHeight * scale;
+        const rotation = clampRotation(transform.rotation);
+        const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
+        const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
 
-    const drawWidth = naturalWidth * scale;
-    const drawHeight = naturalHeight * scale;
-    const rotation = clampRotation(transform.rotation);
-    const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
-    const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
+        let computedOpacity = 1;
+        let cssMatrix = null;
+        let blurRadius = 0;
 
-    let computedOpacity = 1;
-    let cssMatrix = null;
-    let blurRadius = 0;
-    let computedStyle = null;
-
-    if (window.getComputedStyle) {
-        computedStyle = window.getComputedStyle(previewImage);
-        if (computedStyle) {
-            const opacityValue = Number.parseFloat(computedStyle.opacity);
-            if (Number.isFinite(opacityValue)) {
-                computedOpacity = clamp(opacityValue, 0, 1);
+        if (window.getComputedStyle) {
+            const computedStyle = window.getComputedStyle(element);
+            if (computedStyle) {
+                const opacityValue = Number.parseFloat(computedStyle.opacity);
+                if (Number.isFinite(opacityValue)) {
+                    computedOpacity = clamp(opacityValue, 0, 1);
+                }
+                cssMatrix = parseCssTransformMatrix(
+                    computedStyle.transform || computedStyle.webkitTransform || '',
+                );
+                blurRadius = parsePreviewImageBlurRadius(computedStyle);
             }
-            cssMatrix = parseCssTransformMatrix(
-                computedStyle.transform || computedStyle.webkitTransform || '',
+        }
+
+        exportMirrorContext.save();
+        exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        exportMirrorContext.beginPath();
+        exportMirrorContext.rect(0, 0, viewportWidth, viewportHeight);
+        exportMirrorContext.clip();
+
+        exportMirrorContext.save();
+        clipRoundRectPath(
+            exportMirrorContext,
+            transform.left,
+            transform.top,
+            transform.width,
+            transform.height,
+            getPreviewImageFrameBorderRadius(),
+        );
+        exportMirrorContext.clip();
+
+        exportMirrorContext.save();
+        exportMirrorContext.translate(imageOffsetX, imageOffsetY);
+
+        if (cssMatrix && !cssMatrix.isIdentity) {
+            exportMirrorContext.transform(
+                cssMatrix.a,
+                cssMatrix.b,
+                cssMatrix.c,
+                cssMatrix.d,
+                cssMatrix.e,
+                cssMatrix.f,
             );
-            blurRadius = parsePreviewImageBlurRadius(computedStyle);
+        } else if (rotation !== 0) {
+            const originX = drawWidth / 2;
+            const originY = drawHeight / 2;
+            exportMirrorContext.translate(originX, originY);
+            exportMirrorContext.rotate((rotation * Math.PI) / 180);
+            exportMirrorContext.translate(-originX, -originY);
+        }
+
+        if (computedOpacity < 1) {
+            exportMirrorContext.globalAlpha *= computedOpacity;
+        }
+
+        exportMirrorContext.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
+        exportMirrorContext.drawImage(element, 0, 0, drawWidth, drawHeight);
+        exportMirrorContext.filter = 'none';
+
+        exportMirrorContext.restore();
+        exportMirrorContext.restore();
+        exportMirrorContext.restore();
+        exportMirrorContext.restore();
+        exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+
+        return true;
+    };
+
+    let drewAny = false;
+
+    if (previewImageTransitionBuffer && !previewImageTransitionBuffer.hidden) {
+        let bufferTransform = null;
+        const snapshot = previewImageTransitionBuffer.dataset.transitionTransform;
+        if (snapshot) {
+            try {
+                const parsed = JSON.parse(snapshot);
+                if (parsed && typeof parsed === 'object') {
+                    bufferTransform = {
+                        left: Number(parsed.left) || 0,
+                        top: Number(parsed.top) || 0,
+                        width: Number(parsed.width) || 0,
+                        height: Number(parsed.height) || 0,
+                        rotation: Number(parsed.rotation) || 0,
+                    };
+                }
+            } catch (error) {
+                bufferTransform = null;
+            }
+        }
+
+        if (drawElementSnapshot(previewImageTransitionBuffer, bufferTransform)) {
+            drewAny = true;
         }
     }
 
-    exportMirrorContext.save();
-    exportMirrorContext.translate(imageOffsetX, imageOffsetY);
-
-    if (cssMatrix && !cssMatrix.isIdentity) {
-        exportMirrorContext.transform(
-            cssMatrix.a,
-            cssMatrix.b,
-            cssMatrix.c,
-            cssMatrix.d,
-            cssMatrix.e,
-            cssMatrix.f,
-        );
-    } else if (rotation !== 0) {
-        const originX = drawWidth / 2;
-        const originY = drawHeight / 2;
-        exportMirrorContext.translate(originX, originY);
-        exportMirrorContext.rotate((rotation * Math.PI) / 180);
-        exportMirrorContext.translate(-originX, -originY);
+    if (previewImage && !previewImage.hidden && previewImage.complete) {
+        const activeTransform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
+        if (drawElementSnapshot(previewImage, activeTransform)) {
+            drewAny = true;
+        }
     }
 
-    if (computedOpacity < 1) {
-        exportMirrorContext.globalAlpha *= computedOpacity;
-    }
-
-    const filterValue = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
-    exportMirrorContext.filter = filterValue;
-
-    exportMirrorContext.drawImage(
-        previewImage,
-        0,
-        0,
-        drawWidth,
-        drawHeight,
-    );
-    exportMirrorContext.filter = 'none';
-    exportMirrorContext.restore();
-
-    exportMirrorContext.restore();
-    exportMirrorContext.restore();
-    exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
-    return true;
+    return drewAny;
 }
 
 function startPreviewMirroring(width, height, options = {}) {

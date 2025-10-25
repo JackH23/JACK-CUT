@@ -2217,6 +2217,36 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     will-change: transform, opacity;
 }
 
+.preview-image-layer #preview-image {
+    position: relative;
+    z-index: 2;
+}
+
+.preview-image-transition-buffer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 180ms ease;
+    will-change: opacity;
+}
+
+.preview-image-transition-buffer.is-visible {
+    opacity: 1;
+}
+
+.preview-image-transition-buffer.is-fading-out {
+    opacity: 0;
+}
+
+.preview-image-transition-buffer[hidden] {
+    display: none;
+}
+
 .preview-image-layer img.is-visible {
     opacity: 1;
 }

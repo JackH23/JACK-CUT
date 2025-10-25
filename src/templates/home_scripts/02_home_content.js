@@ -588,6 +588,117 @@ function releaseTimelineAudio(objectURL) {
     }
 }
 
+const previewTransitionBufferState = {
+    finalizeHandler: null,
+    fallbackTimer: 0,
+};
+
+function resetPreviewTransitionBufferElement() {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+    previewImageTransitionBuffer.classList.remove('is-visible', 'is-fading-out');
+    previewImageTransitionBuffer.hidden = true;
+    previewImageTransitionBuffer.removeAttribute('src');
+    previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+    previewImageTransitionBuffer.style.removeProperty('--preview-image-rotation');
+    previewImageTransitionBuffer.style.removeProperty('--preview-image-blur');
+    previewImageTransitionBuffer.style.removeProperty('filter');
+}
+
+function cleanupPreviewTransitionBuffer() {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+    if (previewTransitionBufferState.finalizeHandler) {
+        previewImageTransitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
+        previewImageTransitionBuffer.removeEventListener('transitioncancel', previewTransitionBufferState.finalizeHandler);
+        previewTransitionBufferState.finalizeHandler = null;
+    }
+    if (previewTransitionBufferState.fallbackTimer) {
+        window.clearTimeout(previewTransitionBufferState.fallbackTimer);
+        previewTransitionBufferState.fallbackTimer = 0;
+    }
+    resetPreviewTransitionBufferElement();
+}
+
+function stagePreviewTransitionBuffer(options = {}) {
+    if (!previewImageTransitionBuffer || !previewImage || previewImage.hidden) {
+        cleanupPreviewTransitionBuffer();
+        return;
+    }
+
+    const { immediate = false } = options;
+    const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
+    if (immediate || reduceMotion) {
+        cleanupPreviewTransitionBuffer();
+        return;
+    }
+
+    const currentSrc = previewImage.currentSrc || previewImage.src;
+    if (!currentSrc) {
+        cleanupPreviewTransitionBuffer();
+        return;
+    }
+
+    cleanupPreviewTransitionBuffer();
+
+    previewImageTransitionBuffer.src = currentSrc;
+    previewImageTransitionBuffer.hidden = false;
+    previewImageTransitionBuffer.classList.remove('is-fading-out');
+    previewImageTransitionBuffer.classList.add('is-visible');
+
+    let computedStyle = null;
+    if (window.getComputedStyle) {
+        try {
+            computedStyle = window.getComputedStyle(previewImage);
+        } catch (error) {
+            computedStyle = null;
+        }
+    }
+
+    const rotationValue = previewImage.style.getPropertyValue('--preview-image-rotation')
+        || (computedStyle ? computedStyle.getPropertyValue('--preview-image-rotation') : '')
+        || '0deg';
+    previewImageTransitionBuffer.style.setProperty('--preview-image-rotation', rotationValue);
+
+    const blurValue = previewImage.style.getPropertyValue('--preview-image-blur')
+        || (computedStyle ? computedStyle.getPropertyValue('--preview-image-blur') : '')
+        || '0px';
+    previewImageTransitionBuffer.style.setProperty('--preview-image-blur', blurValue);
+
+    if (previewImageTransform && typeof previewImageTransform === 'object') {
+        try {
+            const snapshot = {
+                left: Number(previewImageTransform.left) || 0,
+                top: Number(previewImageTransform.top) || 0,
+                width: Number(previewImageTransform.width) || 0,
+                height: Number(previewImageTransform.height) || 0,
+                rotation: Number(previewImageTransform.rotation) || 0,
+            };
+            previewImageTransitionBuffer.dataset.transitionTransform = JSON.stringify(snapshot);
+        } catch (error) {
+            previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+        }
+    } else {
+        previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+    }
+
+    const finalize = () => {
+        cleanupPreviewTransitionBuffer();
+    };
+
+    previewTransitionBufferState.finalizeHandler = finalize;
+    previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
+    previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
+
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
+
+    requestAnimationFrame(() => {
+        previewImageTransitionBuffer.classList.add('is-fading-out');
+    });
+}
+
 async function revealPreviewImageSource(objectURL, options = {}) {
     const { immediate = false } = options;
     const clipDurationMs = Number.isFinite(options.clipDurationMs)
@@ -621,6 +732,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    stagePreviewTransitionBuffer({ immediate });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 

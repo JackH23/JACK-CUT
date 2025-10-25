@@ -40,6 +40,7 @@ function getActiveOverlayAudioElements() {
     return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
 }
 const previewImage = document.getElementById('preview-image');
+const previewImageTransitionBuffer = document.getElementById('preview-image-transition-buffer');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
 let lastPreviewImageBlurValue = null;
@@ -159,13 +160,20 @@ function applyImageBlurToPreview(blur) {
     lastPreviewImageBlurValue = clamped;
     const blurValue = formatBlurRadius(clamped);
 
-    previewImage.style.setProperty('--preview-image-blur', `${blurValue}px`);
+    const applyBlurStyle = (element) => {
+        if (!element) {
+            return;
+        }
+        element.style.setProperty('--preview-image-blur', `${blurValue}px`);
+        if (clamped > 0) {
+            element.style.filter = `blur(${blurValue}px)`;
+        } else {
+            element.style.removeProperty('filter');
+        }
+    };
 
-    if (clamped > 0) {
-        previewImage.style.filter = `blur(${blurValue}px)`;
-    } else {
-        previewImage.style.removeProperty('filter');
-    }
+    applyBlurStyle(previewImage);
+    applyBlurStyle(previewImageTransitionBuffer);
 }
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');
