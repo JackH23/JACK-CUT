@@ -105,15 +105,21 @@
                 }
 
                 previewVideo.muted = false;
-                const baseVolume = clampVolume(audioSettings.volumePercent / 100);
+                let mixGain = clampVolume(audioSettings.volumePercent / 100);
+                if (typeof refreshPreviewAudioMix === 'function') {
+                    const mix = refreshPreviewAudioMix({ activeItem: timelineItem });
+                    if (mix?.gainsByItem instanceof Map && mix.gainsByItem.has(timelineItem)) {
+                        mixGain = clampVolume(mix.gainsByItem.get(timelineItem));
+                    }
+                }
                 const previewState = getMediaEnvelopeState(previewVideo);
                 if (previewState) {
-                    previewState.baseVolume = baseVolume;
+                    previewState.baseVolume = mixGain;
                 }
-                if (audioSettings.fadeInMs > 0 && baseVolume > 0) {
+                if (audioSettings.fadeInMs > 0 && mixGain > 0) {
                     previewVideo.volume = 0;
                 } else {
-                    previewVideo.volume = baseVolume;
+                    previewVideo.volume = mixGain;
                 }
 
                 try {
@@ -186,7 +192,9 @@
                     if (playPromise && typeof playPromise.then === 'function') {
                         await playPromise;
                     }
-                    applyPreviewAudioEnvelope(audioSettings, effectiveDuration);
+                    applyPreviewAudioEnvelope(audioSettings, effectiveDuration, {
+                        mixGain,
+                    });
                     if (isTimelinePlaying) {
                         if (playbackSyncSource) {
                             clearTimelinePlaybackSyncSource(playbackSyncSource);
