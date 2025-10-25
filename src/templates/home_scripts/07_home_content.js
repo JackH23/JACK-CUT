@@ -4211,31 +4211,70 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     });
 }
 
-function stopPreviewAudio(options = {}) {
-    if (!previewAudio) {
-        return;
-    }
+const supplementalOverlayAudioPlayers = new Map();
+
+function stopAllSupplementalOverlayAudio(options = {}) {
     const { resetTime = true } = options;
-    try {
-        previewAudio.pause();
-    } catch (error) {
-        // Ignore pause errors.
-    }
-    if (resetTime) {
-        try {
-            previewAudio.currentTime = 0;
-        } catch (error) {
-            // Ignore reset errors.
+    const players = Array.from(supplementalOverlayAudioPlayers.entries());
+    players.forEach(([item, state]) => {
+        const element = state?.element || null;
+        if (!element) {
+            supplementalOverlayAudioPlayers.delete(item);
+            return;
         }
+        try {
+            element.pause();
+        } catch (error) {
+            // Ignore pause errors for supplemental audio.
+        }
+        if (resetTime) {
+            try {
+                element.currentTime = 0;
+            } catch (error) {
+                // Ignore reset errors.
+            }
+        }
+        cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
+        if (typeof unregisterOverlayAudioElement === 'function') {
+            unregisterOverlayAudioElement(item, element);
+        }
+        if (element !== previewAudio && element.parentElement) {
+            element.parentElement.removeChild(element);
+        }
+        supplementalOverlayAudioPlayers.delete(item);
+    });
+}
+
+function stopPreviewAudio(options = {}) {
+    const { resetTime = true } = options;
+    if (previewAudio) {
+        try {
+            previewAudio.pause();
+        } catch (error) {
+            // Ignore pause errors.
+        }
+        if (resetTime) {
+            try {
+                previewAudio.currentTime = 0;
+            } catch (error) {
+                // Ignore reset errors.
+            }
+        }
+        cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
     }
-    cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+
+    stopAllSupplementalOverlayAudio({ resetTime });
+
     if (activeAudioOverlayEntry?.syncSource) {
         clearTimelinePlaybackSyncSource(activeAudioOverlayEntry.syncSource);
+    }
+    if (typeof unregisterOverlayAudioElement === 'function' && activeAudioOverlayEntry?.item && previewAudio) {
+        unregisterOverlayAudioElement(activeAudioOverlayEntry.item, previewAudio);
     }
     activeAudioOverlayEntry = null;
 
     if (typeof refreshPreviewAudioMix === 'function') {
-        refreshPreviewAudioMix();
+        refreshPreviewAudioMix({ overlayItems: [] });
     }
 }
 
@@ -4258,32 +4297,184 @@ function normalizeAudioOverlayEntry(entry) {
         ? Math.round(entry.end)
         : startTime + Math.max(0, getTimelineItemPlaybackDuration(entry.item));
     const safeEndTime = Math.max(startTime, rawEndTime);
+    const laneIndex = typeof resolveLaneIndex === 'function'
+        ? resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex)
+        : Number(entry.laneIndex ?? entry.item?.dataset?.laneIndex ?? 0);
 
     return {
         item: entry.item,
         start: startTime,
         end: safeEndTime,
+        laneIndex,
     };
 }
 
-function getTimelineAudioEntryAtTime(timeMs) {
+function getSupplementalAudioContainer() {
+    if (previewAudio?.parentElement) {
+        return previewAudio.parentElement;
+    }
+    if (previewAudio?.ownerDocument?.body) {
+        return previewAudio.ownerDocument.body;
+    }
+    return typeof document !== 'undefined' ? document.body : null;
+}
+
+function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
+    const normalizedSegmentTime = Number.isFinite(options?.normalizedSegmentTime)
+        ? Math.max(0, Math.round(options.normalizedSegmentTime))
+        : null;
+    const mix = options?.mix || null;
+    const activeItems = new Set();
+
+    audioEntries.forEach((entry) => {
+        if (!entry?.item || !isAudioTimelineItem(entry.item)) {
+            return;
+        }
+
+        const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(entry.item));
+        const referenceTime = normalizedSegmentTime !== null ? normalizedSegmentTime : entry.start;
+        const offsetMs = Math.max(
+            0,
+            Math.min(
+                Math.round(referenceTime - entry.start),
+                clipDuration || Math.max(0, entry.end - entry.start),
+            ),
+        );
+        const objectURL = entry.item?.dataset?.objectUrl || '';
+        const audioSettings = getTimelineItemAudioSettings(entry.item);
+        const overlayGain = (mix?.gainsByItem instanceof Map && mix.gainsByItem.has(entry.item))
+            ? mix.gainsByItem.get(entry.item)
+            : null;
+
+        let state = supplementalOverlayAudioPlayers.get(entry.item);
+        if (!state) {
+            const container = getSupplementalAudioContainer();
+            let element = null;
+            if (typeof Audio !== 'undefined') {
+                element = new Audio();
+            } else if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+                element = document.createElement('audio');
+            }
+            if (!element) {
+                return;
+            }
+            element.hidden = true;
+            element.setAttribute('aria-hidden', 'true');
+            element.preload = 'auto';
+            element.crossOrigin = 'anonymous';
+            if (container) {
+                container.appendChild(element);
+            }
+            state = {
+                element,
+                lastObjectUrl: '',
+            };
+            supplementalOverlayAudioPlayers.set(entry.item, state);
+        }
+
+        const { element } = state;
+        if (!element) {
+            return;
+        }
+
+        if (objectURL && element.src !== objectURL) {
+            element.src = objectURL;
+            try {
+                element.load();
+            } catch (error) {
+                // Ignore load errors for supplemental audio elements.
+            }
+            state.lastObjectUrl = objectURL;
+        }
+
+        if (typeof registerOverlayAudioElement === 'function') {
+            registerOverlayAudioElement(entry.item, element);
+        }
+
+        applyMasterVolumeToPreview(audioSettings.volumePercent, {
+            mediaElement: element,
+            mixGain: overlayGain,
+        });
+
+        const remainingDuration = Math.max(0, clipDuration - offsetMs);
+        if (remainingDuration > 0) {
+            applyPreviewAudioEnvelope(audioSettings, remainingDuration, {
+                mediaElement: element,
+                mixGain: overlayGain,
+            });
+        } else {
+            cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
+        }
+
+        const desiredTime = offsetMs / 1000;
+        if (Math.abs((element.currentTime || 0) - desiredTime) > 0.2) {
+            try {
+                element.currentTime = desiredTime;
+            } catch (error) {
+                // Ignore seek errors for supplemental audio.
+            }
+        }
+
+        if (element.paused) {
+            element.play().catch((error) => {
+                console.warn('Unable to start overlay audio clip playback.', error);
+            });
+        }
+
+        activeItems.add(entry.item);
+    });
+
+    const removableItems = [];
+    supplementalOverlayAudioPlayers.forEach((state, item) => {
+        if (!activeItems.has(item)) {
+            removableItems.push(item);
+        }
+    });
+
+    removableItems.forEach((item) => {
+        const state = supplementalOverlayAudioPlayers.get(item);
+        const element = state?.element || null;
+        if (element) {
+            if (typeof unregisterOverlayAudioElement === 'function') {
+                unregisterOverlayAudioElement(item, element);
+            }
+            cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
+            try {
+                element.pause();
+            } catch (error) {
+                // Ignore pause errors when removing supplemental audio.
+            }
+            try {
+                element.currentTime = 0;
+            } catch (error) {
+                // Ignore reset errors when removing supplemental audio.
+            }
+            if (element !== previewAudio && element.parentElement) {
+                element.parentElement.removeChild(element);
+            }
+        }
+        supplementalOverlayAudioPlayers.delete(item);
+    });
+}
+
+function getTimelineAudioEntriesAtTime(timeMs) {
     if (typeof getTimelineLaneEntries !== 'function') {
-        return null;
+        return [];
     }
 
     const rawTime = Number(timeMs);
     if (!Number.isFinite(rawTime)) {
-        return null;
+        return [];
     }
 
     const targetTime = Math.max(0, Math.round(rawTime));
     const candidateEntries = getTimelineLaneEntries();
 
     if (!candidateEntries.length) {
-        return null;
+        return [];
     }
 
-    const audioCandidates = candidateEntries
+    return candidateEntries
         .filter((entry) => entry?.item && isAudioTimelineItem(entry.item))
         .map((entry) => {
             const start = Number.isFinite(entry.start)
@@ -4292,7 +4483,9 @@ function getTimelineAudioEntryAtTime(timeMs) {
             const end = Number.isFinite(entry.end)
                 ? Math.max(0, Math.round(entry.end))
                 : start;
-            const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);
+            const laneIndex = typeof resolveLaneIndex === 'function'
+                ? resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex)
+                : Number(entry.laneIndex ?? entry.item?.dataset?.laneIndex ?? 0);
             return {
                 item: entry.item,
                 start,
@@ -4307,17 +4500,6 @@ function getTimelineAudioEntryAtTime(timeMs) {
             }
             return a.laneIndex - b.laneIndex;
         });
-
-    if (!audioCandidates.length) {
-        return null;
-    }
-
-    const primary = audioCandidates[0];
-    return {
-        item: primary.item,
-        start: primary.start,
-        end: primary.end,
-    };
 }
 
 function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
@@ -4341,21 +4523,69 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         }
     }
 
-    if ((!audioEntry || !audioEntry.item) && normalizedSegmentTime !== null) {
-        const timelineAudioEntry = getTimelineAudioEntryAtTime(normalizedSegmentTime);
-        if (timelineAudioEntry) {
-            audioEntry = normalizeAudioOverlayEntry(timelineAudioEntry);
-        }
+    const overlayAudioEntries = [];
+    const seenOverlayItems = new Set();
+
+    if (audioEntry?.item) {
+        overlayAudioEntries.push(audioEntry);
+        seenOverlayItems.add(audioEntry.item);
     }
 
-    if (!audioEntry || !previewAudio) {
+    entries
+        .filter((entry) => entry?.item && isAudioTimelineItem(entry.item))
+        .forEach((entry) => {
+            const normalized = normalizeAudioOverlayEntry(entry);
+            if (!normalized?.item || seenOverlayItems.has(normalized.item)) {
+                return;
+            }
+            overlayAudioEntries.push(normalized);
+            seenOverlayItems.add(normalized.item);
+        });
+
+    if (normalizedSegmentTime !== null) {
+        const timelineAudioEntries = getTimelineAudioEntriesAtTime(normalizedSegmentTime);
+        timelineAudioEntries.forEach((entry) => {
+            const normalized = normalizeAudioOverlayEntry(entry);
+            if (!normalized?.item || seenOverlayItems.has(normalized.item)) {
+                return;
+            }
+            overlayAudioEntries.push(normalized);
+            seenOverlayItems.add(normalized.item);
+        });
+    }
+
+    if (!overlayAudioEntries.length) {
         if (typeof refreshPreviewAudioMix === 'function') {
             refreshPreviewAudioMix({
                 entries,
                 activeItem: activePlaybackItem,
+                overlayItems: [],
             });
         }
         stopPreviewAudio({ resetTime: false });
+        return;
+    }
+
+    if (!audioEntry || !audioEntry.item) {
+        audioEntry = overlayAudioEntries[0];
+    }
+
+    const additionalEntries = overlayAudioEntries.slice(1);
+
+    const overlayItemsForMix = overlayAudioEntries.map((entry) => entry.item).filter(Boolean);
+
+    if (!previewAudio) {
+        if (typeof refreshPreviewAudioMix === 'function') {
+            refreshPreviewAudioMix({
+                entries,
+                activeItem: activePlaybackItem,
+                overlayItems: overlayItemsForMix,
+            });
+        }
+        syncSupplementalOverlayPlayers(additionalEntries, {
+            normalizedSegmentTime,
+            mix: null,
+        });
         return;
     }
 
@@ -4375,11 +4605,18 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             entries,
             activeItem: activePlaybackItem,
             overlayItem: audioEntry.item,
+            overlayItems: overlayItemsForMix,
         })
         : null;
     const overlayGain = (mix?.gainsByItem instanceof Map && mix.gainsByItem.has(audioEntry.item))
         ? mix.gainsByItem.get(audioEntry.item)
         : null;
+
+    if (activeAudioOverlayEntry?.item && activeAudioOverlayEntry.item !== audioEntry.item
+        && typeof unregisterOverlayAudioElement === 'function' && previewAudio
+    ) {
+        unregisterOverlayAudioElement(activeAudioOverlayEntry.item, previewAudio);
+    }
 
     const needsRestart = !activeAudioOverlayEntry
         || activeAudioOverlayEntry.item !== audioEntry.item
@@ -4408,6 +4645,8 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         };
     };
 
+    const audioSettings = getTimelineItemAudioSettings(audioEntry.item);
+
     if (needsRestart) {
         if (objectURL && previewAudio.src !== objectURL) {
             previewAudio.src = objectURL;
@@ -4418,7 +4657,6 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
             }
         }
 
-        const audioSettings = getTimelineItemAudioSettings(audioEntry.item);
         applyMasterVolumeToPreview(audioSettings.volumePercent, {
             mediaElement: previewAudio,
             mixGain: overlayGain,
@@ -4446,29 +4684,35 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         previewAudio.play().catch((error) => {
             console.warn('Unable to start audio clip playback.', error);
         });
-
-        applyAudioSyncSource();
-        return;
-    }
-
-    try {
-        const desiredTime = offsetMs / 1000;
-        if (Math.abs((previewAudio.currentTime || 0) - desiredTime) > 0.2) {
-            previewAudio.currentTime = desiredTime;
+    } else {
+        try {
+            const desiredTime = offsetMs / 1000;
+            if (Math.abs((previewAudio.currentTime || 0) - desiredTime) > 0.2) {
+                previewAudio.currentTime = desiredTime;
+            }
+        } catch (error) {
+            // Ignore seek corrections.
         }
-    } catch (error) {
-        // Ignore seek corrections.
+
+        if (previewAudio.paused) {
+            previewAudio.play().catch(() => {});
+        }
+
+        if (typeof updateTimelinePlaybackSyncFallback === 'function') {
+            updateTimelinePlaybackSyncFallback(audioEntry.start + offsetMs);
+        }
     }
 
-    if (previewAudio.paused) {
-        previewAudio.play().catch(() => {});
-    }
-
-    if (typeof updateTimelinePlaybackSyncFallback === 'function') {
-        updateTimelinePlaybackSyncFallback(audioEntry.start + offsetMs);
+    if (typeof registerOverlayAudioElement === 'function' && previewAudio) {
+        registerOverlayAudioElement(audioEntry.item, previewAudio);
     }
 
     applyAudioSyncSource();
+
+    syncSupplementalOverlayPlayers(additionalEntries, {
+        normalizedSegmentTime,
+        mix,
+    });
 }
 
 async function addToTimeline(file, objectURL) {

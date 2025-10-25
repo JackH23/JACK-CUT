@@ -2113,7 +2113,13 @@ async function handleConfirmExport() {
             }
         });
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        const overlayElements = typeof getActiveOverlayAudioElements === 'function'
+            ? getActiveOverlayAudioElements()
+            : [];
+        const audioElementCandidates = [previewVideo]
+            .concat(overlayElements.length ? overlayElements : [previewAudio].filter(Boolean));
+        const uniqueAudioElements = Array.from(new Set(audioElementCandidates.filter(Boolean)));
+        const audioAttachment = attachPreviewAudioToStream(uniqueAudioElements, combinedStream);
         exportAudioContext = audioAttachment.audioContext;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;
