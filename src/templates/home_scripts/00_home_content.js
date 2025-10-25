@@ -8,6 +8,115 @@ const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
+const timelineAudioOverlayElements = new Map();
+let previewAudioPrimaryOwner = null;
+
+function getTimelineAudioOverlayElement(timelineItem) {
+    if (!timelineItem) {
+        return null;
+    }
+    const element = timelineAudioOverlayElements.get(timelineItem) || null;
+    if (element && !element.isConnected) {
+        timelineAudioOverlayElements.delete(timelineItem);
+        return null;
+    }
+    return element;
+}
+
+function ensureTimelineAudioOverlayElement(timelineItem) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const existing = getTimelineAudioOverlayElement(timelineItem);
+    if (existing) {
+        return existing;
+    }
+
+    let element = null;
+    if (!previewAudioPrimaryOwner && previewAudio) {
+        element = previewAudio;
+        previewAudioPrimaryOwner = timelineItem;
+    } else {
+        element = document.createElement('audio');
+        element.preload = 'auto';
+        element.hidden = true;
+        element.setAttribute('aria-hidden', 'true');
+        element.classList.add('preview-audio-layer');
+        if (previewAudio && previewAudio.parentElement) {
+            previewAudio.parentElement.appendChild(element);
+        } else if (previewViewport) {
+            previewViewport.appendChild(element);
+        } else {
+            document.body.appendChild(element);
+        }
+    }
+
+    timelineAudioOverlayElements.set(timelineItem, element);
+    return element;
+}
+
+function releaseTimelineAudioOverlayElement(timelineItem) {
+    const element = getTimelineAudioOverlayElement(timelineItem);
+    if (!element) {
+        if (previewAudioPrimaryOwner === timelineItem) {
+            previewAudioPrimaryOwner = null;
+        }
+        return;
+    }
+
+    cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
+
+    try {
+        element.pause();
+    } catch (error) {
+        // Ignore pause errors when releasing an audio overlay element.
+    }
+
+    try {
+        element.currentTime = 0;
+    } catch (error) {
+        // Ignore reset failures when cleaning up audio overlay elements.
+    }
+
+    if (element !== previewAudio) {
+        element.removeAttribute('src');
+        try {
+            element.load();
+        } catch (error) {
+            // Ignore load resets for detached audio overlay elements.
+        }
+        if (element.parentElement) {
+            element.parentElement.removeChild(element);
+        }
+    } else {
+        element.removeAttribute('src');
+        try {
+            element.load();
+        } catch (error) {
+            // Ignore load resets for preview audio.
+        }
+        previewAudioPrimaryOwner = null;
+    }
+
+    timelineAudioOverlayElements.delete(timelineItem);
+}
+
+function clearTimelineAudioOverlayElements() {
+    Array.from(timelineAudioOverlayElements.keys()).forEach((item) => {
+        releaseTimelineAudioOverlayElement(item);
+    });
+}
+
+function getAllTimelineAudioOverlayElements() {
+    const unique = new Set();
+    timelineAudioOverlayElements.forEach((element) => {
+        if (element) {
+            unique.add(element);
+        }
+    });
+    return Array.from(unique.values());
+}
 const previewImage = document.getElementById('preview-image');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
@@ -1111,6 +1220,14 @@ function persistTimelineItemAudioSettings(timelineItem, settings) {
             delete timelineItem.dataset.audioFadeOutMs;
         }
     }
+
+    if (typeof applyTimelineAudioSettingsToPlayback === 'function') {
+        applyTimelineAudioSettingsToPlayback(timelineItem);
+    }
+
+    if (typeof syncTimelineItemAudioControlState === 'function') {
+        syncTimelineItemAudioControlState(timelineItem);
+    }
 }
 
 function persistActiveTimelineAudioSettings(partialSettings) {
@@ -1428,11 +1545,21 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewVideo });
     }
     if (isAudio) {
-        applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewAudio });
+        const activeAudioElement = getTimelineAudioOverlayElement(timelineItem) || null;
+        if (activeAudioElement) {
+            applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: activeAudioElement });
+        }
+        if (!activeAudioElement && previewAudio) {
+            applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewAudio });
+        }
     }
     if (!supportsAudio) {
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
         cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
+    }
+
+    if (typeof syncTimelineItemAudioControlState === 'function') {
+        syncTimelineItemAudioControlState(timelineItem);
     }
 }
 

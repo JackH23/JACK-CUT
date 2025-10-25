@@ -640,6 +640,9 @@ function initializeTimelineItem(timelineItem) {
     if (fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         ensureTimelineAudioDefaults(timelineItem);
     }
+    if (fileType.startsWith('audio/') && typeof initializeTimelineItemAudioControls === 'function') {
+        initializeTimelineItemAudioControls(timelineItem);
+    }
     if (fileType.startsWith('image/') || fileType.startsWith('video/') || fileType.startsWith('audio/')) {
         attachResizeHandles(timelineItem);
         enableTimelineItemEdgeResizing(timelineItem);

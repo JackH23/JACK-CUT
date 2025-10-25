@@ -3213,6 +3213,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
+.timeline-item--audio.timeline-item--audio-playing {
+    border-color: rgba(56, 189, 248, 0.8);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
 .timeline-item--text {
     background: linear-gradient(180deg, rgba(30, 64, 175, 0.18) 0%, rgba(15, 23, 42, 0.92) 100%);
     border: 1px solid rgba(96, 165, 250, 0.38);
@@ -3227,6 +3232,85 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     font-size: 0.78rem;
     color: rgba(226, 232, 240, 0.96);
     text-align: center;
+}
+
+.timeline-item__audio-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+.timeline-item__audio-level {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.25);
+    overflow: hidden;
+}
+
+.timeline-item__audio-level::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: var(--timeline-audio-level, 0%);
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.85) 0%, rgba(14, 165, 233, 0.95) 100%);
+    transition: width 0.18s ease;
+}
+
+.timeline-item__audio-level[data-active="1"]::after {
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+}
+
+.timeline-item__audio-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.timeline-item__audio-volume-slider {
+    flex: 1;
+    accent-color: rgba(56, 189, 248, 0.8);
+}
+
+.timeline-item__audio-volume-readout {
+    min-width: 52px;
+    font-size: 0.72rem;
+    color: rgba(226, 232, 240, 0.92);
+    text-align: right;
+}
+
+.timeline-item__audio-button-row {
+    display: flex;
+    gap: 6px;
+}
+
+.timeline-item__audio-button {
+    flex: 1;
+    font-size: 0.7rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: rgba(226, 232, 240, 0.9);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.timeline-item__audio-button:hover,
+.timeline-item__audio-button:focus-visible {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: rgba(56, 189, 248, 0.7);
+    color: rgba(244, 249, 255, 0.96);
+}
+
+.timeline-item__audio-button:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, 0.85);
+    outline-offset: 1px;
 }
 
 .timeline-waveform {

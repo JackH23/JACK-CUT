@@ -2105,7 +2105,19 @@ async function handleConfirmExport() {
             }
         });
 
-        const audioAttachment = attachPreviewAudioToStream([previewVideo, previewAudio], combinedStream);
+        const audioElements = [previewVideo];
+        const overlayElements = typeof getAllTimelineAudioOverlayElements === 'function'
+            ? getAllTimelineAudioOverlayElements()
+            : [];
+        overlayElements.forEach((element) => {
+            if (element && !audioElements.includes(element)) {
+                audioElements.push(element);
+            }
+        });
+        if (previewAudio && !audioElements.includes(previewAudio)) {
+            audioElements.push(previewAudio);
+        }
+        const audioAttachment = attachPreviewAudioToStream(audioElements, combinedStream);
         exportAudioContext = audioAttachment.audioContext;
         if (typeof audioAttachment.cleanup === 'function') {
             audioAttachmentCleanup = audioAttachment.cleanup;
