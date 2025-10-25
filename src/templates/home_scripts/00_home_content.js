@@ -1498,6 +1498,8 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     const {
         mediaElement: target = previewVideo,
         mixGain = null,
+        clipOffsetMs: rawClipOffsetMs = 0,
+        clipTotalDurationMs: rawTotalDurationMs = null,
     } = options;
     if (!target) {
         return;
@@ -1513,7 +1515,43 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
         : clampVolume(volumePercent / 100);
     const fadeInMs = sanitizeFadeMilliseconds(normalizedSettings.fadeInMs);
     const fadeOutMs = sanitizeFadeMilliseconds(normalizedSettings.fadeOutMs);
-    const clipMs = Math.max(0, Math.round(Number(clipDurationMs) || 0));
+    const playbackMs = Math.max(0, Math.round(Number(clipDurationMs) || 0));
+    const clipOffsetMs = Math.max(0, Math.round(Number(rawClipOffsetMs) || 0));
+    const totalClipMs = Number.isFinite(rawTotalDurationMs)
+        ? Math.max(clipOffsetMs, Math.round(rawTotalDurationMs))
+        : clipOffsetMs + playbackMs;
+    const playbackEndMs = clipOffsetMs + playbackMs;
+    const fadeOutStartMs = totalClipMs > 0
+        ? Math.max(0, totalClipMs - fadeOutMs)
+        : 0;
+    const fadeInLimitMs = (fadeOutMs > 0 && totalClipMs > 0 && fadeOutStartMs > clipOffsetMs)
+        ? Math.max(0, fadeOutStartMs - clipOffsetMs)
+        : playbackMs;
+    const fadeInRemainingMs = fadeInMs > clipOffsetMs
+        ? Math.max(
+            0,
+            Math.min(
+                fadeInMs - clipOffsetMs,
+                playbackMs,
+                fadeInLimitMs,
+            ),
+        )
+        : 0;
+    const fadeOutDelayMs = fadeOutMs > 0 && totalClipMs > 0 && playbackEndMs > fadeOutStartMs
+        ? Math.max(0, fadeOutStartMs - clipOffsetMs)
+        : 0;
+    const fadeOutElapsedMs = fadeOutMs > 0 && totalClipMs > 0 && clipOffsetMs > fadeOutStartMs
+        ? clipOffsetMs - fadeOutStartMs
+        : 0;
+    const fadeOutDurationMs = (() => {
+        if (fadeOutMs <= 0 || totalClipMs <= 0 || playbackEndMs <= fadeOutStartMs) {
+            return 0;
+        }
+        const remainingFadeMs = Math.max(0, fadeOutMs - fadeOutElapsedMs);
+        const remainingPlaybackMs = Math.max(0, playbackMs - fadeOutDelayMs);
+        return Math.max(0, Math.min(remainingFadeMs, remainingPlaybackMs));
+    })();
+
     const state = getMediaEnvelopeState(target);
 
     if (state) {
@@ -1524,15 +1562,35 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     const gainNode = ensureMediaElementGainNode(target);
     const envelopeNode = state?.envelopeNode || null;
     const envelopeTarget = envelopeNode || gainNode;
+
     if (envelopeTarget && (state?.audioContext || envelopeTarget.context)) {
         try {
             const audioContext = state?.audioContext || envelopeTarget.context;
             const now = audioContext.currentTime;
             const gainParam = envelopeTarget.gain;
-            const fadeInSeconds = fadeInMs > 0 ? fadeInMs / 1000 : 0;
-            const fadeOutSeconds = fadeOutMs > 0 ? fadeOutMs / 1000 : 0;
-            const clipSeconds = clipMs > 0 ? clipMs / 1000 : 0;
-            const fadeInEndTime = fadeInSeconds > 0 ? now + fadeInSeconds : now;
+            const steadyValue = envelopeNode ? 1 : baseVolume;
+
+            const computeInitialGain = () => {
+                let value = steadyValue;
+                if (fadeInMs > 0) {
+                    if (clipOffsetMs <= 0) {
+                        value = 0;
+                    } else if (clipOffsetMs < fadeInMs) {
+                        value = steadyValue * clampProgress(clipOffsetMs / fadeInMs);
+                    }
+                }
+                if (fadeOutMs > 0 && totalClipMs > 0) {
+                    if (clipOffsetMs >= totalClipMs) {
+                        value = 0;
+                    } else if (clipOffsetMs >= fadeOutStartMs) {
+                        const fadeProgress = clampProgress(
+                            fadeOutMs > 0 ? (clipOffsetMs - fadeOutStartMs) / fadeOutMs : 1,
+                        );
+                        value = Math.min(value, steadyValue * (1 - fadeProgress));
+                    }
+                }
+                return clampVolume(value);
+            };
 
             if (gainNode && gainNode !== envelopeTarget) {
                 const baseParam = gainNode.gain;
@@ -1548,22 +1606,25 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
                 return;
             }
 
-            if (fadeInSeconds > 0) {
-                gainParam.setValueAtTime(0, now);
-                const targetValue = envelopeNode ? 1 : baseVolume;
-                gainParam.linearRampToValueAtTime(targetValue, fadeInEndTime);
-            } else {
-                const steadyValue = envelopeNode ? 1 : baseVolume;
+            const initialGain = computeInitialGain();
+            gainParam.setValueAtTime(initialGain, now);
+
+            if (fadeInRemainingMs > 0) {
+                const fadeInEndTime = now + (fadeInRemainingMs / 1000);
+                gainParam.linearRampToValueAtTime(steadyValue, fadeInEndTime);
+            } else if (initialGain >= steadyValue && fadeOutDurationMs <= 0) {
                 gainParam.setValueAtTime(steadyValue, now);
             }
 
-            if (fadeOutSeconds > 0 && clipSeconds > 0) {
-                const fadeOutStartTime = now + Math.max(0, clipSeconds - fadeOutSeconds);
-                const safeFadeOutStart = Math.max(fadeOutStartTime, fadeInEndTime, now);
-                const fadeOutEndTime = safeFadeOutStart + fadeOutSeconds;
-                const sustainValue = envelopeNode ? 1 : baseVolume;
-                gainParam.setValueAtTime(sustainValue, safeFadeOutStart);
+            if (fadeOutDurationMs > 0) {
+                const fadeOutStartTime = now + (fadeOutDelayMs / 1000);
+                if (fadeOutDelayMs > 0) {
+                    gainParam.setValueAtTime(steadyValue, fadeOutStartTime);
+                }
+                const fadeOutEndTime = fadeOutStartTime + (fadeOutDurationMs / 1000);
                 gainParam.linearRampToValueAtTime(0, fadeOutEndTime);
+            } else if (fadeOutMs > 0 && totalClipMs > 0 && clipOffsetMs >= totalClipMs) {
+                gainParam.setValueAtTime(0, now);
             }
 
             target.volume = 1;
@@ -1578,42 +1639,64 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
         return;
     }
 
-    if (fadeInMs > 0) {
-        target.volume = 0;
+    const steadyVolume = clampVolume(baseVolume);
+    const initialVolume = (() => {
+        let value = steadyVolume;
+        if (fadeInMs > 0) {
+            if (clipOffsetMs <= 0) {
+                value = 0;
+            } else if (clipOffsetMs < fadeInMs) {
+                value = steadyVolume * clampProgress(clipOffsetMs / fadeInMs);
+            }
+        }
+        if (fadeOutMs > 0 && totalClipMs > 0) {
+            if (clipOffsetMs >= totalClipMs) {
+                value = 0;
+            } else if (clipOffsetMs >= fadeOutStartMs) {
+                const fadeProgress = clampProgress(
+                    fadeOutMs > 0 ? (clipOffsetMs - fadeOutStartMs) / fadeOutMs : 1,
+                );
+                value = Math.min(value, steadyVolume * (1 - fadeProgress));
+            }
+        }
+        return clampVolume(value);
+    })();
+
+    target.volume = initialVolume;
+
+    if (fadeInRemainingMs > 0 && state) {
         const fadeInStart = performance.now();
+        const startVolume = target.volume;
+        const targetVolume = steadyVolume;
         const stepFadeIn = () => {
             const elapsed = performance.now() - fadeInStart;
-            const progress = Math.min(Math.max(elapsed / fadeInMs, 0), 1);
-            target.volume = clampVolume(baseVolume * progress);
+            const progress = Math.min(Math.max(elapsed / fadeInRemainingMs, 0), 1);
+            const nextVolume = clampVolume(startVolume + ((targetVolume - startVolume) * progress));
+            target.volume = nextVolume;
             if (progress < 1) {
-                if (state) {
-                    state.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
-                }
+                state.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
             }
         };
-        if (state) {
-            state.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
-        }
-    } else {
-        target.volume = baseVolume;
+        state.fadeInFrameId = window.requestAnimationFrame(stepFadeIn);
     }
 
-    if (fadeOutMs > 0 && clipMs > 0 && baseVolume > 0 && state) {
-        const startDelay = Math.max(0, clipMs - fadeOutMs);
+    if (fadeOutDurationMs > 0 && state) {
         state.fadeOutTimeoutId = window.setTimeout(() => {
             const fadeOutStart = performance.now();
-            const initialVolume = target.volume;
+            const startVolume = target.volume;
             const stepFadeOut = () => {
                 const elapsed = performance.now() - fadeOutStart;
-                const progress = Math.min(Math.max(elapsed / fadeOutMs, 0), 1);
-                const nextVolume = clampVolume(initialVolume * (1 - progress));
+                const progress = Math.min(Math.max(elapsed / fadeOutDurationMs, 0), 1);
+                const nextVolume = clampVolume(startVolume * (1 - progress));
                 target.volume = nextVolume;
                 if (progress < 1) {
                     state.fadeOutFrameId = window.requestAnimationFrame(stepFadeOut);
                 }
             };
             state.fadeOutFrameId = window.requestAnimationFrame(stepFadeOut);
-        }, startDelay);
+        }, fadeOutDelayMs);
+    } else if (fadeOutMs > 0 && totalClipMs > 0 && clipOffsetMs >= totalClipMs) {
+        target.volume = 0;
     }
 }
 
