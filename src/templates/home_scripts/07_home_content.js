@@ -4191,8 +4191,6 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     });
 }
 
-let activeAudioOverlayEntry = null;
-
 function stopPreviewAudio(options = {}) {
     if (!previewAudio) {
         return;
