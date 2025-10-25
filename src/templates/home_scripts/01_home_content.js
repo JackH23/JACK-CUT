@@ -462,20 +462,27 @@ if (masterVolumeInput) {
         if (masterVolumeInput.disabled) {
             return;
         }
+
         const percent = clampVolumePercent(masterVolumeInput.value);
         masterVolumeInput.value = String(percent);
         updateMasterVolumeReadout(percent);
         persistActiveTimelineAudioSettings({ volumePercent: percent });
-        cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
-        cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
-        const isVideo = isVideoTimelineItem(activeTimelineItem);
-        const isAudio = isAudioTimelineItem(activeTimelineItem);
-        if (isVideo) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewVideo });
+        const targets = [];
+        
+        if (isVideoTimelineItem(activeTimelineItem) && previewVideo) {
+            targets.push(previewVideo);
         }
-        if (isAudio) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewAudio });
+        if (isAudioTimelineItem(activeTimelineItem) && previewAudio) {
+            targets.push(previewAudio);
         }
+
+        targets.forEach((mediaElement) => {
+            cancelPreviewAudioEnvelope({ mediaElement, restoreVolume: false });
+        });
+
+        targets.forEach((mediaElement) => {
+            applyMasterVolumeToPreview(percent, { mediaElement });
+        });
     };
 
     masterVolumeInput.addEventListener('input', handleMasterVolumeChange);

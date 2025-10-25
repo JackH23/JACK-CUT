@@ -1378,6 +1378,9 @@ function syncAudioControlsToTimelineItem(timelineItem) {
     const isVideo = isVideoTimelineItem(timelineItem);
     const isAudio = isAudioTimelineItem(timelineItem);
     const supportsAudio = isVideo || isAudio;
+    if (supportsAudio) {
+        ensureTimelineAudioDefaults(timelineItem);
+    }
     const settings = supportsAudio
         ? getTimelineItemAudioSettings(timelineItem)
         : getDefaultAudioSettings();
