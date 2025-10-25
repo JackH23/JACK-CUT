@@ -4066,6 +4066,56 @@ let activePreviewAudioTracks = new Map();
 const auxiliaryPreviewAudioElements = [];
 const audioElementAssignments = new Map();
 
+function handleTimelineAudioSettingsChange(event) {
+    const detail = event?.detail || {};
+    const timelineItem = detail.timelineItem || null;
+    if (!timelineItem) {
+        return;
+    }
+
+    const normalizedSettings = detail.settings
+        ? {
+            volumePercent: clampVolumePercent(detail.settings.volumePercent),
+            fadeInMs: sanitizeFadeMilliseconds(detail.settings.fadeInMs),
+            fadeOutMs: sanitizeFadeMilliseconds(detail.settings.fadeOutMs),
+        }
+        : getTimelineItemAudioSettings(timelineItem);
+
+    if (timelineItem === activeTimelineItem) {
+        if (isVideoTimelineItem(timelineItem) && previewVideo) {
+            applyMasterVolumeToPreview(normalizedSettings.volumePercent, { mediaElement: previewVideo });
+        }
+        if (isAudioTimelineItem(timelineItem) && previewAudio) {
+            applyMasterVolumeToPreview(normalizedSettings.volumePercent, { mediaElement: previewAudio });
+        }
+    }
+
+    const trackState = activePreviewAudioTracks.get(timelineItem);
+    const mediaElement = trackState?.element || null;
+    if (!mediaElement) {
+        return;
+    }
+
+    cancelPreviewAudioEnvelope({ mediaElement, restoreVolume: false });
+    applyMasterVolumeToPreview(normalizedSettings.volumePercent, { mediaElement });
+
+    const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(timelineItem));
+    const offsetMs = Number.isFinite(trackState.lastOffsetMs)
+        ? Math.max(0, trackState.lastOffsetMs)
+        : 0;
+    const remainingDuration = Math.max(0, clipDuration - offsetMs);
+
+    if (remainingDuration > 0) {
+        applyPreviewAudioEnvelope(normalizedSettings, remainingDuration, { mediaElement });
+    }
+
+    trackState.settingsKey = `${normalizedSettings.volumePercent}|${normalizedSettings.fadeInMs}|${normalizedSettings.fadeOutMs}`;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('timelineAudioSettingsChange', handleTimelineAudioSettingsChange);
+}
+
 function createAuxiliaryPreviewAudioElement() {
     const element = document.createElement('audio');
     element.preload = 'auto';
