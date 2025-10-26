@@ -2088,6 +2088,10 @@ function clearPreviewOverlayLayers() {
         resetActiveOverlayWindowState();
     }
 
+    if (typeof resetOverlayOffscreenCache === 'function') {
+        resetOverlayOffscreenCache();
+    }
+
     lastOverlayRenderTimestamp = null;
 }
 
