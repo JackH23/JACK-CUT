@@ -928,6 +928,122 @@ function markExportPlaybackContextDirty(options = {}) {
     renderExportSummary(getTimelineItems(), null);
 }
 
+const timelineItemMetadataCache = new WeakMap();
+const exportTimelineRowCache = new WeakMap();
+let exportTimelineListItemsContainer = null;
+
+function getExportTimelineItemMetadata(timelineItem, index) {
+    if (!timelineItem) {
+        return {
+            name: `Clip ${index + 1}`,
+            duration: 0,
+            typeLabel: describeFileType(''),
+        };
+    }
+
+    const dataset = timelineItem.dataset || {};
+    const requiresFallbackName = !(dataset.displayName || dataset.fileName);
+
+    const baseSignature = [
+        dataset.displayName || '',
+        dataset.fileName || '',
+        dataset.fileType || '',
+        dataset.imageDuration || '',
+        dataset.videoDuration || '',
+        dataset.audioDuration || '',
+        dataset.customDuration || '',
+    ].join('|');
+
+    const cached = timelineItemMetadataCache.get(timelineItem);
+    let fallbackElement = null;
+    let fallbackSignature = '';
+
+    if (requiresFallbackName) {
+        fallbackElement = cached?.fallbackElement && timelineItem.contains(cached.fallbackElement)
+            ? cached.fallbackElement
+            : null;
+
+        if (!fallbackElement) {
+            fallbackElement = timelineItem.querySelector('span');
+        }
+
+        if (
+            cached
+            && cached.requiresFallbackName
+            && cached.baseSignature === baseSignature
+            && cached.fallbackElement === fallbackElement
+        ) {
+            fallbackSignature = cached.fallbackSignature;
+        } else {
+            const fallbackText = fallbackElement?.textContent || timelineItem.textContent || '';
+            fallbackSignature = typeof fallbackText === 'string' ? fallbackText.trim() : '';
+        }
+    }
+
+    const signature = `${baseSignature}|${requiresFallbackName ? fallbackSignature : ''}`;
+
+    if (cached && cached.signature === signature) {
+        return cached.metadata;
+    }
+
+    let resolvedName = dataset.displayName || dataset.fileName || fallbackSignature || '';
+    if (typeof resolvedName === 'string') {
+        resolvedName = resolvedName.trim();
+    }
+    if (!resolvedName) {
+        resolvedName = `Clip ${index + 1}`;
+    }
+
+    const duration = Math.max(0, Number(getTimelineItemPlaybackDuration(timelineItem)) || 0);
+    const typeLabel = describeFileType(dataset.fileType || '');
+
+    const metadata = {
+        name: resolvedName,
+        duration,
+        typeLabel,
+    };
+
+    timelineItemMetadataCache.set(timelineItem, {
+        signature,
+        baseSignature,
+        fallbackElement: requiresFallbackName ? fallbackElement : null,
+        fallbackSignature: requiresFallbackName ? fallbackSignature : '',
+        requiresFallbackName,
+        metadata,
+    });
+
+    return metadata;
+}
+
+function getOrCreateExportTimelineRow(timelineItem) {
+    let entry = exportTimelineRowCache.get(timelineItem);
+
+    if (!entry || !entry.element || !entry.nameNode || !entry.metaNode) {
+        const element = document.createElement('li');
+        element.className = 'export-timeline-list__item';
+
+        const nameNode = document.createElement('span');
+        nameNode.className = 'export-timeline-clip-name';
+
+        const metaNode = document.createElement('span');
+        metaNode.className = 'export-timeline-clip-meta';
+
+        element.appendChild(nameNode);
+        element.appendChild(metaNode);
+
+        entry = {
+            element,
+            nameNode,
+            metaNode,
+            nameText: '',
+            metaText: '',
+        };
+        exportTimelineRowCache.set(timelineItem, entry);
+    }
+
+    return entry;
+}
+
 function renderExportSummary(timelineItems, playbackCompleted = null, playbackState = null) {
     let summaryItems = Array.isArray(timelineItems) ? timelineItems : [];
     let summaryPlaybackState = playbackState;
@@ -999,37 +1115,40 @@ function renderExportSummary(timelineItems, playbackCompleted = null, playbackSt
     }
 
     if (exportTimelineList) {
-        exportTimelineList.innerHTML = '';
         if (!summaryItems.length) {
             const emptyMessage = document.createElement('p');
             emptyMessage.className = 'export-dialog__subtitle';
             emptyMessage.textContent = 'No media in the timeline. Add clips to export.';
-            exportTimelineList.appendChild(emptyMessage);
+            exportTimelineList.replaceChildren(emptyMessage);
         } else {
-            const list = document.createElement('ul');
-            list.className = 'export-timeline-list__items';
+            if (!exportTimelineListItemsContainer) {
+                exportTimelineListItemsContainer = document.createElement('ul');
+                exportTimelineListItemsContainer.className = 'export-timeline-list__items';
+            }
+
+            const fragment = document.createDocumentFragment();
             summaryItems.forEach((timelineItem, index) => {
-                const listItem = document.createElement('li');
-                listItem.className = 'export-timeline-list__item';
+                const metadata = getExportTimelineItemMetadata(timelineItem, index);
+                const row = getOrCreateExportTimelineRow(timelineItem);
+                const clipLabel = `${index + 1}. ${metadata.name}`;
+                if (row.nameText !== clipLabel) {
+                    row.nameNode.textContent = clipLabel;
+                    row.nameText = clipLabel;
+                }
 
-                const clipName = document.createElement('span');
-                clipName.className = 'export-timeline-clip-name';
-                const displayName = timelineItem.dataset.displayName
-                    || timelineItem.dataset.fileName
-                    || timelineItem.querySelector('span')?.textContent
-                    || `Clip ${index + 1}`;
-                clipName.textContent = `${index + 1}. ${displayName}`;
+                const duration = Math.max(0, Number(metadata.duration) || 0);
+                const metaLabel = `${metadata.typeLabel} • ${formatTime(duration)} (${formatSecondsLabel(duration)})`;
+                if (row.metaText !== metaLabel) {
+                    row.metaNode.textContent = metaLabel;
+                    row.metaText = metaLabel;
+                }
 
-                const clipMeta = document.createElement('span');
-                clipMeta.className = 'export-timeline-clip-meta';
-                const duration = getTimelineItemPlaybackDuration(timelineItem);
-                clipMeta.textContent = `${describeFileType(timelineItem.dataset.fileType || '')} • ${formatTime(duration)} (${formatSecondsLabel(duration)})`;
-
-                listItem.appendChild(clipName);
-                listItem.appendChild(clipMeta);
-                list.appendChild(listItem);
+                fragment.appendChild(row.element);
+                exportTimelineRowCache.set(timelineItem, row);
             });
-            exportTimelineList.appendChild(list);
+            
+            exportTimelineListItemsContainer.replaceChildren(fragment);
+            exportTimelineList.replaceChildren(exportTimelineListItemsContainer);
         }
     }
 
