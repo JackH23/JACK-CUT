@@ -172,6 +172,8 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
 
 let previewImageFrameUpdateHandle = 0;
 let pendingPreviewImageFrameState = null;
+let lastCommittedPreviewImageFrameState = null;
+const PREVIEW_IMAGE_FRAME_RENDER_EPSILON = 0.01;
 
 function commitPreviewImageFrameState(state) {
     if (!state || !previewImageFrame || !previewImageTransform) {
@@ -179,6 +181,7 @@ function commitPreviewImageFrameState(state) {
         resetPreviewViewportAlignmentState();
         resetPreviewGuideElements();
         updateImageRotationControlState();
+        lastCommittedPreviewImageFrameState = null;
         return;
     }
 
@@ -197,12 +200,25 @@ function commitPreviewImageFrameState(state) {
         resetPreviewViewportAlignmentState();
         resetPreviewGuideElements();
         updateImageRotationControlState();
+        lastCommittedPreviewImageFrameState = null;
         return;
     }
 
-    previewImageFrame.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-    previewImageFrame.style.width = `${width}px`;
-    previewImageFrame.style.height = `${height}px`;
+    const previous = lastCommittedPreviewImageFrameState;
+    const positionChanged = !previous
+        || Math.abs(previous.left - left) > PREVIEW_IMAGE_FRAME_RENDER_EPSILON
+        || Math.abs(previous.top - top) > PREVIEW_IMAGE_FRAME_RENDER_EPSILON;
+    const sizeChanged = !previous
+        || Math.abs(previous.width - width) > PREVIEW_IMAGE_FRAME_RENDER_EPSILON
+        || Math.abs(previous.height - height) > PREVIEW_IMAGE_FRAME_RENDER_EPSILON;
+
+    if (positionChanged) {
+        previewImageFrame.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    }
+    if (sizeChanged) {
+        previewImageFrame.style.width = `${width}px`;
+        previewImageFrame.style.height = `${height}px`;
+    }
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
@@ -242,6 +258,15 @@ function commitPreviewImageFrameState(state) {
     updatePreviewOutsideOutline();
     updatePreviewGuides(transformForGuides, alignment);
     updateImageRotationControlState();
+
+    lastCommittedPreviewImageFrameState = {
+        left,
+        top,
+        width,
+        height,
+        rotation,
+        aspectRatio,
+    };
 }
 
 function flushPreviewImageFrameState() {
@@ -250,7 +275,7 @@ function flushPreviewImageFrameState() {
     commitPreviewImageFrameState(state);
 }
 
-function applyPreviewImageTransform(alignmentOverride) {
+function applyPreviewImageTransform(alignmentOverride, options = {}) {
     if (!previewImageFrame || !previewImageTransform) {
         if (typeof window !== 'undefined'
             && typeof window.cancelAnimationFrame === 'function'
@@ -259,6 +284,7 @@ function applyPreviewImageTransform(alignmentOverride) {
         }
         previewImageFrameUpdateHandle = 0;
         pendingPreviewImageFrameState = null;
+        lastCommittedPreviewImageFrameState = null;
         hidePreviewOutsideOutline();
         resetPreviewViewportAlignmentState();
         resetPreviewGuideElements();
@@ -279,7 +305,17 @@ function applyPreviewImageTransform(alignmentOverride) {
         alignmentOverride,
     };
 
-    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    const shouldFlushImmediately = Boolean(options.immediate)
+        || typeof window === 'undefined'
+        || typeof window.requestAnimationFrame !== 'function';
+
+    if (shouldFlushImmediately) {
+        if (typeof window !== 'undefined'
+            && typeof window.cancelAnimationFrame === 'function'
+            && previewImageFrameUpdateHandle) {
+            window.cancelAnimationFrame(previewImageFrameUpdateHandle);
+        }
+        previewImageFrameUpdateHandle = 0;
         flushPreviewImageFrameState();
         return;
     }
@@ -297,6 +333,7 @@ function applyPreviewImageTransform(alignmentOverride) {
 function clearPreviewImageTransform() {
     previewImageTransform = null;
     pendingPreviewImageFrameState = null;
+    lastCommittedPreviewImageFrameState = null;
     if (typeof window !== 'undefined'
         && typeof window.cancelAnimationFrame === 'function'
         && previewImageFrameUpdateHandle) {
@@ -309,12 +346,14 @@ function clearPreviewImageTransform() {
         previewImageFrame.style.removeProperty('height');
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
         previewImageFrame.removeAttribute('data-outside-viewport');
+        previewImageFrame.style.removeProperty('will-change');
     }
     if (previewImage) {
         previewImage.style.removeProperty('--preview-image-rotation');
     }
     if (previewTextEditor) {
         previewTextEditor.style.removeProperty('font-size');
+        previewTextEditor.style.removeProperty('will-change');
     }
     resetPreviewViewportAlignmentState();
     hidePreviewOutsideOutline();
@@ -1825,6 +1864,10 @@ function calculatePreviewImageResize(handle, deltaX, deltaY, origin) {
 function endPreviewImagePointerInteraction() {
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-dragging', 'is-resizing');
+        previewImageFrame.style.removeProperty('will-change');
+    }
+    if (previewTextEditor) {
+        previewTextEditor.style.removeProperty('will-change');
     }
     const hadInteraction = previewImagePointerState.mode !== null
         && previewImagePointerState.mode !== 'text-edit';
@@ -1884,6 +1927,13 @@ function onPreviewImagePointerDown(event) {
         captureTarget.setPointerCapture(event.pointerId);
     }
 
+    if (previewImageFrame) {
+        previewImageFrame.style.willChange = 'transform, width, height';
+    }
+    if (previewTextEditor && !previewTextEditor.hidden) {
+        previewTextEditor.style.willChange = 'font-size';
+    }
+
     previewImagePointerState.pointerId = event.pointerId;
     previewImagePointerState.mode = handleElement ? 'resize' : 'drag';
     previewImagePointerState.handle = handleElement?.dataset.handle || 'se';
@@ -1935,9 +1985,13 @@ function onPreviewImagePointerMove(event) {
         previewImagePointerState.mode = 'drag';
         if (previewImageFrame) {
             previewImageFrame.classList.add('is-dragging');
+            previewImageFrame.style.willChange = 'transform, width, height';
         }
         if (previewTextEditor && previewTextEditor === document.activeElement) {
             previewTextEditor.blur();
+        }
+        if (previewTextEditor && !previewTextEditor.hidden) {
+            previewTextEditor.style.willChange = 'font-size';
         }
         if (typeof previewImageFrame?.setPointerCapture === 'function') {
             previewImageFrame.setPointerCapture(event.pointerId);
@@ -1994,7 +2048,7 @@ function onPreviewImagePointerMove(event) {
         }
     }
 
-    applyPreviewImageTransform(snapResult?.alignment);
+    applyPreviewImageTransform(snapResult?.alignment, { immediate: true });
 
     event.preventDefault();
     event.stopPropagation();
