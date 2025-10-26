@@ -3843,23 +3843,124 @@ async function decodeAudioBufferFromFile(file) {
     });
 }
 
-function buildWaveformChannelDataFromAudioBuffer(audioBuffer) {
-    if (!audioBuffer) {
-        return null;
+const AUDIO_WAVEFORM_TARGET_BUCKETS = 4000;
+let audioWaveformWorkerPromise = null;
+let audioWaveformWorkerInstance = null;
+let audioWaveformWorkerMessageId = 0;
+const audioWaveformWorkerResolvers = new Map();
+let audioWaveformWorkerUrl = null;
+
+function resolveAudioWaveformWorkerUrl() {
+    if (audioWaveformWorkerUrl) {
+        return audioWaveformWorkerUrl;
     }
 
-    let channelData = null;
-    if (typeof AudioBuffer !== 'undefined' && audioBuffer instanceof AudioBuffer) {
-        channelData = audioBuffer.numberOfChannels > 0
-            ? audioBuffer.getChannelData(0)
-            : null;
-    } else if (audioBuffer instanceof Float32Array) {
-        channelData = audioBuffer;
-    } else if (audioBuffer?.channelData instanceof Float32Array) {
-        channelData = audioBuffer.channelData;
+    const getCandidateScript = () => {
+        if (document?.currentScript instanceof HTMLScriptElement) {
+            return document.currentScript;
+        }
+        const scripts = Array.from(document?.getElementsByTagName?.('script') || []);
+        return scripts.find((element) => (element?.src || '').includes('07_home_content')) || null;
+    };
+
+    try {
+        const scriptElement = getCandidateScript();
+        if (scriptElement?.src) {
+            audioWaveformWorkerUrl = new URL('audio_waveform_worker.js', scriptElement.src).href;
+            return audioWaveformWorkerUrl;
+        }
+    } catch (error) {
+        audioWaveformWorkerUrl = null;
     }
 
-    if (!channelData) {
+    try {
+        audioWaveformWorkerUrl = new URL('audio_waveform_worker.js', window.location.href).href;
+    } catch (error) {
+        audioWaveformWorkerUrl = null;
+    }
+
+    return audioWaveformWorkerUrl;
+}
+
+function resetAudioWaveformWorkerState() {
+    if (audioWaveformWorkerInstance) {
+        try {
+            audioWaveformWorkerInstance.terminate();
+        } catch (error) {
+            // Ignore terminate errors during cleanup.
+        }
+    }
+    audioWaveformWorkerInstance = null;
+    audioWaveformWorkerPromise = null;
+    audioWaveformWorkerMessageId = 0;
+    audioWaveformWorkerResolvers.clear();
+}
+
+function getAudioWaveformWorker() {
+    if (audioWaveformWorkerPromise) {
+        return audioWaveformWorkerPromise;
+    }
+
+    if (typeof window === 'undefined' || typeof Worker === 'undefined') {
+        audioWaveformWorkerPromise = Promise.resolve(null);
+        return audioWaveformWorkerPromise;
+    }
+
+    const workerUrl = resolveAudioWaveformWorkerUrl();
+    if (!workerUrl) {
+        audioWaveformWorkerPromise = Promise.resolve(null);
+        return audioWaveformWorkerPromise;
+    }
+
+    audioWaveformWorkerPromise = new Promise((resolve) => {
+        try {
+            const worker = new Worker(workerUrl);
+            audioWaveformWorkerInstance = worker;
+
+            worker.addEventListener('message', (event) => {
+                const { id = null, result = null, error = null } = event.data || {};
+                if ((id === null || typeof id === 'undefined') || !audioWaveformWorkerResolvers.has(id)) {
+                    return;
+                }
+                const resolver = audioWaveformWorkerResolvers.get(id);
+                audioWaveformWorkerResolvers.delete(id);
+                if (error) {
+                    resolver.reject(new Error(String(error)));
+                    return;
+                }
+                resolver.resolve(result);
+            });
+
+            worker.addEventListener('error', () => {
+                const pending = Array.from(audioWaveformWorkerResolvers.values());
+                audioWaveformWorkerResolvers.clear();
+                pending.forEach((resolver) => {
+                    resolver.reject(new Error('worker-error'));
+                });
+                resetAudioWaveformWorkerState();
+            });
+
+            resolve(worker);
+        } catch (error) {
+            audioWaveformWorkerInstance = null;
+            resolve(null);
+        }
+    });
+
+    audioWaveformWorkerPromise.then((worker) => {
+        if (!worker) {
+            audioWaveformWorkerPromise = null;
+        }
+        return worker;
+    }).catch(() => {
+        audioWaveformWorkerPromise = null;
+    });
+
+    return audioWaveformWorkerPromise;
+}
+
+function computeWaveformBucketsOnMainThread(channelData) {
+    if (!(channelData instanceof Float32Array)) {
         return null;
     }
 
@@ -3868,8 +3969,7 @@ function buildWaveformChannelDataFromAudioBuffer(audioBuffer) {
         return null;
     }
 
-    const TARGET_BUCKETS = 4000;
-    const bucketWidth = Math.max(1, Math.floor(totalSamples / TARGET_BUCKETS) || 1);
+    const bucketWidth = Math.max(1, Math.floor(totalSamples / AUDIO_WAVEFORM_TARGET_BUCKETS) || 1);
     const bucketCount = Math.ceil(totalSamples / bucketWidth);
     const buckets = new Float32Array(bucketCount * 2);
 
@@ -3898,6 +3998,95 @@ function buildWaveformChannelDataFromAudioBuffer(audioBuffer) {
         buckets,
         totalSamples,
     };
+}
+
+async function buildWaveformChannelDataWithWorker(channelData) {
+    if (!(channelData instanceof Float32Array)) {
+        return null;
+    }
+
+    try {
+        const worker = await getAudioWaveformWorker();
+        if (!worker) {
+            return null;
+        }
+
+        let transferable = null;
+        try {
+            transferable = channelData.slice();
+        } catch (error) {
+            transferable = new Float32Array(channelData);
+        }
+
+        const messageId = audioWaveformWorkerMessageId + 1;
+        audioWaveformWorkerMessageId = messageId;
+
+        return await new Promise((resolve, reject) => {
+            audioWaveformWorkerResolvers.set(messageId, { resolve, reject });
+            try {
+                worker.postMessage({ id: messageId, channelData: transferable }, [transferable.buffer]);
+            } catch (error) {
+                audioWaveformWorkerResolvers.delete(messageId);
+                reject(error);
+            }
+        });
+    } catch (error) {
+        return null;
+    }
+}
+
+function buildWaveformChannelDataFromAudioBuffer(audioBuffer) {
+    if (!audioBuffer) {
+        return null;
+    }
+
+    let channelData = null;
+    if (typeof AudioBuffer !== 'undefined' && audioBuffer instanceof AudioBuffer) {
+        channelData = audioBuffer.numberOfChannels > 0
+            ? audioBuffer.getChannelData(0)
+            : null;
+    } else if (audioBuffer instanceof Float32Array) {
+        channelData = audioBuffer;
+    } else if (audioBuffer?.channelData instanceof Float32Array) {
+        channelData = audioBuffer.channelData;
+    }
+
+    if (!channelData) {
+        return null;
+    }
+
+    const totalSamples = channelData.length;
+    if (!Number.isFinite(totalSamples) || totalSamples <= 0) {
+        return null;
+    }
+
+    return computeWaveformBucketsOnMainThread(channelData);
+}
+
+async function createWaveformChannelDataFromAudioBuffer(audioBuffer) {
+    if (!audioBuffer) {
+        return null;
+    }
+
+    let channelData = null;
+    if (typeof AudioBuffer !== 'undefined' && audioBuffer instanceof AudioBuffer) {
+        channelData = audioBuffer.numberOfChannels > 0
+            ? audioBuffer.getChannelData(0)
+            : null;
+    } else if (audioBuffer instanceof Float32Array) {
+        channelData = audioBuffer;
+    } else if (audioBuffer?.channelData instanceof Float32Array) {
+        channelData = audioBuffer.channelData;
+    }
+
+    if (channelData instanceof Float32Array) {
+        const workerResult = await buildWaveformChannelDataWithWorker(channelData).catch(() => null);
+        if (workerResult) {
+            return workerResult;
+        }
+    }
+
+    return buildWaveformChannelDataFromAudioBuffer(audioBuffer);
 }
 
 function drawAudioWaveform(canvas, audioBuffer, options = {}) {
@@ -4136,7 +4325,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
         if (!existing.channelData && existing.audioBuffer) {
-            existing.channelData = buildWaveformChannelDataFromAudioBuffer(existing.audioBuffer);
+            existing.channelData = await createWaveformChannelDataFromAudioBuffer(existing.audioBuffer);
             delete existing.audioBuffer;
         }
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
@@ -4158,7 +4347,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     const audioBuffer = await decodeAudioBufferFromFile(file);
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
-        const channelData = buildWaveformChannelDataFromAudioBuffer(audioBuffer);
+        const channelData = await createWaveformChannelDataFromAudioBuffer(audioBuffer);
         const cacheEntry = {
             imageDataUrl: null,
             durationMs,
