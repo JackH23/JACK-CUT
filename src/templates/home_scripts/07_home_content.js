@@ -1477,14 +1477,29 @@ function getTimelineLanePadding() {
 
 // Derive the pixel geometry for the timeline based on the zero-based duration span.
 // This keeps the visual playhead aligned with fractional playback values regardless of zoom.
+let cachedTimelineDurationGeometry = null;
+let timelineDurationGeometryDirty = true;
+
+function markTimelineDurationGeometryDirty() {
+    timelineDurationGeometryDirty = true;
+}
+
 function computeTimelineDurationGeometry() {
+    if (!timelineDurationGeometryDirty) {
+        return cachedTimelineDurationGeometry;
+    }
+
+    timelineDurationGeometryDirty = false;
+
     if (!timelineTrack) {
-        return null;
+        cachedTimelineDurationGeometry = null;
+        return cachedTimelineDurationGeometry;
     }
 
     const perPixel = getTimelineDurationPerPixel();
     if (!Number.isFinite(perPixel) || perPixel <= 0) {
-        return null;
+        cachedTimelineDurationGeometry = null;
+        return cachedTimelineDurationGeometry;
     }
 
     const { left: trackPaddingLeft } = getTimelineTrackPadding();
@@ -1524,12 +1539,14 @@ function computeTimelineDurationGeometry() {
     }
 
     if (computedWidthPx > 0) {
-        return { offset, width: computedWidthPx };
+        cachedTimelineDurationGeometry = { offset, width: computedWidthPx };
+        return cachedTimelineDurationGeometry;
     }
 
     const entries = getTimelineLaneEntries();
     if (!entries.length) {
-        return null;
+        cachedTimelineDurationGeometry = null;
+        return cachedTimelineDurationGeometry;
     }
 
     let timelineDurationMs = 0;
@@ -1556,16 +1573,61 @@ function computeTimelineDurationGeometry() {
     });
 
     if (!hasValidEntry) {
-        return null;
+        cachedTimelineDurationGeometry = null;
+        return cachedTimelineDurationGeometry;
     }
 
     if (timelineDurationMs <= 0) {
-        return { offset, width: 0 };
+        cachedTimelineDurationGeometry = { offset, width: 0 };
+        return cachedTimelineDurationGeometry;
     }
 
     const width = Math.max(1, Math.round(timelineDurationMs / perPixel));
 
-    return { offset, width };
+    cachedTimelineDurationGeometry = { offset, width };
+    return cachedTimelineDurationGeometry;
+}
+
+let pendingTimelineScrollUpdateHandle = null;
+
+function runTimelineScrollUpdate() {
+    if (!timelineTrack) {
+        return;
+    }
+
+    recomputeTimelinePlayheadGeometry();
+
+    if (!timelinePlayheadLine || !timelinePlayheadLine.classList.contains('is-visible')) {
+        return;
+    }
+
+    const stored = Number.parseFloat(timelinePlayheadLine.dataset && timelinePlayheadLine.dataset.position);
+    if (Number.isFinite(stored)) {
+        updateTimelinePlayheadIndicator(stored, { visible: true });
+    }
+}
+
+function scheduleTimelineScrollUpdate() {
+    if (pendingTimelineScrollUpdateHandle !== null) {
+        return;
+    }
+
+    const finalize = () => {
+        pendingTimelineScrollUpdateHandle = null;
+        runTimelineScrollUpdate();
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        pendingTimelineScrollUpdateHandle = window.requestAnimationFrame(finalize);
+        return;
+    }
+
+    if (typeof setTimeout === 'function') {
+        pendingTimelineScrollUpdateHandle = setTimeout(finalize, 16);
+        return;
+    }
+
+    finalize();
 }
 
 let timelineProgressAnimationFrame = null;
@@ -1705,6 +1767,7 @@ function updateTimelinePlayheadIndicator(fraction, options = {}) {
     }
 
     if (forceGeometryUpdate) {
+        markTimelineDurationGeometryDirty();
         recomputeTimelinePlayheadGeometry();
     }
 
@@ -1783,6 +1846,7 @@ function applyTimelineProgressGeometry() {
 }
 
 function scheduleTimelineIndicatorUpdate() {
+    markTimelineDurationGeometryDirty();
     if (timelineIndicatorResizeFrame !== null) {
         return;
     }
@@ -1909,16 +1973,7 @@ function animateTimelineProgress(startFraction, endFraction, durationMs) {
 }
 
 if (timelineTrack) {
-    timelineTrack.addEventListener('scroll', () => {
-        recomputeTimelinePlayheadGeometry();
-        if (!timelinePlayheadLine || !timelinePlayheadLine.classList.contains('is-visible')) {
-            return;
-        }
-        const stored = Number.parseFloat(timelinePlayheadLine.dataset && timelinePlayheadLine.dataset.position);
-        if (Number.isFinite(stored)) {
-            updateTimelinePlayheadIndicator(stored, { visible: true });
-        }
-    });
+    timelineTrack.addEventListener('scroll', scheduleTimelineScrollUpdate);
 }
 
 function shouldSeekTimelineFromTrackEvent(event) {

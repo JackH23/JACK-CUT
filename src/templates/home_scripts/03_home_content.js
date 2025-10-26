@@ -2001,6 +2001,10 @@ function reflowTimelineLane(lane) {
         return;
     }
 
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
+    }
+
     invalidateTimelineLaneEntriesCache();
 
     const fallbackIndex = Number.isFinite(Number(lane?.dataset?.laneIndex))
@@ -2027,6 +2031,9 @@ function reflowTimelineLane(lane) {
 
 function reflowAllTimelineLanes() {
     flushAllTimelineLaneReflows();
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
+    }
     getTimelineLanes().forEach((lane) => {
         reflowTimelineLane(lane);
     });
@@ -2456,6 +2463,9 @@ function refreshTimelineLaneIndices() {
     });
 
     invalidateTimelineLaneEntriesCache();
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
+    }
 }
 
 function createTimelineLaneElement() {

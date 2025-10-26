@@ -199,6 +199,10 @@ function scheduleTimelineLaneReflow(lane) {
         return;
     }
 
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
+    }
+
     if (typeof invalidateTimelineLaneEntriesCache === 'function') {
         invalidateTimelineLaneEntriesCache();
     }
@@ -227,6 +231,10 @@ function flushTimelineLaneReflow(lane) {
         return;
     }
 
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
+    }
+
     if (typeof invalidateTimelineLaneEntriesCache === 'function') {
         invalidateTimelineLaneEntriesCache();
     }
@@ -251,6 +259,10 @@ function flushTimelineLaneReflow(lane) {
 function flushAllTimelineLaneReflows() {
     if (typeof invalidateTimelineLaneEntriesCache === 'function') {
         invalidateTimelineLaneEntriesCache();
+    }
+
+    if (typeof markTimelineDurationGeometryDirty === 'function') {
+        markTimelineDurationGeometryDirty();
     }
 
     const entries = Array.from(pendingTimelineLaneReflows.entries());
