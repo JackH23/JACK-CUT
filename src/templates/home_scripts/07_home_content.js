@@ -3735,10 +3735,22 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
 
 const AUDIO_WAVEFORM_HEIGHT = 80;
 const audioWaveformByObjectUrl = new Map();
-let audioDecodeContextLock = Promise.resolve();
+const AUDIO_DECODE_MAX_CONCURRENCY = 3;
+const AUDIO_DECODE_CONTEXT_IDLE_CLOSE_DELAY_MS = 15000;
+const audioDecodeQueue = [];
+let audioDecodeActiveJobs = 0;
+let audioDecodeQueueTickScheduled = false;
+let audioDecodeContextIdleCloseTimeout = null;
 let sharedAudioDecodeContext = null;
 let sharedAudioDecodeContextPromise = null;
 let sharedAudioDecodeContextClosing = null;
+const audioDecodeWorkerState = {
+    worker: null,
+    url: null,
+    pending: new Map(),
+    nextJobId: 0,
+    disabled: false,
+};
 const audioWaveformResizeObservers = new WeakMap();
 
 async function ensureSharedAudioDecodeContext(AudioContextConstructor) {
@@ -3775,6 +3787,14 @@ async function ensureSharedAudioDecodeContext(AudioContextConstructor) {
 }
 
 function resetSharedAudioDecodeContext() {
+    if (audioDecodeContextIdleCloseTimeout !== null) {
+        if (typeof window !== 'undefined' && typeof window.clearTimeout === 'function') {
+            window.clearTimeout(audioDecodeContextIdleCloseTimeout);
+        } else {
+            clearTimeout(audioDecodeContextIdleCloseTimeout);
+        }
+        audioDecodeContextIdleCloseTimeout = null;
+    }
     if (sharedAudioDecodeContextClosing) {
         return sharedAudioDecodeContextClosing;
     }
@@ -3802,6 +3822,275 @@ function resetSharedAudioDecodeContext() {
 
     sharedAudioDecodeContextClosing = closingPromise;
     return closingPromise;
+}
+
+function cancelAudioDecodeIdleCleanup() {
+    if (audioDecodeContextIdleCloseTimeout !== null) {
+        if (typeof window !== 'undefined' && typeof window.clearTimeout === 'function') {
+            window.clearTimeout(audioDecodeContextIdleCloseTimeout);
+        } else {
+            clearTimeout(audioDecodeContextIdleCloseTimeout);
+        }
+        audioDecodeContextIdleCloseTimeout = null;
+    }
+}
+
+function suspendAudioDecodeContextIfIdle() {
+    const context = sharedAudioDecodeContext;
+    if (!context || context.state === 'closed') {
+        return;
+    }
+
+    if (typeof context.suspend === 'function') {
+        try {
+            Promise.resolve(context.suspend()).catch(() => {});
+        } catch (error) {
+            // Ignore suspend failures.
+        }
+    }
+
+    if (audioDecodeContextIdleCloseTimeout === null
+        && typeof setTimeout === 'function'
+    ) {
+        const schedule = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+            ? window.setTimeout.bind(window)
+            : setTimeout;
+        audioDecodeContextIdleCloseTimeout = schedule(() => {
+            audioDecodeContextIdleCloseTimeout = null;
+            if (audioDecodeQueue.length === 0 && audioDecodeActiveJobs === 0) {
+                resetSharedAudioDecodeContext();
+            }
+        }, AUDIO_DECODE_CONTEXT_IDLE_CLOSE_DELAY_MS);
+    }
+}
+
+function cleanupAudioDecodeWorker() {
+    const { worker, url, pending } = audioDecodeWorkerState;
+    if (worker) {
+        try {
+            worker.terminate();
+        } catch (error) {
+            // Ignore termination failures.
+        }
+    }
+    if (url && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        try {
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            // Ignore URL revoke failures.
+        }
+    }
+    audioDecodeWorkerState.worker = null;
+    audioDecodeWorkerState.url = null;
+    audioDecodeWorkerState.nextJobId = 0;
+    if (pending && typeof pending.clear === 'function') {
+        pending.forEach((entry) => {
+            if (entry && typeof entry.reject === 'function') {
+                entry.reject(new Error('Audio decode worker terminated.'));
+            }
+        });
+        pending.clear();
+    }
+}
+
+function ensureAudioDecodeWorker() {
+    if (audioDecodeWorkerState.disabled) {
+        return null;
+    }
+    if (audioDecodeWorkerState.worker) {
+        return audioDecodeWorkerState.worker;
+    }
+
+    if (typeof window === 'undefined'
+        || typeof window.Worker !== 'function'
+        || typeof Blob !== 'function'
+        || typeof URL === 'undefined'
+        || typeof URL.createObjectURL !== 'function'
+    ) {
+        audioDecodeWorkerState.disabled = true;
+        return null;
+    }
+
+    const workerSource = `((self) => {\n` +
+        `    const OfflineCtor = self.OfflineAudioContext || self.webkitOfflineAudioContext;\n` +
+        `    self.onmessage = async (event) => {\n` +
+        `        const data = event?.data;\n` +
+        `        const jobId = data?.id;\n` +
+        `        if (!jobId) {\n` +
+        `            return;\n` +
+        `        }\n` +
+        `        const buffer = data?.buffer;\n` +
+        `        const sampleRate = data?.sampleRate || 44100;\n` +
+        `        if (!(buffer instanceof ArrayBuffer)) {\n` +
+        `            self.postMessage({ id: jobId, error: 'Invalid buffer' });\n` +
+        `            return;\n` +
+        `        }\n` +
+        `        if (typeof OfflineCtor !== 'function') {\n` +
+        `            self.postMessage({ id: jobId, error: 'Offline context unavailable' });\n` +
+        `            return;\n` +
+        `        }\n` +
+        `        try {\n` +
+        `            const offlineContext = new OfflineCtor(1, 1, sampleRate);\n` +
+        `            const decode = offlineContext.decodeAudioData;\n` +
+        `            const arity = typeof decode === 'function' ? decode.length : 0;\n` +
+        `            const decoded = await (arity <= 1\n` +
+        `                ? decode.call(offlineContext, buffer)\n` +
+        `                : new Promise((resolve, reject) => decode.call(offlineContext, buffer, resolve, reject)));\n` +
+        `            if (!decoded) {\n` +
+        `                self.postMessage({ id: jobId, error: 'Decode returned null' });\n` +
+        `                return;\n` +
+        `            }\n` +
+        `            const channelCount = decoded.numberOfChannels || 0;\n` +
+        `            const primaryChannel = channelCount > 0\n` +
+        `                ? decoded.getChannelData(0)?.slice(0)\n` +
+        `                : null;\n` +
+        `            const transferable = primaryChannel ? [primaryChannel.buffer] : undefined;\n` +
+        `            self.postMessage({\n` +
+        `                id: jobId,\n` +
+        `                result: primaryChannel ? {\n` +
+        `                    channelData: primaryChannel,\n` +
+        `                    sampleRate: decoded.sampleRate || sampleRate,\n` +
+        `                    length: decoded.length || primaryChannel.length || 0,\n` +
+        `                    duration: decoded.duration || 0,\n` +
+        `                    numberOfChannels: channelCount || (primaryChannel ? 1 : 0),\n` +
+        `                } : null,\n` +
+        `            }, transferable);\n` +
+        `        } catch (error) {\n` +
+        `            self.postMessage({ id: jobId, error: error?.message || String(error) });\n` +
+        `        }\n` +
+        `    };\n` +
+        `})(self);`;
+
+    let blob = null;
+    try {
+        blob = new Blob([workerSource], { type: 'application/javascript' });
+    } catch (error) {
+        audioDecodeWorkerState.disabled = true;
+        return null;
+    }
+
+    let url = null;
+    try {
+        url = URL.createObjectURL(blob);
+    } catch (error) {
+        audioDecodeWorkerState.disabled = true;
+        return null;
+    }
+
+    let worker = null;
+    try {
+        worker = new window.Worker(url);
+    } catch (error) {
+        URL.revokeObjectURL(url);
+        audioDecodeWorkerState.disabled = true;
+        return null;
+    }
+
+    worker.onmessage = (event) => {
+        const data = event?.data;
+        const jobId = data?.id;
+        if (!jobId || !audioDecodeWorkerState.pending.has(jobId)) {
+            return;
+        }
+        const pending = audioDecodeWorkerState.pending.get(jobId);
+        audioDecodeWorkerState.pending.delete(jobId);
+        if (!pending) {
+            return;
+        }
+        if (data?.result && typeof pending.resolve === 'function') {
+            pending.resolve(data.result);
+            return;
+        }
+        if (data?.error === 'Offline context unavailable') {
+            audioDecodeWorkerState.disabled = true;
+            cleanupAudioDecodeWorker();
+        }
+        if (typeof pending.reject === 'function') {
+            pending.reject(new Error(data?.error || 'Unknown worker error'));
+        }
+    };
+
+    worker.onerror = () => {
+        audioDecodeWorkerState.disabled = true;
+        cleanupAudioDecodeWorker();
+    };
+
+    audioDecodeWorkerState.worker = worker;
+    audioDecodeWorkerState.url = url;
+    return worker;
+}
+
+function maybeDecodeAudioBufferOffThread(arrayBuffer) {
+    if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
+        return Promise.resolve(null);
+    }
+
+    const worker = ensureAudioDecodeWorker();
+    if (!worker) {
+        return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+        const jobId = audioDecodeWorkerState.nextJobId += 1;
+        const pendingEntry = {
+            resolve: (result) => resolve(result || null),
+            reject: () => resolve(null),
+        };
+        audioDecodeWorkerState.pending.set(jobId, pendingEntry);
+        try {
+            const bufferForWorker = typeof arrayBuffer.slice === 'function'
+                ? arrayBuffer.slice(0)
+                : arrayBuffer;
+            worker.postMessage({
+                id: jobId,
+                buffer: bufferForWorker,
+                sampleRate: sharedAudioDecodeContext?.sampleRate || 44100,
+            }, bufferForWorker !== arrayBuffer ? [bufferForWorker] : undefined);
+        } catch (error) {
+            audioDecodeWorkerState.pending.delete(jobId);
+            resolve(null);
+        }
+    });
+}
+
+function enqueueAudioDecodeJob(executor) {
+    return new Promise((resolve, reject) => {
+        audioDecodeQueue.push({ executor, resolve, reject });
+        cancelAudioDecodeIdleCleanup();
+        scheduleAudioDecodeQueueTick();
+    });
+}
+
+function scheduleAudioDecodeQueueTick() {
+    if (audioDecodeQueueTickScheduled) {
+        return;
+    }
+    audioDecodeQueueTickScheduled = true;
+    Promise.resolve().then(flushAudioDecodeQueue);
+}
+
+function flushAudioDecodeQueue() {
+    audioDecodeQueueTickScheduled = false;
+    while (audioDecodeActiveJobs < AUDIO_DECODE_MAX_CONCURRENCY && audioDecodeQueue.length > 0) {
+        const entry = audioDecodeQueue.shift();
+        if (!entry || typeof entry.executor !== 'function') {
+            continue;
+        }
+        audioDecodeActiveJobs += 1;
+        Promise.resolve(entry.executor()).then((result) => {
+            entry.resolve(result);
+        }).catch((error) => {
+            entry.reject(error);
+        }).finally(() => {
+            audioDecodeActiveJobs -= 1;
+            if (audioDecodeQueue.length > 0) {
+                scheduleAudioDecodeQueueTick();
+            } else if (audioDecodeActiveJobs === 0) {
+                suspendAudioDecodeContextIfIdle();
+                cleanupAudioDecodeWorker();
+            }
+        });
+    }
 }
 
 function getWaveformCssWidth(canvas, timelineItem, widthOverride) {
@@ -3858,14 +4147,59 @@ async function decodeAudioBufferFromFile(file) {
         return null;
     }
 
-    const arrayBuffer = await file.arrayBuffer();
+    return enqueueAudioDecodeJob(async () => {
+        let arrayBuffer = null;
+        try {
+            arrayBuffer = await file.arrayBuffer();
+        } catch (error) {
+            console.warn('Unable to read audio file for waveform rendering.', error);
+            return null;
+        }
 
-    return audioDecodeContextLock = audioDecodeContextLock.then(async () => {
+        if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
+            return null;
+        }
+
+        let workerResult = null;
+        try {
+            workerResult = await maybeDecodeAudioBufferOffThread(arrayBuffer);
+        } catch (error) {
+            workerResult = null;
+        }
+
+        if (workerResult && workerResult.channelData instanceof Float32Array) {
+            const { channelData, sampleRate, length, duration, numberOfChannels } = workerResult;
+            const computedSampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100;
+            const computedLength = Number.isFinite(length) && length > 0 ? length : channelData.length;
+            const computedDuration = Number.isFinite(duration) && duration > 0
+                ? duration
+                : (computedSampleRate > 0 ? computedLength / computedSampleRate : 0);
+            const audioBufferLike = {
+                duration: computedDuration,
+                sampleRate: computedSampleRate,
+                length: computedLength,
+                numberOfChannels: Number.isFinite(numberOfChannels) && numberOfChannels > 0
+                    ? numberOfChannels
+                    : (channelData ? 1 : 0),
+                channelData,
+                getChannelData: () => channelData,
+            };
+            return audioBufferLike;
+        }
+
         try {
             const audioContext = await ensureSharedAudioDecodeContext(AudioContextConstructor);
 
             if (!audioContext) {
                 return null;
+            }
+
+            if (audioContext.state === 'suspended' && typeof audioContext.resume === 'function') {
+                try {
+                    await audioContext.resume();
+                } catch (resumeError) {
+                    // Ignore resume failures; decoding may still succeed.
+                }
             }
 
             const decodeAudioData = audioContext.decodeAudioData;
@@ -3894,6 +4228,8 @@ async function decodeAudioBufferFromFile(file) {
             console.warn('Unable to decode audio file for waveform rendering.', error);
             await resetSharedAudioDecodeContext();
             return null;
+        } finally {
+            arrayBuffer = null;
         }
     });
 }
