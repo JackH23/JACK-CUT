@@ -1316,6 +1316,96 @@ function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = 
     return normalized;
 }
 
+const pendingOverlayTransformUpdates = new Map();
+let pendingOverlayTransformFrameId = 0;
+
+function commitPendingOverlayTransformUpdates(persistOverride = null) {
+    if (!pendingOverlayTransformUpdates.size) {
+        return;
+    }
+
+    const updates = Array.from(pendingOverlayTransformUpdates.entries());
+    pendingOverlayTransformUpdates.clear();
+
+    updates.forEach(([timelineItem, data]) => {
+        if (!timelineItem || !data || !data.entry || !data.transform) {
+            return;
+        }
+
+        applyOverlayLayerTransform(data.entry, data.transform);
+
+        const shouldPersist = persistOverride !== null
+            ? persistOverride
+            : Boolean(data.persist);
+
+        if (shouldPersist) {
+            storeOverlayTransformOnTimelineItem(timelineItem, data.transform, { skipKeyframes: true });
+        }
+    });
+}
+
+function flushPendingOverlayTransformUpdates(options = {}) {
+    const { persistOverride = null } = options;
+
+    if (pendingOverlayTransformFrameId
+        && typeof window !== 'undefined'
+        && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(pendingOverlayTransformFrameId);
+    }
+
+    pendingOverlayTransformFrameId = 0;
+    commitPendingOverlayTransformUpdates(persistOverride);
+}
+
+function scheduleOverlayTransformUpdate(timelineItem, entry, transform, options = {}) {
+    if (!timelineItem || !entry || !transform) {
+        return;
+    }
+
+    const sanitizedTransform = {
+        left: Number.isFinite(transform.left) ? transform.left : 0,
+        top: Number.isFinite(transform.top) ? transform.top : 0,
+        width: Number.isFinite(transform.width) ? Math.max(transform.width, 0) : 0,
+        height: Number.isFinite(transform.height) ? Math.max(transform.height, 0) : 0,
+        rotation: Number.isFinite(transform.rotation) ? transform.rotation : 0,
+        aspectRatio: Number.isFinite(transform.aspectRatio) && transform.aspectRatio > 0
+            ? transform.aspectRatio
+            : ((Number.isFinite(transform.width)
+                && Number.isFinite(transform.height)
+                && transform.width > 0
+                && transform.height > 0)
+                ? transform.width / transform.height
+                : 1),
+    };
+
+    const nextPersist = Boolean(options.persist);
+    const existing = pendingOverlayTransformUpdates.get(timelineItem);
+    const mergedPersist = nextPersist || Boolean(existing?.persist);
+
+    pendingOverlayTransformUpdates.set(timelineItem, {
+        entry,
+        transform: sanitizedTransform,
+        persist: mergedPersist,
+    });
+
+    const hasRequestAnimationFrame = typeof window !== 'undefined'
+        && typeof window.requestAnimationFrame === 'function';
+
+    if (!hasRequestAnimationFrame) {
+        commitPendingOverlayTransformUpdates(mergedPersist);
+        return;
+    }
+
+    if (pendingOverlayTransformFrameId) {
+        return;
+    }
+
+    pendingOverlayTransformFrameId = window.requestAnimationFrame(() => {
+        pendingOverlayTransformFrameId = 0;
+        commitPendingOverlayTransformUpdates();
+    });
+}
+
 function beginOverlayPointerInteraction(event, timelineItem, layer) {
     if (!event || !timelineItem || !layer) {
         return false;
@@ -1329,6 +1419,8 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
     if (!entry || !entry.frame) {
         return false;
     }
+
+    flushPendingOverlayTransformUpdates({ persistOverride: true });
 
     const handleElement = event.target?.closest?.('.preview-resize-handle') || null;
     const mode = handleElement ? 'resize' : 'drag';
@@ -1393,6 +1485,8 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
 function finishOverlayPointerInteraction(commit = true) {
     const { pointerId, layer, timelineItem, lastTransform, captureTarget } = overlayPointerState;
 
+    flushPendingOverlayTransformUpdates({ persistOverride: commit });
+
     if (pointerId !== null) {
         if (typeof captureTarget?.hasPointerCapture === 'function'
             && captureTarget.hasPointerCapture(pointerId)) {
@@ -1425,7 +1519,6 @@ function finishOverlayPointerInteraction(commit = true) {
             rotation: Number.isFinite(lastTransform.rotation) ? lastTransform.rotation : 0,
         };
         storeOverlayTransformOnTimelineItem(timelineItem, transformToPersist, { skipKeyframes: false });
-        refreshActiveOverlayLayers();
     }
 
     overlayPointerState.lastTransform = null;
@@ -1502,10 +1595,27 @@ function onOverlayPointerMove(event) {
         }
         : workingTransform;
 
-    overlayPointerState.lastTransform = snapped;
+    const transformForUpdate = {
+        left: snapped.left,
+        top: snapped.top,
+        width: snapped.width,
+        height: snapped.height,
+        rotation: Number.isFinite(snapped.rotation) ? snapped.rotation : 0,
+        aspectRatio: snapped.aspectRatio,
+    };
 
-    applyOverlayLayerTransform(entry, snapped);
-    storeOverlayTransformOnTimelineItem(timelineItem, snapped, { skipKeyframes: true });
+    overlayPointerState.lastTransform = { ...transformForUpdate };
+
+    entry.frame = {
+        left: transformForUpdate.left,
+        top: transformForUpdate.top,
+        width: transformForUpdate.width,
+        height: transformForUpdate.height,
+        rotation: transformForUpdate.rotation,
+    };
+    updateOverlaySnapshotEntry(entry);
+
+    scheduleOverlayTransformUpdate(timelineItem, entry, transformForUpdate, { persist: true });
 
     if (layer) {
         layer.classList.toggle('is-dragging', mode === 'drag');
