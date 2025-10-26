@@ -2048,7 +2048,8 @@ function onPreviewImagePointerMove(event) {
         }
     }
 
-    applyPreviewImageTransform(snapResult?.alignment, { immediate: true });
+    const shouldFlushImmediately = previewImagePointerState.mode === 'resize';
+    applyPreviewImageTransform(snapResult?.alignment, { immediate: shouldFlushImmediately });
 
     event.preventDefault();
     event.stopPropagation();
