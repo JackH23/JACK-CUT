@@ -2042,6 +2042,22 @@ function setPreviewImageVisibility(isVisible) {
     }
 }
 
+function releaseTerminatedPrimaryPreviewState() {
+    if (typeof cleanupPreviewTransitionBuffer === 'function') {
+        cleanupPreviewTransitionBuffer();
+    }
+
+    if (typeof applyImageBlurToPreview === 'function') {
+        applyImageBlurToPreview(0);
+    }
+
+    if (typeof clearPreviewCanvasBackdrop === 'function') {
+        clearPreviewCanvasBackdrop();
+    } else if (typeof setCanvasBackdropVisibility === 'function') {
+        setCanvasBackdropVisibility(false);
+    }
+}
+
 function clearPreviewOverlayLayers() {
     if (!previewOverlayStack) {
         return;

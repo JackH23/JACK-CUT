@@ -312,6 +312,28 @@
         }
     });
 
+    const hasUpperLayerOverlays = overlayEntries.some((descriptor) => descriptor
+        && descriptor.shouldRender
+        && computeOverlayLayerGroup(descriptor) === 'above');
+
+    const hasFinitePrimaryRange = Number.isFinite(primaryStartTime)
+        && Number.isFinite(primaryRangeEnd)
+        && primaryRangeEnd > primaryStartTime;
+
+    let primaryEnded = false;
+    if (hasFinitePrimaryRange) {
+        const primaryDescriptor = { start: primaryStartTime, end: primaryRangeEnd };
+        const primaryIsActive = isClipActiveAtTime(primaryDescriptor, safeTimelineNow);
+        if (!primaryIsActive
+            && safeTimelineNow >= (primaryRangeEnd - OVERLAY_TIMELINE_EDGE_TOLERANCE_MS)) {
+            primaryEnded = true;
+        }
+    }
+
+    if (hasUpperLayerOverlays && primaryEnded) {
+        releaseTerminatedPrimaryPreviewState();
+    }
+
     const borderRadius = getPreviewImageFrameBorderRadius();
 
     const overlayGroups = { below: [], above: [] };
