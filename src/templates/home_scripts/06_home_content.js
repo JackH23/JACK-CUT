@@ -220,7 +220,7 @@
         });
     }
 
-    const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -235,18 +235,6 @@
             hasRecentOverlayLayers = true;
         }
     });
-
-    const shouldRetainOverlayEntry = (entry) => {
-        if (!entry || !entry.isVisible) {
-            return false;
-        }
-        const lastTime = Number(entry.lastTimelineTime);
-        if (!Number.isFinite(lastTime)) {
-            return false;
-        }
-        const age = Math.abs(safeTimelineNow - lastTime);
-        return age <= recentOverlayHoldThreshold;
-    };
 
     if (!overlayEntries.length) {
 
@@ -527,11 +515,6 @@
         nextKnownItems.add(descriptor.item);
 
         if (!descriptor.shouldRender) {
-            if (shouldRetainOverlayEntry(entry)) {
-                nextActiveItems.add(descriptor.item);
-                return;
-            }
-
             if (entry.isVisible) {
                 const liveOpacity = Number.isFinite(entry.renderedOpacity)
                     ? entry.renderedOpacity
@@ -750,18 +733,10 @@
     const staleItems = [];
     activeOverlayLayers.forEach((entry, item) => {
         if (!nextKnownItems.has(item)) {
-            if (shouldRetainOverlayEntry(entry)) {
-                nextActiveItems.add(item);
-                return;
-            }
             staleItems.push(item);
             return;
         }
         if (!nextActiveItems.has(item)) {
-            if (shouldRetainOverlayEntry(entry)) {
-                nextActiveItems.add(item);
-                return;
-            }
             hideOverlayLayerEntry(entry);
         }
     });
