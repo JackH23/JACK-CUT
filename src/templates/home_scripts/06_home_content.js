@@ -259,6 +259,7 @@
                 entry.opacity = Number.isFinite(entry.renderedOpacity)
                     ? entry.renderedOpacity
                     : computeOverlayEntryOpacity(entry);
+                updateOverlaySnapshotEntry(entry);
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
             return;
@@ -516,6 +517,8 @@
                 entry.layer.remove();
             }
         }
+
+        removeOverlaySnapshotEntry(entry);
     };
 
     overlayEntries.forEach((descriptor) => {
@@ -541,6 +544,7 @@
                     entry.opacity = liveOpacity;
                     entry.lastTimelineTime = safeTimelineNow;
                     entry.layerGroup = getDescriptorLayerGroup(descriptor);
+                    updateOverlaySnapshotEntry(entry);
                     return;
                 }
             }
@@ -696,6 +700,7 @@
         entry.opacity = entry.renderedOpacity;
         entry.lastTimelineTime = safeTimelineNow;
 
+        updateOverlaySnapshotEntry(entry);
         return true;
     };
 
@@ -719,6 +724,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                updateOverlaySnapshotEntry(fallbackEntry);
             }
         });
     }
@@ -743,6 +749,7 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                updateOverlaySnapshotEntry(fallbackEntry);
             }
         });
     }
@@ -771,6 +778,7 @@
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
+        removeOverlaySnapshotEntry(entry);
         activeOverlayLayers.delete(item);
     });
 
@@ -792,77 +800,341 @@
     return overlayEntries;
 }
 
-function getActiveOverlayLayerSnapshots() {
-    const snapshots = [];
-    const groupPriority = { below: 0, above: 1 };
+const OVERLAY_SNAPSHOT_GROUP_PRIORITY = { below: 0, above: 1 };
+const activeOverlaySnapshotCache = new Map();
+const activeOverlaySnapshotOutput = [];
+let activeOverlaySnapshotCacheDirty = true;
 
-    activeOverlayLayers.forEach((entry) => {
-        if (!entry || !entry.isVisible || !entry.frame) {
+function markActiveOverlaySnapshotsDirty() {
+    if (!activeOverlaySnapshotCacheDirty) {
+        activeOverlaySnapshotCacheDirty = true;
+    }
+}
+
+function ensureOverlaySnapshotRecord(entry) {
+    if (!entry) {
+        return null;
+    }
+
+    let record = activeOverlaySnapshotCache.get(entry);
+    if (!record) {
+        record = {
+            snapshot: {
+                image: entry.image || null,
+                frame: {
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    rotation: 0,
+                },
+                group: 'above',
+                zIndex: 0,
+                borderRadius: 0,
+                opacity: 1,
+                priority: OVERLAY_SNAPSHOT_GROUP_PRIORITY.above,
+                animation: null,
+                lastTimelineTime: null,
+            },
+            output: null,
+        };
+        activeOverlaySnapshotCache.set(entry, record);
+        markActiveOverlaySnapshotsDirty();
+    }
+
+    return record;
+}
+
+function removeOverlaySnapshotEntry(entry) {
+    if (!entry) {
+        return;
+    }
+
+    if (activeOverlaySnapshotCache.delete(entry)) {
+        markActiveOverlaySnapshotsDirty();
+    }
+}
+
+function clearActiveOverlaySnapshotCache() {
+    if (activeOverlaySnapshotCache.size === 0 && activeOverlaySnapshotOutput.length === 0) {
+        activeOverlaySnapshotCacheDirty = true;
+        return;
+    }
+
+    activeOverlaySnapshotCache.clear();
+    activeOverlaySnapshotOutput.length = 0;
+    markActiveOverlaySnapshotsDirty();
+}
+
+function updateOverlaySnapshotEntry(entry) {
+    if (!entry) {
+        return;
+    }
+
+    if (!entry.isVisible || !entry.frame) {
+        removeOverlaySnapshotEntry(entry);
+        return;
+    }
+
+    const { image } = entry;
+    if (!image || !image.complete) {
+        removeOverlaySnapshotEntry(entry);
+        return;
+    }
+
+    const liveOpacity = Number.isFinite(entry.renderedOpacity)
+        ? entry.renderedOpacity
+        : computeOverlayEntryOpacity(entry);
+    entry.opacity = liveOpacity;
+    if (liveOpacity <= 0) {
+        removeOverlaySnapshotEntry(entry);
+        return;
+    }
+
+    const naturalWidth = Math.max(0, image.naturalWidth || 0);
+    const naturalHeight = Math.max(0, image.naturalHeight || 0);
+    if (naturalWidth <= 0 || naturalHeight <= 0) {
+        removeOverlaySnapshotEntry(entry);
+        return;
+    }
+
+    const frameWidth = Math.max(0, entry.frame.width || 0);
+    const frameHeight = Math.max(0, entry.frame.height || 0);
+    if (frameWidth <= 0 || frameHeight <= 0) {
+        removeOverlaySnapshotEntry(entry);
+        return;
+    }
+
+    const record = ensureOverlaySnapshotRecord(entry);
+    if (!record) {
+        return;
+    }
+
+    const snapshot = record.snapshot;
+    let changed = false;
+
+    if (snapshot.image !== image) {
+        snapshot.image = image;
+        changed = true;
+    }
+
+    const rotation = Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0;
+    let frame = snapshot.frame;
+    if (!frame) {
+        snapshot.frame = {
+            left: entry.frame.left,
+            top: entry.frame.top,
+            width: frameWidth,
+            height: frameHeight,
+            rotation,
+        };
+        frame = snapshot.frame;
+        changed = true;
+    } else {
+        if (frame.left !== entry.frame.left) {
+            frame.left = entry.frame.left;
+            changed = true;
+        }
+        if (frame.top !== entry.frame.top) {
+            frame.top = entry.frame.top;
+            changed = true;
+        }
+        if (frame.width !== frameWidth) {
+            frame.width = frameWidth;
+            changed = true;
+        }
+        if (frame.height !== frameHeight) {
+            frame.height = frameHeight;
+            changed = true;
+        }
+        if (frame.rotation !== rotation) {
+            frame.rotation = rotation;
+            changed = true;
+        }
+    }
+
+    const group = entry.layerGroup === 'below' ? 'below' : 'above';
+    if (snapshot.group !== group) {
+        snapshot.group = group;
+        changed = true;
+    }
+
+    const priority = OVERLAY_SNAPSHOT_GROUP_PRIORITY[group]
+        ?? OVERLAY_SNAPSHOT_GROUP_PRIORITY.above;
+    if (snapshot.priority !== priority) {
+        snapshot.priority = priority;
+        changed = true;
+    }
+
+    const zIndex = Number.isFinite(entry.zIndex) ? entry.zIndex : 0;
+    if (snapshot.zIndex !== zIndex) {
+        snapshot.zIndex = zIndex;
+        changed = true;
+    }
+
+    const borderRadius = Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0;
+    if (snapshot.borderRadius !== borderRadius) {
+        snapshot.borderRadius = borderRadius;
+        changed = true;
+    }
+
+    if (snapshot.opacity !== liveOpacity) {
+        snapshot.opacity = liveOpacity;
+        changed = true;
+    }
+
+    const animationSource = entry.renderedAnimation || null;
+    if (animationSource) {
+        const translateX = Number.isFinite(animationSource.translateX) ? animationSource.translateX : 0;
+        const translateY = Number.isFinite(animationSource.translateY) ? animationSource.translateY : 0;
+        const scale = Number.isFinite(animationSource.scale) ? animationSource.scale : 1;
+        const rotate = Number.isFinite(animationSource.rotate) ? animationSource.rotate : 0;
+        if (!snapshot.animation) {
+            snapshot.animation = {
+                translateX,
+                translateY,
+                scale,
+                rotate,
+            };
+            changed = true;
+        } else {
+            const animation = snapshot.animation;
+            if (animation.translateX !== translateX) {
+                animation.translateX = translateX;
+                changed = true;
+            }
+            if (animation.translateY !== translateY) {
+                animation.translateY = translateY;
+                changed = true;
+            }
+            if (animation.scale !== scale) {
+                animation.scale = scale;
+                changed = true;
+            }
+            if (animation.rotate !== rotate) {
+                animation.rotate = rotate;
+                changed = true;
+            }
+        }
+    } else if (snapshot.animation) {
+        snapshot.animation = null;
+        changed = true;
+    }
+
+    const lastTimelineTime = Number.isFinite(entry.lastTimelineTime)
+        ? entry.lastTimelineTime
+        : null;
+    if (snapshot.lastTimelineTime !== lastTimelineTime) {
+        snapshot.lastTimelineTime = lastTimelineTime;
+        changed = true;
+    }
+
+    if (changed) {
+        markActiveOverlaySnapshotsDirty();
+    }
+}
+
+function getActiveOverlayLayerSnapshots() {
+    if (!activeOverlaySnapshotCacheDirty) {
+        return activeOverlaySnapshotOutput;
+    }
+
+    activeOverlaySnapshotOutput.length = 0;
+
+    activeOverlaySnapshotCache.forEach((record) => {
+        const snapshot = record.snapshot;
+        if (!snapshot || !snapshot.image) {
             return;
         }
 
-        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
-            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
+        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(snapshot.lastTimelineTime)) {
+            const age = Math.abs(lastOverlayRenderTimestamp - snapshot.lastTimelineTime);
             if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
                 return;
             }
         }
 
-        const { image } = entry;
-        if (!image || !image.complete) {
+        const frame = snapshot.frame;
+        if (!frame || frame.width <= 0 || frame.height <= 0) {
             return;
         }
 
-        const liveOpacity = Number.isFinite(entry.renderedOpacity)
-            ? entry.renderedOpacity
-            : computeOverlayEntryOpacity(entry);
-        entry.opacity = liveOpacity;
-        if (liveOpacity <= 0) {
+        if (snapshot.opacity <= 0) {
             return;
         }
 
-        const naturalWidth = Math.max(0, image.naturalWidth || 0);
-        const naturalHeight = Math.max(0, image.naturalHeight || 0);
-        if (naturalWidth <= 0 || naturalHeight <= 0) {
-            return;
-        }
+        let output = record.output;
+        if (!output) {
+            output = {
+                image: snapshot.image,
+                frame: {
+                    left: frame.left,
+                    top: frame.top,
+                    width: frame.width,
+                    height: frame.height,
+                    rotation: frame.rotation,
+                },
+                group: snapshot.group,
+                zIndex: snapshot.zIndex,
+                borderRadius: snapshot.borderRadius,
+                opacity: snapshot.opacity,
+                priority: snapshot.priority,
+                animation: snapshot.animation
+                    ? {
+                        translateX: snapshot.animation.translateX,
+                        translateY: snapshot.animation.translateY,
+                        scale: snapshot.animation.scale,
+                        rotate: snapshot.animation.rotate,
+                    }
+                    : null,
+            };
+            record.output = output;
+        } else {
+            output.image = snapshot.image;
+            if (!output.frame) {
+                output.frame = {
+                    left: frame.left,
+                    top: frame.top,
+                    width: frame.width,
+                    height: frame.height,
+                    rotation: frame.rotation,
+                };
+            } else {
+                output.frame.left = frame.left;
+                output.frame.top = frame.top;
+                output.frame.width = frame.width;
+                output.frame.height = frame.height;
+                output.frame.rotation = frame.rotation;
+            }
+            output.group = snapshot.group;
+            output.zIndex = snapshot.zIndex;
+            output.borderRadius = snapshot.borderRadius;
+            output.opacity = snapshot.opacity;
+            output.priority = snapshot.priority;
 
-        const frameWidth = Math.max(0, entry.frame.width || 0);
-        const frameHeight = Math.max(0, entry.frame.height || 0);
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            return;
-        }
-
-        const group = entry.layerGroup === 'below' ? 'below' : 'above';
-
-        const animation = entry.renderedAnimation || null;
-
-        snapshots.push({
-            image,
-            frame: {
-                left: entry.frame.left,
-                top: entry.frame.top,
-                width: frameWidth,
-                height: frameHeight,
-                rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
-            },
-            group,
-            zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
-            borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
-            opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
-            priority: groupPriority[group] ?? 1,
-            animation: animation
-                ? {
-                    translateX: Number.isFinite(animation.translateX) ? animation.translateX : 0,
-                    translateY: Number.isFinite(animation.translateY) ? animation.translateY : 0,
-                    scale: Number.isFinite(animation.scale) ? animation.scale : 1,
-                    rotate: Number.isFinite(animation.rotate) ? animation.rotate : 0,
+            if (snapshot.animation) {
+                if (!output.animation) {
+                    output.animation = {
+                        translateX: snapshot.animation.translateX,
+                        translateY: snapshot.animation.translateY,
+                        scale: snapshot.animation.scale,
+                        rotate: snapshot.animation.rotate,
+                    };
+                } else {
+                    output.animation.translateX = snapshot.animation.translateX;
+                    output.animation.translateY = snapshot.animation.translateY;
+                    output.animation.scale = snapshot.animation.scale;
+                    output.animation.rotate = snapshot.animation.rotate;
                 }
-                : null,
-        });
+            } else {
+                output.animation = null;
+            }
+        }
+
+        activeOverlaySnapshotOutput.push(output);
     });
 
-    snapshots.sort((a, b) => {
+    activeOverlaySnapshotOutput.sort((a, b) => {
         if (a.priority !== b.priority) {
             return a.priority - b.priority;
         }
@@ -872,7 +1144,8 @@ function getActiveOverlayLayerSnapshots() {
         return 0;
     });
 
-    return snapshots;
+    activeOverlaySnapshotCacheDirty = false;
+    return activeOverlaySnapshotOutput;
 }
 
 function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, viewportHeight) {
@@ -990,6 +1263,8 @@ function applyOverlayLayerTransform(entry, transform) {
         height,
         rotation: rotationValue,
     };
+
+    updateOverlaySnapshotEntry(entry);
 }
 
 function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = {}) {
@@ -2344,6 +2619,7 @@ function applyNormalizedPreviewImageTransform(normalized, options = {}) {
         width: normalizedViewportWidth,
         height: normalizedViewportHeight,
     };
+    setPreviewViewportRenderSize(normalizedViewportWidth, normalizedViewportHeight);
     if (normalizedViewportWidth > 0 && normalizedViewportHeight > 0) {
         lastNonZeroPreviewViewportSize = {
             width: normalizedViewportWidth,
