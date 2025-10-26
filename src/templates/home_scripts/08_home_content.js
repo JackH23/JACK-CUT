@@ -1467,16 +1467,38 @@ function collectTimelineExportMedia(timelineItems) {
         if (!item || !item.dataset) {
             return;
         }
-        const objectUrl = item.dataset.objectUrl || '';
+        const { dataset } = item;
+        const objectUrl = dataset.objectUrl || '';
         if (!objectUrl || seen.has(objectUrl)) {
             return;
         }
         seen.add(objectUrl);
-        descriptors.push({
+        const descriptor = {
             objectUrl,
-            fileType: item.dataset.fileType || '',
-            element: item,
+            fileType: dataset.fileType || '',
+        };
+
+        if (dataset.displayName) {
+            descriptor.displayName = dataset.displayName;
+        }
+
+        if (dataset.timelineInstanceId) {
+            descriptor.instanceId = dataset.timelineInstanceId;
+        }
+
+        const durationKeys = ['videoDuration', 'imageDuration', 'audioDuration'];
+        durationKeys.forEach((key) => {
+            const rawValue = dataset[key];
+            if (rawValue === undefined || rawValue === '') {
+                return;
+            }
+            const value = Number(rawValue);
+            if (Number.isFinite(value) && value >= 0) {
+                descriptor[key] = value;
+            }
         });
+
+        descriptors.push(descriptor);
     });
 
     return descriptors;
@@ -1504,7 +1526,7 @@ async function warmupExportPlaybackContext(playbackContext, options = {}) {
     }
 
     const runDescriptor = async (descriptor) => {
-        const { objectUrl, fileType } = descriptor;
+        const { objectUrl, fileType = '' } = descriptor;
         if (!objectUrl) {
             return { ok: true, descriptor };
         }
