@@ -57,6 +57,7 @@
     const OVERLAY_BELOW_Z_MAX = 59;
     const OVERLAY_ABOVE_Z_BASE = 60;
     const OVERLAY_ABOVE_Z_MAX = 140;
+    const OVERLAY_FRAME_RENDER_EPSILON = 0.01;
 
     const resolveOverlayLaneRank = (laneIndex, group) => {
         const normalizedLaneIndex = resolveLaneIndex(laneIndex);
@@ -395,6 +396,9 @@
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
             layer.classList.add('preview-overlay-layer');
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.transform = 'translate3d(0px, 0px, 0)';
             const content = document.createElement('div');
             content.className = 'preview-overlay-content';
             layer.appendChild(content);
@@ -613,39 +617,52 @@
 
         const groupName = getDescriptorLayerGroup(descriptor);
 
-        let appliedFrameStyles = null;
+        let frameLeft = 0;
+        let frameTop = 0;
+        let widthValue = '100%';
+        let heightValue = '100%';
+        let numericWidth = 0;
+        let numericHeight = 0;
         let rotationValue = '0deg';
 
         if (frame) {
-            appliedFrameStyles = {
-                left: formatOverlayPixelValue(frame.left),
-                top: formatOverlayPixelValue(frame.top),
-                width: formatOverlayPixelValue(frame.width),
-                height: formatOverlayPixelValue(frame.height),
-            };
+            frameLeft = Number.isFinite(frame.left) ? frame.left : 0;
+            frameTop = Number.isFinite(frame.top) ? frame.top : 0;
+            numericWidth = Number.isFinite(frame.width) ? frame.width : 0;
+            numericHeight = Number.isFinite(frame.height) ? frame.height : 0;
+            widthValue = formatOverlayPixelValue(frame.width);
+            heightValue = formatOverlayPixelValue(frame.height);
             const numericRotation = Number.isFinite(frame.rotation) ? frame.rotation : 0;
             rotationValue = `${numericRotation}deg`;
-        } else {
-            appliedFrameStyles = {
-                left: '0px',
-                top: '0px',
-                width: '100%',
-                height: '100%',
-            };
-            rotationValue = '0deg';
         }
 
         const previousFrameStyles = entry.renderedFrame;
-        if (!previousFrameStyles
-            || previousFrameStyles.left !== appliedFrameStyles.left
-            || previousFrameStyles.top !== appliedFrameStyles.top
-            || previousFrameStyles.width !== appliedFrameStyles.width
-            || previousFrameStyles.height !== appliedFrameStyles.height) {
-            layer.style.left = appliedFrameStyles.left;
-            layer.style.top = appliedFrameStyles.top;
-            layer.style.width = appliedFrameStyles.width;
-            layer.style.height = appliedFrameStyles.height;
-            entry.renderedFrame = appliedFrameStyles;
+        const positionChanged = !previousFrameStyles
+            || Math.abs(previousFrameStyles.left - frameLeft) > OVERLAY_FRAME_RENDER_EPSILON
+            || Math.abs(previousFrameStyles.top - frameTop) > OVERLAY_FRAME_RENDER_EPSILON;
+        const sizeChanged = !previousFrameStyles
+            || previousFrameStyles.widthValue !== widthValue
+            || previousFrameStyles.heightValue !== heightValue;
+
+        if (positionChanged) {
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.transform = `translate3d(${frameLeft}px, ${frameTop}px, 0)`;
+        }
+        if (sizeChanged) {
+            layer.style.width = widthValue;
+            layer.style.height = heightValue;
+        }
+
+        if (positionChanged || sizeChanged) {
+            entry.renderedFrame = {
+                left: frameLeft,
+                top: frameTop,
+                width: numericWidth,
+                height: numericHeight,
+                widthValue,
+                heightValue,
+            };
         }
 
         if (entry.renderedRotation !== rotationValue) {
@@ -1236,7 +1253,7 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
         });
 }
 
-function applyOverlayLayerTransform(entry, transform) {
+function applyOverlayLayerTransform(entry, transform, options = {}) {
     if (!entry || !entry.layer || !transform) {
         return;
     }
@@ -1247,13 +1264,30 @@ function applyOverlayLayerTransform(entry, transform) {
     const width = Number.isFinite(transform.width) ? Math.max(transform.width, 0) : 0;
     const height = Number.isFinite(transform.height) ? Math.max(transform.height, 0) : 0;
 
-    entry.layer.style.left = `${left}px`;
-    entry.layer.style.top = `${top}px`;
-    entry.layer.style.width = `${width}px`;
-    entry.layer.style.height = `${height}px`;
+    const previousFrame = entry.renderedFrame;
+    const positionChanged = !previousFrame
+        || Math.abs(previousFrame.left - left) > OVERLAY_FRAME_RENDER_EPSILON
+        || Math.abs(previousFrame.top - top) > OVERLAY_FRAME_RENDER_EPSILON;
+    const sizeChanged = !previousFrame
+        || Math.abs((previousFrame.width || 0) - width) > OVERLAY_FRAME_RENDER_EPSILON
+        || Math.abs((previousFrame.height || 0) - height) > OVERLAY_FRAME_RENDER_EPSILON;
+
+    if (positionChanged) {
+        entry.layer.style.left = '0px';
+        entry.layer.style.top = '0px';
+        entry.layer.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    }
+    if (sizeChanged) {
+        entry.layer.style.width = `${width}px`;
+        entry.layer.style.height = `${height}px`;
+    }
 
     if (entry.image) {
-        entry.image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+        const rotationString = `${rotationValue}deg`;
+        if (entry.renderedRotation !== rotationString) {
+            entry.image.style.setProperty('--preview-overlay-rotation', rotationString);
+            entry.renderedRotation = rotationString;
+        }
     }
 
     entry.frame = {
@@ -1263,8 +1297,18 @@ function applyOverlayLayerTransform(entry, transform) {
         height,
         rotation: rotationValue,
     };
+    entry.renderedFrame = {
+        left,
+        top,
+        width,
+        height,
+        widthValue: `${width}px`,
+        heightValue: `${height}px`,
+    };
 
-    updateOverlaySnapshotEntry(entry);
+    if (!options.skipSnapshot) {
+        updateOverlaySnapshotEntry(entry);
+    }
 }
 
 function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = {}) {
@@ -1319,7 +1363,8 @@ function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = 
 const pendingOverlayTransformUpdates = new Map();
 let pendingOverlayTransformFrameId = 0;
 
-function commitPendingOverlayTransformUpdates(persistOverride = null) {
+function commitPendingOverlayTransformUpdates(options = {}) {
+    const { persistOverride = null, forceSnapshot = false } = options;
     if (!pendingOverlayTransformUpdates.size) {
         return;
     }
@@ -1332,7 +1377,8 @@ function commitPendingOverlayTransformUpdates(persistOverride = null) {
             return;
         }
 
-        applyOverlayLayerTransform(data.entry, data.transform);
+        const skipSnapshot = forceSnapshot ? false : Boolean(data.skipSnapshot);
+        applyOverlayLayerTransform(data.entry, data.transform, { skipSnapshot });
 
         const shouldPersist = persistOverride !== null
             ? persistOverride
@@ -1345,7 +1391,7 @@ function commitPendingOverlayTransformUpdates(persistOverride = null) {
 }
 
 function flushPendingOverlayTransformUpdates(options = {}) {
-    const { persistOverride = null } = options;
+    const { persistOverride = null, forceSnapshot = false } = options;
 
     if (pendingOverlayTransformFrameId
         && typeof window !== 'undefined'
@@ -1354,7 +1400,10 @@ function flushPendingOverlayTransformUpdates(options = {}) {
     }
 
     pendingOverlayTransformFrameId = 0;
-    commitPendingOverlayTransformUpdates(persistOverride);
+    commitPendingOverlayTransformUpdates({
+        persistOverride,
+        forceSnapshot,
+    });
 }
 
 function scheduleOverlayTransformUpdate(timelineItem, entry, transform, options = {}) {
@@ -1379,20 +1428,28 @@ function scheduleOverlayTransformUpdate(timelineItem, entry, transform, options 
     };
 
     const nextPersist = Boolean(options.persist);
+    const nextSkipSnapshot = Boolean(options.skipSnapshot);
     const existing = pendingOverlayTransformUpdates.get(timelineItem);
     const mergedPersist = nextPersist || Boolean(existing?.persist);
+    const mergedSkipSnapshot = existing
+        ? (existing.skipSnapshot !== false && nextSkipSnapshot)
+        : nextSkipSnapshot;
 
     pendingOverlayTransformUpdates.set(timelineItem, {
         entry,
         transform: sanitizedTransform,
         persist: mergedPersist,
+        skipSnapshot: mergedSkipSnapshot,
     });
 
     const hasRequestAnimationFrame = typeof window !== 'undefined'
         && typeof window.requestAnimationFrame === 'function';
 
     if (!hasRequestAnimationFrame) {
-        commitPendingOverlayTransformUpdates(mergedPersist);
+        commitPendingOverlayTransformUpdates({
+            persistOverride: mergedPersist,
+            forceSnapshot: false,
+        });
         return;
     }
 
@@ -1420,7 +1477,10 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
         return false;
     }
 
-    flushPendingOverlayTransformUpdates({ persistOverride: true });
+    flushPendingOverlayTransformUpdates({
+        persistOverride: true,
+        forceSnapshot: true,
+    });
 
     const handleElement = event.target?.closest?.('.preview-resize-handle') || null;
     const mode = handleElement ? 'resize' : 'drag';
@@ -1473,6 +1533,8 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
         layer.classList.add('is-dragging');
     }
 
+    layer.style.willChange = 'transform, width, height';
+
     setPreviewGuidesVisible(true);
     updatePreviewGuides(
         entry.frame,
@@ -1485,7 +1547,10 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
 function finishOverlayPointerInteraction(commit = true) {
     const { pointerId, layer, timelineItem, lastTransform, captureTarget } = overlayPointerState;
 
-    flushPendingOverlayTransformUpdates({ persistOverride: commit });
+    flushPendingOverlayTransformUpdates({
+        persistOverride: commit,
+        forceSnapshot: commit,
+    });
 
     if (pointerId !== null) {
         if (typeof captureTarget?.hasPointerCapture === 'function'
@@ -1500,6 +1565,7 @@ function finishOverlayPointerInteraction(commit = true) {
 
     if (layer) {
         layer.classList.remove('is-dragging', 'is-resizing');
+        layer.style.removeProperty('will-change');
     }
 
     overlayPointerState.pointerId = null;
@@ -1613,9 +1679,10 @@ function onOverlayPointerMove(event) {
         height: transformForUpdate.height,
         rotation: transformForUpdate.rotation,
     };
-    updateOverlaySnapshotEntry(entry);
-
-    scheduleOverlayTransformUpdate(timelineItem, entry, transformForUpdate, { persist: true });
+    scheduleOverlayTransformUpdate(timelineItem, entry, transformForUpdate, {
+        persist: false,
+        skipSnapshot: true,
+    });
 
     if (layer) {
         layer.classList.toggle('is-dragging', mode === 'drag');
