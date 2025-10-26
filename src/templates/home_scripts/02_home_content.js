@@ -588,10 +588,45 @@ function releaseTimelineAudio(objectURL) {
     }
 }
 
+const DEFAULT_PREVIEW_TRANSITION_FADE_MS = 240;
+const PREVIEW_IMAGE_VISIBLE_OPACITY_EPSILON = 0.05;
+
 const previewTransitionBufferState = {
     finalizeHandler: null,
     fallbackTimer: 0,
+    pendingFrame: 0,
+    activeToken: 0,
+    pendingFade: false,
+    fadeDurationMs: DEFAULT_PREVIEW_TRANSITION_FADE_MS,
 };
+
+function cancelPreviewTransitionBufferFinalize() {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+
+    if (previewTransitionBufferState.finalizeHandler) {
+        previewImageTransitionBuffer.removeEventListener(
+            'transitionend',
+            previewTransitionBufferState.finalizeHandler,
+        );
+        previewImageTransitionBuffer.removeEventListener(
+            'transitioncancel',
+            previewTransitionBufferState.finalizeHandler,
+        );
+        previewTransitionBufferState.finalizeHandler = null;
+    }
+
+    if (previewTransitionBufferState.fallbackTimer) {
+        window.clearTimeout(previewTransitionBufferState.fallbackTimer);
+        previewTransitionBufferState.fallbackTimer = 0;
+    }
+
+    if (previewTransitionBufferState.pendingFrame) {
+        window.cancelAnimationFrame(previewTransitionBufferState.pendingFrame);
+        previewTransitionBufferState.pendingFrame = 0;
+    }
+}
 
 function resetPreviewTransitionBufferElement() {
     if (!previewImageTransitionBuffer) {
@@ -604,22 +639,156 @@ function resetPreviewTransitionBufferElement() {
     previewImageTransitionBuffer.style.removeProperty('--preview-image-rotation');
     previewImageTransitionBuffer.style.removeProperty('--preview-image-blur');
     previewImageTransitionBuffer.style.removeProperty('filter');
+    previewImageTransitionBuffer.style.removeProperty('--preview-transition-duration');
+    previewImageTransitionBuffer.style.removeProperty('--preview-transition-easing');
 }
 
 function cleanupPreviewTransitionBuffer() {
     if (!previewImageTransitionBuffer) {
         return;
     }
-    if (previewTransitionBufferState.finalizeHandler) {
-        previewImageTransitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
-        previewImageTransitionBuffer.removeEventListener('transitioncancel', previewTransitionBufferState.finalizeHandler);
-        previewTransitionBufferState.finalizeHandler = null;
+    cancelPreviewTransitionBufferFinalize();
+    previewTransitionBufferState.activeToken = 0;
+    previewTransitionBufferState.pendingFade = false;
+    previewTransitionBufferState.fadeDurationMs = DEFAULT_PREVIEW_TRANSITION_FADE_MS;
+    resetPreviewTransitionBufferElement();
+}
+
+function resolvePreviewTransitionFadeDuration(config = null) {
+    if (!config || typeof config !== 'object') {
+        return DEFAULT_PREVIEW_TRANSITION_FADE_MS;
     }
+
+    const totalDuration = Number(config.totalDuration);
+    const duration = Number(config.duration);
+
+    if (Number.isFinite(totalDuration) && totalDuration > 0) {
+        return Math.max(DEFAULT_PREVIEW_TRANSITION_FADE_MS, Math.round(totalDuration));
+    }
+
+    if (Number.isFinite(duration) && duration > 0) {
+        return Math.max(DEFAULT_PREVIEW_TRANSITION_FADE_MS, Math.round(duration));
+    }
+
+    return DEFAULT_PREVIEW_TRANSITION_FADE_MS;
+}
+
+function isPreviewImageReadyForTransitionCleanup() {
+    if (!previewImage) {
+        return true;
+    }
+
+    if (previewImage.hidden) {
+        return true;
+    }
+
+    const hasSource = Boolean(previewImage.currentSrc || previewImage.src);
+    if (!hasSource) {
+        return false;
+    }
+
+    if (!previewImage.classList.contains('is-visible')) {
+        return false;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        try {
+            const computed = window.getComputedStyle(previewImage);
+            if (computed) {
+                const opacity = Number.parseFloat(computed.opacity);
+                if (Number.isFinite(opacity) && opacity <= PREVIEW_IMAGE_VISIBLE_OPACITY_EPSILON) {
+                    return false;
+                }
+            }
+        } catch (error) {
+            return true;
+        }
+    }
+
+    return true;
+}
+
+function finalizePreviewTransitionBuffer(token, options = {}) {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+
+    const { force = false } = options;
+    if (!force && (!token || token !== previewTransitionBufferState.activeToken)) {
+        return;
+    }
+
+    if (!force && !isPreviewImageReadyForTransitionCleanup()) {
+        if (!previewTransitionBufferState.pendingFrame) {
+            previewTransitionBufferState.pendingFrame = window.requestAnimationFrame(() => {
+                previewTransitionBufferState.pendingFrame = 0;
+                finalizePreviewTransitionBuffer(token, options);
+            });
+        }
+        return;
+    }
+
+    cancelPreviewTransitionBufferFinalize();
+    previewTransitionBufferState.activeToken = 0;
+    previewTransitionBufferState.pendingFade = false;
+    previewTransitionBufferState.fadeDurationMs = DEFAULT_PREVIEW_TRANSITION_FADE_MS;
+    resetPreviewTransitionBufferElement();
+}
+
+function startPreviewTransitionBufferFade(options = {}) {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+
+    const token = previewTransitionBufferState.activeToken;
+    if (!token || !previewTransitionBufferState.pendingFade) {
+        return;
+    }
+
+    previewTransitionBufferState.pendingFade = false;
+
+    if (previewTransitionBufferState.pendingFrame) {
+        window.cancelAnimationFrame(previewTransitionBufferState.pendingFrame);
+        previewTransitionBufferState.pendingFrame = 0;
+    }
+
+    const { durationMs = null, easing = null, fallbackDurationMs = null } = options;
+
+    if (Number.isFinite(durationMs) && durationMs > 0) {
+        const resolvedDuration = Math.max(DEFAULT_PREVIEW_TRANSITION_FADE_MS, Math.round(durationMs));
+        previewTransitionBufferState.fadeDurationMs = resolvedDuration;
+        previewImageTransitionBuffer.style.setProperty('--preview-transition-duration', `${resolvedDuration}ms`);
+    }
+
+    if (typeof easing === 'string' && easing.trim()) {
+        previewImageTransitionBuffer.style.setProperty('--preview-transition-easing', easing);
+    }
+
+    previewImageTransitionBuffer.hidden = false;
+    previewImageTransitionBuffer.classList.add('is-visible');
+
+    const fallbackDuration = Math.max(
+        previewTransitionBufferState.fadeDurationMs + 120,
+        Number.isFinite(fallbackDurationMs) && fallbackDurationMs > 0
+            ? Math.round(fallbackDurationMs)
+            : 720,
+    );
+
     if (previewTransitionBufferState.fallbackTimer) {
         window.clearTimeout(previewTransitionBufferState.fallbackTimer);
-        previewTransitionBufferState.fallbackTimer = 0;
     }
-    resetPreviewTransitionBufferElement();
+
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(() => {
+        finalizePreviewTransitionBuffer(token, { force: true });
+    }, fallbackDuration);
+
+    previewTransitionBufferState.pendingFrame = window.requestAnimationFrame(() => {
+        previewTransitionBufferState.pendingFrame = 0;
+        if (previewTransitionBufferState.activeToken !== token) {
+            return;
+        }
+        previewImageTransitionBuffer.classList.add('is-fading-out');
+    });
 }
 
 function stagePreviewTransitionBuffer(options = {}) {
@@ -628,7 +797,7 @@ function stagePreviewTransitionBuffer(options = {}) {
         return;
     }
 
-    const { immediate = false } = options;
+    const { immediate = false, fadeDurationMs = null, fadeEasing = null } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
     if (immediate || reduceMotion) {
         cleanupPreviewTransitionBuffer();
@@ -642,6 +811,23 @@ function stagePreviewTransitionBuffer(options = {}) {
     }
 
     cleanupPreviewTransitionBuffer();
+
+    const token = (previewTransitionBufferState.activeToken % Number.MAX_SAFE_INTEGER) + 1;
+    previewTransitionBufferState.activeToken = token;
+    previewTransitionBufferState.pendingFade = true;
+
+    const overrideFade = Number.isFinite(fadeDurationMs)
+        ? Math.max(0, Math.round(fadeDurationMs))
+        : null;
+    const resolvedFadeDuration = overrideFade && overrideFade > 0
+        ? Math.max(DEFAULT_PREVIEW_TRANSITION_FADE_MS, overrideFade)
+        : DEFAULT_PREVIEW_TRANSITION_FADE_MS;
+    previewTransitionBufferState.fadeDurationMs = resolvedFadeDuration;
+
+    previewImageTransitionBuffer.style.setProperty('--preview-transition-duration', `${resolvedFadeDuration}ms`);
+    if (typeof fadeEasing === 'string' && fadeEasing.trim()) {
+        previewImageTransitionBuffer.style.setProperty('--preview-transition-easing', fadeEasing);
+    }
 
     previewImageTransitionBuffer.src = currentSrc;
     previewImageTransitionBuffer.hidden = false;
@@ -685,18 +871,12 @@ function stagePreviewTransitionBuffer(options = {}) {
     }
 
     const finalize = () => {
-        cleanupPreviewTransitionBuffer();
+        finalizePreviewTransitionBuffer(token);
     };
 
     previewTransitionBufferState.finalizeHandler = finalize;
-    previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
-    previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
-
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
-
-    requestAnimationFrame(() => {
-        previewImageTransitionBuffer.classList.add('is-fading-out');
-    });
+    previewImageTransitionBuffer.addEventListener('transitionend', finalize);
+    previewImageTransitionBuffer.addEventListener('transitioncancel', finalize);
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -732,7 +912,21 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    stagePreviewTransitionBuffer({ immediate });
+    const entranceConfig = (!immediate && entranceConfigOverride)
+        ? entranceConfigOverride
+        : ((!immediate && typeof getPreviewImageEntranceConfig === 'function')
+            ? getPreviewImageEntranceConfig({ clipDurationMs })
+            : entranceConfigOverride);
+    const fadeDurationMs = !immediate
+        ? resolvePreviewTransitionFadeDuration(entranceConfig)
+        : 0;
+    const fadeEasing = entranceConfig?.easing || null;
+
+    stagePreviewTransitionBuffer({
+        immediate,
+        fadeDurationMs,
+        fadeEasing,
+    });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
@@ -750,13 +944,26 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                 previewImage.classList.add('is-visible');
             } else {
                 requestAnimationFrame(() => {
-                    const didAnimate = runPreviewImageEntranceAnimation({
-                        clipDurationMs,
-                        configOverride: entranceConfigOverride,
-                    });
+                    let didAnimate = false;
+                    try {
+                        didAnimate = runPreviewImageEntranceAnimation({
+                            clipDurationMs,
+                            configOverride: entranceConfig,
+                        });
+                    } catch (animationError) {
+                        console.error('Failed to run preview entrance animation.', animationError);
+                        didAnimate = false;
+                    }
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
+                    startPreviewTransitionBufferFade({
+                        durationMs: fadeDurationMs,
+                        easing: fadeEasing,
+                        fallbackDurationMs: entranceConfig?.totalDuration
+                            || entranceConfig?.duration
+                            || null,
+                    });
                 });
             }
             resolve();

@@ -1322,13 +1322,19 @@ function waitForNextFrame(options = null) {
             return;
         }
 
-        let rafId = 0;
+        let rafIdPrimary = 0;
+        let rafIdSecondary = 0;
         const finalize = () => {
             if (signal) {
                 signal.removeEventListener('abort', handleAbort);
             }
-            if (rafId) {
-                window.cancelAnimationFrame(rafId);
+            if (rafIdPrimary) {
+                window.cancelAnimationFrame(rafIdPrimary);
+                rafIdPrimary = 0;
+            }
+            if (rafIdSecondary) {
+                window.cancelAnimationFrame(rafIdSecondary);
+                rafIdSecondary = 0;
             }
             resolve();
         };
@@ -1337,11 +1343,18 @@ function waitForNextFrame(options = null) {
             finalize();
         };
 
-        rafId = window.requestAnimationFrame(() => {
-            if (signal) {
-                signal.removeEventListener('abort', handleAbort);
+        const stepTwo = () => {
+            if (signal?.aborted) {
+                finalize();
+                return;
             }
-            resolve();
+            rafIdSecondary = window.requestAnimationFrame(() => {
+                finalize();
+            });
+        };
+
+        rafIdPrimary = window.requestAnimationFrame(() => {
+            stepTwo();
         });
 
         if (signal) {
