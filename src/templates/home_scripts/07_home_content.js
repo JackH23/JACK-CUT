@@ -1478,7 +1478,7 @@ function getTimelineLanePadding() {
 // Derive the pixel geometry for the timeline based on the zero-based duration span.
 // This keeps the visual playhead aligned with fractional playback values regardless of zoom.
 let cachedTimelineDurationGeometry = null;
-let timelineDurationGeometryDirty = true;
+var timelineDurationGeometryDirty = true;
 
 function markTimelineDurationGeometryDirty() {
     timelineDurationGeometryDirty = true;
