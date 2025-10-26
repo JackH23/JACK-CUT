@@ -985,22 +985,16 @@ function computeTimelineAudioMix(entries = [], options = {}) {
         layer.gain = clampVolume(layer.baseVolume * boost * duck);
     });
 
-    const gainSum = layers.reduce((total, layer) => total + layer.gain, 0);
-    if (gainSum > 1) {
-        const scale = 1 / gainSum;
-        layers.forEach((layer) => {
-            layer.gain = clampVolume(layer.gain * scale);
-        });
-    }
-
     const gainsByItem = new Map();
     layers.forEach((layer) => {
         gainsByItem.set(layer.item, layer.gain);
     });
 
+    const totalGain = layers.reduce((total, layer) => total + layer.gain, 0);
+
     return {
         layers,
-        totalGain: layers.reduce((total, layer) => total + layer.gain, 0),
+        totalGain,
         gainsByItem,
     };
 }
@@ -1328,8 +1322,10 @@ function getTimelineItemAudioSettings(timelineItem) {
 function persistTimelineItemAudioSettings(timelineItem, settings) {
     const supportsAudio = isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
     if (!supportsAudio || !timelineItem?.dataset || !settings) {
-        return;
+        return null;
     }
+
+    let mix = null;
 
     if (Object.prototype.hasOwnProperty.call(settings, 'volumePercent')) {
         const percent = clampVolumePercent(settings.volumePercent);
@@ -1362,15 +1358,22 @@ function persistTimelineItemAudioSettings(timelineItem, settings) {
         syncTimelineItemVolumeControl(timelineItem);
     }
     if (typeof refreshPreviewAudioMix === 'function') {
-        refreshPreviewAudioMix();
+        const mixOptions = { activeItem: timelineItem };
+        if (typeof isAudioTimelineItem === 'function' && isAudioTimelineItem(timelineItem)) {
+            mixOptions.overlayItem = timelineItem;
+            mixOptions.overlayItems = [timelineItem];
+        }
+        mix = refreshPreviewAudioMix(mixOptions);
     }
+
+    return mix;
 }
 
 function persistActiveTimelineAudioSettings(partialSettings) {
     if (!activeTimelineItem) {
-        return;
+        return null;
     }
-    persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
+    return persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
 }
 
 function formatMasterVolumeDisplay(percent) {
@@ -1753,6 +1756,16 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         ? getTimelineItemAudioSettings(timelineItem)
         : getDefaultAudioSettings();
 
+    let mix = null;
+    if (typeof refreshPreviewAudioMix === 'function') {
+        const mixOptions = { activeItem: timelineItem };
+        if (isAudio) {
+            mixOptions.overlayItem = timelineItem;
+            mixOptions.overlayItems = [timelineItem];
+        }
+        mix = refreshPreviewAudioMix(mixOptions);
+    }
+
     if (timelineItem && typeof syncTimelineItemVolumeControl === 'function') {
         syncTimelineItemVolumeControl(timelineItem);
     }
@@ -1797,19 +1810,34 @@ function syncAudioControlsToTimelineItem(timelineItem) {
         syncAudioFadeControl(control, seconds);
     });
 
+    const mixGain = (mix?.gainsByItem instanceof Map && mix?.gainsByItem.has(timelineItem))
+        ? mix.gainsByItem.get(timelineItem)
+        : null;
+
     if (isVideo) {
-        applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewVideo });
+        applyMasterVolumeToPreview(settings.volumePercent, {
+            mediaElement: previewVideo,
+            mixGain,
+        });
     }
     if (isAudio) {
-        applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewAudio });
+        applyMasterVolumeToPreview(settings.volumePercent, {
+            mediaElement: previewAudio,
+            mixGain,
+        });
+        if (typeof getOverlayAudioElementForItem === 'function') {
+            const overlayElement = getOverlayAudioElementForItem(timelineItem);
+            if (overlayElement && overlayElement !== previewAudio) {
+                applyMasterVolumeToPreview(settings.volumePercent, {
+                    mediaElement: overlayElement,
+                    mixGain,
+                });
+            }
+        }
     }
     if (!supportsAudio) {
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
         cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
-    }
-
-    if (typeof refreshPreviewAudioMix === 'function') {
-        refreshPreviewAudioMix({ activeItem: timelineItem });
     }
 }
 

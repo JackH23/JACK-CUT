@@ -465,16 +465,25 @@ if (masterVolumeInput) {
         const percent = clampVolumePercent(masterVolumeInput.value);
         masterVolumeInput.value = String(percent);
         updateMasterVolumeReadout(percent);
-        persistActiveTimelineAudioSettings({ volumePercent: percent });
+        const mix = persistActiveTimelineAudioSettings({ volumePercent: percent }) || null;
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
         cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
         const isVideo = isVideoTimelineItem(activeTimelineItem);
         const isAudio = isAudioTimelineItem(activeTimelineItem);
+        const mixGain = (mix?.gainsByItem instanceof Map && mix?.gainsByItem.has(activeTimelineItem))
+            ? mix.gainsByItem.get(activeTimelineItem)
+            : null;
         if (isVideo) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewVideo });
+            applyMasterVolumeToPreview(percent, { mediaElement: previewVideo, mixGain });
         }
         if (isAudio) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewAudio });
+            applyMasterVolumeToPreview(percent, { mediaElement: previewAudio, mixGain });
+            if (typeof getOverlayAudioElementForItem === 'function') {
+                const overlayElement = getOverlayAudioElementForItem(activeTimelineItem);
+                if (overlayElement && overlayElement !== previewAudio) {
+                    applyMasterVolumeToPreview(percent, { mediaElement: overlayElement, mixGain });
+                }
+            }
         }
     };
 
