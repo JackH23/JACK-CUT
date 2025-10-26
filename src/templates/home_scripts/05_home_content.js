@@ -1473,6 +1473,7 @@ function resetPreviewImageFrameToFit() {
     };
 
     lastPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
+    setPreviewViewportRenderSize(viewportWidth, viewportHeight);
     lastNonZeroPreviewViewportSize = { width: viewportWidth, height: viewportHeight };
     applyPreviewImageTransform();
 }
@@ -1503,6 +1504,7 @@ function hidePreviewImageLayer() {
     pendingPreviewImageTransform = null;
     shouldResetImageFrameOnNextViewportUpdate = false;
     lastPreviewViewportSize = null;
+    invalidatePreviewViewportRenderSize();
     lastNonZeroPreviewViewportSize = null;
     previewImagePointerState.pointerId = null;
     previewImagePointerState.mode = null;
@@ -1559,6 +1561,7 @@ let lastCreativeControlsPanelHeight = null;
 
 function handlePreviewViewportResized() {
     if (!previewViewport) {
+        setPreviewViewportRenderSize(0, 0);
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
         return;
@@ -1566,6 +1569,8 @@ function handlePreviewViewportResized() {
 
     const width = Math.max(0, previewViewport.clientWidth);
     const height = Math.max(0, previewViewport.clientHeight);
+
+    setPreviewViewportRenderSize(width, height);
 
     refreshCanvasBackdropExpansion();
 
@@ -1602,6 +1607,7 @@ function handlePreviewViewportResized() {
 
     if (width === 0 || height === 0) {
         lastPreviewViewportSize = { width, height };
+        setPreviewViewportRenderSize(width, height);
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
         return;
@@ -1613,6 +1619,7 @@ function handlePreviewViewportResized() {
         if (applied) {
             pendingPreviewImageTransform = null;
             lastPreviewViewportSize = { width, height };
+            setPreviewViewportRenderSize(width, height);
             lastNonZeroPreviewViewportSize = { width, height };
             refreshActiveOverlayLayers();
             return;
@@ -1623,6 +1630,7 @@ function handlePreviewViewportResized() {
         shouldResetImageFrameOnNextViewportUpdate = false;
         resetPreviewImageFrameToFit();
         lastPreviewViewportSize = { width, height };
+        setPreviewViewportRenderSize(width, height);
         lastNonZeroPreviewViewportSize = { width, height };
         refreshActiveOverlayLayers();
         return;
@@ -1630,6 +1638,7 @@ function handlePreviewViewportResized() {
 
     if (!previewImageTransform) {
         lastPreviewViewportSize = { width, height };
+        setPreviewViewportRenderSize(width, height);
         lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
@@ -1638,6 +1647,7 @@ function handlePreviewViewportResized() {
 
     if (!lastPreviewViewportSize || lastPreviewViewportSize.width === 0) {
         lastPreviewViewportSize = { width, height };
+        setPreviewViewportRenderSize(width, height);
         lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
@@ -1648,6 +1658,7 @@ function handlePreviewViewportResized() {
 
     if (!Number.isFinite(scale) || scale <= 0) {
         lastPreviewViewportSize = { width, height };
+        setPreviewViewportRenderSize(width, height);
         lastNonZeroPreviewViewportSize = { width, height };
         hidePreviewOutsideOutline();
         refreshActiveOverlayLayers();
@@ -1668,6 +1679,7 @@ function handlePreviewViewportResized() {
     previewImageTransform.height = nextHeight;
 
     lastPreviewViewportSize = { width, height };
+    setPreviewViewportRenderSize(width, height);
     lastNonZeroPreviewViewportSize = { width, height };
     applyPreviewImageTransform();
     refreshActiveOverlayLayers();
@@ -2088,6 +2100,7 @@ function clearPreviewOverlayLayers() {
         resetActiveOverlayWindowState();
     }
 
+    clearActiveOverlaySnapshotCache();
     lastOverlayRenderTimestamp = null;
 }
 
@@ -2734,6 +2747,12 @@ function applyOverlayAnimationTransform(entry, transformState) {
         scale,
         rotate,
     };
+
+    if (entry.frame) {
+        updateOverlaySnapshotEntry(entry);
+    } else {
+        markActiveOverlaySnapshotsDirty();
+    }
 }
 
 function resetOverlayAnimationState(entry) {
@@ -2751,6 +2770,12 @@ function resetOverlayAnimationState(entry) {
         scale: 1,
         rotate: 0,
     };
+
+    if (entry.frame) {
+        updateOverlaySnapshotEntry(entry);
+    } else {
+        markActiveOverlaySnapshotsDirty();
+    }
 }
 
 let activeOverlayDescriptorCache = [];

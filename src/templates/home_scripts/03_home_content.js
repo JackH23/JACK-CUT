@@ -49,6 +49,34 @@
     return null;
 }
 
+let previewViewportRenderSizeCache = null;
+
+function setPreviewViewportRenderSize(width, height) {
+    const nextWidth = Math.max(0, Number(width) || 0);
+    const nextHeight = Math.max(0, Number(height) || 0);
+
+    if (previewViewportRenderSizeCache
+        && previewViewportRenderSizeCache.width === nextWidth
+        && previewViewportRenderSizeCache.height === nextHeight) {
+        return previewViewportRenderSizeCache;
+    }
+
+    previewViewportRenderSizeCache = {
+        width: nextWidth,
+        height: nextHeight,
+    };
+
+    return previewViewportRenderSizeCache;
+}
+
+function getPreviewViewportRenderSize() {
+    return previewViewportRenderSizeCache;
+}
+
+function invalidatePreviewViewportRenderSize() {
+    previewViewportRenderSizeCache = null;
+}
+
 const CANVAS_BACKDROP_SNAPSHOT_DEFAULT_SCALE = 1.08;
 const CANVAS_BACKDROP_GRADIENT_TOP_COLOR = 'rgba(15, 23, 42, 0.32)';
 const CANVAS_BACKDROP_GRADIENT_BOTTOM_COLOR = 'rgba(15, 23, 42, 0.5)';
@@ -623,8 +651,18 @@ function startPreviewMirroring(width, height, options = {}) {
         exportMirrorContext.fillStyle = '#000000';
         exportMirrorContext.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        let viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
-        let viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
+        let viewportWidth = 0;
+        let viewportHeight = 0;
+
+        const cachedViewportSize = getPreviewViewportRenderSize();
+        if (cachedViewportSize) {
+            viewportWidth = Math.max(0, Number(cachedViewportSize.width) || 0);
+            viewportHeight = Math.max(0, Number(cachedViewportSize.height) || 0);
+        } else if (previewViewport) {
+            viewportWidth = Math.max(0, previewViewport.clientWidth);
+            viewportHeight = Math.max(0, previewViewport.clientHeight);
+            setPreviewViewportRenderSize(viewportWidth, viewportHeight);
+        }
 
         if ((viewportWidth === 0 || viewportHeight === 0)
             && lastNonZeroPreviewViewportSize
