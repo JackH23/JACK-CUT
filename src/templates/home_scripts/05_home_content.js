@@ -2131,15 +2131,85 @@ function updateOverlayLanePipelineEntry(laneIndex, item, state = {}) {
         pipeline.lastUpdated = timestamp;
     }
 
+    const entry = state.entry || null;
+
+    const cloneFrame = (frame) => {
+        if (!frame) {
+            return null;
+        }
+        const left = Number(frame.left);
+        const top = Number(frame.top);
+        const width = Number(frame.width);
+        const height = Number(frame.height);
+        if (!Number.isFinite(left)
+            || !Number.isFinite(top)
+            || !Number.isFinite(width)
+            || !Number.isFinite(height)
+        ) {
+            return null;
+        }
+        const rotation = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+        return {
+            left,
+            top,
+            width,
+            height,
+            rotation,
+        };
+    };
+
+    const cloneAnimation = (animation) => {
+        if (!animation) {
+            return null;
+        }
+        const translateX = Number(animation.translateX);
+        const translateY = Number(animation.translateY);
+        const scale = Number(animation.scale);
+        const rotate = Number(animation.rotate);
+        return {
+            translateX: Number.isFinite(translateX) ? translateX : 0,
+            translateY: Number.isFinite(translateY) ? translateY : 0,
+            scale: Number.isFinite(scale) ? scale : 1,
+            rotate: Number.isFinite(rotate) ? rotate : 0,
+        };
+    };
+
+    const normalizeOpacity = (value) => {
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        if (value <= 0) {
+            return 0;
+        }
+        if (value >= 1) {
+            return 1;
+        }
+        return value;
+    };
+
+    const frameSnapshot = cloneFrame(state.frame) || cloneFrame(entry?.frame);
+    const animationSnapshot = cloneAnimation(state.animation)
+        || cloneAnimation(entry?.renderedAnimation);
+    const stateOpacity = normalizeOpacity(state.opacity);
+    const entryOpacity = normalizeOpacity(entry?.renderedOpacity);
+
     const payload = {
         item,
-        entry: state.entry || null,
-        layerGroup: state.layerGroup || null,
-        zIndex: Number.isFinite(state.zIndex) ? state.zIndex : 0,
-        opacity: Number.isFinite(state.opacity) ? state.opacity : 1,
-        frame: state.frame || null,
-        animation: state.animation || null,
+        entry,
+        layerGroup: state.layerGroup || entry?.layerGroup || null,
+        zIndex: Number.isFinite(state.zIndex)
+            ? state.zIndex
+            : (Number.isFinite(entry?.zIndex) ? entry.zIndex : 0),
+        opacity: stateOpacity !== null
+            ? stateOpacity
+            : (entryOpacity !== null ? entryOpacity : 1),
+        frame: frameSnapshot,
+        animation: animationSnapshot,
+        borderRadius: Number.isFinite(state.borderRadius)
+            ? Math.max(state.borderRadius, 0)
+            : (Number.isFinite(entry?.borderRadius) ? Math.max(entry.borderRadius, 0) : 0),
         lastTimelineTime: timestamp,
+        laneIndex: pipeline.laneIndex,
     };
 
     pipeline.entries.set(item, payload);

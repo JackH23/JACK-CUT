@@ -500,13 +500,7 @@ if (canvasBackgroundModeSelect) {
             return;
         }
 
-        const dataset = activeTimelineItem.dataset || {};
-        const hadBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
-
         persistTimelineItemCanvasSettings(activeTimelineItem, { mode: sanitized });
-        if (!hadBlur && sanitized !== 'none') {
-            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
-        }
 
         syncCanvasBlurControlState(activeTimelineItem);
         syncCanvasCustomImageControls(activeTimelineItem);
@@ -545,9 +539,6 @@ if (canvasBackgroundUploadInput) {
         const objectURL = URL.createObjectURL(file);
         setTimelineItemCanvasCustomImage(activeTimelineItem, file, objectURL);
         persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'custom' });
-        if (!Object.prototype.hasOwnProperty.call(activeTimelineItem.dataset || {}, 'canvasBlur')) {
-            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
-        }
         if (canvasBackgroundModeSelect) {
             canvasBackgroundModeSelect.disabled = false;
             canvasBackgroundModeSelect.removeAttribute('aria-disabled');
