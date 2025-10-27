@@ -43,6 +43,8 @@ const previewImage = document.getElementById('preview-image');
 const previewImageTransitionBuffer = document.getElementById('preview-image-transition-buffer');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
+const PREVIEW_BASE_LAYER_KEY = 'base-image-layer';
+const previewLayerTransitionStates = new Map();
 let lastPreviewImageBlurValue = null;
 const previewImageLayer = document.getElementById('preview-image-layer');
 const previewImageFrame = document.getElementById('preview-image-frame');
@@ -125,6 +127,257 @@ const previewRulerElements = previewGuidesLayer
 const previewPlaceholder = document.getElementById('preview-placeholder');
 const defaultPreviewPlaceholderText = previewPlaceholder ? previewPlaceholder.textContent : '';
 
+function getPreviewLayerTransitionState(layerKey = PREVIEW_BASE_LAYER_KEY) {
+    const normalizedKey = layerKey || PREVIEW_BASE_LAYER_KEY;
+    let state = previewLayerTransitionStates.get(normalizedKey);
+    if (!state) {
+        state = {
+            key: normalizedKey,
+            frameSnapshot: null,
+            frameCanvas: null,
+            captureHandle: 0,
+            lastBlur: 0,
+            lastOpacity: 1,
+            isTransitioning: false,
+            bufferElement: null,
+            lastUpdated: 0,
+            transitionTransform: null,
+        };
+        previewLayerTransitionStates.set(normalizedKey, state);
+    }
+    return state;
+}
+
+function parseElementBlurRadius(element, computedStyle = null) {
+    if (!element) {
+        return 0;
+    }
+
+    let blur = Number.parseFloat(
+        element.style?.getPropertyValue?.('--preview-image-blur') || '',
+    );
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        const styleSource = computedStyle
+            || (typeof window !== 'undefined' && window.getComputedStyle
+                ? window.getComputedStyle(element)
+                : null);
+        if (styleSource) {
+            const variableValue = styleSource.getPropertyValue?.('--preview-image-blur') || '';
+            const parsedVariable = Number.parseFloat(variableValue);
+            if (Number.isFinite(parsedVariable) && parsedVariable >= 0) {
+                blur = parsedVariable;
+            } else {
+                const filterValue = styleSource.filter || styleSource.webkitFilter || '';
+                const match = typeof filterValue === 'string'
+                    ? filterValue.match(/blur\(([^)]+)\)/i)
+                    : null;
+                if (match) {
+                    const parsedFilter = Number.parseFloat(match[1]);
+                    if (Number.isFinite(parsedFilter) && parsedFilter >= 0) {
+                        blur = parsedFilter;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!Number.isFinite(blur) || blur < 0) {
+        return 0;
+    }
+    return blur;
+}
+
+function captureLayerFrameSnapshot(
+    layerKey = PREVIEW_BASE_LAYER_KEY,
+    element = previewImage,
+    options = {},
+) {
+    if (!element) {
+        return null;
+    }
+
+    const state = getPreviewLayerTransitionState(layerKey);
+
+    const fallbackWidth = Number(options.width) || element.naturalWidth
+        || element.videoWidth || element.width || element.clientWidth || 0;
+    const fallbackHeight = Number(options.height) || element.naturalHeight
+        || element.videoHeight || element.height || element.clientHeight || 0;
+    const width = Math.max(0, Math.round(fallbackWidth));
+    const height = Math.max(0, Math.round(fallbackHeight));
+
+    if (width === 0 || height === 0) {
+        return null;
+    }
+
+    let canvas = state.frameCanvas;
+    if (!canvas) {
+        canvas = document.createElement('canvas');
+        state.frameCanvas = canvas;
+    }
+
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+    }
+
+    const context = canvas.getContext('2d', { alpha: true });
+    if (!context) {
+        return null;
+    }
+
+    try {
+        context.clearRect(0, 0, width, height);
+        context.drawImage(element, 0, 0, width, height);
+    } catch (error) {
+        return null;
+    }
+
+    let computedStyle = options.computedStyle || null;
+    if (!computedStyle && typeof window !== 'undefined' && window.getComputedStyle) {
+        try {
+            computedStyle = window.getComputedStyle(element);
+        } catch (styleError) {
+            computedStyle = null;
+        }
+    }
+
+    const opacityValue = computedStyle ? Number.parseFloat(computedStyle.opacity) : null;
+    const opacity = Number.isFinite(opacityValue) ? clamp(opacityValue, 0, 1) : 1;
+    const blur = parseElementBlurRadius(element, computedStyle);
+    const transformValue = computedStyle?.transform || computedStyle?.webkitTransform || '';
+    const matrix = transformValue ? parseCssTransformMatrix(transformValue) : null;
+
+    const snapshot = {
+        canvas,
+        width,
+        height,
+        opacity,
+        blur,
+        transform: transformValue || '',
+        matrix,
+    };
+
+    state.frameSnapshot = snapshot;
+    state.lastUpdated = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+        ? performance.now()
+        : Date.now();
+    state.lastOpacity = opacity;
+    state.lastBlur = blur;
+
+    if (options.transform) {
+        state.transitionTransform = { ...options.transform };
+    }
+
+    return snapshot;
+}
+
+function markPreviewLayerFrameRendered(layerKey = PREVIEW_BASE_LAYER_KEY, options = {}) {
+    const state = getPreviewLayerTransitionState(layerKey);
+    const targetElement = options.element || (layerKey === PREVIEW_BASE_LAYER_KEY ? previewImage : null);
+    if (!targetElement) {
+        return;
+    }
+
+    const immediate = Boolean(options.immediate);
+    if (immediate) {
+        if (state.captureHandle && typeof window !== 'undefined'
+            && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(state.captureHandle);
+        }
+        state.captureHandle = 0;
+        captureLayerFrameSnapshot(layerKey, targetElement, options);
+        return;
+    }
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        captureLayerFrameSnapshot(layerKey, targetElement, options);
+        return;
+    }
+
+    if (state.captureHandle) {
+        return;
+    }
+
+    state.captureHandle = window.requestAnimationFrame(() => {
+        state.captureHandle = 0;
+        captureLayerFrameSnapshot(layerKey, targetElement, options);
+    });
+}
+
+function getPreviewLayerTransitionSnapshot(layerKey = PREVIEW_BASE_LAYER_KEY) {
+    const state = getPreviewLayerTransitionState(layerKey);
+    if (!state.frameSnapshot) {
+        return null;
+    }
+
+    const snapshot = state.frameSnapshot;
+    return {
+        canvas: snapshot.canvas,
+        width: snapshot.width,
+        height: snapshot.height,
+        opacity: Number.isFinite(snapshot.opacity)
+            ? snapshot.opacity
+            : (Number.isFinite(state.lastOpacity) ? state.lastOpacity : 1),
+        blur: Number.isFinite(snapshot.blur)
+            ? snapshot.blur
+            : (Number.isFinite(state.lastBlur) ? state.lastBlur : 0),
+        transform: snapshot.transform || '',
+        matrix: snapshot.matrix || null,
+        timestamp: state.lastUpdated,
+    };
+}
+
+function waitForAnimationFrames(frameCount = 1) {
+    const requested = Math.max(1, Math.round(Number(frameCount) || 1));
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        let remaining = requested;
+        const step = () => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                resolve();
+                return;
+            }
+            window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+    });
+}
+
+if (typeof window !== 'undefined') {
+    window.getPreviewLayerTransitionSnapshot = getPreviewLayerTransitionSnapshot;
+    window.markPreviewLayerFrameRendered = markPreviewLayerFrameRendered;
+    window.capturePreviewLayerFrameSnapshot = captureLayerFrameSnapshot;
+    window.PREVIEW_BASE_LAYER_KEY = PREVIEW_BASE_LAYER_KEY;
+}
+
+function snapshotPreviewImageTransform() {
+    if (!previewImageTransform || typeof previewImageTransform !== 'object') {
+        return null;
+    }
+
+    return {
+        left: Number(previewImageTransform.left) || 0,
+        top: Number(previewImageTransform.top) || 0,
+        width: Number(previewImageTransform.width) || 0,
+        height: Number(previewImageTransform.height) || 0,
+        rotation: Number(previewImageTransform.rotation) || 0,
+    };
+}
+
+function isPreviewLayerTransitionActive(layerKey = PREVIEW_BASE_LAYER_KEY) {
+    const state = getPreviewLayerTransitionState(layerKey);
+    return Boolean(state?.isTransitioning);
+}
+
+if (typeof window !== 'undefined') {
+    window.isPreviewLayerTransitionActive = isPreviewLayerTransitionActive;
+}
+
 if (previewImage) {
     try {
         previewImage.decoding = 'async';
@@ -174,6 +427,13 @@ function applyImageBlurToPreview(blur) {
 
     applyBlurStyle(previewImage);
     applyBlurStyle(previewImageTransitionBuffer);
+
+    const layerState = getPreviewLayerTransitionState(PREVIEW_BASE_LAYER_KEY);
+    layerState.lastBlur = clamped;
+    if (layerState.frameSnapshot) {
+        layerState.frameSnapshot.blur = clamped;
+    }
+    markPreviewLayerFrameRendered(PREVIEW_BASE_LAYER_KEY);
 }
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');

@@ -2546,6 +2546,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     inset: 0;
     overflow: hidden;
     border-radius: inherit;
+    contain: paint;
 }
 
 .preview-overlay-layer .preview-overlay-content img {
@@ -2582,6 +2583,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     position: absolute;
     inset: 0;
     pointer-events: none;
+    isolation: isolate;
+    contain: paint;
 }
 
 .preview-image-layer[hidden] {

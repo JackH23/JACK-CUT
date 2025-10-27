@@ -242,6 +242,10 @@ function commitPreviewImageFrameState(state) {
     updatePreviewOutsideOutline();
     updatePreviewGuides(transformForGuides, alignment);
     updateImageRotationControlState();
+
+    if (typeof markPreviewLayerFrameRendered === 'function') {
+        markPreviewLayerFrameRendered(PREVIEW_BASE_LAYER_KEY);
+    }
 }
 
 function flushPreviewImageFrameState() {

@@ -455,30 +455,83 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const drawElementSnapshot = (element, transform) => {
-        if (!element || element.hidden || !element.complete || !transform) {
+    const drawElementSnapshot = (element, transform, options = {}) => {
+        if (!element || element.hidden || !transform) {
             return false;
         }
 
-        const naturalWidth = Math.max(1, element.naturalWidth || 0);
-        const naturalHeight = Math.max(1, element.naturalHeight || 0);
-        const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
-        if (!Number.isFinite(scale) || scale <= 0) {
-            return false;
-        }
+        const layerKey = options.layerKey || null;
+        const preferSnapshot = options.preferSnapshot !== false;
+        const getLayerSnapshot = (layerKey && typeof getPreviewLayerTransitionSnapshot === 'function')
+            ? getPreviewLayerTransitionSnapshot
+            : null;
+        const isLayerTransitioning = (layerKey && typeof isPreviewLayerTransitionActive === 'function')
+            ? isPreviewLayerTransitionActive
+            : null;
 
-        const drawWidth = naturalWidth * scale;
-        const drawHeight = naturalHeight * scale;
-        const rotation = clampRotation(transform.rotation);
-        const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
-        const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
+        const layerSnapshot = layerKey && getLayerSnapshot
+            ? getLayerSnapshot(layerKey)
+            : null;
+        const layerTransitioning = layerKey && isLayerTransitioning
+            ? isLayerTransitioning(layerKey)
+            : false;
 
+        let sourceElement = element;
+        let naturalWidth = Math.max(0, element.naturalWidth || element.videoWidth || element.width || 0);
+        let naturalHeight = Math.max(0, element.naturalHeight || element.videoHeight || element.height || 0);
         let computedOpacity = 1;
         let cssMatrix = null;
         let blurRadius = 0;
+        let computedStyle = null;
 
-        if (window.getComputedStyle) {
-            const computedStyle = window.getComputedStyle(element);
+        const snapshotAvailable = Boolean(layerSnapshot?.canvas);
+        const shouldUseSnapshot = snapshotAvailable
+            && preferSnapshot
+            && (!element.complete || naturalWidth === 0 || naturalHeight === 0 || layerTransitioning);
+
+        if (shouldUseSnapshot) {
+            sourceElement = layerSnapshot.canvas;
+            naturalWidth = Math.max(1, layerSnapshot.width || layerSnapshot.canvas.width || 0);
+            naturalHeight = Math.max(1, layerSnapshot.height || layerSnapshot.canvas.height || 0);
+            if (Number.isFinite(layerSnapshot.opacity)) {
+                computedOpacity = clamp(layerSnapshot.opacity, 0, 1);
+            }
+            if (Number.isFinite(layerSnapshot.blur)) {
+                blurRadius = Math.max(layerSnapshot.blur, 0);
+            }
+            cssMatrix = layerSnapshot.matrix
+                || (layerSnapshot.transform
+                    ? parseCssTransformMatrix(layerSnapshot.transform)
+                    : null);
+        } else {
+            if (naturalWidth <= 0 || naturalHeight <= 0) {
+                if (snapshotAvailable) {
+                    sourceElement = layerSnapshot.canvas;
+                    naturalWidth = Math.max(1, layerSnapshot.width || layerSnapshot.canvas.width || 0);
+                    naturalHeight = Math.max(1, layerSnapshot.height || layerSnapshot.canvas.height || 0);
+                    if (Number.isFinite(layerSnapshot.opacity)) {
+                        computedOpacity = clamp(layerSnapshot.opacity, 0, 1);
+                    }
+                    if (Number.isFinite(layerSnapshot.blur)) {
+                        blurRadius = Math.max(layerSnapshot.blur, 0);
+                    }
+                    cssMatrix = layerSnapshot.matrix
+                        || (layerSnapshot.transform
+                            ? parseCssTransformMatrix(layerSnapshot.transform)
+                            : null);
+                } else {
+                    return false;
+                }
+            }
+
+            if (window.getComputedStyle) {
+                try {
+                    computedStyle = window.getComputedStyle(element);
+                } catch (styleError) {
+                    computedStyle = null;
+                }
+            }
+
             if (computedStyle) {
                 const opacityValue = Number.parseFloat(computedStyle.opacity);
                 if (Number.isFinite(opacityValue)) {
@@ -490,6 +543,22 @@ function drawPreviewImageToExportCanvas() {
                 blurRadius = parsePreviewImageBlurRadius(computedStyle);
             }
         }
+
+        if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)
+            || naturalWidth <= 0 || naturalHeight <= 0) {
+            return false;
+        }
+
+        const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
+        if (!Number.isFinite(scale) || scale <= 0) {
+            return false;
+        }
+
+        const drawWidth = naturalWidth * scale;
+        const drawHeight = naturalHeight * scale;
+        const rotation = clampRotation(transform.rotation);
+        const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
+        const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
 
         exportMirrorContext.save();
         exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
@@ -533,7 +602,7 @@ function drawPreviewImageToExportCanvas() {
         }
 
         exportMirrorContext.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
-        exportMirrorContext.drawImage(element, 0, 0, drawWidth, drawHeight);
+        exportMirrorContext.drawImage(sourceElement, 0, 0, drawWidth, drawHeight);
         exportMirrorContext.filter = 'none';
 
         exportMirrorContext.restore();
@@ -546,6 +615,10 @@ function drawPreviewImageToExportCanvas() {
     };
 
     let drewAny = false;
+
+    const baseLayerKey = typeof PREVIEW_BASE_LAYER_KEY !== 'undefined'
+        ? PREVIEW_BASE_LAYER_KEY
+        : 'base-image-layer';
 
     if (previewImageTransitionBuffer && !previewImageTransitionBuffer.hidden) {
         let bufferTransform = null;
@@ -567,14 +640,18 @@ function drawPreviewImageToExportCanvas() {
             }
         }
 
-        if (drawElementSnapshot(previewImageTransitionBuffer, bufferTransform)) {
+        if (drawElementSnapshot(previewImageTransitionBuffer, bufferTransform, {
+            layerKey: baseLayerKey,
+        })) {
             drewAny = true;
         }
     }
 
-    if (previewImage && !previewImage.hidden && previewImage.complete) {
+    if (previewImage && !previewImage.hidden) {
         const activeTransform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
-        if (drawElementSnapshot(previewImage, activeTransform)) {
+        if (drawElementSnapshot(previewImage, activeTransform, {
+            layerKey: baseLayerKey,
+        })) {
             drewAny = true;
         }
     }

@@ -610,6 +610,7 @@ function cleanupPreviewTransitionBuffer() {
     if (!previewImageTransitionBuffer) {
         return;
     }
+    const layerState = getPreviewLayerTransitionState(PREVIEW_BASE_LAYER_KEY);
     if (previewTransitionBufferState.finalizeHandler) {
         previewImageTransitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
         previewImageTransitionBuffer.removeEventListener('transitioncancel', previewTransitionBufferState.finalizeHandler);
@@ -618,6 +619,11 @@ function cleanupPreviewTransitionBuffer() {
     if (previewTransitionBufferState.fallbackTimer) {
         window.clearTimeout(previewTransitionBufferState.fallbackTimer);
         previewTransitionBufferState.fallbackTimer = 0;
+    }
+    if (layerState) {
+        layerState.isTransitioning = false;
+        layerState.bufferElement = null;
+        layerState.transitionTransform = null;
     }
     resetPreviewTransitionBufferElement();
 }
@@ -640,6 +646,17 @@ function stagePreviewTransitionBuffer(options = {}) {
         cleanupPreviewTransitionBuffer();
         return;
     }
+
+    const layerState = getPreviewLayerTransitionState(PREVIEW_BASE_LAYER_KEY);
+    const currentTransform = snapshotPreviewImageTransform();
+
+    markPreviewLayerFrameRendered(PREVIEW_BASE_LAYER_KEY, {
+        immediate: true,
+        transform: currentTransform,
+    });
+    layerState.transitionTransform = currentTransform;
+    layerState.isTransitioning = true;
+    layerState.bufferElement = previewImageTransitionBuffer;
 
     cleanupPreviewTransitionBuffer();
 
@@ -669,19 +686,21 @@ function stagePreviewTransitionBuffer(options = {}) {
 
     if (previewImageTransform && typeof previewImageTransform === 'object') {
         try {
-            const snapshot = {
-                left: Number(previewImageTransform.left) || 0,
-                top: Number(previewImageTransform.top) || 0,
-                width: Number(previewImageTransform.width) || 0,
-                height: Number(previewImageTransform.height) || 0,
-                rotation: Number(previewImageTransform.rotation) || 0,
-            };
-            previewImageTransitionBuffer.dataset.transitionTransform = JSON.stringify(snapshot);
+            const snapshot = snapshotPreviewImageTransform();
+            if (snapshot) {
+                previewImageTransitionBuffer.dataset.transitionTransform = JSON.stringify(snapshot);
+                layerState.transitionTransform = snapshot;
+            } else {
+                previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+                layerState.transitionTransform = null;
+            }
         } catch (error) {
             previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+            layerState.transitionTransform = null;
         }
     } else {
         previewImageTransitionBuffer.removeAttribute('data-transition-transform');
+        layerState.transitionTransform = null;
     }
 
     const finalize = () => {
@@ -735,6 +754,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
     stagePreviewTransitionBuffer({ immediate });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
+    await waitForAnimationFrames(immediate ? 1 : 2);
 
     await new Promise((resolve) => {
         let settled = false;
@@ -748,6 +768,10 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             previewImage.removeEventListener('error', finish);
             if (immediate) {
                 previewImage.classList.add('is-visible');
+                markPreviewLayerFrameRendered(PREVIEW_BASE_LAYER_KEY, {
+                    immediate: true,
+                    transform: snapshotPreviewImageTransform(),
+                });
             } else {
                 requestAnimationFrame(() => {
                     const didAnimate = runPreviewImageEntranceAnimation({
@@ -757,6 +781,11 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
+                    requestAnimationFrame(() => {
+                        markPreviewLayerFrameRendered(PREVIEW_BASE_LAYER_KEY, {
+                            transform: snapshotPreviewImageTransform(),
+                        });
+                    });
                 });
             }
             resolve();
