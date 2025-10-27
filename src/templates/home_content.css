@@ -2231,7 +2231,12 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     object-fit: contain;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 180ms ease;
+    --preview-transition-duration: 180ms;
+    --preview-transition-delay: 0ms;
+    --preview-transition-easing: ease;
+    transition: opacity var(--preview-transition-duration, 180ms)
+        var(--preview-transition-easing, ease)
+        var(--preview-transition-delay, 0ms);
     will-change: opacity;
 }
 

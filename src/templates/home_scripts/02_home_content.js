@@ -593,6 +593,10 @@ const previewTransitionBufferState = {
     fallbackTimer: 0,
 };
 
+const DEFAULT_PREVIEW_TRANSITION_DURATION_MS = 180;
+const DEFAULT_PREVIEW_TRANSITION_DELAY_MS = 0;
+const DEFAULT_PREVIEW_TRANSITION_EASING = 'ease';
+
 function resetPreviewTransitionBufferElement() {
     if (!previewImageTransitionBuffer) {
         return;
@@ -603,6 +607,9 @@ function resetPreviewTransitionBufferElement() {
     previewImageTransitionBuffer.removeAttribute('data-transition-transform');
     previewImageTransitionBuffer.style.removeProperty('--preview-image-rotation');
     previewImageTransitionBuffer.style.removeProperty('--preview-image-blur');
+    previewImageTransitionBuffer.style.removeProperty('--preview-transition-duration');
+    previewImageTransitionBuffer.style.removeProperty('--preview-transition-delay');
+    previewImageTransitionBuffer.style.removeProperty('--preview-transition-easing');
     previewImageTransitionBuffer.style.removeProperty('filter');
 }
 
@@ -622,18 +629,157 @@ function cleanupPreviewTransitionBuffer() {
     resetPreviewTransitionBufferElement();
 }
 
+function resolvePreviewTransitionTransformSnapshot() {
+    if (!previewImage || !previewViewport) {
+        return null;
+    }
+
+    const hasStoredTransform = previewImageTransform
+        && typeof previewImageTransform === 'object'
+        && Number.isFinite(previewImageTransform.left)
+        && Number.isFinite(previewImageTransform.top)
+        && Number.isFinite(previewImageTransform.width)
+        && Number.isFinite(previewImageTransform.height);
+
+    if (hasStoredTransform) {
+        return {
+            left: Number(previewImageTransform.left) || 0,
+            top: Number(previewImageTransform.top) || 0,
+            width: Math.max(0, Number(previewImageTransform.width) || 0),
+            height: Math.max(0, Number(previewImageTransform.height) || 0),
+            rotation: Number(previewImageTransform.rotation) || 0,
+        };
+    }
+
+    const canResolveActiveTransform = typeof getActivePreviewImageTransform === 'function'
+        && typeof getPreviewViewportSize === 'function';
+
+    if (canResolveActiveTransform) {
+        try {
+            const viewportSize = getPreviewViewportSize();
+            const width = Math.max(0, Number(viewportSize?.width) || 0);
+            const height = Math.max(0, Number(viewportSize?.height) || 0);
+            if (width > 0 && height > 0) {
+                const activeTransform = getActivePreviewImageTransform(width, height);
+                if (activeTransform
+                    && Number.isFinite(activeTransform.left)
+                    && Number.isFinite(activeTransform.top)
+                    && Number.isFinite(activeTransform.width)
+                    && Number.isFinite(activeTransform.height)
+                ) {
+                    return {
+                        left: Number(activeTransform.left) || 0,
+                        top: Number(activeTransform.top) || 0,
+                        width: Math.max(0, Number(activeTransform.width) || 0),
+                        height: Math.max(0, Number(activeTransform.height) || 0),
+                        rotation: Number(activeTransform.rotation) || 0,
+                    };
+                }
+            }
+        } catch (error) {
+            // Ignore transform resolution errors and fall back to DOM measurements.
+        }
+    }
+
+    if (typeof previewViewport.getBoundingClientRect !== 'function'
+        || typeof previewImage.getBoundingClientRect !== 'function'
+    ) {
+        return null;
+    }
+
+    let viewportRect = null;
+    let imageRect = null;
+    try {
+        viewportRect = previewViewport.getBoundingClientRect();
+        imageRect = previewImage.getBoundingClientRect();
+    } catch (error) {
+        viewportRect = null;
+        imageRect = null;
+    }
+
+    if (!viewportRect || !imageRect) {
+        return null;
+    }
+
+    const width = Math.max(0, Number(imageRect.width) || 0);
+    const height = Math.max(0, Number(imageRect.height) || 0);
+    if (width <= 0 || height <= 0) {
+        return null;
+    }
+
+    const left = Number.isFinite(imageRect.left) && Number.isFinite(viewportRect.left)
+        ? imageRect.left - viewportRect.left
+        : 0;
+    const top = Number.isFinite(imageRect.top) && Number.isFinite(viewportRect.top)
+        ? imageRect.top - viewportRect.top
+        : 0;
+
+    let rotation = 0;
+    if (window.getComputedStyle) {
+        try {
+            const computedStyle = window.getComputedStyle(previewImage);
+            const transformValue = computedStyle
+                ? (computedStyle.transform || computedStyle.webkitTransform || '')
+                : '';
+            const matrix = parseCssTransformMatrix(transformValue);
+            if (matrix && !matrix.isIdentity) {
+                const rawRotation = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI);
+                if (Number.isFinite(rawRotation)) {
+                    rotation = rawRotation;
+                }
+            }
+        } catch (error) {
+            rotation = 0;
+        }
+    }
+
+    const clampRotationFn = typeof clampRotation === 'function'
+        ? clampRotation
+        : ((value) => value);
+
+    return {
+        left: Number.isFinite(left) ? left : 0,
+        top: Number.isFinite(top) ? top : 0,
+        width,
+        height,
+        rotation: clampRotationFn(rotation),
+    };
+}
+
 function stagePreviewTransitionBuffer(options = {}) {
     if (!previewImageTransitionBuffer || !previewImage || previewImage.hidden) {
         cleanupPreviewTransitionBuffer();
         return;
     }
 
-    const { immediate = false } = options;
+    const {
+        immediate = false,
+        transitionDurationMs: rawTransitionDuration = null,
+        transitionDelayMs: rawTransitionDelay = null,
+        transitionEasing: rawTransitionEasing = null,
+    } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
     if (immediate || reduceMotion) {
         cleanupPreviewTransitionBuffer();
         return;
     }
+
+    const safeDurationCandidate = Number.isFinite(rawTransitionDuration)
+        ? Math.max(0, Math.round(rawTransitionDuration))
+        : null;
+    const safeDelayCandidate = Number.isFinite(rawTransitionDelay)
+        ? Math.max(0, Math.round(rawTransitionDelay))
+        : null;
+    const resolvedTransitionDuration = safeDurationCandidate && safeDurationCandidate > 0
+        ? safeDurationCandidate
+        : DEFAULT_PREVIEW_TRANSITION_DURATION_MS;
+    const resolvedTransitionDelay = safeDelayCandidate !== null
+        ? safeDelayCandidate
+        : DEFAULT_PREVIEW_TRANSITION_DELAY_MS;
+    const resolvedTransitionEasing = typeof rawTransitionEasing === 'string'
+        && rawTransitionEasing.trim()
+        ? rawTransitionEasing
+        : DEFAULT_PREVIEW_TRANSITION_EASING;
 
     const currentSrc = previewImage.currentSrc || previewImage.src;
     if (!currentSrc) {
@@ -647,6 +793,19 @@ function stagePreviewTransitionBuffer(options = {}) {
     previewImageTransitionBuffer.hidden = false;
     previewImageTransitionBuffer.classList.remove('is-fading-out');
     previewImageTransitionBuffer.classList.add('is-visible');
+
+    previewImageTransitionBuffer.style.setProperty(
+        '--preview-transition-duration',
+        `${resolvedTransitionDuration}ms`,
+    );
+    previewImageTransitionBuffer.style.setProperty(
+        '--preview-transition-delay',
+        `${resolvedTransitionDelay}ms`,
+    );
+    previewImageTransitionBuffer.style.setProperty(
+        '--preview-transition-easing',
+        resolvedTransitionEasing,
+    );
 
     let computedStyle = null;
     if (window.getComputedStyle) {
@@ -667,16 +826,17 @@ function stagePreviewTransitionBuffer(options = {}) {
         || '0px';
     previewImageTransitionBuffer.style.setProperty('--preview-image-blur', blurValue);
 
-    if (previewImageTransform && typeof previewImageTransform === 'object') {
+    const transformSnapshot = resolvePreviewTransitionTransformSnapshot();
+    if (transformSnapshot) {
         try {
-            const snapshot = {
-                left: Number(previewImageTransform.left) || 0,
-                top: Number(previewImageTransform.top) || 0,
-                width: Number(previewImageTransform.width) || 0,
-                height: Number(previewImageTransform.height) || 0,
-                rotation: Number(previewImageTransform.rotation) || 0,
+            const serializedSnapshot = {
+                left: Number(transformSnapshot.left) || 0,
+                top: Number(transformSnapshot.top) || 0,
+                width: Math.max(0, Number(transformSnapshot.width) || 0),
+                height: Math.max(0, Number(transformSnapshot.height) || 0),
+                rotation: Number(transformSnapshot.rotation) || 0,
             };
-            previewImageTransitionBuffer.dataset.transitionTransform = JSON.stringify(snapshot);
+            previewImageTransitionBuffer.dataset.transitionTransform = JSON.stringify(serializedSnapshot);
         } catch (error) {
             previewImageTransitionBuffer.removeAttribute('data-transition-transform');
         }
@@ -692,7 +852,15 @@ function stagePreviewTransitionBuffer(options = {}) {
     previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
     previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
+    const requestedTimeout = Number.isFinite(options.timeoutMs)
+        ? Math.max(0, Math.round(options.timeoutMs))
+        : 0;
+    const fallbackWindow = resolvedTransitionDuration + resolvedTransitionDelay;
+    const fallbackTimeout = requestedTimeout > 0
+        ? Math.max(requestedTimeout, fallbackWindow + 240)
+        : Math.max(480, fallbackWindow + 240);
+
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, fallbackTimeout);
 
     requestAnimationFrame(() => {
         previewImageTransitionBuffer.classList.add('is-fading-out');
@@ -732,7 +900,56 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    stagePreviewTransitionBuffer({ immediate });
+    const transitionOptions = { immediate };
+    if (!immediate) {
+        let derivedDelayMs = 0;
+        let derivedDurationMs = null;
+        let derivedEasing = null;
+
+        if (entranceConfigOverride) {
+            const configDelay = Number.isFinite(entranceConfigOverride.delay)
+                ? Math.max(0, Math.round(entranceConfigOverride.delay))
+                : 0;
+            const configDuration = Number.isFinite(entranceConfigOverride.duration)
+                ? Math.max(0, Math.round(entranceConfigOverride.duration))
+                : 0;
+            const configTotal = Number.isFinite(entranceConfigOverride.totalDuration)
+                ? Math.max(0, Math.round(entranceConfigOverride.totalDuration))
+                : configDelay + configDuration;
+
+            derivedDelayMs = configDelay;
+            let fadeDuration = configDuration;
+            if (fadeDuration <= 0 && configTotal > configDelay) {
+                fadeDuration = configTotal - configDelay;
+            }
+            if (fadeDuration > 0) {
+                derivedDurationMs = fadeDuration;
+            }
+            if (typeof entranceConfigOverride.easing === 'string'
+                && entranceConfigOverride.easing.trim()
+            ) {
+                derivedEasing = entranceConfigOverride.easing;
+            }
+        } else if (clipDurationMs !== null && clipDurationMs > 0) {
+            const fallbackDuration = Math.min(
+                Math.max(Math.round(clipDurationMs * 0.25), 160),
+                800,
+            );
+            derivedDurationMs = fallbackDuration;
+        }
+
+        if (derivedDurationMs !== null && derivedDurationMs > 0) {
+            transitionOptions.transitionDurationMs = derivedDurationMs;
+        }
+        if (derivedDelayMs > 0) {
+            transitionOptions.transitionDelayMs = derivedDelayMs;
+        }
+        if (derivedEasing) {
+            transitionOptions.transitionEasing = derivedEasing;
+        }
+    }
+
+    stagePreviewTransitionBuffer(transitionOptions);
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
