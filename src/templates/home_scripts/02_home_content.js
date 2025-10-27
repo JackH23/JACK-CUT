@@ -591,6 +591,10 @@ function releaseTimelineAudio(objectURL) {
 const previewTransitionBufferState = {
     finalizeHandler: null,
     fallbackTimer: 0,
+    forceCleanupTimer: 0,
+    activeToken: null,
+    pendingFinalize: false,
+    nextImageVisible: false,
 };
 
 function resetPreviewTransitionBufferElement() {
@@ -619,29 +623,58 @@ function cleanupPreviewTransitionBuffer() {
         window.clearTimeout(previewTransitionBufferState.fallbackTimer);
         previewTransitionBufferState.fallbackTimer = 0;
     }
+    if (previewTransitionBufferState.forceCleanupTimer) {
+        window.clearTimeout(previewTransitionBufferState.forceCleanupTimer);
+        previewTransitionBufferState.forceCleanupTimer = 0;
+    }
+    previewTransitionBufferState.activeToken = null;
+    previewTransitionBufferState.pendingFinalize = false;
+    previewTransitionBufferState.nextImageVisible = false;
     resetPreviewTransitionBufferElement();
+}
+
+function finalizePreviewTransitionBuffer(token, options = {}) {
+    if (!previewImageTransitionBuffer) {
+        return;
+    }
+    if (token && previewTransitionBufferState.activeToken !== token) {
+        return;
+    }
+
+    const { force = false } = options;
+    if (!force && !previewTransitionBufferState.nextImageVisible) {
+        previewTransitionBufferState.pendingFinalize = true;
+        return;
+    }
+
+    cleanupPreviewTransitionBuffer();
 }
 
 function stagePreviewTransitionBuffer(options = {}) {
     if (!previewImageTransitionBuffer || !previewImage || previewImage.hidden) {
         cleanupPreviewTransitionBuffer();
-        return;
+        return null;
     }
 
     const { immediate = false } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
     if (immediate || reduceMotion) {
         cleanupPreviewTransitionBuffer();
-        return;
+        return null;
     }
 
     const currentSrc = previewImage.currentSrc || previewImage.src;
     if (!currentSrc) {
         cleanupPreviewTransitionBuffer();
-        return;
+        return null;
     }
 
     cleanupPreviewTransitionBuffer();
+
+    const token = Symbol('preview-transition');
+    previewTransitionBufferState.activeToken = token;
+    previewTransitionBufferState.pendingFinalize = false;
+    previewTransitionBufferState.nextImageVisible = false;
 
     previewImageTransitionBuffer.src = currentSrc;
     previewImageTransitionBuffer.hidden = false;
@@ -685,18 +718,41 @@ function stagePreviewTransitionBuffer(options = {}) {
     }
 
     const finalize = () => {
-        cleanupPreviewTransitionBuffer();
+        finalizePreviewTransitionBuffer(token);
     };
 
     previewTransitionBufferState.finalizeHandler = finalize;
     previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
     previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
+    const fallbackDelay = Math.max(480, Number(options.timeoutMs) || 720);
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(() => {
+        finalizePreviewTransitionBuffer(token);
+    }, fallbackDelay);
+
+    previewTransitionBufferState.forceCleanupTimer = window.setTimeout(() => {
+        finalizePreviewTransitionBuffer(token, { force: true });
+    }, Math.max(fallbackDelay * 2, 2000));
 
     requestAnimationFrame(() => {
+        if (previewTransitionBufferState.activeToken !== token) {
+            return;
+        }
         previewImageTransitionBuffer.classList.add('is-fading-out');
     });
+
+    return token;
+}
+
+function markPreviewTransitionBufferReady(token) {
+    if (!token || previewTransitionBufferState.activeToken !== token) {
+        return;
+    }
+
+    previewTransitionBufferState.nextImageVisible = true;
+    if (previewTransitionBufferState.pendingFinalize) {
+        finalizePreviewTransitionBuffer(token, { force: true });
+    }
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -732,7 +788,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    stagePreviewTransitionBuffer({ immediate });
+    const transitionToken = stagePreviewTransitionBuffer({ immediate });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
@@ -748,6 +804,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             previewImage.removeEventListener('error', finish);
             if (immediate) {
                 previewImage.classList.add('is-visible');
+                markPreviewTransitionBufferReady(transitionToken);
             } else {
                 requestAnimationFrame(() => {
                     const didAnimate = runPreviewImageEntranceAnimation({
@@ -757,6 +814,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
+                    markPreviewTransitionBufferReady(transitionToken);
                 });
             }
             resolve();
