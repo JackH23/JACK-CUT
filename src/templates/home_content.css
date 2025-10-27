@@ -2213,7 +2213,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     opacity: 0;
     transform: rotate(var(--preview-image-rotation, 0deg));
     filter: blur(var(--preview-image-blur, 0px));
-    transition: opacity 180ms ease;
+    transition:
+        opacity var(--image-transition-duration, 180ms)
+        var(--image-transition-easing, ease);
     will-change: transform, opacity;
 }
 
@@ -2231,7 +2233,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     object-fit: contain;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition:
+        opacity var(--image-transition-duration, 180ms)
+        var(--image-transition-easing, ease);
     will-change: opacity;
 }
 
@@ -2523,6 +2527,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     pointer-events: auto;
     cursor: pointer;
     touch-action: none;
+    opacity: 1;
+    transition:
+        opacity var(--image-transition-duration, 180ms)
+        var(--image-transition-easing, ease);
+    will-change: opacity;
 }
 
 .preview-overlay-layer.is-active {

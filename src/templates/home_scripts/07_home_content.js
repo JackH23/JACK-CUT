@@ -3174,6 +3174,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
     }
 
     if (fileType.startsWith('video/')) {
+        applyPreviewImageTransitionStyles(null);
         const audioSettings = getTimelineItemAudioSettings(timelineItem);
         setPreviewMode('has-video');
         resetPreviewScroll();
@@ -3203,6 +3204,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         playVideoButton.textContent = 'Play Back';
         applyActiveImageKeyframe({ deferReset: true });
     } else if (fileType.startsWith('audio/')) {
+        applyPreviewImageTransitionStyles(null);
         stopPreviewAudio({ resetTime: true });
         setPreviewMode(null);
         previewVideo.pause();
@@ -5591,6 +5593,11 @@ async function playTimelineItem(
     const startOffsetMs = Number.isFinite(options?.startOffsetMs)
         ? Math.max(0, Math.round(options.startOffsetMs))
         : 0;
+    const transitionFromPrevious = options?.transitionFromPrevious || null;
+
+    if (!fileType.startsWith('image/')) {
+        applyPreviewImageTransitionStyles(null);
+    }
 
     setActiveTimelineItem(timelineItem);
 

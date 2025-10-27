@@ -656,9 +656,9 @@ function stagePreviewTransitionBuffer(options = {}) {
         return null;
     }
 
-    const { immediate = false } = options;
+    const { immediate = false, transition = null } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
-    if (immediate || reduceMotion) {
+    if ((immediate && !transition) || reduceMotion) {
         cleanupPreviewTransitionBuffer();
         return null;
     }
@@ -761,13 +761,24 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         ? Math.max(0, Number(options.clipDurationMs))
         : null;
     const entranceConfigOverride = options.entranceConfigOverride || null;
+    const transitionOverride = options.transition || null;
 
     if (!previewImage || !objectURL) {
+        applyPreviewImageTransitionStyles(null);
         return;
     }
 
+    const transitionConfig = transitionOverride && Number.isFinite(transitionOverride.durationMs)
+        ? {
+            durationMs: Math.max(0, Math.round(Number(transitionOverride.durationMs))),
+            easing: transitionOverride.easing,
+        }
+        : null;
+    applyPreviewImageTransitionStyles(transitionConfig);
+
     if (!previewImage.hidden && previewImage.src === objectURL) {
-        if (immediate) {
+        const shouldSkipAnimation = immediate && !transitionConfig;
+        if (shouldSkipAnimation) {
             cancelPreviewEntranceAnimation();
             previewImage.classList.add('is-visible');
         } else {
@@ -788,7 +799,10 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    const transitionToken = stagePreviewTransitionBuffer({ immediate });
+    const transitionToken = stagePreviewTransitionBuffer({
+        immediate,
+        transition: transitionConfig,
+    });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 

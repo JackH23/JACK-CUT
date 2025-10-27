@@ -333,6 +333,20 @@
         const exitWindow = exitConfig
             ? Math.min(animationClipDuration, Math.max(0, exitConfig.totalDuration))
             : 0;
+        let previousTransitionConfig = null;
+        if (transitionFromPrevious
+            && transitionFromPrevious.nextItem === timelineItem
+            && Number.isFinite(transitionFromPrevious.durationMs)
+        ) {
+            const transitionDuration = Math.max(0, Math.round(transitionFromPrevious.durationMs));
+            if (transitionDuration > 0 && startOffsetMs < transitionDuration) {
+                previousTransitionConfig = {
+                    durationMs: transitionDuration,
+                    easing: transitionFromPrevious.easing,
+                };
+            }
+        }
+        const revealImmediate = skipEntranceAnimation && !previousTransitionConfig;
         setPreviewMode('has-image');
         previewVideo.pause();
         previewVideo.hidden = true;
@@ -344,7 +358,8 @@
         await revealPreviewImageSource(objectURL, {
             clipDurationMs: animationClipDuration,
             entranceConfigOverride,
-            immediate: skipEntranceAnimation,
+            immediate: revealImmediate,
+            transition: previousTransitionConfig,
         });
         resetPreviewScroll();
         setActiveClipProgress(initialProgress, { source: 'image-playback' });
@@ -526,6 +541,76 @@
     }
 }
 
+const TIMELINE_IMAGE_TRANSITION_GAP_TOLERANCE_MS = 8;
+
+function isImageTimelineSegment(segment) {
+    if (!segment || !segment.item) {
+        return false;
+    }
+    return typeof isImageTimelineItem === 'function'
+        ? isImageTimelineItem(segment.item)
+        : Boolean(segment.item?.dataset?.fileType?.startsWith?.('image/'));
+}
+
+function computeTimelineImageTransition(currentSegment, nextSegment) {
+    if (!isImageTimelineSegment(currentSegment) || !isImageTimelineSegment(nextSegment)) {
+        return null;
+    }
+
+    const currentItem = currentSegment.item;
+    const nextItem = nextSegment.item;
+    if (!currentItem || !nextItem || currentItem === nextItem) {
+        return null;
+    }
+
+    const gap = Math.max(0, Math.round(nextSegment.start - currentSegment.end));
+    if (gap > TIMELINE_IMAGE_TRANSITION_GAP_TOLERANCE_MS) {
+        return null;
+    }
+
+    const currentDuration = Math.max(0, getTimelineItemPlaybackDuration(currentItem));
+    const nextDuration = Math.max(0, getTimelineItemPlaybackDuration(nextItem));
+    if (!currentDuration || !nextDuration) {
+        return null;
+    }
+
+    const currentSettings = getTimelineItemImageTransitionSettings(currentItem);
+    const nextSettings = getTimelineItemImageTransitionSettings(nextItem);
+
+    const maxTransitionDuration = Math.min(
+        currentSegment.duration || currentDuration,
+        nextSegment.duration || nextDuration,
+        currentDuration,
+        nextDuration,
+        currentSettings.durationMs,
+        nextSettings.durationMs,
+    );
+
+    if (!Number.isFinite(maxTransitionDuration) || maxTransitionDuration <= 0) {
+        return null;
+    }
+
+    const transitionDuration = Math.max(0, Math.round(maxTransitionDuration));
+    if (!transitionDuration) {
+        return null;
+    }
+
+    const easing = nextSettings.easing || currentSettings.easing || IMAGE_TRANSITION_DEFAULT_EASING;
+    const transitionStartTime = Math.max(
+        currentSegment.start,
+        currentSegment.end - transitionDuration,
+    );
+
+    return {
+        durationMs: transitionDuration,
+        easing,
+        startTimeMs: transitionStartTime,
+        endTimeMs: currentSegment.end,
+        currentItem,
+        nextItem,
+    };
+}
+
 function waitForGapDuration(durationMs) {
     return new Promise((resolve) => {
         const safeDuration = Math.max(0, Math.round(Number(durationMs) || 0));
@@ -626,6 +711,8 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
     let completedNaturally = true;
     let pendingResumeTime = resumeTimeMs;
 
+    let pendingImageTransition = null;
+
     try {
         for (let index = initialSegmentIndex; index < segments.length; index += 1) {
             if (!isTimelinePlaying) {
@@ -635,9 +722,11 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             const segment = segments[index];
             const { item, start, end, duration } = segment;
             if (duration <= 0) {
+                pendingImageTransition = null;
                 continue;
             }
             if (pendingResumeTime !== null && pendingResumeTime >= end) {
+                pendingImageTransition = null;
                 continue;
             }
             const nextSegment = segments[index + 1];
@@ -690,15 +779,20 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             const remainingDuration = pendingResumeTime !== null
                 ? Math.max(0, Math.round(end - segmentStartTime))
                 : duration;
+            const transitionFromPrevious = pendingImageTransition;
+            const transitionToNext = computeTimelineImageTransition(segment, nextSegment || null);
             animateTimelineProgress(startFraction, endFraction, remainingDuration);
             if (item) {
                 // eslint-disable-next-line no-await-in-loop
                 await playTimelineItem(item, remainingDuration, segment.items || null, {
                     startOffsetMs: segmentStartOffset,
+                    transitionFromPrevious,
                 });
+                pendingImageTransition = transitionToNext;
             } else {
                 // eslint-disable-next-line no-await-in-loop
                 await waitForGapDuration(remainingDuration);
+                pendingImageTransition = null;
             }
             pendingResumeTime = null;
         }

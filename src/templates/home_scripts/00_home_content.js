@@ -175,6 +175,180 @@ function applyImageBlurToPreview(blur) {
     applyBlurStyle(previewImage);
     applyBlurStyle(previewImageTransitionBuffer);
 }
+
+function sanitizeImageTransitionDuration(value, options = {}) {
+    const defaultDuration = Number.isFinite(options.defaultDuration)
+        ? Math.max(0, Math.round(options.defaultDuration))
+        : IMAGE_TRANSITION_DEFAULT_DURATION;
+    const minDuration = Number.isFinite(options.minDuration)
+        ? Math.max(0, Math.round(options.minDuration))
+        : 0;
+    const maxDuration = Number.isFinite(options.maxDuration)
+        ? Math.max(minDuration, Math.round(options.maxDuration))
+        : IMAGE_TRANSITION_MAX_DURATION;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return Math.min(maxDuration, Math.max(minDuration, defaultDuration));
+    }
+    const rounded = Math.round(parsed);
+    return Math.min(maxDuration, Math.max(minDuration, rounded));
+}
+
+function resolveImageTransitionEasing(value, options = {}) {
+    const fallback = (typeof options?.fallback === 'string' && options.fallback.trim())
+        ? options.fallback.trim()
+        : IMAGE_TRANSITION_DEFAULT_EASING;
+    if (typeof value !== 'string') {
+        return fallback;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return fallback;
+    }
+    const presetKey = trimmed.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(IMAGE_TRANSITION_EASING_PRESETS, presetKey)) {
+        return IMAGE_TRANSITION_EASING_PRESETS[presetKey];
+    }
+    return trimmed;
+}
+
+function normalizeImageTransitionOptions(options = null) {
+    if (!options) {
+        return null;
+    }
+
+    const defaultDuration = Number.isFinite(options.defaultDuration)
+        ? Math.max(0, Math.round(options.defaultDuration))
+        : IMAGE_TRANSITION_DEFAULT_DURATION;
+    const minDuration = Number.isFinite(options.minDuration)
+        ? Math.max(0, Math.round(options.minDuration))
+        : 1;
+    const maxDuration = Number.isFinite(options.maxDuration)
+        ? Math.max(minDuration, Math.round(options.maxDuration))
+        : IMAGE_TRANSITION_MAX_DURATION;
+
+    const durationSource = Number.isFinite(options.durationMs)
+        ? options.durationMs
+        : Number.isFinite(options.duration)
+            ? options.duration
+            : Number.isFinite(options.lengthMs)
+                ? options.lengthMs
+                : null;
+
+    const durationMs = sanitizeImageTransitionDuration(durationSource, {
+        defaultDuration,
+        minDuration,
+        maxDuration,
+    });
+
+    if (durationMs <= 0) {
+        return null;
+    }
+
+    const easingInput = options.easing ?? options.easingKey ?? options.easingPreset;
+    const easing = resolveImageTransitionEasing(easingInput, {
+        fallback: options.fallbackEasing || IMAGE_TRANSITION_DEFAULT_EASING,
+    });
+
+    return {
+        durationMs,
+        easing,
+    };
+}
+
+function getTimelineItemImageTransitionSettings(timelineItem) {
+    const defaults = {
+        durationMs: IMAGE_TRANSITION_DEFAULT_DURATION,
+        easing: IMAGE_TRANSITION_DEFAULT_EASING,
+    };
+
+    if (!timelineItem || !timelineItem.dataset) {
+        return defaults;
+    }
+
+    const dataset = timelineItem.dataset;
+    if (typeof dataset.imageTransition === 'string'
+        && dataset.imageTransition.trim().toLowerCase() === 'none') {
+        return {
+            durationMs: 0,
+            easing: defaults.easing,
+        };
+    }
+
+    const durationCandidate = Number.isFinite(Number(dataset.imageTransitionMs))
+        ? Number(dataset.imageTransitionMs)
+        : Number.isFinite(Number(dataset.transitionMs))
+            ? Number(dataset.transitionMs)
+            : null;
+
+    const durationMs = sanitizeImageTransitionDuration(durationCandidate, {
+        defaultDuration: defaults.durationMs,
+        minDuration: 0,
+    });
+
+    const easingInput = dataset.imageTransitionEasing
+        || dataset.imageTransitionEasingPreset
+        || dataset.transitionEasing;
+
+    const easing = resolveImageTransitionEasing(easingInput, {
+        fallback: defaults.easing,
+    });
+
+    return {
+        durationMs,
+        easing,
+    };
+}
+
+let activePreviewImageTransition = null;
+
+function applyPreviewImageTransitionStyles(config = null) {
+    const normalized = normalizeImageTransitionOptions(config);
+    const alreadyApplied = activePreviewImageTransition
+        && normalized
+        && activePreviewImageTransition.durationMs === normalized.durationMs
+        && activePreviewImageTransition.easing === normalized.easing;
+    if (alreadyApplied) {
+        return;
+    }
+
+    const targets = [
+        previewImageLayer,
+        previewImageTransitionBuffer,
+        previewOverlayStack,
+        previewImage,
+    ];
+
+    if (normalized) {
+        const durationValue = `${Math.max(0, Math.round(normalized.durationMs))}ms`;
+        const easingValue = normalized.easing || IMAGE_TRANSITION_DEFAULT_EASING;
+        targets.forEach((element) => {
+            if (!element || !element.style) {
+                return;
+            }
+            element.style.setProperty('--image-transition-duration', durationValue);
+            element.style.setProperty('--image-transition-easing', easingValue);
+        });
+        activePreviewImageTransition = {
+            durationMs: normalized.durationMs,
+            easing: normalized.easing,
+        };
+        return;
+    }
+
+    if (!activePreviewImageTransition) {
+        return;
+    }
+
+    targets.forEach((element) => {
+        if (!element || !element.style) {
+            return;
+        }
+        element.style.removeProperty('--image-transition-duration');
+        element.style.removeProperty('--image-transition-easing');
+    });
+    activePreviewImageTransition = null;
+}
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');
@@ -316,6 +490,16 @@ const optionSliderConfigs = [
 ];
 
 const IMAGE_FRAME_DURATION = 1000;
+const IMAGE_TRANSITION_DEFAULT_DURATION = 240;
+const IMAGE_TRANSITION_MAX_DURATION = 4000;
+const IMAGE_TRANSITION_DEFAULT_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const IMAGE_TRANSITION_EASING_PRESETS = {
+    linear: 'linear',
+    ease: IMAGE_TRANSITION_DEFAULT_EASING,
+    'ease-in': 'cubic-bezier(0.4, 0, 1, 1)',
+    'ease-out': 'cubic-bezier(0, 0, 0.2, 1)',
+    'ease-in-out': IMAGE_TRANSITION_DEFAULT_EASING,
+};
 
 const optionSliderRegistry = new Map();
 
