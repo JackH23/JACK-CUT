@@ -2042,6 +2042,8 @@ function setPreviewImageVisibility(isVisible) {
     }
 }
 
+const overlayLanePipelines = new Map();
+
 function clearPreviewOverlayLayers() {
     if (!previewOverlayStack) {
         return;
@@ -2050,6 +2052,8 @@ function clearPreviewOverlayLayers() {
     if (typeof cancelOverlayPointerInteraction === 'function') {
         cancelOverlayPointerInteraction();
     }
+
+    resetOverlayLanePipelines();
 
     activeOverlayLayers.forEach((entry) => {
         if (!entry) {
@@ -2062,6 +2066,8 @@ function clearPreviewOverlayLayers() {
         entry.borderRadius = 0;
         entry.opacity = 1;
         entry.lastTimelineTime = null;
+        entry.timelineItem = null;
+        entry.pipelineLane = null;
         resetOverlayAnimationState(entry);
         if (entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
@@ -2094,6 +2100,68 @@ function clearPreviewOverlayLayers() {
 function resolveLaneIndex(laneValue) {
     const parsed = Number.parseInt(laneValue ?? '', 10);
     return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resetOverlayLanePipelines() {
+    overlayLanePipelines.clear();
+}
+
+function getOverlayLanePipeline(laneIndex) {
+    const normalizedLaneIndex = resolveLaneIndex(laneIndex);
+    let pipeline = overlayLanePipelines.get(normalizedLaneIndex);
+    if (!pipeline) {
+        pipeline = {
+            laneIndex: normalizedLaneIndex,
+            entries: new Map(),
+            lastUpdated: 0,
+        };
+        overlayLanePipelines.set(normalizedLaneIndex, pipeline);
+    }
+    return pipeline;
+}
+
+function updateOverlayLanePipelineEntry(laneIndex, item, state = {}) {
+    if (!item) {
+        return;
+    }
+
+    const pipeline = getOverlayLanePipeline(laneIndex);
+    const timestamp = Number.isFinite(state.timestamp) ? state.timestamp : null;
+    if (timestamp !== null) {
+        pipeline.lastUpdated = timestamp;
+    }
+
+    const payload = {
+        item,
+        entry: state.entry || null,
+        layerGroup: state.layerGroup || null,
+        zIndex: Number.isFinite(state.zIndex) ? state.zIndex : 0,
+        opacity: Number.isFinite(state.opacity) ? state.opacity : 1,
+        frame: state.frame || null,
+        animation: state.animation || null,
+        lastTimelineTime: timestamp,
+    };
+
+    pipeline.entries.set(item, payload);
+}
+
+function removeOverlayFromLanePipeline(laneIndex, item) {
+    if (!item) {
+        return;
+    }
+
+    const normalizedLaneIndex = resolveLaneIndex(
+        Number.isFinite(laneIndex) ? laneIndex : (item?.dataset?.laneIndex ?? laneIndex),
+    );
+    const pipeline = overlayLanePipelines.get(normalizedLaneIndex);
+    if (!pipeline) {
+        return;
+    }
+
+    pipeline.entries.delete(item);
+    if (pipeline.entries.size === 0) {
+        overlayLanePipelines.delete(normalizedLaneIndex);
+    }
 }
 
 function resolveOverlayFramePixels(timelineItem, viewportWidth, viewportHeight, options = {}) {
