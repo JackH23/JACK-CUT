@@ -422,6 +422,8 @@
                 renderedZIndex: null,
                 renderedRotation: null,
                 renderedAnimation: null,
+                timelineItem: descriptor.item || null,
+                pipelineLane: resolveLaneIndex(descriptor.laneIndex),
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -476,12 +478,23 @@
             || 'Overlay layer';
         layer.title = image.alt;
 
+        entry.timelineItem = descriptor.item;
+        entry.pipelineLane = resolveLaneIndex(descriptor.laneIndex);
+
         return entry;
     };
 
-    const hideOverlayLayerEntry = (entry) => {
+    const hideOverlayLayerEntry = (entry, timelineItem = null) => {
         if (!entry) {
             return;
+        }
+
+        const item = timelineItem || entry.timelineItem || null;
+        const laneHint = Number.isFinite(entry.pipelineLane)
+            ? entry.pipelineLane
+            : (item?.dataset?.laneIndex ?? null);
+        if (item) {
+            removeOverlayFromLanePipeline(laneHint, item);
         }
 
         entry.isVisible = false;
@@ -495,6 +508,8 @@
         entry.renderedOpacity = null;
         entry.renderedZIndex = null;
         entry.renderedRotation = null;
+        entry.timelineItem = null;
+        entry.pipelineLane = null;
         resetOverlayAnimationState(entry);
 
         if (entry.layer) {
@@ -552,7 +567,7 @@
             && previewTextEditorState.currentItem === descriptor.item;
 
         if (isEditingDefaultText) {
-            hideOverlayLayerEntry(entry);
+            hideOverlayLayerEntry(entry, descriptor.item);
             return false;
         }
 
@@ -662,6 +677,16 @@
         );
         applyOverlayAnimationTransform(entry, animationTransform);
 
+        updateOverlayLanePipelineEntry(entry.pipelineLane, descriptor.item, {
+            entry,
+            layerGroup: groupName,
+            zIndex: targetZIndex,
+            opacity: entry.opacity,
+            frame: resolvedFrame,
+            animation: entry.renderedAnimation,
+            timestamp: safeTimelineNow,
+        });
+
         const isActiveItem = descriptor.item === activeTimelineItem;
         const isPointerTarget = overlayPointerState.pointerId !== null
             && overlayPointerState.timelineItem === descriptor.item;
@@ -702,6 +727,17 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                fallbackEntry.timelineItem = descriptor.item;
+                fallbackEntry.pipelineLane = resolveLaneIndex(descriptor.laneIndex);
+                updateOverlayLanePipelineEntry(fallbackEntry.pipelineLane, descriptor.item, {
+                    entry: fallbackEntry,
+                    layerGroup: fallbackEntry.layerGroup,
+                    zIndex,
+                    opacity: fallbackEntry.opacity,
+                    frame: fallbackEntry.frame,
+                    animation: fallbackEntry.renderedAnimation,
+                    timestamp: safeTimelineNow,
+                });
             }
         });
     }
@@ -726,6 +762,17 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                fallbackEntry.timelineItem = descriptor.item;
+                fallbackEntry.pipelineLane = resolveLaneIndex(descriptor.laneIndex);
+                updateOverlayLanePipelineEntry(fallbackEntry.pipelineLane, descriptor.item, {
+                    entry: fallbackEntry,
+                    layerGroup: fallbackEntry.layerGroup,
+                    zIndex,
+                    opacity: fallbackEntry.opacity,
+                    frame: fallbackEntry.frame,
+                    animation: fallbackEntry.renderedAnimation,
+                    timestamp: safeTimelineNow,
+                });
             }
         });
     }
@@ -737,7 +784,7 @@
             return;
         }
         if (!nextActiveItems.has(item)) {
-            hideOverlayLayerEntry(entry);
+            hideOverlayLayerEntry(entry, item);
         }
     });
     staleItems.forEach((item) => {
@@ -745,6 +792,11 @@
         if (entry && entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
+        }
+        if (entry) {
+            removeOverlayFromLanePipeline(entry.pipelineLane, item);
+            entry.timelineItem = null;
+            entry.pipelineLane = null;
         }
         activeOverlayLayers.delete(item);
     });
@@ -771,69 +823,89 @@ function getActiveOverlayLayerSnapshots() {
     const snapshots = [];
     const groupPriority = { below: 0, above: 1 };
 
-    activeOverlayLayers.forEach((entry) => {
-        if (!entry || !entry.isVisible || !entry.frame) {
-            return;
-        }
-
-        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
-            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
-            if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
+    overlayLanePipelines.forEach((pipeline) => {
+        pipeline.entries.forEach((state) => {
+            const entry = state.entry;
+            if (!entry || !entry.isVisible) {
                 return;
             }
-        }
 
-        const { image } = entry;
-        if (!image || !image.complete) {
-            return;
-        }
+            const frame = entry.frame || state.frame;
+            if (!frame) {
+                return;
+            }
 
-        const liveOpacity = Number.isFinite(entry.renderedOpacity)
-            ? entry.renderedOpacity
-            : computeOverlayEntryOpacity(entry);
-        entry.opacity = liveOpacity;
-        if (liveOpacity <= 0) {
-            return;
-        }
-
-        const naturalWidth = Math.max(0, image.naturalWidth || 0);
-        const naturalHeight = Math.max(0, image.naturalHeight || 0);
-        if (naturalWidth <= 0 || naturalHeight <= 0) {
-            return;
-        }
-
-        const frameWidth = Math.max(0, entry.frame.width || 0);
-        const frameHeight = Math.max(0, entry.frame.height || 0);
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            return;
-        }
-
-        const group = entry.layerGroup === 'below' ? 'below' : 'above';
-
-        const animation = entry.renderedAnimation || null;
-
-        snapshots.push({
-            image,
-            frame: {
-                left: entry.frame.left,
-                top: entry.frame.top,
-                width: frameWidth,
-                height: frameHeight,
-                rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
-            },
-            group,
-            zIndex: Number.isFinite(entry.zIndex) ? entry.zIndex : 0,
-            borderRadius: Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0,
-            opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
-            priority: groupPriority[group] ?? 1,
-            animation: animation
-                ? {
-                    translateX: Number.isFinite(animation.translateX) ? animation.translateX : 0,
-                    translateY: Number.isFinite(animation.translateY) ? animation.translateY : 0,
-                    scale: Number.isFinite(animation.scale) ? animation.scale : 1,
-                    rotate: Number.isFinite(animation.rotate) ? animation.rotate : 0,
+            const lastTime = Number.isFinite(entry.lastTimelineTime)
+                ? entry.lastTimelineTime
+                : (Number.isFinite(state.lastTimelineTime) ? state.lastTimelineTime : null);
+            if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(lastTime)) {
+                const age = Math.abs(lastOverlayRenderTimestamp - lastTime);
+                if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
+                    return;
                 }
-                : null,
+            }
+
+            const { image } = entry;
+            if (!image || !image.complete) {
+                return;
+            }
+
+            const liveOpacity = Number.isFinite(entry.renderedOpacity)
+                ? entry.renderedOpacity
+                : computeOverlayEntryOpacity(entry);
+            entry.opacity = liveOpacity;
+            if (liveOpacity <= 0) {
+                return;
+            }
+
+            const naturalWidth = Math.max(0, image.naturalWidth || 0);
+            const naturalHeight = Math.max(0, image.naturalHeight || 0);
+            if (naturalWidth <= 0 || naturalHeight <= 0) {
+                return;
+            }
+
+            const frameWidth = Math.max(0, frame.width || 0);
+            const frameHeight = Math.max(0, frame.height || 0);
+            if (frameWidth <= 0 || frameHeight <= 0) {
+                return;
+            }
+
+            const groupName = (state.layerGroup || entry.layerGroup) === 'below' ? 'below' : 'above';
+            const animation = entry.renderedAnimation || state.animation || null;
+            const zIndex = Number.isFinite(state.zIndex)
+                ? state.zIndex
+                : (Number.isFinite(entry.zIndex) ? entry.zIndex : 0);
+            const borderRadius = Number.isFinite(entry.borderRadius)
+                ? entry.borderRadius
+                : (Number.isFinite(state.borderRadius) ? state.borderRadius : 0);
+            const laneIndex = Number.isFinite(entry.pipelineLane)
+                ? entry.pipelineLane
+                : pipeline.laneIndex;
+
+            snapshots.push({
+                image,
+                frame: {
+                    left: frame.left,
+                    top: frame.top,
+                    width: frameWidth,
+                    height: frameHeight,
+                    rotation: Number.isFinite(frame.rotation) ? frame.rotation : 0,
+                },
+                group: groupName,
+                zIndex,
+                borderRadius: Number.isFinite(borderRadius) ? borderRadius : 0,
+                opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+                priority: groupPriority[groupName] ?? 1,
+                laneIndex,
+                animation: animation
+                    ? {
+                        translateX: Number.isFinite(animation.translateX) ? animation.translateX : 0,
+                        translateY: Number.isFinite(animation.translateY) ? animation.translateY : 0,
+                        scale: Number.isFinite(animation.scale) ? animation.scale : 1,
+                        rotate: Number.isFinite(animation.rotate) ? animation.rotate : 0,
+                    }
+                    : null,
+            });
         });
     });
 
@@ -843,6 +915,9 @@ function getActiveOverlayLayerSnapshots() {
         }
         if (a.zIndex !== b.zIndex) {
             return a.zIndex - b.zIndex;
+        }
+        if (a.laneIndex !== b.laneIndex) {
+            return a.laneIndex - b.laneIndex;
         }
         return 0;
     });
