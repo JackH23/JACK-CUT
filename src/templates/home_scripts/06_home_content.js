@@ -607,6 +607,10 @@
 
         const groupName = getDescriptorLayerGroup(descriptor);
 
+        if (entry.layerGroup && entry.layerGroup !== groupName) {
+            resetOverlayAnimationState(entry);
+        }
+
         let appliedFrameStyles = null;
         let rotationValue = '0deg';
 
@@ -683,7 +687,9 @@
             zIndex: targetZIndex,
             opacity: entry.opacity,
             frame: resolvedFrame,
-            animation: entry.renderedAnimation,
+            animation: entry.renderedAnimation
+                ? { ...entry.renderedAnimation }
+                : null,
             timestamp: safeTimelineNow,
         });
 
@@ -725,7 +731,11 @@
                     : computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
-                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                const nextGroup = getDescriptorLayerGroup(descriptor);
+                if (fallbackEntry.layerGroup && fallbackEntry.layerGroup !== nextGroup) {
+                    resetOverlayAnimationState(fallbackEntry);
+                }
+                fallbackEntry.layerGroup = nextGroup;
                 fallbackEntry.zIndex = zIndex;
                 fallbackEntry.timelineItem = descriptor.item;
                 fallbackEntry.pipelineLane = resolveLaneIndex(descriptor.laneIndex);
@@ -735,7 +745,9 @@
                     zIndex,
                     opacity: fallbackEntry.opacity,
                     frame: fallbackEntry.frame,
-                    animation: fallbackEntry.renderedAnimation,
+                    animation: fallbackEntry.renderedAnimation
+                        ? { ...fallbackEntry.renderedAnimation }
+                        : null,
                     timestamp: safeTimelineNow,
                 });
             }
@@ -760,7 +772,11 @@
                     : computeOverlayEntryOpacity(fallbackEntry);
                 nextActiveItems.add(descriptor.item);
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
-                fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
+                const nextGroup = getDescriptorLayerGroup(descriptor);
+                if (fallbackEntry.layerGroup && fallbackEntry.layerGroup !== nextGroup) {
+                    resetOverlayAnimationState(fallbackEntry);
+                }
+                fallbackEntry.layerGroup = nextGroup;
                 fallbackEntry.zIndex = zIndex;
                 fallbackEntry.timelineItem = descriptor.item;
                 fallbackEntry.pipelineLane = resolveLaneIndex(descriptor.laneIndex);
@@ -770,7 +786,9 @@
                     zIndex,
                     opacity: fallbackEntry.opacity,
                     frame: fallbackEntry.frame,
-                    animation: fallbackEntry.renderedAnimation,
+                    animation: fallbackEntry.renderedAnimation
+                        ? { ...fallbackEntry.renderedAnimation }
+                        : null,
                     timestamp: safeTimelineNow,
                 });
             }
@@ -2155,13 +2173,11 @@ function evaluateImageBlurKeyframes(keyframes, progress = 0) {
         return DEFAULT_IMAGE_BLUR;
     }
 
-    if (sorted.length === 1) {
-        return clampImageBlur(sorted[0].blur, { snapToInteger: false });
-    }
-
     const first = sorted[0];
+    let resolved = clampImageBlur(first.blur, { snapToInteger: false });
+
     if (safeProgress <= first.progress + KEYFRAME_PROGRESS_TOLERANCE) {
-        return clampImageBlur(first.blur, { snapToInteger: false });
+        return resolved;
     }
 
     for (let index = 1; index < sorted.length; index += 1) {
@@ -2170,27 +2186,18 @@ function evaluateImageBlurKeyframes(keyframes, progress = 0) {
             continue;
         }
 
-        if (safeProgress <= current.progress + KEYFRAME_PROGRESS_TOLERANCE) {
-            const previous = sorted[index - 1];
-            if (!previous) {
-                return clampImageBlur(current.blur, { snapToInteger: false });
-            }
+        if ((safeProgress + KEYFRAME_PROGRESS_TOLERANCE) < current.progress) {
+            break;
+        }
 
-            const span = current.progress - previous.progress;
-            if (Math.abs(span) <= KEYFRAME_PROGRESS_TOLERANCE) {
-                return clampImageBlur(current.blur, { snapToInteger: false });
-            }
+            resolved = clampImageBlur(current.blur, { snapToInteger: false });
 
-            const ratio = (safeProgress - previous.progress) / span;
-            const easedRatio = easeKeyframeProgress(ratio);
-            const interpolated = previous.blur
-                + ((current.blur - previous.blur) * easedRatio);
-            return clampImageBlur(interpolated, { snapToInteger: false });
+            if (safeProgress <= current.progress + KEYFRAME_PROGRESS_TOLERANCE) {
+            return resolved;
         }
     }
 
-    const last = sorted[sorted.length - 1];
-    return clampImageBlur(last.blur, { snapToInteger: false });
+    return resolved;
 }
 
 function getTimelineItemImageBlurKeyframes(timelineItem) {

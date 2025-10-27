@@ -2506,6 +2506,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .preview-overlay-stack__group {
     position: absolute;
     inset: 0;
+    contain: layout paint style;
+    isolation: isolate;
 }
 
 .preview-overlay-stack__group--below {
@@ -2523,6 +2525,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     pointer-events: auto;
     cursor: pointer;
     touch-action: none;
+    contain: layout paint;
+    isolation: isolate;
+    will-change: transform, opacity;
 }
 
 .preview-overlay-layer.is-active {
@@ -2562,6 +2567,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
         )
         scale(var(--overlay-animation-scale, 1));
     pointer-events: none;
+    will-change: transform;
 }
 
 .preview-overlay-layer .preview-resize-handle {
