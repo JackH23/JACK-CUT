@@ -327,7 +327,6 @@ function getOptionSliderController(inputId) {
 }
 
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
-const DEFAULT_CANVAS_BLUR = 18;
 const CANVAS_BLUR_MIN = 0;
 const CANVAS_BLUR_MAX = 40;
 const DEFAULT_IMAGE_BLUR = 0;
@@ -2021,9 +2020,7 @@ function getTimelineItemCanvasSettings(timelineItem) {
     const mode = sanitizeCanvasMode(dataset.canvasMode);
     const hasStoredBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
     const rawBlur = hasStoredBlur ? Number(dataset.canvasBlur) : Number.NaN;
-    const blur = mode === 'none'
-        ? clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : 0)
-        : clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : DEFAULT_CANVAS_BLUR);
+    const blur = clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : 0);
     const customImageUrl = dataset.canvasCustomImage || '';
     const customImageName = dataset.canvasCustomImageName || '';
     const expandBlur = dataset.canvasBlurExpand === 'true';

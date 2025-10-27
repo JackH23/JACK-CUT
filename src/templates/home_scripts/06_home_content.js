@@ -690,6 +690,7 @@
             animation: entry.renderedAnimation
                 ? { ...entry.renderedAnimation }
                 : null,
+            borderRadius: entry.borderRadius,
             timestamp: safeTimelineNow,
         });
 
@@ -748,6 +749,7 @@
                     animation: fallbackEntry.renderedAnimation
                         ? { ...fallbackEntry.renderedAnimation }
                         : null,
+                    borderRadius: fallbackEntry.borderRadius,
                     timestamp: safeTimelineNow,
                 });
             }
@@ -789,6 +791,7 @@
                     animation: fallbackEntry.renderedAnimation
                         ? { ...fallbackEntry.renderedAnimation }
                         : null,
+                    borderRadius: fallbackEntry.borderRadius,
                     timestamp: safeTimelineNow,
                 });
             }
@@ -848,7 +851,7 @@ function getActiveOverlayLayerSnapshots() {
                 return;
             }
 
-            const frame = entry.frame || state.frame;
+            const frame = state.frame || entry.frame;
             if (!frame) {
                 return;
             }
@@ -868,11 +871,16 @@ function getActiveOverlayLayerSnapshots() {
                 return;
             }
 
-            const liveOpacity = Number.isFinite(entry.renderedOpacity)
-                ? entry.renderedOpacity
-                : computeOverlayEntryOpacity(entry);
-            entry.opacity = liveOpacity;
-            if (liveOpacity <= 0) {
+            const storedOpacity = Number.isFinite(state.opacity)
+                ? state.opacity
+                : (Number.isFinite(entry.renderedOpacity)
+                    ? entry.renderedOpacity
+                    : computeOverlayEntryOpacity(entry));
+            const normalizedOpacity = Number.isFinite(storedOpacity)
+                ? Math.min(Math.max(storedOpacity, 0), 1)
+                : 0;
+            entry.opacity = normalizedOpacity;
+            if (normalizedOpacity <= 0) {
                 return;
             }
 
@@ -888,17 +896,18 @@ function getActiveOverlayLayerSnapshots() {
                 return;
             }
 
-            const groupName = (state.layerGroup || entry.layerGroup) === 'below' ? 'below' : 'above';
-            const animation = entry.renderedAnimation || state.animation || null;
+            const groupSource = state.layerGroup || entry.layerGroup;
+            const groupName = groupSource === 'below' ? 'below' : 'above';
+            const animation = state.animation || entry.renderedAnimation || null;
             const zIndex = Number.isFinite(state.zIndex)
                 ? state.zIndex
                 : (Number.isFinite(entry.zIndex) ? entry.zIndex : 0);
-            const borderRadius = Number.isFinite(entry.borderRadius)
-                ? entry.borderRadius
-                : (Number.isFinite(state.borderRadius) ? state.borderRadius : 0);
-            const laneIndex = Number.isFinite(entry.pipelineLane)
-                ? entry.pipelineLane
-                : pipeline.laneIndex;
+            const borderRadius = Number.isFinite(state.borderRadius)
+                ? state.borderRadius
+                : (Number.isFinite(entry.borderRadius) ? entry.borderRadius : 0);
+            const laneIndex = Number.isFinite(state.laneIndex)
+                ? state.laneIndex
+                : (Number.isFinite(entry.pipelineLane) ? entry.pipelineLane : pipeline.laneIndex);
 
             snapshots.push({
                 image,
@@ -911,8 +920,8 @@ function getActiveOverlayLayerSnapshots() {
                 },
                 group: groupName,
                 zIndex,
-                borderRadius: Number.isFinite(borderRadius) ? borderRadius : 0,
-                opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+                borderRadius: Number.isFinite(borderRadius) ? Math.max(borderRadius, 0) : 0,
+                opacity: normalizedOpacity,
                 priority: groupPriority[groupName] ?? 1,
                 laneIndex,
                 animation: animation
