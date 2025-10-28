@@ -1,25 +1,27 @@
         canvasBlurInput.setAttribute('aria-disabled', 'true');
         canvasBlurInput.value = '0';
         updateCanvasBlurReadout(0, { disabled: true });
-        updateCanvasBlurExpandUI({ blur: 0, disabled: true, expandEnabled: false });
+        updateCanvasBlurExpandUI({ blur: 0, disabled: true, expandEnabled: false, manual: false });
         return;
     }
 
     const settings = getTimelineItemCanvasSettings(timelineItem);
     const isDisabled = settings.mode === 'none';
+    const manualBlur = !isDisabled && Boolean(settings.manualBlur);
     canvasBlurInput.disabled = isDisabled;
     if (isDisabled) {
         canvasBlurInput.setAttribute('aria-disabled', 'true');
     } else {
         canvasBlurInput.removeAttribute('aria-disabled');
     }
-    const blurValue = isDisabled ? 0 : settings.blur;
+    const blurValue = manualBlur ? settings.blur : 0;
     canvasBlurInput.value = String(blurValue);
     updateCanvasBlurReadout(blurValue, { disabled: isDisabled });
     updateCanvasBlurExpandUI({
         blur: blurValue,
         disabled: isDisabled,
-        expandEnabled: Boolean(settings.expandBlur),
+        expandEnabled: manualBlur && Boolean(settings.expandBlur),
+        manual: manualBlur,
     });
 }
 
@@ -167,6 +169,8 @@ function syncCanvasControlsToTimelineItem(timelineItem) {
     syncImageBlurControlState(timelineItem || null);
 }
 
+let currentPreviewCanvasBlur = 0;
+
 function setCanvasBackdropVisibility(isVisible) {
     if (!previewCanvasBackdrop) {
         return;
@@ -183,10 +187,15 @@ function setCanvasBackdropVisibility(isVisible) {
 }
 
 function applyCanvasBlurToPreview(blur) {
+    const clamped = clampCanvasBlur(blur);
+    if (clamped === currentPreviewCanvasBlur) {
+        return;
+    }
+    currentPreviewCanvasBlur = clamped;
     if (!previewCanvasBackdrop) {
         return;
     }
-    const clamped = clampCanvasBlur(blur);
+    
     previewCanvasBackdrop.style.setProperty('--canvas-blur-radius', `${clamped}px`);
 }
 
@@ -259,12 +268,14 @@ function refreshCanvasBackdropExpansion(options = {}) {
         : false;
     const settings = timelineItem ? getTimelineItemCanvasSettings(timelineItem) : null;
     const mode = settings?.mode || 'none';
-    const blurValue = blurOverride !== null && blurOverride !== undefined
+    const manualBlur = Boolean(settings?.manualBlur);
+    const baseBlur = manualBlur ? clampCanvasBlur(settings?.blur ?? 0) : 0;
+    const blurValue = manualBlur && blurOverride !== null && blurOverride !== undefined
         ? clampCanvasBlur(blurOverride)
-        : clampCanvasBlur(settings?.blur ?? 0);
-    const expandEnabled = expandOverride !== null && expandOverride !== undefined
+        : baseBlur;
+    const expandEnabled = manualBlur && expandOverride !== null && expandOverride !== undefined
         ? Boolean(expandOverride)
-        : Boolean(settings?.expandBlur);
+        : (manualBlur ? Boolean(settings?.expandBlur) : false);
 
     if (!isClip || mode === 'none' || !expandEnabled || blurValue <= CANVAS_BLUR_MIN) {
         previewCanvasBackdrop.style.removeProperty('--canvas-backdrop-scale');
@@ -344,7 +355,11 @@ function applyCanvasSettingsToPreview(timelineItem) {
         return;
     }
 
-    applyCanvasBlurToPreview(settings.blur);
+    const manualBlur = Boolean(settings.manualBlur);
+    const blurToApply = manualBlur ? settings.blur : 0;
+    const expandEnabled = manualBlur && Boolean(settings.expandBlur);
+
+    applyCanvasBlurToPreview(blurToApply);
     previewCanvasBackdrop.dataset.mode = settings.mode;
     if (settings.mode === 'custom') {
         previewCanvasBackdrop.dataset.source = 'image';
@@ -373,7 +388,11 @@ function applyCanvasSettingsToPreview(timelineItem) {
             previewCanvasImage.hidden = false;
         }
         setCanvasBackdropVisibility(true);
-        refreshCanvasBackdropExpansion({ timelineItem, blurOverride: settings.blur });
+        refreshCanvasBackdropExpansion({
+            timelineItem,
+            blurOverride: blurToApply,
+            expandOverride: expandEnabled,
+        });
         return;
     }
 
@@ -418,7 +437,11 @@ function applyCanvasSettingsToPreview(timelineItem) {
 
     syncCanvasVideoToPreview();
     setCanvasBackdropVisibility(true);
-    refreshCanvasBackdropExpansion({ timelineItem, blurOverride: settings.blur });
+    refreshCanvasBackdropExpansion({
+        timelineItem,
+        blurOverride: blurToApply,
+        expandOverride: expandEnabled,
+    });
 }
 
 function isCanvasBackdropUsingClipVideo() {
@@ -500,13 +523,12 @@ if (canvasBackgroundModeSelect) {
             return;
         }
 
-        const dataset = activeTimelineItem.dataset || {};
-        const hadBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
-
-        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: sanitized });
-        if (!hadBlur && sanitized !== 'none') {
-            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
+        const persistOptions = { mode: sanitized };
+        if (sanitized === 'none') {
+            persistOptions.manualBlur = false;
         }
+
+        persistTimelineItemCanvasSettings(activeTimelineItem, persistOptions);
 
         syncCanvasBlurControlState(activeTimelineItem);
         syncCanvasCustomImageControls(activeTimelineItem);
@@ -545,9 +567,6 @@ if (canvasBackgroundUploadInput) {
         const objectURL = URL.createObjectURL(file);
         setTimelineItemCanvasCustomImage(activeTimelineItem, file, objectURL);
         persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'custom' });
-        if (!Object.prototype.hasOwnProperty.call(activeTimelineItem.dataset || {}, 'canvasBlur')) {
-            persistTimelineItemCanvasSettings(activeTimelineItem, { blur: DEFAULT_CANVAS_BLUR });
-        }
         if (canvasBackgroundModeSelect) {
             canvasBackgroundModeSelect.disabled = false;
             canvasBackgroundModeSelect.removeAttribute('aria-disabled');
@@ -565,7 +584,7 @@ if (canvasBackgroundRemoveButton) {
             return;
         }
         releaseTimelineCanvasCustomImage(activeTimelineItem);
-        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'none' });
+        persistTimelineItemCanvasSettings(activeTimelineItem, { mode: 'none', manualBlur: false });
         if (canvasBackgroundModeSelect) {
             canvasBackgroundModeSelect.value = 'none';
         }
@@ -584,13 +603,22 @@ if (canvasBlurInput) {
         if (!activeTimelineItem || isDisabled) {
             return;
         }
-        persistTimelineItemCanvasSettings(activeTimelineItem, { blur: clamped });
+        persistTimelineItemCanvasSettings(activeTimelineItem, {
+            blur: clamped,
+            manualBlur: true,
+        });
         applyCanvasBlurToPreview(clamped);
-        refreshCanvasBackdropExpansion({ timelineItem: activeTimelineItem, blurOverride: clamped });
+        const expandChecked = Boolean(canvasBlurExpandToggle?.checked);
+        refreshCanvasBackdropExpansion({
+            timelineItem: activeTimelineItem,
+            blurOverride: clamped,
+            expandOverride: expandChecked,
+        });
         updateCanvasBlurExpandUI({
             blur: clamped,
             disabled: isDisabled,
-            expandEnabled: Boolean(canvasBlurExpandToggle?.checked),
+            expandEnabled: expandChecked,
+            manual: true,
         });
     };
 
@@ -603,11 +631,21 @@ if (canvasBlurExpandToggle) {
         if (!activeTimelineItem || canvasBlurExpandToggle.disabled) {
             return;
         }
+        const settings = getTimelineItemCanvasSettings(activeTimelineItem);
+        if (!settings.manualBlur) {
+            return;
+        }
         const isChecked = canvasBlurExpandToggle.checked;
         persistTimelineItemCanvasSettings(activeTimelineItem, { expandBlur: isChecked });
         refreshCanvasBackdropExpansion({
             timelineItem: activeTimelineItem,
             expandOverride: isChecked,
+        });
+        updateCanvasBlurExpandUI({
+            blur: settings.blur,
+            disabled: false,
+            expandEnabled: isChecked,
+            manual: true,
         });
     };
 

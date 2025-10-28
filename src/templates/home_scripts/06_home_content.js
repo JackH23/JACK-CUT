@@ -382,8 +382,11 @@
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
             layer.classList.add('preview-overlay-layer');
+            layer.style.setProperty('contain', 'layout paint style');
+            layer.style.setProperty('will-change', 'transform, opacity');
             const content = document.createElement('div');
             content.className = 'preview-overlay-content';
+            content.style.setProperty('will-change', 'transform, opacity');
             layer.appendChild(content);
             const image = document.createElement('img');
             try {
@@ -393,6 +396,7 @@
             }
             image.loading = 'eager';
             image.draggable = false;
+            image.style.setProperty('will-change', 'transform, opacity');
             content.appendChild(image);
             ['n', 's', 'e', 'w', 'nw', 'ne', 'se', 'sw'].forEach((direction) => {
                 const handle = document.createElement('button');
@@ -434,6 +438,7 @@
             content.className = 'preview-overlay-content';
             layer.insertBefore(content, layer.firstChild);
             content.appendChild(image);
+            content.style.setProperty('will-change', 'transform, opacity');
             entry.content = content;
         }
 
@@ -567,12 +572,22 @@
             ? getTimelineItemKeyframeTransformAtProgress(descriptor.item, overlayProgress)
             : null;
 
-        const frame = resolveOverlayFramePixels(
+        let frame = resolveOverlayFramePixels(
             descriptor.item,
             viewportWidth,
             viewportHeight,
             { normalizedTransform },
         );
+
+        if (!frame && entry.frame) {
+            frame = {
+                left: entry.frame.left,
+                top: entry.frame.top,
+                width: entry.frame.width,
+                height: entry.frame.height,
+                rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+            };
+        }
 
         const resolvedFrame = frame
             ? {

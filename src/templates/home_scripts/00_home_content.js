@@ -1978,7 +1978,12 @@ function updateImageBlurReadout(value, options = {}) {
     imageBlurValue.textContent = clamped <= 0 ? 'Off' : `${formatBlurRadius(clamped)}px`;
 }
 
-function updateCanvasBlurExpandUI({ blur = 0, disabled = true, expandEnabled = false } = {}) {
+function updateCanvasBlurExpandUI({
+    blur = 0,
+    disabled = true,
+    expandEnabled = false,
+    manual = false,
+} = {}) {
     if (!canvasBlurExpandToggle) {
         if (canvasBlurExpandContainer) {
             canvasBlurExpandContainer.hidden = true;
@@ -1987,7 +1992,7 @@ function updateCanvasBlurExpandUI({ blur = 0, disabled = true, expandEnabled = f
     }
 
     const resolvedBlur = clampCanvasBlur(blur);
-    const isDisabled = Boolean(disabled);
+    const isDisabled = Boolean(disabled || !manual);
     const shouldReveal = !isDisabled && resolvedBlur > CANVAS_BLUR_MIN;
 
     canvasBlurExpandToggle.checked = Boolean(expandEnabled);
@@ -2011,6 +2016,7 @@ function getTimelineItemCanvasSettings(timelineItem) {
         customImageUrl: '',
         customImageName: '',
         expandBlur: false,
+        manualBlur: false,
     };
 
     if (!timelineItem) {
@@ -2021,9 +2027,10 @@ function getTimelineItemCanvasSettings(timelineItem) {
     const mode = sanitizeCanvasMode(dataset.canvasMode);
     const hasStoredBlur = Object.prototype.hasOwnProperty.call(dataset, 'canvasBlur');
     const rawBlur = hasStoredBlur ? Number(dataset.canvasBlur) : Number.NaN;
-    const blur = mode === 'none'
-        ? clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : 0)
-        : clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : DEFAULT_CANVAS_BLUR);
+    const manualBlur = dataset.canvasBlurManual === 'true' && mode !== 'none';
+    const blur = manualBlur
+        ? clampCanvasBlur(Number.isFinite(rawBlur) ? rawBlur : DEFAULT_CANVAS_BLUR)
+        : 0;
     const customImageUrl = dataset.canvasCustomImage || '';
     const customImageName = dataset.canvasCustomImageName || '';
     const expandBlur = dataset.canvasBlurExpand === 'true';
@@ -2039,6 +2046,7 @@ function getTimelineItemCanvasSettings(timelineItem) {
             customImageUrl: '',
             customImageName: '',
             expandBlur: false,
+            manualBlur: false,
         };
     }
 
@@ -2047,7 +2055,8 @@ function getTimelineItemCanvasSettings(timelineItem) {
         blur,
         customImageUrl,
         customImageName,
-        expandBlur,
+        expandBlur: manualBlur ? expandBlur : false,
+        manualBlur,
     };
 }
 
@@ -2068,6 +2077,15 @@ function persistTimelineItemCanvasSettings(timelineItem, settings) {
     if (Object.prototype.hasOwnProperty.call(settings, 'blur')) {
         const blur = clampCanvasBlur(settings.blur);
         timelineItem.dataset.canvasBlur = String(blur);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'manualBlur')) {
+        if (settings.manualBlur) {
+            timelineItem.dataset.canvasBlurManual = 'true';
+        } else {
+            delete timelineItem.dataset.canvasBlurManual;
+            delete timelineItem.dataset.canvasBlur;
+        }
     }
 
     if (Object.prototype.hasOwnProperty.call(settings, 'customImageUrl')) {
@@ -2140,7 +2158,7 @@ function setTimelineItemCanvasCustomImage(timelineItem, file, objectURL) {
 
 function syncCanvasBlurControlState(timelineItem) {
     if (!canvasBlurInput || !canvasBlurValue) {
-        updateCanvasBlurExpandUI({ blur: 0, disabled: true, expandEnabled: false });
+        updateCanvasBlurExpandUI({ blur: 0, disabled: true, expandEnabled: false, manual: false });
         return;
     }
 
