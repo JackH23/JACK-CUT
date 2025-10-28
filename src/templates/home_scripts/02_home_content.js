@@ -591,7 +591,20 @@ function releaseTimelineAudio(objectURL) {
 const previewTransitionBufferState = {
     finalizeHandler: null,
     fallbackTimer: 0,
+    fallbackDelay: 0,
+    pendingFadeOutHandler: null,
+    isFading: false,
 };
+
+function notifyPreviewFrameCompositionInvalidated() {
+    if (typeof markPreviewFrameCompositionDirty === 'function') {
+        try {
+            markPreviewFrameCompositionDirty();
+        } catch (error) {
+            // Ignore composition invalidation failures.
+        }
+    }
+}
 
 function resetPreviewTransitionBufferElement() {
     if (!previewImageTransitionBuffer) {
@@ -604,6 +617,7 @@ function resetPreviewTransitionBufferElement() {
     previewImageTransitionBuffer.style.removeProperty('--preview-image-rotation');
     previewImageTransitionBuffer.style.removeProperty('--preview-image-blur');
     previewImageTransitionBuffer.style.removeProperty('filter');
+    notifyPreviewFrameCompositionInvalidated();
 }
 
 function cleanupPreviewTransitionBuffer() {
@@ -619,6 +633,9 @@ function cleanupPreviewTransitionBuffer() {
         window.clearTimeout(previewTransitionBufferState.fallbackTimer);
         previewTransitionBufferState.fallbackTimer = 0;
     }
+    previewTransitionBufferState.fallbackDelay = 0;
+    previewTransitionBufferState.pendingFadeOutHandler = null;
+    previewTransitionBufferState.isFading = false;
     resetPreviewTransitionBufferElement();
 }
 
@@ -644,6 +661,7 @@ function stagePreviewTransitionBuffer(options = {}) {
     previewImageTransitionBuffer.hidden = false;
     previewImageTransitionBuffer.classList.remove('is-fading-out');
     previewImageTransitionBuffer.classList.add('is-visible');
+    previewImageTransitionBuffer.style.removeProperty('filter');
 
     let computedStyle = null;
     if (window.getComputedStyle) {
@@ -658,11 +676,7 @@ function stagePreviewTransitionBuffer(options = {}) {
         || (computedStyle ? computedStyle.getPropertyValue('--preview-image-rotation') : '')
         || '0deg';
     previewImageTransitionBuffer.style.setProperty('--preview-image-rotation', rotationValue);
-
-    const blurValue = previewImage.style.getPropertyValue('--preview-image-blur')
-        || (computedStyle ? computedStyle.getPropertyValue('--preview-image-blur') : '')
-        || '0px';
-    previewImageTransitionBuffer.style.setProperty('--preview-image-blur', blurValue);
+    previewImageTransitionBuffer.style.setProperty('--preview-image-blur', '0px');
 
     if (previewImageTransform && typeof previewImageTransform === 'object') {
         try {
@@ -689,14 +703,47 @@ function stagePreviewTransitionBuffer(options = {}) {
     previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
     previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    const fallbackDelay = Math.max(480, Number(options.timeoutMs) || 720);
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, fallbackDelay);
+    previewTransitionBufferState.fallbackDelay = Math.max(480, Number(options.timeoutMs) || 720);
+    previewTransitionBufferState.pendingFadeOutHandler = ({ immediate: fadeImmediate = false } = {}) => {
+        if (!previewImageTransitionBuffer) {
+            return;
+        }
 
-    if (shouldAnimate) {
+        if (previewTransitionBufferState.fallbackTimer) {
+            window.clearTimeout(previewTransitionBufferState.fallbackTimer);
+            previewTransitionBufferState.fallbackTimer = 0;
+        }
+
+        if (fadeImmediate || !shouldAnimate) {
+            finalize();
+            return;
+        }
+
+        if (previewTransitionBufferState.isFading) {
+            return;
+        }
+
+        previewTransitionBufferState.isFading = true;
+        previewTransitionBufferState.fallbackTimer = window.setTimeout(
+            finalize,
+            previewTransitionBufferState.fallbackDelay,
+        );
         requestAnimationFrame(() => {
+            if (!previewImageTransitionBuffer) {
+                return;
+            }
             previewImageTransitionBuffer.classList.add('is-fading-out');
+            notifyPreviewFrameCompositionInvalidated();
         });
+    };
+
+    if (!shouldAnimate) {
+        previewTransitionBufferState.pendingFadeOutHandler({ immediate: true });
+    } else {
+        notifyPreviewFrameCompositionInvalidated();
     }
+
+    return previewTransitionBufferState.pendingFadeOutHandler;
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -732,7 +779,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
-    stagePreviewTransitionBuffer({ immediate });
+    const triggerTransitionFadeOut = stagePreviewTransitionBuffer({ immediate });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
@@ -767,6 +814,12 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     }
                 });
             }
+
+            if (typeof triggerTransitionFadeOut === 'function') {
+                triggerTransitionFadeOut({ immediate: shouldCleanupTransitionBuffer });
+            }
+
+            notifyPreviewFrameCompositionInvalidated();
             resolve();
         };
 

@@ -173,6 +173,16 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
 let previewImageFrameUpdateHandle = 0;
 let pendingPreviewImageFrameState = null;
 
+function invalidatePreviewFrameComposition() {
+    if (typeof markPreviewFrameCompositionDirty === 'function') {
+        try {
+            markPreviewFrameCompositionDirty();
+        } catch (error) {
+            // Ignore composition invalidation failures.
+        }
+    }
+}
+
 function commitPreviewImageFrameState(state) {
     if (!state || !previewImageFrame || !previewImageTransform) {
         hidePreviewOutsideOutline();
@@ -242,6 +252,7 @@ function commitPreviewImageFrameState(state) {
     updatePreviewOutsideOutline();
     updatePreviewGuides(transformForGuides, alignment);
     updateImageRotationControlState();
+    invalidatePreviewFrameComposition();
 }
 
 function flushPreviewImageFrameState() {
@@ -320,6 +331,7 @@ function clearPreviewImageTransform() {
     hidePreviewOutsideOutline();
     setPreviewGuidesVisible(false);
     updateImageRotationControlState();
+    invalidatePreviewFrameComposition();
 }
 
 const PREVIEW_TEXT_COMMIT_DELAY_MS = 200;
@@ -2040,6 +2052,8 @@ function setPreviewImageVisibility(isVisible) {
         previewImage.hidden = true;
         hidePreviewImageLayer();
     }
+
+    invalidatePreviewFrameComposition();
 }
 
 function clearPreviewOverlayLayers() {

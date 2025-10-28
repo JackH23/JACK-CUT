@@ -133,6 +133,14 @@ if (previewImage) {
     }
 }
 
+if (previewImageTransitionBuffer) {
+    try {
+        previewImageTransitionBuffer.decoding = 'async';
+    } catch (error) {
+        // Ignore decoding hint errors on the transition buffer.
+    }
+}
+
 function formatBlurRadius(value, precision = PREVIEW_IMAGE_BLUR_PRECISION) {
     const safePrecision = Math.max(0, Math.min(6, Math.round(Number(precision) || 0)));
     if (safePrecision === 0) {
@@ -160,11 +168,18 @@ function applyImageBlurToPreview(blur) {
     lastPreviewImageBlurValue = clamped;
     const blurValue = formatBlurRadius(clamped);
 
-    const applyBlurStyle = (element) => {
+    const applyBlurStyle = (element, options = {}) => {
         if (!element) {
             return;
         }
+
         element.style.setProperty('--preview-image-blur', `${blurValue}px`);
+
+        if (options.forceNoFilter) {
+            element.style.removeProperty('filter');
+            return;
+        }
+
         if (clamped > 0) {
             element.style.filter = `blur(${blurValue}px)`;
         } else {
@@ -173,7 +188,15 @@ function applyImageBlurToPreview(blur) {
     };
 
     applyBlurStyle(previewImage);
-    applyBlurStyle(previewImageTransitionBuffer);
+    applyBlurStyle(previewImageTransitionBuffer, { forceNoFilter: true });
+
+    if (typeof markPreviewFrameCompositionDirty === 'function') {
+        try {
+            markPreviewFrameCompositionDirty();
+        } catch (error) {
+            // Ignore composition invalidation failures.
+        }
+    }
 }
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');

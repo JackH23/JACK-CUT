@@ -181,6 +181,247 @@ function parsePreviewImageBlurRadius(computedStyleOverride = null) {
     return blur;
 }
 
+const previewFrameCompositionState = {
+    frontCanvas: null,
+    backCanvas: null,
+    frontContext: null,
+    backContext: null,
+    width: 0,
+    height: 0,
+    dirty: true,
+    lastRenderHadContent: false,
+};
+
+function ensurePreviewFrameCompositionBuffers(width, height) {
+    const safeWidth = Math.max(1, Math.round(Number(width) || 0));
+    const safeHeight = Math.max(1, Math.round(Number(height) || 0));
+
+    const state = previewFrameCompositionState;
+
+    if (!state.frontCanvas) {
+        state.frontCanvas = document.createElement('canvas');
+        state.backCanvas = document.createElement('canvas');
+        state.frontContext = state.frontCanvas.getContext('2d');
+        state.backContext = state.backCanvas.getContext('2d');
+        state.dirty = true;
+        state.lastRenderHadContent = false;
+        state.width = 0;
+        state.height = 0;
+    }
+
+    if (state.width !== safeWidth || state.height !== safeHeight) {
+        [state.frontCanvas, state.backCanvas].forEach((canvas) => {
+            if (!canvas) {
+                return;
+            }
+            canvas.width = safeWidth;
+            canvas.height = safeHeight;
+        });
+        state.width = safeWidth;
+        state.height = safeHeight;
+        state.dirty = true;
+    }
+
+    return state;
+}
+
+function markPreviewFrameCompositionDirty() {
+    previewFrameCompositionState.dirty = true;
+}
+
+const previewFrameCompositionGlobalScope = typeof window !== 'undefined'
+    ? window
+    : (typeof globalThis !== 'undefined' ? globalThis : null);
+
+if (previewFrameCompositionGlobalScope) {
+    previewFrameCompositionGlobalScope.markPreviewFrameCompositionDirty = markPreviewFrameCompositionDirty;
+}
+
+function renderPreviewFrameComposition(width, height) {
+    const state = ensurePreviewFrameCompositionBuffers(width, height);
+    const context = state.backContext;
+    if (!context) {
+        state.lastRenderHadContent = false;
+        state.dirty = false;
+        return false;
+    }
+
+    const viewportWidth = Math.max(1, Math.round(Number(width) || 0));
+    const viewportHeight = Math.max(1, Math.round(Number(height) || 0));
+
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.globalAlpha = 1;
+    context.clearRect(0, 0, state.backCanvas.width, state.backCanvas.height);
+
+    const drawElementSnapshot = (element, transform) => {
+        if (!element || !transform || element.hidden) {
+            return false;
+        }
+
+        const naturalWidth = Math.max(1, element.naturalWidth || 0);
+        const naturalHeight = Math.max(1, element.naturalHeight || 0);
+        if (!element.complete || naturalWidth === 0 || naturalHeight === 0) {
+            return false;
+        }
+
+        const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
+        if (!Number.isFinite(scale) || scale <= 0) {
+            return false;
+        }
+
+        const drawWidth = naturalWidth * scale;
+        const drawHeight = naturalHeight * scale;
+        const rotation = clampRotation(transform.rotation);
+        const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
+        const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
+
+        let computedOpacity = 1;
+        let cssMatrix = null;
+        let blurRadius = element === previewImageTransitionBuffer ? 0 : parsePreviewImageBlurRadius();
+
+        if (window.getComputedStyle) {
+            let computedStyle = null;
+            try {
+                computedStyle = window.getComputedStyle(element);
+            } catch (error) {
+                computedStyle = null;
+            }
+
+            if (computedStyle) {
+                const opacityValue = Number.parseFloat(computedStyle.opacity);
+                if (Number.isFinite(opacityValue)) {
+                    computedOpacity = clamp(opacityValue, 0, 1);
+                }
+
+                cssMatrix = parseCssTransformMatrix(
+                    computedStyle.transform || computedStyle.webkitTransform || '',
+                );
+
+                if (element !== previewImageTransitionBuffer) {
+                    const parsedBlur = parsePreviewImageBlurRadius(computedStyle);
+                    if (Number.isFinite(parsedBlur) && parsedBlur >= 0) {
+                        blurRadius = parsedBlur;
+                    }
+                }
+            }
+        }
+
+        context.save();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.beginPath();
+        context.rect(0, 0, viewportWidth, viewportHeight);
+        context.clip();
+
+        context.save();
+        clipRoundRectPath(
+            context,
+            transform.left,
+            transform.top,
+            transform.width,
+            transform.height,
+            getPreviewImageFrameBorderRadius(),
+        );
+        context.clip();
+
+        context.save();
+        context.translate(imageOffsetX, imageOffsetY);
+
+        if (cssMatrix && !cssMatrix.isIdentity) {
+            context.transform(
+                cssMatrix.a,
+                cssMatrix.b,
+                cssMatrix.c,
+                cssMatrix.d,
+                cssMatrix.e,
+                cssMatrix.f,
+            );
+        } else if (rotation !== 0) {
+            const originX = drawWidth / 2;
+            const originY = drawHeight / 2;
+            context.translate(originX, originY);
+            context.rotate((rotation * Math.PI) / 180);
+            context.translate(-originX, -originY);
+        }
+
+        if (computedOpacity < 1) {
+            context.globalAlpha *= computedOpacity;
+        }
+
+        context.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
+        context.drawImage(element, 0, 0, drawWidth, drawHeight);
+        context.filter = 'none';
+
+        context.restore();
+        context.restore();
+        context.restore();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+
+        return true;
+    };
+
+    let drewAny = false;
+
+    if (previewImageTransitionBuffer && !previewImageTransitionBuffer.hidden) {
+        let bufferTransform = null;
+        const snapshot = previewImageTransitionBuffer.dataset.transitionTransform;
+        if (snapshot) {
+            try {
+                const parsed = JSON.parse(snapshot);
+                if (parsed && typeof parsed === 'object') {
+                    bufferTransform = {
+                        left: Number(parsed.left) || 0,
+                        top: Number(parsed.top) || 0,
+                        width: Number(parsed.width) || 0,
+                        height: Number(parsed.height) || 0,
+                        rotation: Number(parsed.rotation) || 0,
+                    };
+                }
+            } catch (error) {
+                bufferTransform = null;
+            }
+        }
+
+        if (bufferTransform && drawElementSnapshot(previewImageTransitionBuffer, bufferTransform)) {
+            drewAny = true;
+        }
+    }
+
+    if (previewImage && !previewImage.hidden && previewImage.complete) {
+        const activeTransform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
+        if (activeTransform && drawElementSnapshot(previewImage, activeTransform)) {
+            drewAny = true;
+        }
+    }
+
+    if (!drewAny) {
+        if (state.frontContext) {
+            state.frontContext.setTransform(1, 0, 0, 1, 0, 0);
+            state.frontContext.clearRect(0, 0, state.frontCanvas.width, state.frontCanvas.height);
+        }
+        state.lastRenderHadContent = false;
+        state.dirty = false;
+        return false;
+    }
+
+    const nextFrontCanvas = state.backCanvas;
+    const nextFrontContext = state.backContext;
+    state.backCanvas = state.frontCanvas;
+    state.backContext = state.frontContext;
+    state.frontCanvas = nextFrontCanvas;
+    state.frontContext = nextFrontContext;
+    state.lastRenderHadContent = true;
+    state.dirty = false;
+    return true;
+}
+
+function getPreviewFrameCompositionCanvas(width, height) {
+    const state = ensurePreviewFrameCompositionBuffers(width, height);
+    if (state.dirty) {
+        renderPreviewFrameComposition(width, height);
+    }
+    return state.lastRenderHadContent ? state.frontCanvas : null;
+}
+
 function ensureCanvasBackdropSnapshotContext(width, height) {
     const safeWidth = Math.max(1, Math.round(Number(width) || 0));
     const safeHeight = Math.max(1, Math.round(Number(height) || 0));
@@ -446,6 +687,11 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
+    const compositionCanvas = getPreviewFrameCompositionCanvas(viewportWidth, viewportHeight);
+    if (!compositionCanvas) {
+        return false;
+    }
+
     const canvasWidth = Math.max(1, exportMirrorCanvas.width);
     const canvasHeight = Math.max(1, exportMirrorCanvas.height);
     const scaleX = canvasWidth / viewportWidth;
@@ -455,131 +701,13 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const drawElementSnapshot = (element, transform) => {
-        if (!element || element.hidden || !element.complete || !transform) {
-            return false;
-        }
+    exportMirrorContext.save();
+    exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    exportMirrorContext.drawImage(compositionCanvas, 0, 0, viewportWidth, viewportHeight);
+    exportMirrorContext.restore();
+    exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
 
-        const naturalWidth = Math.max(1, element.naturalWidth || 0);
-        const naturalHeight = Math.max(1, element.naturalHeight || 0);
-        const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
-        if (!Number.isFinite(scale) || scale <= 0) {
-            return false;
-        }
-
-        const drawWidth = naturalWidth * scale;
-        const drawHeight = naturalHeight * scale;
-        const rotation = clampRotation(transform.rotation);
-        const imageOffsetX = transform.left + ((transform.width - drawWidth) / 2);
-        const imageOffsetY = transform.top + ((transform.height - drawHeight) / 2);
-
-        let computedOpacity = 1;
-        let cssMatrix = null;
-        let blurRadius = 0;
-
-        if (window.getComputedStyle) {
-            const computedStyle = window.getComputedStyle(element);
-            if (computedStyle) {
-                const opacityValue = Number.parseFloat(computedStyle.opacity);
-                if (Number.isFinite(opacityValue)) {
-                    computedOpacity = clamp(opacityValue, 0, 1);
-                }
-                cssMatrix = parseCssTransformMatrix(
-                    computedStyle.transform || computedStyle.webkitTransform || '',
-                );
-                blurRadius = parsePreviewImageBlurRadius(computedStyle);
-            }
-        }
-
-        exportMirrorContext.save();
-        exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-        exportMirrorContext.beginPath();
-        exportMirrorContext.rect(0, 0, viewportWidth, viewportHeight);
-        exportMirrorContext.clip();
-
-        exportMirrorContext.save();
-        clipRoundRectPath(
-            exportMirrorContext,
-            transform.left,
-            transform.top,
-            transform.width,
-            transform.height,
-            getPreviewImageFrameBorderRadius(),
-        );
-        exportMirrorContext.clip();
-
-        exportMirrorContext.save();
-        exportMirrorContext.translate(imageOffsetX, imageOffsetY);
-
-        if (cssMatrix && !cssMatrix.isIdentity) {
-            exportMirrorContext.transform(
-                cssMatrix.a,
-                cssMatrix.b,
-                cssMatrix.c,
-                cssMatrix.d,
-                cssMatrix.e,
-                cssMatrix.f,
-            );
-        } else if (rotation !== 0) {
-            const originX = drawWidth / 2;
-            const originY = drawHeight / 2;
-            exportMirrorContext.translate(originX, originY);
-            exportMirrorContext.rotate((rotation * Math.PI) / 180);
-            exportMirrorContext.translate(-originX, -originY);
-        }
-
-        if (computedOpacity < 1) {
-            exportMirrorContext.globalAlpha *= computedOpacity;
-        }
-
-        exportMirrorContext.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
-        exportMirrorContext.drawImage(element, 0, 0, drawWidth, drawHeight);
-        exportMirrorContext.filter = 'none';
-
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
-
-        return true;
-    };
-
-    let drewAny = false;
-
-    if (previewImageTransitionBuffer && !previewImageTransitionBuffer.hidden) {
-        let bufferTransform = null;
-        const snapshot = previewImageTransitionBuffer.dataset.transitionTransform;
-        if (snapshot) {
-            try {
-                const parsed = JSON.parse(snapshot);
-                if (parsed && typeof parsed === 'object') {
-                    bufferTransform = {
-                        left: Number(parsed.left) || 0,
-                        top: Number(parsed.top) || 0,
-                        width: Number(parsed.width) || 0,
-                        height: Number(parsed.height) || 0,
-                        rotation: Number(parsed.rotation) || 0,
-                    };
-                }
-            } catch (error) {
-                bufferTransform = null;
-            }
-        }
-
-        if (drawElementSnapshot(previewImageTransitionBuffer, bufferTransform)) {
-            drewAny = true;
-        }
-    }
-
-    if (previewImage && !previewImage.hidden && previewImage.complete) {
-        const activeTransform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
-        if (drawElementSnapshot(previewImage, activeTransform)) {
-            drewAny = true;
-        }
-    }
-
-    return drewAny;
+    return true;
 }
 
 function startPreviewMirroring(width, height, options = {}) {
