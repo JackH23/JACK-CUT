@@ -188,15 +188,19 @@ function setCanvasBackdropVisibility(isVisible) {
 
 function applyCanvasBlurToPreview(blur) {
     const clamped = clampCanvasBlur(blur);
-    if (clamped === currentPreviewCanvasBlur) {
-        return;
-    }
-    currentPreviewCanvasBlur = clamped;
     if (!previewCanvasBackdrop) {
+        currentPreviewCanvasBlur = clamped;
         return;
     }
-    
-    previewCanvasBackdrop.style.setProperty('--canvas-blur-radius', `${clamped}px`);
+    if (clamped > CANVAS_BLUR_MIN) {
+        previewCanvasBackdrop.style.setProperty('--canvas-blur-radius', `${clamped}px`);
+        previewCanvasBackdrop.classList.add('has-blur');
+    } else {
+        previewCanvasBackdrop.classList.remove('has-blur');
+        previewCanvasBackdrop.style.removeProperty('--canvas-blur-radius');
+    }
+
+    currentPreviewCanvasBlur = clamped;
 }
 
 function getCanvasBackdropContentAspectRatio() {

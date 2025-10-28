@@ -2132,9 +2132,13 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    filter: blur(var(--canvas-blur-radius, 0px));
-    transform: scale(var(--canvas-backdrop-scale, 1.08));
+    transform: scale(var(--canvas-backdrop-scale, 1));
     transition: filter 0.2s ease;
+}
+
+.preview-canvas-backdrop.has-blur video,
+.preview-canvas-backdrop.has-blur img {
+    filter: blur(var(--canvas-blur-radius, 0px));
 }
 
 .preview-canvas-backdrop video[hidden],

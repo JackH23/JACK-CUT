@@ -49,7 +49,7 @@
     return null;
 }
 
-const CANVAS_BACKDROP_SNAPSHOT_DEFAULT_SCALE = 1.08;
+const CANVAS_BACKDROP_SNAPSHOT_DEFAULT_SCALE = 1;
 const CANVAS_BACKDROP_GRADIENT_TOP_COLOR = 'rgba(15, 23, 42, 0.32)';
 const CANVAS_BACKDROP_GRADIENT_BOTTOM_COLOR = 'rgba(15, 23, 42, 0.5)';
 let canvasBackdropSnapshotCanvas = null;
