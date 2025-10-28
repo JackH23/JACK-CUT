@@ -2069,6 +2069,7 @@ function clearPreviewOverlayLayers() {
         }
     });
     activeOverlayLayers.clear();
+    backgroundFrameCache.clear();
 
     if (previewOverlayGroups) {
         const { below, above } = previewOverlayGroups;
@@ -2084,11 +2085,13 @@ function clearPreviewOverlayLayers() {
     previewOverlayStack.setAttribute('aria-hidden', 'true');
 
     activeOverlayDescriptorCache = [];
+    activeBackgroundDescriptorCache = [];
     if (typeof resetActiveOverlayWindowState === 'function') {
         resetActiveOverlayWindowState();
     }
 
     lastOverlayRenderTimestamp = null;
+    lastBackgroundRenderTimestamp = null;
 }
 
 function resolveLaneIndex(laneValue) {
@@ -2754,6 +2757,7 @@ function resetOverlayAnimationState(entry) {
 }
 
 let activeOverlayDescriptorCache = [];
+let activeBackgroundDescriptorCache = [];
 
 function normalizeOverlayRenderOptions(input) {
     if (Array.isArray(input)) {
@@ -2865,9 +2869,13 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     }
 
     const normalizedOptions = normalizeOverlayRenderOptions(options ?? {});
+    const combinedDescriptorCache = [
+        ...(Array.isArray(activeBackgroundDescriptorCache) ? activeBackgroundDescriptorCache : []),
+        ...(Array.isArray(activeOverlayDescriptorCache) ? activeOverlayDescriptorCache : []),
+    ];
     const descriptorCacheInput = (normalizedOptions.descriptors && normalizedOptions.descriptors.length)
         ? normalizedOptions.descriptors
-        : activeOverlayDescriptorCache;
+        : combinedDescriptorCache;
     const cachedDescriptorMap = (descriptorCacheInput && descriptorCacheInput.length)
         ? new Map(descriptorCacheInput.map((descriptor) => [descriptor.item, descriptor]))
         : null;
