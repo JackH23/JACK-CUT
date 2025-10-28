@@ -3186,7 +3186,10 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
             previewVideo.src = objectURL;
             previewVideo.load();
         }
-        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
+        applyMasterVolumeToPreview(audioSettings.volumePercent, {
+            mediaElement: previewVideo,
+            timelineItem,
+        });
         playVideoButton.textContent = 'Play Back';
         applyImageBlurToPreview(0);
     } else if (fileType.startsWith('image/')) {
@@ -4132,15 +4135,65 @@ function detachAudioWaveformResizeObserver(timelineItem) {
     audioWaveformResizeObservers.delete(timelineItem);
 }
 
+function updateTimelineAudioMetadata(timelineItem, metadata) {
+    if (!timelineItem?.dataset || !metadata) {
+        return;
+    }
+
+    const { sampleRate, channelCount, bitrate, durationMs } = metadata;
+
+    if (Number.isFinite(sampleRate) && sampleRate > 0) {
+        timelineItem.dataset.audioSampleRate = String(Math.round(sampleRate));
+    }
+
+    if (Number.isFinite(channelCount) && channelCount > 0) {
+        timelineItem.dataset.audioChannelCount = String(Math.max(1, Math.round(channelCount)));
+    }
+
+    if (Number.isFinite(bitrate) && bitrate > 0) {
+        timelineItem.dataset.audioBitrate = String(Math.round(bitrate));
+    }
+
+    if (Number.isFinite(durationMs) && durationMs > 0) {
+        timelineItem.dataset.maxAudioDuration = String(Math.round(durationMs));
+    }
+}
+
+function estimateAudioBitrateFromFile(file, durationMs) {
+    if (!file || typeof file.size !== 'number') {
+        return null;
+    }
+
+    const bytes = Number(file.size);
+    const duration = Number(durationMs);
+    if (!Number.isFinite(bytes) || bytes <= 0 || !Number.isFinite(duration) || duration <= 0) {
+        return null;
+    }
+
+    const bitsPerMillisecond = (bytes * 8) / duration;
+    const bitsPerSecond = bitsPerMillisecond * 1000;
+    if (!Number.isFinite(bitsPerSecond) || bitsPerSecond <= 0) {
+        return null;
+    }
+
+    return Math.round(bitsPerSecond);
+}
+
 async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas) {
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
-        if (!existing.channelData && existing.audioBuffer) {
-            existing.channelData = buildWaveformChannelDataFromAudioBuffer(existing.audioBuffer);
+        const cachedBuffer = existing.audioBuffer || null;
+        if (!existing.channelData && cachedBuffer) {
+            existing.channelData = buildWaveformChannelDataFromAudioBuffer(cachedBuffer);
             delete existing.audioBuffer;
         }
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
-        timelineItem.dataset.maxAudioDuration = String(duration);
+        updateTimelineAudioMetadata(timelineItem, {
+            durationMs: duration,
+            sampleRate: cachedBuffer?.sampleRate || null,
+            channelCount: cachedBuffer?.numberOfChannels || null,
+            bitrate: estimateAudioBitrateFromFile(file, duration),
+        });
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
         if (waveformCanvas) {
             const widthOverride = timelineItem
@@ -4159,6 +4212,12 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
         const channelData = buildWaveformChannelDataFromAudioBuffer(audioBuffer);
+        updateTimelineAudioMetadata(timelineItem, {
+            durationMs,
+            sampleRate: audioBuffer.sampleRate,
+            channelCount: audioBuffer.numberOfChannels,
+            bitrate: estimateAudioBitrateFromFile(file, durationMs),
+        });
         const cacheEntry = {
             imageDataUrl: null,
             durationMs,
@@ -4169,7 +4228,6 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
             cacheEntry.audioBuffer = audioBuffer;
         }
         audioWaveformByObjectUrl.set(objectURL, cacheEntry);
-        timelineItem.dataset.maxAudioDuration = String(durationMs);
         setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
         if (waveformCanvas) {
             const widthOverride = timelineItem
@@ -4201,7 +4259,12 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
                     durationMs,
                     drawn: false,
                 });
-                timelineItem.dataset.maxAudioDuration = String(durationMs);
+                updateTimelineAudioMetadata(timelineItem, {
+                    durationMs,
+                    sampleRate: null,
+                    channelCount: null,
+                    bitrate: estimateAudioBitrateFromFile(file, durationMs),
+                });
                 setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
                 if (waveformCanvas) {
                     attachAudioWaveformResizeObserver(timelineItem, waveformCanvas, objectURL);
@@ -4396,6 +4459,7 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
         applyMasterVolumeToPreview(audioSettings.volumePercent, {
             mediaElement: element,
             mixGain: overlayGain,
+            timelineItem: entry.item,
         });
 
         const remainingDuration = Math.max(0, clipDuration - offsetMs);
@@ -4405,6 +4469,7 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
                 mixGain: overlayGain,
                 clipOffsetMs: offsetMs,
                 clipTotalDurationMs: clipDuration,
+                timelineItem: entry.item,
             });
         } else {
             cancelPreviewAudioEnvelope({ mediaElement: element, restoreVolume: false });
@@ -4664,6 +4729,7 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
         applyMasterVolumeToPreview(audioSettings.volumePercent, {
             mediaElement: previewAudio,
             mixGain: overlayGain,
+            timelineItem: audioEntry.item,
         });
         const remainingDuration = Math.max(0, clipDuration - offsetMs);
         if (remainingDuration > 0) {
@@ -4672,6 +4738,7 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
                 mixGain: overlayGain,
                 clipOffsetMs: offsetMs,
                 clipTotalDurationMs: clipDuration,
+                timelineItem: audioEntry.item,
             });
         } else {
             cancelPreviewAudioEnvelope({ mediaElement: previewAudio, restoreVolume: false });
@@ -5439,7 +5506,10 @@ async function playTimelineItem(
             previewPlaceholder.hidden = false;
             previewPlaceholder.textContent = 'Preparing video preview…';
         }
-        applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
+        applyMasterVolumeToPreview(audioSettings.volumePercent, {
+            mediaElement: previewVideo,
+            timelineItem,
+        });
         if (typeof refreshPreviewAudioMix === 'function') {
             refreshPreviewAudioMix({
                 entries: overlayEntries,

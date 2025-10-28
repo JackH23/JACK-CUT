@@ -204,6 +204,7 @@
                         mixGain,
                         clipOffsetMs: safeStartOffset,
                         clipTotalDurationMs: targetDuration,
+                        timelineItem,
                     });
                     if (isTimelinePlaying) {
                         if (playbackSyncSource) {

@@ -482,10 +482,18 @@ if (masterVolumeInput) {
             mixGain = mix.gainsByItem.get(activeTimelineItem);
         }
         if (isVideo) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewVideo, mixGain });
+            applyMasterVolumeToPreview(percent, {
+                mediaElement: previewVideo,
+                mixGain,
+                timelineItem: typeof activeTimelineItem !== 'undefined' ? activeTimelineItem : null,
+            });
         }
         if (isAudio) {
-            applyMasterVolumeToPreview(percent, { mediaElement: previewAudio, mixGain });
+            applyMasterVolumeToPreview(percent, {
+                mediaElement: previewAudio,
+                mixGain,
+                timelineItem: typeof activeTimelineItem !== 'undefined' ? activeTimelineItem : null,
+            });
         }
     };
 
