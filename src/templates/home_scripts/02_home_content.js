@@ -665,13 +665,52 @@ function releaseTimelineAudio(objectURL) {
     }
 }
 
+const previewTransitionConfig = {
+    quality: 'hard-cut',
+};
+
+let disableBackgroundBlurOnTransition = true;
+
+if (typeof window !== 'undefined') {
+    try {
+        Object.defineProperty(window, 'disableBackgroundBlurOnTransition', {
+            configurable: true,
+            get: () => disableBackgroundBlurOnTransition,
+            set: (value) => {
+                disableBackgroundBlurOnTransition = Boolean(value);
+            },
+        });
+        Object.defineProperty(window, 'previewTransitionConfig', {
+            configurable: true,
+            get: () => previewTransitionConfig,
+        });
+    } catch (error) {
+        // Ignore environments where defining globals is not permitted.
+    }
+}
+
 const previewTransitionBufferState = {
     finalizeHandler: null,
     fallbackTimer: 0,
     transitionCompleted: false,
     nextFrameReady: false,
     isHoldingFrame: false,
+    releaseRequested: false,
+    pendingRelease: null,
+    frameIndex: -1,
+    sourceUrl: null,
+    targetObjectUrl: null,
+    ignoreFrameIndex: false,
 };
+
+function getPreviewTransitionQuality() {
+    const mode = (previewTransitionConfig?.quality || '').toLowerCase();
+    return mode === 'smooth' ? 'smooth' : 'hard-cut';
+}
+
+function shouldDisablePreviewTransitionEffects() {
+    return disableBackgroundBlurOnTransition !== false || getPreviewTransitionQuality() === 'hard-cut';
+}
 
 function resetPreviewTransitionBufferElement() {
     if (!previewImageTransitionBuffer) {
@@ -684,6 +723,10 @@ function resetPreviewTransitionBufferElement() {
     previewImageTransitionBuffer.style.removeProperty('--preview-image-rotation');
     previewImageTransitionBuffer.style.removeProperty('--preview-image-blur');
     previewImageTransitionBuffer.style.removeProperty('filter');
+    if (previewImageTransitionBuffer.dataset) {
+        delete previewImageTransitionBuffer.dataset.objectUrl;
+        delete previewImageTransitionBuffer.dataset.frameIndex;
+    }
 }
 
 function cleanupPreviewTransitionBuffer() {
@@ -703,6 +746,13 @@ function cleanupPreviewTransitionBuffer() {
     previewTransitionBufferState.transitionCompleted = false;
     previewTransitionBufferState.nextFrameReady = false;
     previewTransitionBufferState.isHoldingFrame = false;
+    previewTransitionBufferState.releaseRequested = false;
+    previewTransitionBufferState.pendingRelease = null;
+    previewTransitionBufferState.frameIndex = -1;
+    previewTransitionBufferState.sourceUrl = null;
+    previewTransitionBufferState.targetObjectUrl = null;
+    previewTransitionBufferState.ignoreFrameIndex = false;
+
 
     if (!transitionBuffer) {
         return;
@@ -723,6 +773,10 @@ function finalizePreviewTransitionBufferWhenReady(options = {}) {
         return;
     }
 
+    if (!previewTransitionBufferState.releaseRequested) {
+        return;
+    }
+
     if (previewTransitionBufferState.transitionCompleted && previewTransitionBufferState.nextFrameReady) {
         cleanupPreviewTransitionBuffer();
     }
@@ -730,6 +784,56 @@ function finalizePreviewTransitionBufferWhenReady(options = {}) {
 
 function isPreviewTransitionBufferHoldingFrame() {
     return previewTransitionBufferState.isHoldingFrame;
+}
+
+function attemptPreviewTransitionBufferRelease(options = {}) {
+    if (!previewTransitionBufferState.isHoldingFrame) {
+        return;
+    }
+
+    const force = options.force === true;
+    if (!force && !previewTransitionBufferState.nextFrameReady) {
+        return;
+    }
+
+    const ignoreFrameIndex = force
+        || previewTransitionBufferState.ignoreFrameIndex
+        || !Number.isFinite(previewTransitionBufferState.frameIndex)
+        || previewTransitionBufferState.frameIndex < 0;
+    const frameAdvanced = Number.isFinite(currentPreviewTimelineFrameIndex)
+        && Number.isFinite(previewTransitionBufferState.frameIndex)
+        && currentPreviewTimelineFrameIndex > previewTransitionBufferState.frameIndex;
+    const targetDifferent = Boolean(
+        previewTransitionBufferState.targetObjectUrl
+        && previewTransitionBufferState.targetObjectUrl !== previewTransitionBufferState.sourceUrl,
+    );
+
+    if (!force && !ignoreFrameIndex && !frameAdvanced && !targetDifferent) {
+        return;
+    }
+
+    const releaseHandler = previewTransitionBufferState.pendingRelease;
+    previewTransitionBufferState.pendingRelease = null;
+
+    if (typeof releaseHandler === 'function') {
+        releaseHandler();
+        return;
+    }
+
+    cleanupPreviewTransitionBuffer();
+}
+
+function requestPreviewTransitionBufferRelease(options = {}) {
+    if (!previewTransitionBufferState.isHoldingFrame) {
+        return;
+    }
+
+    previewTransitionBufferState.releaseRequested = true;
+    if (options.ignoreFrameIndex === true) {
+        previewTransitionBufferState.ignoreFrameIndex = true;
+    }
+
+    attemptPreviewTransitionBufferRelease(options);
 }
 
 function stagePreviewTransitionBuffer(options = {}) {
@@ -751,16 +855,36 @@ function stagePreviewTransitionBuffer(options = {}) {
         return;
     }
 
+    const stagedObjectUrl = previewImage.dataset?.objectUrl || currentSrc;
+
+    const pendingTargetUrl = previewTransitionBufferState.targetObjectUrl || stagedObjectUrl;
+
     cleanupPreviewTransitionBuffer();
+    previewTransitionBufferState.targetObjectUrl = pendingTargetUrl;
 
     previewTransitionBufferState.isHoldingFrame = true;
     previewTransitionBufferState.transitionCompleted = false;
     previewTransitionBufferState.nextFrameReady = false;
+    previewTransitionBufferState.releaseRequested = false;
+    previewTransitionBufferState.pendingRelease = null;
+    previewTransitionBufferState.frameIndex = Number.isFinite(currentPreviewTimelineFrameIndex)
+        ? currentPreviewTimelineFrameIndex
+        : -1;
+    previewTransitionBufferState.sourceUrl = stagedObjectUrl;
+    previewTransitionBufferState.ignoreFrameIndex = false;
 
     previewImageTransitionBuffer.src = currentSrc;
     previewImageTransitionBuffer.hidden = false;
     previewImageTransitionBuffer.classList.remove('is-fading-out');
     previewImageTransitionBuffer.classList.add('is-visible');
+    if (previewImageTransitionBuffer.dataset) {
+        previewImageTransitionBuffer.dataset.objectUrl = stagedObjectUrl;
+        if (Number.isFinite(previewTransitionBufferState.frameIndex) && previewTransitionBufferState.frameIndex >= 0) {
+            previewImageTransitionBuffer.dataset.frameIndex = String(previewTransitionBufferState.frameIndex);
+        } else {
+            delete previewImageTransitionBuffer.dataset.frameIndex;
+        }
+    }
 
     let computedStyle = null;
     if (window.getComputedStyle) {
@@ -776,10 +900,15 @@ function stagePreviewTransitionBuffer(options = {}) {
         || '0deg';
     previewImageTransitionBuffer.style.setProperty('--preview-image-rotation', rotationValue);
 
-    const blurValue = previewImage.style.getPropertyValue('--preview-image-blur')
-        || (computedStyle ? computedStyle.getPropertyValue('--preview-image-blur') : '')
-        || '0px';
-    previewImageTransitionBuffer.style.setProperty('--preview-image-blur', blurValue);
+    if (shouldDisablePreviewTransitionEffects()) {
+        previewImageTransitionBuffer.style.setProperty('--preview-image-blur', '0px');
+        previewImageTransitionBuffer.style.filter = 'none';
+    } else {
+        const blurValue = previewImage.style.getPropertyValue('--preview-image-blur')
+            || (computedStyle ? computedStyle.getPropertyValue('--preview-image-blur') : '')
+            || '0px';
+        previewImageTransitionBuffer.style.setProperty('--preview-image-blur', blurValue);
+    }
 
     if (previewImageTransform && typeof previewImageTransform === 'object') {
         try {
@@ -798,22 +927,52 @@ function stagePreviewTransitionBuffer(options = {}) {
         previewImageTransitionBuffer.removeAttribute('data-transition-transform');
     }
 
+    const transitionQuality = getPreviewTransitionQuality();
+
+    if (transitionQuality === 'hard-cut') {
+        previewTransitionBufferState.pendingRelease = () => {
+            previewTransitionBufferState.transitionCompleted = true;
+            cleanupPreviewTransitionBuffer();
+        };
+    } else {
+        previewTransitionBufferState.pendingRelease = () => {
+            if (!previewImageTransitionBuffer) {
+                cleanupPreviewTransitionBuffer();
+                return;
+            }
+
+    if (previewTransitionBufferState.finalizeHandler && previewImageTransitionBuffer) {
+                previewImageTransitionBuffer.removeEventListener(
+                    'transitionend',
+                    previewTransitionBufferState.finalizeHandler,
+                );
+                previewImageTransitionBuffer.removeEventListener(
+                    'transitioncancel',
+                    previewTransitionBufferState.finalizeHandler,
+                );
+            }
+
     const finalize = () => {
-        previewTransitionBufferState.transitionCompleted = true;
-        finalizePreviewTransitionBufferWhenReady();
-    };
+                previewTransitionBufferState.transitionCompleted = true;
+                finalizePreviewTransitionBufferWhenReady();
+            };
 
-    previewTransitionBufferState.finalizeHandler = finalize;
-    previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
-    previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
+            previewTransitionBufferState.finalizeHandler = finalize;
+            previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
+            previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(() => {
-        finalizePreviewTransitionBufferWhenReady({ force: true });
-    }, Math.max(480, Number(options.timeoutMs) || 720));
+            if (previewTransitionBufferState.fallbackTimer) {
+                window.clearTimeout(previewTransitionBufferState.fallbackTimer);
+            }
+            previewTransitionBufferState.fallbackTimer = window.setTimeout(() => {
+                finalizePreviewTransitionBufferWhenReady({ force: true });
+            }, Math.max(480, Number(options.timeoutMs) || 720));
 
-    requestAnimationFrame(() => {
-        previewImageTransitionBuffer.classList.add('is-fading-out');
-    });
+            requestAnimationFrame(() => {
+                previewImageTransitionBuffer.classList.add('is-fading-out');
+            });
+        };
+    }
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -849,12 +1008,19 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    previewTransitionBufferState.targetObjectUrl = objectURL;
+    previewTransitionBufferState.nextFrameReady = false;
+    previewTransitionBufferState.ignoreFrameIndex = false;
+
     stagePreviewTransitionBuffer({ immediate });
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
     await new Promise((resolve) => {
         let settled = false;
+        const transitionQuality = getPreviewTransitionQuality();
+        const useHardCut = transitionQuality === 'hard-cut';
+        const shouldIgnoreFrameIndex = !isTimelinePlaying;
 
         const finish = () => {
             if (settled) {
@@ -862,11 +1028,16 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             }
             settled = true;
             previewTransitionBufferState.nextFrameReady = true;
-            finalizePreviewTransitionBufferWhenReady();
             previewImage.removeEventListener('load', finish);
             previewImage.removeEventListener('error', finish);
-            if (immediate) {
+            const triggerRelease = () => {
+                previewImage.dataset.objectUrl = objectURL;
+                requestPreviewTransitionBufferRelease({ ignoreFrameIndex: shouldIgnoreFrameIndex });
+            };
+
+            if (immediate || useHardCut) {
                 previewImage.classList.add('is-visible');
+                triggerRelease();
             } else {
                 requestAnimationFrame(() => {
                     const didAnimate = runPreviewImageEntranceAnimation({
@@ -876,6 +1047,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
+                    triggerRelease();
                 });
             }
             resolve();

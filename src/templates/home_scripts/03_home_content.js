@@ -262,6 +262,10 @@ function setPreviewTimelineFrameIndex(frameIndex) {
     if (previewImage) {
         previewImage.dataset.frameIndex = String(safeIndex);
     }
+
+    if (typeof attemptPreviewTransitionBufferRelease === 'function') {
+        attemptPreviewTransitionBufferRelease();
+    }
 }
 
 function invalidatePreviewFrameCache() {
@@ -726,8 +730,29 @@ function drawPreviewImageToExportCanvas(options = {}) {
             return false;
         }
 
-        const naturalWidth = Math.max(1, element.naturalWidth || 0);
-        const naturalHeight = Math.max(1, element.naturalHeight || 0);
+        let source = element;
+        let naturalWidth = Math.max(1, element.naturalWidth || element.videoWidth || element.width || 0);
+        let naturalHeight = Math.max(1, element.naturalHeight || element.videoHeight || element.height || 0);
+
+        const elementSourceUrl = element.dataset?.objectUrl
+            || element.currentSrc
+            || element.src
+            || '';
+        if (typeof getPreloadedTimelineImageBitmap === 'function' && elementSourceUrl) {
+            const cached = getPreloadedTimelineImageBitmap(elementSourceUrl);
+            if (cached?.bitmap) {
+                source = cached.bitmap;
+                naturalWidth = Math.max(
+                    1,
+                    Math.round(Number(source.width) || Number(cached.width) || naturalWidth),
+                );
+                naturalHeight = Math.max(
+                    1,
+                    Math.round(Number(source.height) || Number(cached.height) || naturalHeight),
+                );
+            }
+        }
+
         const scale = Math.max(transform.width / naturalWidth, transform.height / naturalHeight);
         if (!Number.isFinite(scale) || scale <= 0) {
             return false;
@@ -742,18 +767,23 @@ function drawPreviewImageToExportCanvas(options = {}) {
         let computedOpacity = 1;
         let cssMatrix = null;
         let blurRadius = 0;
+        const disableEffects = typeof shouldDisablePreviewTransitionEffects === 'function'
+            ? shouldDisablePreviewTransitionEffects()
+            : false;
 
         if (window.getComputedStyle) {
             const computedStyle = window.getComputedStyle(element);
             if (computedStyle) {
-                const opacityValue = Number.parseFloat(computedStyle.opacity);
-                if (Number.isFinite(opacityValue)) {
-                    computedOpacity = clamp(opacityValue, 0, 1);
+                if (!disableEffects) {
+                    const opacityValue = Number.parseFloat(computedStyle.opacity);
+                    if (Number.isFinite(opacityValue)) {
+                        computedOpacity = clamp(opacityValue, 0, 1);
+                    }
+                    blurRadius = parsePreviewImageBlurRadius(computedStyle);
                 }
                 cssMatrix = parseCssTransformMatrix(
                     computedStyle.transform || computedStyle.webkitTransform || '',
                 );
-                blurRadius = parsePreviewImageBlurRadius(computedStyle);
             }
         }
 
@@ -794,12 +824,22 @@ function drawPreviewImageToExportCanvas(options = {}) {
             context.translate(-originX, -originY);
         }
 
-        if (computedOpacity < 1) {
+        if (!disableEffects && computedOpacity < 1) {
             context.globalAlpha *= computedOpacity;
         }
 
-        context.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
-        context.drawImage(element, 0, 0, drawWidth, drawHeight);
+        context.filter = disableEffects || blurRadius <= 0 ? 'none' : `blur(${blurRadius}px)`;
+        context.drawImage(
+            source,
+            0,
+            0,
+            naturalWidth,
+            naturalHeight,
+            0,
+            0,
+            drawWidth,
+            drawHeight,
+        );
         context.filter = 'none';
 
         context.restore();
