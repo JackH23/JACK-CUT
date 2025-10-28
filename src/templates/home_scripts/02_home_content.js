@@ -630,10 +630,7 @@ function stagePreviewTransitionBuffer(options = {}) {
 
     const { immediate = false } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
-    if (immediate || reduceMotion) {
-        cleanupPreviewTransitionBuffer();
-        return;
-    }
+    const shouldAnimate = !immediate && !reduceMotion;
 
     const currentSrc = previewImage.currentSrc || previewImage.src;
     if (!currentSrc) {
@@ -692,11 +689,14 @@ function stagePreviewTransitionBuffer(options = {}) {
     previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
     previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
+    const fallbackDelay = Math.max(480, Number(options.timeoutMs) || 720);
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, fallbackDelay);
 
-    requestAnimationFrame(() => {
-        previewImageTransitionBuffer.classList.add('is-fading-out');
-    });
+    if (shouldAnimate) {
+        requestAnimationFrame(() => {
+            previewImageTransitionBuffer.classList.add('is-fading-out');
+        });
+    }
 }
 
 async function revealPreviewImageSource(objectURL, options = {}) {
@@ -746,8 +746,13 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             settled = true;
             previewImage.removeEventListener('load', finish);
             previewImage.removeEventListener('error', finish);
+            const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
+            const shouldCleanupTransitionBuffer = immediate || reduceMotion;
             if (immediate) {
                 previewImage.classList.add('is-visible');
+                if (shouldCleanupTransitionBuffer) {
+                    cleanupPreviewTransitionBuffer();
+                }
             } else {
                 requestAnimationFrame(() => {
                     const didAnimate = runPreviewImageEntranceAnimation({
@@ -756,6 +761,9 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     });
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
+                    }
+                    if (shouldCleanupTransitionBuffer) {
+                        cleanupPreviewTransitionBuffer();
                     }
                 });
             }
