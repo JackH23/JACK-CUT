@@ -329,7 +329,7 @@ function getOptionSliderController(inputId) {
 }
 
 const CANVAS_BACKGROUND_MODES = new Set(['none', 'clip', 'custom']);
-const DEFAULT_CANVAS_BLUR = 18;
+const DEFAULT_CANVAS_BLUR = 0;
 const CANVAS_BLUR_MIN = 0;
 const CANVAS_BLUR_MAX = 40;
 const DEFAULT_IMAGE_BLUR = 0;

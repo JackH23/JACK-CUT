@@ -430,9 +430,12 @@
             const layer = document.createElement('div');
             layer.classList.add('preview-overlay-layer');
             layer.style.setProperty('contain', 'layout paint style');
+            layer.style.setProperty('isolation', 'isolate');
             layer.style.setProperty('will-change', 'transform, opacity');
             const content = document.createElement('div');
             content.className = 'preview-overlay-content';
+            content.style.setProperty('background-color', 'transparent');
+            content.style.setProperty('mix-blend-mode', 'normal');
             content.style.setProperty('will-change', 'transform, opacity');
             layer.appendChild(content);
             const image = document.createElement('img');
@@ -444,6 +447,8 @@
             image.loading = 'eager';
             image.draggable = false;
             image.style.setProperty('will-change', 'transform, opacity');
+            image.style.setProperty('mix-blend-mode', 'normal');
+            image.style.setProperty('backface-visibility', 'hidden');
             content.appendChild(image);
             ['n', 's', 'e', 'w', 'nw', 'ne', 'se', 'sw'].forEach((direction) => {
                 const handle = document.createElement('button');
@@ -488,6 +493,8 @@
             content.className = 'preview-overlay-content';
             layer.insertBefore(content, layer.firstChild);
             content.appendChild(image);
+            content.style.setProperty('background-color', 'transparent');
+            content.style.setProperty('mix-blend-mode', 'normal');
             content.style.setProperty('will-change', 'transform, opacity');
             entry.content = content;
         }
@@ -988,6 +995,9 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
         return;
     }
 
+    exportMirrorContext.save();
+    exportMirrorContext.globalCompositeOperation = 'source-over';
+
     snapshots
         .filter((snapshot) => snapshot.group === group)
         .forEach((snapshot) => {
@@ -1065,6 +1075,8 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             exportMirrorContext.drawImage(sourceImage, offsetX, offsetY, drawWidth, drawHeight);
             exportMirrorContext.restore();
         });
+
+    exportMirrorContext.restore();
 }
 
 function applyOverlayLayerTransform(entry, transform) {
