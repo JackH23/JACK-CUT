@@ -2364,11 +2364,11 @@ function computeOverlayDescriptorOpacity(descriptor) {
 }
 
 function computeOverlayEntryOpacity(entry) {
-    if (!entry || !entry.layer || !entry.image) {
+    if (!entry || !entry.layer) {
         return 1;
     }
 
-    if (entry.layer.hasAttribute('hidden') || entry.image.hidden) {
+    if (entry.layer.hasAttribute('hidden')) {
         return 0;
     }
 
@@ -2389,14 +2389,17 @@ function computeOverlayEntryOpacity(entry) {
         }
     }
 
-    const imageStyle = window.getComputedStyle(entry.image);
-    if (imageStyle) {
-        if (imageStyle.display === 'none' || imageStyle.visibility === 'hidden') {
-            return 0;
-        }
-        const parsedImageOpacity = Number.parseFloat(imageStyle.opacity);
-        if (Number.isFinite(parsedImageOpacity)) {
-            opacity *= clamp(parsedImageOpacity, 0, 1);
+    const displayTarget = entry.displayCanvas || entry.image || null;
+    if (displayTarget) {
+        const targetStyle = window.getComputedStyle(displayTarget);
+        if (targetStyle) {
+            if (targetStyle.display === 'none' || targetStyle.visibility === 'hidden') {
+                return 0;
+            }
+            const parsedTargetOpacity = Number.parseFloat(targetStyle.opacity);
+            if (Number.isFinite(parsedTargetOpacity)) {
+                opacity *= clamp(parsedTargetOpacity, 0, 1);
+            }
         }
     }
 
@@ -2463,33 +2466,6 @@ const OVERLAY_EXIT_ANIMATION_CURVES = {
         { time: 1, translateX: 104, scale: 0.96 },
     ],
 };
-
-function formatOverlayAnimationPercent(value) {
-    const numeric = Number.isFinite(value) ? value : 0;
-    const rounded = Math.round(numeric * 1000) / 1000;
-    if (Math.abs(rounded) < 0.0005) {
-        return '0%';
-    }
-    return `${rounded}%`;
-}
-
-function formatOverlayAnimationScale(value) {
-    const numeric = Number.isFinite(value) ? value : 1;
-    const rounded = Math.round(numeric * 1000) / 1000;
-    if (Math.abs(rounded) < 0.0005) {
-        return '0';
-    }
-    return `${rounded}`;
-}
-
-function formatOverlayAnimationRotation(value) {
-    const numeric = Number.isFinite(value) ? value : 0;
-    const rounded = Math.round(numeric * 1000) / 1000;
-    if (Math.abs(rounded) < 0.0005) {
-        return '0deg';
-    }
-    return `${rounded}deg`;
-}
 
 function interpolateOverlayAnimationValue(start, end, ratio, fallback) {
     const startValue = Number.isFinite(start) ? start : fallback;
@@ -2692,8 +2668,8 @@ function computeOverlayAnimationTransform(descriptor, clipDurationMs, clipTimeMs
 }
 
 function applyOverlayAnimationTransform(entry, transformState) {
-    if (!entry || !entry.image) {
-        return;
+    if (!entry) {
+        return OVERLAY_ANIMATION_IDENTITY;
     }
 
     const target = transformState || OVERLAY_ANIMATION_IDENTITY;
@@ -2702,50 +2678,45 @@ function applyOverlayAnimationTransform(entry, transformState) {
     const scale = Number.isFinite(target.scale) ? target.scale : 1;
     const rotate = Number.isFinite(target.rotate) ? target.rotate : 0;
 
-    const previous = entry.renderedAnimation;
-    if (!previous || previous.translateX !== translateX) {
-        entry.image.style.setProperty(
-            '--overlay-animation-translate-x',
-            formatOverlayAnimationPercent(translateX),
-        );
-    }
-    if (!previous || previous.translateY !== translateY) {
-        entry.image.style.setProperty(
-            '--overlay-animation-translate-y',
-            formatOverlayAnimationPercent(translateY),
-        );
-    }
-    if (!previous || previous.scale !== scale) {
-        entry.image.style.setProperty(
-            '--overlay-animation-scale',
-            formatOverlayAnimationScale(scale),
-        );
-    }
-    if (!previous || previous.rotate !== rotate) {
-        entry.image.style.setProperty(
-            '--overlay-animation-rotation',
-            formatOverlayAnimationRotation(rotate),
-        );
-    }
-
-    entry.renderedAnimation = {
+    const normalized = {
         translateX,
         translateY,
         scale,
         rotate,
     };
+
+    entry.pendingAnimationState = { ...normalized };
+    entry.renderedAnimation = { ...normalized };
+
+    if (entry.image) {
+        entry.image.style.setProperty('--overlay-animation-translate-x', '0%');
+        entry.image.style.setProperty('--overlay-animation-translate-y', '0%');
+        entry.image.style.setProperty('--overlay-animation-scale', '1');
+        entry.image.style.setProperty('--overlay-animation-rotation', '0deg');
+    }
+
+    return normalized;
 }
 
 function resetOverlayAnimationState(entry) {
-    if (!entry || !entry.image) {
+    if (!entry) {
         return;
     }
 
-    entry.image.style.setProperty('--overlay-animation-translate-x', '0%');
-    entry.image.style.setProperty('--overlay-animation-translate-y', '0%');
-    entry.image.style.setProperty('--overlay-animation-scale', '1');
-    entry.image.style.setProperty('--overlay-animation-rotation', '0deg');
+    if (entry.image) {
+        entry.image.style.setProperty('--overlay-animation-translate-x', '0%');
+        entry.image.style.setProperty('--overlay-animation-translate-y', '0%');
+        entry.image.style.setProperty('--overlay-animation-scale', '1');
+        entry.image.style.setProperty('--overlay-animation-rotation', '0deg');
+    }
+
     entry.renderedAnimation = {
+        translateX: 0,
+        translateY: 0,
+        scale: 1,
+        rotate: 0,
+    };
+    entry.pendingAnimationState = {
         translateX: 0,
         translateY: 0,
         scale: 1,

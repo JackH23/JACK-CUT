@@ -2543,6 +2543,13 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border-radius: inherit;
 }
 
+.preview-overlay-layer .preview-overlay-content canvas.preview-overlay-bitmap {
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+}
+
 .preview-overlay-layer .preview-overlay-content img {
     --preview-overlay-rotation: 0deg;
     --overlay-animation-translate-x: 0%;

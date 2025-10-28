@@ -334,6 +334,196 @@
         return Math.abs(previous - next) > OVERLAY_OPACITY_EPSILON;
     };
 
+    const OVERLAY_CANVAS_DIMENSION_EPSILON = 0.1;
+
+    const ensureOverlayRenderSurfaces = (entry, frameWidth, frameHeight) => {
+        if (!entry || frameWidth <= 0 || frameHeight <= 0) {
+            return null;
+        }
+
+        const width = Math.max(1, Math.round(frameWidth));
+        const height = Math.max(1, Math.round(frameHeight));
+
+        const displayCanvas = entry.displayCanvas || null;
+        if (!displayCanvas) {
+            return null;
+        }
+
+        if (displayCanvas.width !== width || displayCanvas.height !== height) {
+            displayCanvas.width = width;
+            displayCanvas.height = height;
+            entry.displayContext = displayCanvas.getContext('2d');
+        } else if (!entry.displayContext) {
+            entry.displayContext = displayCanvas.getContext('2d');
+        }
+
+        if (!entry.offscreenCanvas) {
+            entry.offscreenCanvas = document.createElement('canvas');
+        }
+        if (entry.offscreenCanvas.width !== width || entry.offscreenCanvas.height !== height) {
+            entry.offscreenCanvas.width = width;
+            entry.offscreenCanvas.height = height;
+            entry.offscreenContext = entry.offscreenCanvas.getContext('2d');
+        } else if (!entry.offscreenContext) {
+            entry.offscreenContext = entry.offscreenCanvas.getContext('2d');
+        }
+
+        return {
+            displayCanvas: entry.displayCanvas,
+            displayContext: entry.displayContext || null,
+            offscreenCanvas: entry.offscreenCanvas,
+            offscreenContext: entry.offscreenContext || null,
+            width,
+            height,
+        };
+    };
+
+    const formatOverlaySignaturePart = (value, precision = 4) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return '0';
+        }
+        return numeric.toFixed(precision);
+    };
+
+    const computeOverlayRenderSignature = (
+        frame,
+        animationState,
+        objectURL,
+        borderRadius,
+        naturalWidth,
+        naturalHeight,
+    ) => [
+        formatOverlaySignaturePart(frame.left),
+        formatOverlaySignaturePart(frame.top),
+        formatOverlaySignaturePart(frame.width),
+        formatOverlaySignaturePart(frame.height),
+        formatOverlaySignaturePart(frame.rotation),
+        formatOverlaySignaturePart(animationState.translateX),
+        formatOverlaySignaturePart(animationState.translateY),
+        formatOverlaySignaturePart(animationState.scale),
+        formatOverlaySignaturePart(animationState.rotate),
+        formatOverlaySignaturePart(borderRadius),
+        formatOverlaySignaturePart(naturalWidth, 0),
+        formatOverlaySignaturePart(naturalHeight, 0),
+        objectURL || '',
+    ].join('|');
+
+    const renderOverlayEntryBitmap = (entry, frame, animationState) => {
+        if (!entry || !frame) {
+            return false;
+        }
+
+        const transformState = animationState || OVERLAY_ANIMATION_IDENTITY;
+
+        const image = entry.image || null;
+        if (!image || !image.complete) {
+            return false;
+        }
+
+        const naturalWidth = Math.max(0, image.naturalWidth || 0);
+        const naturalHeight = Math.max(0, image.naturalHeight || 0);
+        if (naturalWidth <= 0 || naturalHeight <= 0) {
+            return false;
+        }
+
+        const signature = computeOverlayRenderSignature(
+            frame,
+            transformState,
+            entry.objectURL,
+            entry.borderRadius,
+            naturalWidth,
+            naturalHeight,
+        );
+
+        const targetWidth = Number(frame.width) || 0;
+        const targetHeight = Number(frame.height) || 0;
+        if (targetWidth <= 0 || targetHeight <= 0) {
+            entry.renderSurfaceSize = null;
+            entry.renderSignature = null;
+            return false;
+        }
+        const hasMatchingSurface = entry.renderSurfaceSize
+            && Math.abs(entry.renderSurfaceSize.width - targetWidth) < OVERLAY_CANVAS_DIMENSION_EPSILON
+            && Math.abs(entry.renderSurfaceSize.height - targetHeight) < OVERLAY_CANVAS_DIMENSION_EPSILON;
+
+        if (hasMatchingSurface && entry.renderSignature === signature) {
+            return true;
+        }
+
+        const surfaces = ensureOverlayRenderSurfaces(entry, targetWidth, targetHeight);
+        if (!surfaces) {
+            entry.renderSignature = null;
+            return false;
+        }
+
+        const { offscreenCanvas, offscreenContext, displayCanvas, displayContext } = surfaces;
+        if (!offscreenCanvas || !offscreenContext || !displayCanvas || !displayContext) {
+            entry.renderSignature = null;
+            return false;
+        }
+
+        offscreenContext.setTransform(1, 0, 0, 1, 0, 0);
+        offscreenContext.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        offscreenContext.save();
+        offscreenContext.globalAlpha = 1;
+        offscreenContext.filter = 'none';
+
+        const baseRotationDegrees = Number.isFinite(frame.rotation) ? frame.rotation : 0;
+        const animationTranslateX = Number.isFinite(transformState.translateX) ? transformState.translateX : 0;
+        const animationTranslateY = Number.isFinite(transformState.translateY) ? transformState.translateY : 0;
+        const animationScale = Number.isFinite(transformState.scale) ? transformState.scale : 1;
+        const animationRotateDegrees = Number.isFinite(transformState.rotate) ? transformState.rotate : 0;
+
+        const translateXPixels = (animationTranslateX / 100) * offscreenCanvas.width;
+        const translateYPixels = (animationTranslateY / 100) * offscreenCanvas.height;
+        const effectiveScale = animationScale > 0 ? animationScale : 0;
+        const totalRotationRadians = ((baseRotationDegrees + animationRotateDegrees) * Math.PI) / 180;
+        const centerX = offscreenCanvas.width / 2;
+        const centerY = offscreenCanvas.height / 2;
+
+        offscreenContext.translate(centerX, centerY);
+        if (totalRotationRadians !== 0) {
+            offscreenContext.rotate(totalRotationRadians);
+        }
+        if (translateXPixels !== 0 || translateYPixels !== 0) {
+            offscreenContext.translate(translateXPixels, translateYPixels);
+        }
+        if (effectiveScale !== 1) {
+            offscreenContext.scale(effectiveScale, effectiveScale);
+        }
+        offscreenContext.translate(-centerX, -centerY);
+
+        const radius = Math.max(0, Number(entry.borderRadius) || 0);
+        if (radius > 0) {
+            clipRoundRectPath(offscreenContext, 0, 0, offscreenCanvas.width, offscreenCanvas.height, radius);
+            offscreenContext.clip();
+        }
+
+        const drawScale = Math.max(
+            offscreenCanvas.width / naturalWidth,
+            offscreenCanvas.height / naturalHeight,
+        );
+        const drawWidth = naturalWidth * drawScale;
+        const drawHeight = naturalHeight * drawScale;
+        const offsetX = (offscreenCanvas.width - drawWidth) / 2;
+        const offsetY = (offscreenCanvas.height - drawHeight) / 2;
+
+        offscreenContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+        offscreenContext.restore();
+
+        displayContext.setTransform(1, 0, 0, 1, 0, 0);
+        displayContext.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+        displayContext.globalAlpha = 1;
+        displayContext.filter = 'none';
+        displayContext.drawImage(offscreenCanvas, 0, 0, displayCanvas.width, displayCanvas.height);
+
+        entry.renderSurfaceSize = { width: targetWidth, height: targetHeight };
+        entry.renderSignature = signature;
+
+        return true;
+    };
+
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
@@ -393,6 +583,14 @@
             }
             image.loading = 'eager';
             image.draggable = false;
+            const displayCanvas = document.createElement('canvas');
+            displayCanvas.className = 'preview-overlay-bitmap';
+            displayCanvas.width = 1;
+            displayCanvas.height = 1;
+            displayCanvas.style.width = '100%';
+            displayCanvas.style.height = '100%';
+            displayCanvas.setAttribute('aria-hidden', 'true');
+            content.appendChild(displayCanvas);
             content.appendChild(image);
             ['n', 's', 'e', 'w', 'nw', 'ne', 'se', 'sw'].forEach((direction) => {
                 const handle = document.createElement('button');
@@ -409,6 +607,13 @@
                 layer,
                 content,
                 image,
+                displayCanvas,
+                displayContext: displayCanvas.getContext('2d'),
+                offscreenCanvas: null,
+                offscreenContext: null,
+                renderSurfaceSize: null,
+                renderSignature: null,
+                pendingAnimationState: { ...OVERLAY_ANIMATION_IDENTITY },
                 objectURL: '',
                 frame: null,
                 isVisible: false,
@@ -421,7 +626,7 @@
                 renderedOpacity: null,
                 renderedZIndex: null,
                 renderedRotation: null,
-                renderedAnimation: null,
+                renderedAnimation: { ...OVERLAY_ANIMATION_IDENTITY },
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -429,10 +634,19 @@
         const { layer, image } = entry;
         let { content } = entry;
 
+        if (image) {
+            image.hidden = true;
+            image.style.display = 'none';
+            image.setAttribute('aria-hidden', 'true');
+        }
+
         if (!content || !content.isConnected) {
             content = document.createElement('div');
             content.className = 'preview-overlay-content';
             layer.insertBefore(content, layer.firstChild);
+            if (entry.displayCanvas) {
+                content.appendChild(entry.displayCanvas);
+            }
             content.appendChild(image);
             entry.content = content;
         }
@@ -466,15 +680,38 @@
         }
         entry.borderRadius = nextBorderRadius;
 
+        if (!entry.displayCanvas || !entry.displayCanvas.isConnected) {
+            const canvas = entry.displayCanvas || document.createElement('canvas');
+            canvas.className = 'preview-overlay-bitmap';
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            canvas.setAttribute('aria-hidden', 'true');
+            canvas.width = Math.max(1, Math.round(entry.renderSurfaceSize?.width || 1));
+            canvas.height = Math.max(1, Math.round(entry.renderSurfaceSize?.height || 1));
+            content.insertBefore(canvas, content.firstChild);
+            entry.displayCanvas = canvas;
+            entry.displayContext = canvas.getContext('2d');
+        }
+
+        if (!entry.offscreenCanvas) {
+            entry.offscreenCanvas = document.createElement('canvas');
+            entry.offscreenCanvas.width = Math.max(1, Math.round(entry.renderSurfaceSize?.width || 1));
+            entry.offscreenCanvas.height = Math.max(1, Math.round(entry.renderSurfaceSize?.height || 1));
+            entry.offscreenContext = entry.offscreenCanvas.getContext('2d');
+        }
+
         if (entry.objectURL !== objectURL || !image.src) {
             image.src = objectURL;
             entry.objectURL = objectURL;
+            entry.renderSignature = null;
         }
 
         image.alt = descriptor.item.dataset.displayName
             || descriptor.item.querySelector('span')?.textContent
             || 'Overlay layer';
         layer.title = image.alt;
+        layer.style.removeProperty('mix-blend-mode');
+        layer.style.removeProperty('filter');
 
         return entry;
     };
@@ -495,6 +732,17 @@
         entry.renderedOpacity = null;
         entry.renderedZIndex = null;
         entry.renderedRotation = null;
+        entry.renderSurfaceSize = null;
+        entry.renderSignature = null;
+        entry.pendingAnimationState = { ...OVERLAY_ANIMATION_IDENTITY };
+        if (entry.displayContext && entry.displayCanvas) {
+            entry.displayContext.setTransform(1, 0, 0, 1, 0, 0);
+            entry.displayContext.clearRect(0, 0, entry.displayCanvas.width, entry.displayCanvas.height);
+        }
+        if (entry.offscreenContext && entry.offscreenCanvas) {
+            entry.offscreenContext.setTransform(1, 0, 0, 1, 0, 0);
+            entry.offscreenContext.clearRect(0, 0, entry.offscreenCanvas.width, entry.offscreenCanvas.height);
+        }
         resetOverlayAnimationState(entry);
 
         if (entry.layer) {
@@ -627,16 +875,22 @@
             entry.renderedFrame = appliedFrameStyles;
         }
 
-        if (entry.renderedRotation !== rotationValue) {
-            image.style.setProperty('--preview-overlay-rotation', rotationValue);
-            entry.renderedRotation = rotationValue;
-        }
+        entry.renderedRotation = rotationValue;
 
         if (layer.parentElement !== container) {
             container.appendChild(layer);
         }
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
+        layer.style.removeProperty('mix-blend-mode');
+        layer.style.filter = 'none';
+
+        if (entry.displayCanvas && !entry.displayCanvas.parentElement) {
+            const targetContent = entry.content || null;
+            if (targetContent) {
+                targetContent.insertBefore(entry.displayCanvas, targetContent.firstChild);
+            }
+        }
 
         const descriptorOpacity = computeOverlayDescriptorOpacity(descriptor);
         const clampedOpacity = clamp(descriptorOpacity, 0, 1);
@@ -646,8 +900,8 @@
         }
         entry.renderedOpacity = nextOpacity;
         entry.opacity = nextOpacity;
-        if (image) {
-            image.style.opacity = '1';
+        if (entry.displayCanvas) {
+            entry.displayCanvas.style.opacity = '1';
         }
 
         const clipDurationMs = Math.max(0, Number(descriptor.clipDuration) || 0);
@@ -660,7 +914,8 @@
             clipDurationMs,
             clipTimeMs,
         );
-        applyOverlayAnimationTransform(entry, animationTransform);
+        const normalizedAnimation = applyOverlayAnimationTransform(entry, animationTransform);
+        renderOverlayEntryBitmap(entry, resolvedFrame, normalizedAnimation);
 
         const isActiveItem = descriptor.item === activeTimelineItem;
         const isPointerTarget = overlayPointerState.pointerId !== null
