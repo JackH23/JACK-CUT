@@ -591,6 +591,9 @@ function releaseTimelineAudio(objectURL) {
 const previewTransitionBufferState = {
     finalizeHandler: null,
     fallbackTimer: 0,
+    transitionCompleted: false,
+    nextFrameReady: false,
+    isHoldingFrame: false,
 };
 
 function resetPreviewTransitionBufferElement() {
@@ -607,19 +610,49 @@ function resetPreviewTransitionBufferElement() {
 }
 
 function cleanupPreviewTransitionBuffer() {
-    if (!previewImageTransitionBuffer) {
-        return;
+    const transitionBuffer = previewImageTransitionBuffer;
+
+    if (previewTransitionBufferState.finalizeHandler && transitionBuffer) {
+        transitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
+        transitionBuffer.removeEventListener('transitioncancel', previewTransitionBufferState.finalizeHandler);
     }
-    if (previewTransitionBufferState.finalizeHandler) {
-        previewImageTransitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
-        previewImageTransitionBuffer.removeEventListener('transitioncancel', previewTransitionBufferState.finalizeHandler);
-        previewTransitionBufferState.finalizeHandler = null;
-    }
+    previewTransitionBufferState.finalizeHandler = null;
+
     if (previewTransitionBufferState.fallbackTimer) {
         window.clearTimeout(previewTransitionBufferState.fallbackTimer);
         previewTransitionBufferState.fallbackTimer = 0;
     }
+
+    previewTransitionBufferState.transitionCompleted = false;
+    previewTransitionBufferState.nextFrameReady = false;
+    previewTransitionBufferState.isHoldingFrame = false;
+
+    if (!transitionBuffer) {
+        return;
+    }
+
     resetPreviewTransitionBufferElement();
+}
+
+function finalizePreviewTransitionBufferWhenReady(options = {}) {
+    const force = Boolean(options?.force);
+
+    if (force) {
+        cleanupPreviewTransitionBuffer();
+        return;
+    }
+
+    if (!previewTransitionBufferState.isHoldingFrame) {
+        return;
+    }
+
+    if (previewTransitionBufferState.transitionCompleted && previewTransitionBufferState.nextFrameReady) {
+        cleanupPreviewTransitionBuffer();
+    }
+}
+
+function isPreviewTransitionBufferHoldingFrame() {
+    return previewTransitionBufferState.isHoldingFrame;
 }
 
 function stagePreviewTransitionBuffer(options = {}) {
@@ -642,6 +675,10 @@ function stagePreviewTransitionBuffer(options = {}) {
     }
 
     cleanupPreviewTransitionBuffer();
+
+    previewTransitionBufferState.isHoldingFrame = true;
+    previewTransitionBufferState.transitionCompleted = false;
+    previewTransitionBufferState.nextFrameReady = false;
 
     previewImageTransitionBuffer.src = currentSrc;
     previewImageTransitionBuffer.hidden = false;
@@ -685,14 +722,17 @@ function stagePreviewTransitionBuffer(options = {}) {
     }
 
     const finalize = () => {
-        cleanupPreviewTransitionBuffer();
+        previewTransitionBufferState.transitionCompleted = true;
+        finalizePreviewTransitionBufferWhenReady();
     };
 
     previewTransitionBufferState.finalizeHandler = finalize;
     previewImageTransitionBuffer.addEventListener('transitionend', finalize, { once: true });
     previewImageTransitionBuffer.addEventListener('transitioncancel', finalize, { once: true });
 
-    previewTransitionBufferState.fallbackTimer = window.setTimeout(finalize, Math.max(480, Number(options.timeoutMs) || 720));
+    previewTransitionBufferState.fallbackTimer = window.setTimeout(() => {
+        finalizePreviewTransitionBufferWhenReady({ force: true });
+    }, Math.max(480, Number(options.timeoutMs) || 720));
 
     requestAnimationFrame(() => {
         previewImageTransitionBuffer.classList.add('is-fading-out');
@@ -744,6 +784,8 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                 return;
             }
             settled = true;
+            previewTransitionBufferState.nextFrameReady = true;
+            finalizePreviewTransitionBufferWhenReady();
             previewImage.removeEventListener('load', finish);
             previewImage.removeEventListener('error', finish);
             if (immediate) {

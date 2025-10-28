@@ -56,6 +56,113 @@ let canvasBackdropSnapshotCanvas = null;
 let canvasBackdropSnapshotContext = null;
 let hasCanvasBackdropSnapshot = false;
 
+let previewFrameCacheCanvas = null;
+let previewFrameCacheContext = null;
+let hasPreviewFrameCache = false;
+
+function ensurePreviewFrameCacheContext(width, height) {
+    const roundedWidth = Math.round(Number(width) || 0);
+    const roundedHeight = Math.round(Number(height) || 0);
+
+    if (!Number.isFinite(roundedWidth)
+        || !Number.isFinite(roundedHeight)
+        || roundedWidth <= 0
+        || roundedHeight <= 0
+    ) {
+        return null;
+    }
+
+    const safeWidth = Math.max(1, roundedWidth);
+    const safeHeight = Math.max(1, roundedHeight);
+
+    if (!previewFrameCacheCanvas) {
+        previewFrameCacheCanvas = document.createElement('canvas');
+    }
+
+    if (previewFrameCacheCanvas.width !== safeWidth || previewFrameCacheCanvas.height !== safeHeight) {
+        previewFrameCacheCanvas.width = safeWidth;
+        previewFrameCacheCanvas.height = safeHeight;
+        previewFrameCacheContext = null;
+    }
+
+    if (!previewFrameCacheContext) {
+        previewFrameCacheContext = previewFrameCacheCanvas.getContext('2d');
+    }
+
+    return previewFrameCacheContext;
+}
+
+function storePreviewFrameCacheFromCanvas(sourceCanvas, width, height) {
+    if (!sourceCanvas) {
+        hasPreviewFrameCache = false;
+        return;
+    }
+
+    const context = ensurePreviewFrameCacheContext(width, height);
+    if (!context || !previewFrameCacheCanvas) {
+        hasPreviewFrameCache = false;
+        return;
+    }
+
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, previewFrameCacheCanvas.width, previewFrameCacheCanvas.height);
+
+    try {
+        context.drawImage(
+            sourceCanvas,
+            0,
+            0,
+            Math.max(1, Math.round(Number(width) || 0)),
+            Math.max(1, Math.round(Number(height) || 0)),
+            0,
+            0,
+            previewFrameCacheCanvas.width,
+            previewFrameCacheCanvas.height,
+        );
+        hasPreviewFrameCache = true;
+    } catch (error) {
+        hasPreviewFrameCache = false;
+    }
+}
+
+function drawPreviewFrameCache(targetContext, width, height) {
+    if (!hasPreviewFrameCache || !previewFrameCacheCanvas || !targetContext) {
+        return false;
+    }
+
+    const roundedWidth = Math.round(Number(width) || 0);
+    const roundedHeight = Math.round(Number(height) || 0);
+
+    if (!Number.isFinite(roundedWidth)
+        || !Number.isFinite(roundedHeight)
+        || roundedWidth <= 0
+        || roundedHeight <= 0
+    ) {
+        return false;
+    }
+
+    const safeWidth = Math.max(1, roundedWidth);
+    const safeHeight = Math.max(1, roundedHeight);
+
+    targetContext.drawImage(
+        previewFrameCacheCanvas,
+        0,
+        0,
+        previewFrameCacheCanvas.width,
+        previewFrameCacheCanvas.height,
+        0,
+        0,
+        safeWidth,
+        safeHeight,
+    );
+
+    return true;
+}
+
+function invalidatePreviewFrameCache() {
+    hasPreviewFrameCache = false;
+}
+
 function computeCoverDimensions(sourceWidth, sourceHeight, targetWidth, targetHeight) {
     if (!Number.isFinite(sourceWidth)
         || !Number.isFinite(sourceHeight)
@@ -439,8 +546,17 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const viewportWidth = Math.max(0, previewViewport.clientWidth);
-    const viewportHeight = Math.max(0, previewViewport.clientHeight);
+    let viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
+    let viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
+
+    if ((viewportWidth === 0 || viewportHeight === 0)
+        && lastNonZeroPreviewViewportSize
+        && lastNonZeroPreviewViewportSize.width > 0
+        && lastNonZeroPreviewViewportSize.height > 0
+    ) {
+        viewportWidth = lastNonZeroPreviewViewportSize.width;
+        viewportHeight = lastNonZeroPreviewViewportSize.height;
+    }
 
     if (viewportWidth === 0 || viewportHeight === 0) {
         return false;
@@ -652,6 +768,8 @@ function startPreviewMirroring(width, height, options = {}) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
         }
 
+        let drewPrimaryFrame = false;
+
         if (!previewVideo.hidden && previewVideo.readyState >= 2) {
             const dimensions = computeContainDimensions(
                 previewVideo.videoWidth,
@@ -666,9 +784,10 @@ function startPreviewMirroring(width, height, options = {}) {
                 dimensions.width,
                 dimensions.height,
             );
+            drewPrimaryFrame = true;
         } else if (!previewImage.hidden && previewImage.complete) {
-            const drewImage = drawPreviewImageToExportCanvas();
-            if (!drewImage) {
+            drewPrimaryFrame = drawPreviewImageToExportCanvas();
+            if (!drewPrimaryFrame) {
                 const fallbackDimensions = computeContainDimensions(
                     previewImage.naturalWidth,
                     previewImage.naturalHeight,
@@ -682,8 +801,20 @@ function startPreviewMirroring(width, height, options = {}) {
                     fallbackDimensions.width,
                     fallbackDimensions.height,
                 );
+                drewPrimaryFrame = true;
             }
-        } else {
+        }
+
+        if (!drewPrimaryFrame) {
+            const shouldHoldFrame = typeof isPreviewTransitionBufferHoldingFrame === 'function'
+                && isPreviewTransitionBufferHoldingFrame();
+            if (shouldHoldFrame) {
+                drewPrimaryFrame = drawPreviewFrameCache(exportMirrorContext, canvasWidth, canvasHeight);
+            }
+        }
+
+        if (!drewPrimaryFrame) {
+            invalidatePreviewFrameCache();
             exportMirrorContext.fillStyle = '#1f2937';
             exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
             exportMirrorContext.fillStyle = '#e2e8f0';
@@ -700,6 +831,10 @@ function startPreviewMirroring(width, height, options = {}) {
 
         if (overlaySnapshots.length && hasViewport) {
             drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
+        }
+
+        if (drewPrimaryFrame) {
+            storePreviewFrameCacheFromCanvas(exportMirrorCanvas, canvasWidth, canvasHeight);
         }
 
         scheduleNextFrame();
