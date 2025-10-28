@@ -850,13 +850,20 @@ function getActiveOverlayLayerSnapshots() {
     return snapshots;
 }
 
-function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, viewportHeight) {
+function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, viewportHeight, options = {}) {
     if (!Array.isArray(snapshots) || !snapshots.length) {
         return;
     }
 
-    const canvasWidth = Math.max(1, exportMirrorCanvas.width);
-    const canvasHeight = Math.max(1, exportMirrorCanvas.height);
+    const targetCanvas = options.canvas || exportMirrorCanvas;
+    const context = options.context || exportMirrorContext;
+
+    if (!targetCanvas || !context) {
+        return;
+    }
+
+    const canvasWidth = Math.max(1, targetCanvas.width);
+    const canvasHeight = Math.max(1, targetCanvas.height);
     const scaleX = viewportWidth > 0 ? canvasWidth / viewportWidth : 0;
     const scaleY = viewportHeight > 0 ? canvasHeight / viewportHeight : 0;
 
@@ -897,7 +904,7 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             const animationRotateDegrees = Number.isFinite(animationState?.rotate)
                 ? animationState.rotate
                 : 0;
-            
+
             const totalRotationRadians = ((baseRotationDegrees + animationRotateDegrees) * Math.PI) / 180;
             const translateXPixels = (animationTranslateX / 100) * frame.width;
             const translateYPixels = (animationTranslateY / 100) * frame.height;
@@ -905,36 +912,36 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             const centerX = frame.width / 2;
             const centerY = frame.height / 2;
 
-            exportMirrorContext.save();
-            exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-            exportMirrorContext.translate(frame.left + centerX, frame.top + centerY);
+            context.save();
+            context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+            context.translate(frame.left + centerX, frame.top + centerY);
             if (totalRotationRadians !== 0) {
-                exportMirrorContext.rotate(totalRotationRadians);
+                context.rotate(totalRotationRadians);
             }
             if (translateXPixels !== 0 || translateYPixels !== 0) {
-                exportMirrorContext.translate(translateXPixels, translateYPixels);
+                context.translate(translateXPixels, translateYPixels);
             }
             if (effectiveScale !== 1) {
-                exportMirrorContext.scale(effectiveScale, effectiveScale);
+                context.scale(effectiveScale, effectiveScale);
             }
-            exportMirrorContext.translate(-centerX, -centerY);
+            context.translate(-centerX, -centerY);
 
             const radius = Math.max(0, snapshot.borderRadius || 0);
             if (radius > 0) {
-                clipRoundRectPath(exportMirrorContext, 0, 0, frame.width, frame.height, radius);
-                exportMirrorContext.clip();
+                clipRoundRectPath(context, 0, 0, frame.width, frame.height, radius);
+                context.clip();
             }
 
             const clampedOpacity = clamp(Number(snapshot.opacity) || 1, 0, 1);
-            exportMirrorContext.globalAlpha *= clampedOpacity;
+            context.globalAlpha *= clampedOpacity;
 
             const drawWidth = naturalWidth * drawScale;
             const drawHeight = naturalHeight * drawScale;
             const offsetX = (frame.width - drawWidth) / 2;
             const offsetY = (frame.height - drawHeight) / 2;
 
-            exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-            exportMirrorContext.restore();
+            context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+            context.restore();
         });
 }
 
