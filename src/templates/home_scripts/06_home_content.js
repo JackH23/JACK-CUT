@@ -337,6 +337,11 @@
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
+        if (descriptor.layerGroup === 'below' && descriptor.shouldRender !== true) {
+            descriptor.shouldRender = descriptor.isActive
+                || descriptor.intersectsWindow
+                || shouldRenderOverlayDescriptor(descriptor, safeTimelineNow);
+        }
         if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
         } else {
@@ -366,6 +371,48 @@
         ne: 'Resize overlay from top right',
         se: 'Resize overlay from bottom right',
         sw: 'Resize overlay from bottom left',
+    };
+
+    const ensureBackgroundBitmap = (entry) => {
+        if (!entry || !entry.image || !entry.objectURL) {
+            return;
+        }
+
+        if (entry.bitmap
+            && entry.bitmapDimensions
+            && entry.bitmapDimensions.width === entry.image.naturalWidth
+            && entry.bitmapDimensions.height === entry.image.naturalHeight) {
+            if (!backgroundFrameCache.has(entry.objectURL)) {
+                backgroundFrameCache.set(entry.objectURL, entry.bitmap);
+            }
+            return;
+        }
+
+        if (entry.pendingBitmapPromise || !window.createImageBitmap) {
+            return;
+        }
+
+        if (!entry.image.complete
+            || entry.image.naturalWidth <= 0
+            || entry.image.naturalHeight <= 0) {
+            return;
+        }
+
+        try {
+            const promise = window.createImageBitmap(entry.image).then((bitmap) => {
+                entry.bitmap = bitmap;
+                entry.bitmapDimensions = { width: bitmap.width, height: bitmap.height };
+                backgroundFrameCache.set(entry.objectURL, bitmap);
+                entry.pendingBitmapPromise = null;
+                return bitmap;
+            }).catch((error) => {
+                console.warn('Failed to cache background frame buffer.', error);
+                entry.pendingBitmapPromise = null;
+            });
+            entry.pendingBitmapPromise = promise;
+        } catch (error) {
+            entry.pendingBitmapPromise = null;
+        }
     };
 
     const ensureOverlayLayerEntry = (descriptor) => {
@@ -426,6 +473,9 @@
                 renderedZIndex: null,
                 renderedRotation: null,
                 renderedAnimation: null,
+                bitmap: null,
+                bitmapDimensions: null,
+                pendingBitmapPromise: null,
             };
             activeOverlayLayers.set(descriptor.item, entry);
         }
@@ -501,6 +551,12 @@
         entry.renderedZIndex = null;
         entry.renderedRotation = null;
         resetOverlayAnimationState(entry);
+        if (entry.objectURL) {
+            backgroundFrameCache.delete(entry.objectURL);
+        }
+        entry.bitmap = null;
+        entry.bitmapDimensions = null;
+        entry.pendingBitmapPromise = null;
 
         if (entry.layer) {
             entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
@@ -548,6 +604,11 @@
         }
 
         const { layer, image } = entry;
+
+        const groupName = getDescriptorLayerGroup(descriptor);
+        if (groupName === 'below') {
+            ensureBackgroundBitmap(entry);
+        }
 
         const isDefaultTextOverlay = typeof isDefaultTextTimelineItem === 'function'
             && isDefaultTextTimelineItem(descriptor.item);
@@ -604,8 +665,6 @@
                 height: viewportHeight,
                 rotation: 0,
             };
-
-        const groupName = getDescriptorLayerGroup(descriptor);
 
         let appliedFrameStyles = null;
         let rotationValue = '0deg';
@@ -717,6 +776,9 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                if (fallbackEntry.layerGroup === 'below') {
+                    ensureBackgroundBitmap(fallbackEntry);
+                }
             }
         });
     }
@@ -741,6 +803,9 @@
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
+                if (fallbackEntry.layerGroup === 'below') {
+                    ensureBackgroundBitmap(fallbackEntry);
+                }
             }
         });
     }
@@ -752,6 +817,14 @@
             return;
         }
         if (!nextActiveItems.has(item)) {
+            if (entry && entry.layerGroup === 'below'
+                && Number.isFinite(lastBackgroundRenderTimestamp)
+                && Number.isFinite(entry.lastTimelineTime)) {
+                const age = Math.abs(lastBackgroundRenderTimestamp - entry.lastTimelineTime);
+                if (age <= (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
+                    return;
+                }
+            }
             hideOverlayLayerEntry(entry);
         }
     });
@@ -760,6 +833,9 @@
         if (entry && entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
+        }
+        if (entry && entry.objectURL) {
+            backgroundFrameCache.delete(entry.objectURL);
         }
         activeOverlayLayers.delete(item);
     });
@@ -774,11 +850,31 @@
         previewOverlayStack.setAttribute('aria-hidden', 'true');
     }
 
-    activeOverlayDescriptorCache = overlayEntries
+    const nextBackgroundCache = overlayEntries
+        .filter((descriptor) => getDescriptorLayerGroup(descriptor) === 'below')
         .map((descriptor) => extractOverlayDescriptorCacheEntry(descriptor))
         .filter((descriptor) => descriptor && descriptor.item);
 
-    lastOverlayRenderTimestamp = safeTimelineNow;
+    const nextForegroundCache = overlayEntries
+        .filter((descriptor) => getDescriptorLayerGroup(descriptor) !== 'below')
+        .map((descriptor) => extractOverlayDescriptorCacheEntry(descriptor))
+        .filter((descriptor) => descriptor && descriptor.item);
+
+    activeBackgroundDescriptorCache = nextBackgroundCache;
+    activeOverlayDescriptorCache = nextForegroundCache;
+
+    if (overlayGroups.above.length) {
+        lastOverlayRenderTimestamp = safeTimelineNow;
+    } else if (!overlayGroups.above.length) {
+        lastOverlayRenderTimestamp = overlayGroups.below.length ? safeTimelineNow : lastOverlayRenderTimestamp;
+    }
+
+    if (overlayGroups.below.length) {
+        lastBackgroundRenderTimestamp = safeTimelineNow;
+    } else {
+        lastBackgroundRenderTimestamp = null;
+    }
+
     return overlayEntries;
 }
 
@@ -791,8 +887,12 @@ function getActiveOverlayLayerSnapshots() {
             return;
         }
 
-        if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
-            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
+        const referenceTimestamp = entry.layerGroup === 'below'
+            ? lastBackgroundRenderTimestamp
+            : lastOverlayRenderTimestamp;
+
+        if (Number.isFinite(referenceTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
+            const age = Math.abs(referenceTimestamp - entry.lastTimelineTime);
             if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
                 return;
             }
@@ -827,6 +927,14 @@ function getActiveOverlayLayerSnapshots() {
 
         const animation = entry.renderedAnimation || null;
 
+        let bitmap = null;
+        if (group === 'below' && entry.objectURL) {
+            const cachedBitmap = backgroundFrameCache.get(entry.objectURL);
+            if (cachedBitmap) {
+                bitmap = cachedBitmap;
+            }
+        }
+
         snapshots.push({
             image,
             frame: {
@@ -849,6 +957,7 @@ function getActiveOverlayLayerSnapshots() {
                     rotate: Number.isFinite(animation.rotate) ? animation.rotate : 0,
                 }
                 : null,
+            bitmap,
         });
     });
 
@@ -882,13 +991,18 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
     snapshots
         .filter((snapshot) => snapshot.group === group)
         .forEach((snapshot) => {
-            const { image, frame } = snapshot;
+            const { image, frame, bitmap } = snapshot;
             if (!frame || frame.width <= 0 || frame.height <= 0) {
                 return;
             }
 
-            const naturalWidth = Math.max(1, image.naturalWidth || 0);
-            const naturalHeight = Math.max(1, image.naturalHeight || 0);
+            const sourceImage = bitmap || image;
+            if (!sourceImage) {
+                return;
+            }
+
+            const naturalWidth = bitmap ? Math.max(1, bitmap.width || 0) : Math.max(1, image.naturalWidth || 0);
+            const naturalHeight = bitmap ? Math.max(1, bitmap.height || 0) : Math.max(1, image.naturalHeight || 0);
             if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)) {
                 return;
             }
@@ -948,7 +1062,7 @@ function drawOverlaySnapshotsToExportCanvas(snapshots, group, viewportWidth, vie
             const offsetX = (frame.width - drawWidth) / 2;
             const offsetY = (frame.height - drawHeight) / 2;
 
-            exportMirrorContext.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+            exportMirrorContext.drawImage(sourceImage, offsetX, offsetY, drawWidth, drawHeight);
             exportMirrorContext.restore();
         });
 }

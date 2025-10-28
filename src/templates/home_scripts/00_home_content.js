@@ -66,6 +66,7 @@ const previewOverlayGroups = previewOverlayStack
     }
     : null;
 const activeOverlayLayers = new Map();
+const backgroundFrameCache = new Map();
 const overlayLayerToTimelineItem = new WeakMap();
 const overlayPointerState = {
     pointerId: null,
@@ -78,6 +79,7 @@ const overlayPointerState = {
     lastTransform: null,
 };
 let lastOverlayRenderTimestamp = null;
+let lastBackgroundRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
 const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = 1;
