@@ -994,6 +994,7 @@ function applyAudioMixToPreview(mix, context = {}) {
         applyMasterVolumeToPreview(settings.volumePercent, {
             mediaElement: previewVideo,
             mixGain,
+            timelineItem: activeItem,
         });
     }
 
@@ -1023,6 +1024,7 @@ function applyAudioMixToPreview(mix, context = {}) {
         applyMasterVolumeToPreview(settings.volumePercent, {
             mediaElement: targetElement,
             mixGain,
+            timelineItem: overlayItem,
         });
     });
 
@@ -1168,6 +1170,7 @@ function getMediaEnvelopeState(mediaElement) {
             gainNode: null,
             envelopeNode: null,
             previewDestination: null,
+            metadata: null,
         });
     }
     const state = mediaEnvelopeStates.get(mediaElement);
@@ -1221,6 +1224,9 @@ function ensureMediaElementGainNode(mediaElement) {
             state.sourceNode = sourceNode;
             state.envelopeNode = envelopeNode;
             state.gainNode = gainNode;
+            if (state.metadata) {
+                applyChannelConfigurationToAudioNodes([sourceNode, envelopeNode, gainNode], state.metadata);
+            }
         } catch (error) {
             disconnectMediaEnvelopeAudio(state);
             return null;
@@ -1296,6 +1302,78 @@ function getTimelineItemAudioSettings(timelineItem) {
         fadeInMs,
         fadeOutMs,
     };
+}
+
+function getTimelineItemAudioMetadata(timelineItem) {
+    const dataset = timelineItem?.dataset || {};
+    const sampleRate = Number(dataset.audioSampleRate);
+    const channelCount = Number(dataset.audioChannelCount);
+    const bitrate = Number(dataset.audioBitrate);
+
+    return {
+        sampleRate: Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : null,
+        channelCount: Number.isFinite(channelCount) && channelCount > 0
+            ? Math.max(1, Math.round(channelCount))
+            : null,
+        bitrate: Number.isFinite(bitrate) && bitrate > 0 ? bitrate : null,
+    };
+}
+
+function applyChannelConfigurationToAudioNodes(nodes, metadata) {
+    if (!metadata || !Array.isArray(nodes)) {
+        return;
+    }
+
+    const channelCount = Number(metadata.channelCount);
+    if (!Number.isFinite(channelCount) || channelCount <= 0) {
+        return;
+    }
+    const safeCount = Math.max(1, Math.round(channelCount));
+
+    nodes.forEach((node) => {
+        if (!node) {
+            return;
+        }
+        try {
+            if (typeof node.channelCount === 'number') {
+                node.channelCount = safeCount;
+            }
+        } catch (error) {
+            // Ignore channel count assignment errors.
+        }
+        try {
+            if (typeof node.channelCountMode === 'string') {
+                node.channelCountMode = 'explicit';
+            }
+        } catch (error) {
+            // Ignore channel mode assignment errors.
+        }
+        try {
+            if (typeof node.channelInterpretation === 'string') {
+                node.channelInterpretation = 'discrete';
+            }
+        } catch (error) {
+            // Ignore channel interpretation assignment errors.
+        }
+    });
+}
+
+function updateMediaEnvelopeMetadata(mediaElement, metadata) {
+    const state = getMediaEnvelopeState(mediaElement);
+    if (!state) {
+        return;
+    }
+
+    state.metadata = metadata || null;
+    if (!metadata) {
+        return;
+    }
+
+    applyChannelConfigurationToAudioNodes([
+        state.sourceNode,
+        state.envelopeNode,
+        state.gainNode,
+    ], metadata);
 }
 
 function persistTimelineItemAudioSettings(timelineItem, settings) {
@@ -1399,10 +1477,13 @@ function applyMasterVolumeToPreview(volumePercent, options = {}) {
     const {
         mediaElement: target = previewVideo,
         mixGain = null,
+        timelineItem = null,
     } = options;
     if (!target) {
         return;
     }
+    const metadata = timelineItem ? getTimelineItemAudioMetadata(timelineItem) : null;
+    updateMediaEnvelopeMetadata(target, metadata);
     const percent = clampVolumePercent(volumePercent);
     const mixGainValue = Number.isFinite(mixGain) ? clampVolume(mixGain) : null;
     const normalized = mixGainValue !== null
@@ -1490,6 +1571,7 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
         mixGain = null,
         clipOffsetMs: rawClipOffsetMs = 0,
         clipTotalDurationMs: rawTotalDurationMs = null,
+        timelineItem = null,
     } = options;
     if (!target) {
         return;
@@ -1543,6 +1625,11 @@ function applyPreviewAudioEnvelope(settings, clipDurationMs, options = {}) {
     })();
 
     const state = getMediaEnvelopeState(target);
+
+    if (timelineItem) {
+        const metadata = getTimelineItemAudioMetadata(timelineItem);
+        updateMediaEnvelopeMetadata(target, metadata);
+    }
 
     if (state) {
         state.baseVolume = baseVolume;
@@ -1780,10 +1867,16 @@ function syncAudioControlsToTimelineItem(timelineItem) {
     });
 
     if (isVideo) {
-        applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewVideo });
+        applyMasterVolumeToPreview(settings.volumePercent, {
+            mediaElement: previewVideo,
+            timelineItem,
+        });
     }
     if (isAudio) {
-        applyMasterVolumeToPreview(settings.volumePercent, { mediaElement: previewAudio });
+        applyMasterVolumeToPreview(settings.volumePercent, {
+            mediaElement: previewAudio,
+            timelineItem,
+        });
     }
     if (!supportsAudio) {
         cancelPreviewAudioEnvelope({ mediaElement: previewVideo, restoreVolume: false });
