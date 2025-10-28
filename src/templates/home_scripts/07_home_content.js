@@ -5602,6 +5602,14 @@ async function playTimelineItem(
         overlayEntriesOverride,
         laneCache,
     );
+    if (stabilizeLowerLayerDuringTransition !== false
+        && fileType.startsWith('image/')
+        && typeof preparePreviewOverlayTransition === 'function') {
+        preparePreviewOverlayTransition({
+            item: timelineItem,
+            entries: overlayEntries,
+        });
+    }
     renderPreviewOverlayLayers(timelineItem, overlayEntries);
     applyCanvasSettingsToPreview(timelineItem);
 

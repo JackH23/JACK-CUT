@@ -2035,14 +2035,144 @@ function setPreviewImageVisibility(isVisible) {
             queuePreviewImageFrameReset();
         }
     } else {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'visibility-hide' });
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
     }
 }
 
-function clearPreviewOverlayLayers() {
+let previewLowerLayerLockDepth = 0;
+let previewOverlayPendingRender = null;
+let pendingOverlayTransitionDetail = null;
+let previewOverlayPendingRenderFrame = 0;
+
+function isPreviewLowerLayerLockActive() {
+    return previewLowerLayerLockDepth > 0;
+}
+
+function queuePendingOverlayRender(update) {
+    cancelPendingOverlayRenderFlush();
+    previewOverlayPendingRender = update || null;
+    if (update && typeof logPreviewTransitionDiagnostic === 'function') {
+        logPreviewTransitionDiagnostic('Queued overlay layer update', update.detail || update);
+    }
+}
+
+function applyPendingOverlayRender() {
+    previewOverlayPendingRenderFrame = 0;
+    const pending = previewOverlayPendingRender;
+    previewOverlayPendingRender = null;
+    pendingOverlayTransitionDetail = null;
+
+    if (!pending) {
+        return;
+    }
+
+    if (pending.action === 'clear') {
+        performClearPreviewOverlayLayers();
+        return;
+    }
+
+    renderPreviewOverlayLayersInternal(pending.item, pending.options || null);
+}
+
+function activatePreviewLowerLayerLock(detail = null) {
+    cancelPendingOverlayRenderFlush();
+    previewLowerLayerLockDepth = Math.max(0, previewLowerLayerLockDepth) + 1;
+    pendingOverlayTransitionDetail = detail || pendingOverlayTransitionDetail;
+
+    if (previewLowerLayerLockDepth === 1) {
+        if (previewOverlayStack) {
+            previewOverlayStack.classList.add('is-transition-locked');
+        }
+        queuePendingOverlayRender(null);
+        if (typeof logPreviewTransitionDiagnostic === 'function') {
+            logPreviewTransitionDiagnostic('Lower layer lock engaged', detail);
+        }
+    }
+}
+
+function releasePreviewLowerLayerLock(options = {}) {
+    if (previewLowerLayerLockDepth <= 0) {
+        return;
+    }
+
+    previewLowerLayerLockDepth = Math.max(0, previewLowerLayerLockDepth - 1);
+
+    if (previewLowerLayerLockDepth > 0) {
+        return;
+    }
+
+    if (previewOverlayStack) {
+        previewOverlayStack.classList.remove('is-transition-locked');
+    }
+
+    if (typeof logPreviewTransitionDiagnostic === 'function') {
+        logPreviewTransitionDiagnostic('Lower layer lock released', options?.detail || pendingOverlayTransitionDetail);
+    }
+
+    const shouldApply = options?.applyPending !== false;
+    const pending = previewOverlayPendingRender;
+    if (shouldApply && pending) {
+        schedulePendingOverlayRenderFlush();
+    } else if (!shouldApply) {
+        previewOverlayPendingRender = null;
+        pendingOverlayTransitionDetail = null;
+        cancelPendingOverlayRenderFlush();
+    }
+}
+
+function primeActiveOverlayTextures() {
+    if (!activeOverlayLayers || typeof activeOverlayLayers.forEach !== 'function') {
+        return;
+    }
+
+    activeOverlayLayers.forEach((entry) => {
+        if (!entry || !entry.image) {
+            return;
+        }
+
+        const element = entry.image;
+        const tagName = (element.tagName || '').toLowerCase();
+        if (tagName === 'img') {
+            if (typeof element.decode === 'function') {
+                element.decode().catch(() => {});
+            }
+        } else if (tagName === 'video') {
+            try {
+                // eslint-disable-next-line no-unused-expressions
+                element.readyState;
+            } catch (error) {
+                // Ignore readiness probing errors.
+            }
+        }
+    });
+}
+
+function preparePreviewOverlayTransition(detail = null) {
+    if (stabilizeLowerLayerDuringTransition === false) {
+        return;
+    }
+
+    pendingOverlayTransitionDetail = detail || pendingOverlayTransitionDetail;
+
+    if (typeof primeActiveOverlayTextures === 'function') {
+        try {
+            primeActiveOverlayTextures();
+        } catch (error) {
+            if (typeof logPreviewTransitionDiagnostic === 'function') {
+                logPreviewTransitionDiagnostic('Overlay texture prime failed', { error });
+            }
+        }
+    }
+
+    if (!isPreviewLowerLayerLockActive()) {
+        activatePreviewLowerLayerLock(detail);
+    }
+}
+
+function performClearPreviewOverlayLayers() {
     if (!previewOverlayStack) {
         return;
     }
@@ -2089,6 +2219,24 @@ function clearPreviewOverlayLayers() {
     }
 
     lastOverlayRenderTimestamp = null;
+}
+
+function clearPreviewOverlayLayers() {
+    if (!previewOverlayStack) {
+        return;
+    }
+
+    if (typeof cancelOverlayPointerInteraction === 'function') {
+        cancelOverlayPointerInteraction();
+    }
+
+    if (stabilizeLowerLayerDuringTransition !== false && isPreviewLowerLayerLockActive()) {
+        queuePendingOverlayRender({ action: 'clear', detail: { reason: 'transition-lock' } });
+        return;
+    }
+
+    cancelPendingOverlayRenderFlush();
+    performClearPreviewOverlayLayers();
 }
 
 function resolveLaneIndex(laneValue) {
@@ -2792,7 +2940,7 @@ function extractOverlayDescriptorCacheEntry(descriptor) {
     };
 }
 
-function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
+function renderPreviewOverlayLayersInternal(primaryTimelineItem, options = null) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
     }
@@ -2802,7 +2950,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     }
 
     if (!primaryTimelineItem) {
-        clearPreviewOverlayLayers();
+        performClearPreviewOverlayLayers();
         return;
     }
 
@@ -2811,7 +2959,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     const viewportHeight = Math.max(0, viewportSize.height || 0);
 
     if (viewportWidth === 0 || viewportHeight === 0) {
-        clearPreviewOverlayLayers();
+        performClearPreviewOverlayLayers();
         return;
     }
 
@@ -2936,3 +3084,72 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 : doesClipIntersectWindow(
                     descriptor,
                 expandedWindowStart,
+function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
+    if (stabilizeLowerLayerDuringTransition !== false && isPreviewLowerLayerLockActive()) {
+        queuePendingOverlayRender({
+            action: 'render',
+            item: primaryTimelineItem,
+            options: options || null,
+            detail: pendingOverlayTransitionDetail || { reason: 'transition-lock' },
+        });
+        return;
+    }
+
+    cancelPendingOverlayRenderFlush();
+    previewOverlayPendingRender = null;
+    pendingOverlayTransitionDetail = null;
+    renderPreviewOverlayLayersInternal(primaryTimelineItem, options);
+}
+
+function cancelPendingOverlayRenderFlush() {
+    if (previewOverlayPendingRenderFrame && typeof window !== 'undefined') {
+        try {
+            if (typeof window.cancelAnimationFrame === 'function') {
+                window.cancelAnimationFrame(previewOverlayPendingRenderFrame);
+            }
+        } catch (error) {
+            // Ignore cancellation errors in restricted environments.
+        }
+    }
+    previewOverlayPendingRenderFrame = 0;
+}
+
+function schedulePendingOverlayRenderFlush() {
+    if (!previewOverlayPendingRender) {
+        previewOverlayPendingRenderFrame = 0;
+        return;
+    }
+
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        applyPendingOverlayRender();
+        return;
+    }
+
+    if (previewOverlayPendingRenderFrame) {
+        return;
+    }
+
+    const detail = pendingOverlayTransitionDetail;
+    previewOverlayPendingRenderFrame = window.requestAnimationFrame(() => {
+        previewOverlayPendingRenderFrame = 0;
+        if (typeof logPreviewTransitionDiagnostic === 'function' && previewOverlayPendingRender) {
+            logPreviewTransitionDiagnostic('Applying deferred overlay render', detail || {
+                reason: 'deferred-flush',
+            });
+        }
+        applyPendingOverlayRender();
+    });
+}
+
+if (typeof window !== 'undefined') {
+    try {
+        window.activatePreviewLowerLayerLock = activatePreviewLowerLayerLock;
+        window.releasePreviewLowerLayerLock = releasePreviewLowerLayerLock;
+        window.isPreviewLowerLayerLockActive = isPreviewLowerLayerLockActive;
+        window.preparePreviewOverlayTransition = preparePreviewOverlayTransition;
+        window.primeActiveOverlayTextures = primeActiveOverlayTextures;
+    } catch (error) {
+        // Ignore environments where assigning globals is restricted.
+    }
+}
+

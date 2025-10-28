@@ -670,6 +670,85 @@ const previewTransitionConfig = {
 };
 
 let disableBackgroundBlurOnTransition = true;
+let stabilizeLowerLayerDuringTransition = true;
+
+const previewTransitionEventHooks = {
+    start: new Set(),
+    end: new Set(),
+};
+
+const previewTransitionDiagnostics = {
+    enabled: false,
+};
+
+function addPreviewTransitionEventListener(type, handler) {
+    if (!handler || typeof handler !== 'function') {
+        return () => {};
+    }
+
+    const normalized = String(type || '').toLowerCase();
+    const hookSet = normalized === 'end'
+        ? previewTransitionEventHooks.end
+        : previewTransitionEventHooks.start;
+
+    hookSet.add(handler);
+    return () => {
+        hookSet.delete(handler);
+    };
+}
+
+function removePreviewTransitionEventListener(type, handler) {
+    if (!handler || typeof handler !== 'function') {
+        return;
+    }
+
+    const normalized = String(type || '').toLowerCase();
+    const hookSet = normalized === 'end'
+        ? previewTransitionEventHooks.end
+        : previewTransitionEventHooks.start;
+
+    hookSet.delete(handler);
+}
+
+function logPreviewTransitionDiagnostic(message, detail = null) {
+    if (!previewTransitionDiagnostics.enabled) {
+        return;
+    }
+
+    const payload = detail ? { ...detail } : null;
+    try {
+        // eslint-disable-next-line no-console
+        console.debug('[PreviewTransition]', message, payload);
+    } catch (error) {
+        // Ignore logging errors in restricted environments.
+    }
+}
+
+function emitPreviewTransitionEvent(type, detail = null) {
+    const normalized = String(type || '').toLowerCase();
+    const hookSet = normalized === 'end'
+        ? previewTransitionEventHooks.end
+        : previewTransitionEventHooks.start;
+
+    hookSet.forEach((listener) => {
+        try {
+            listener(detail);
+        } catch (error) {
+            // Ignore listener failures to keep the pipeline resilient.
+        }
+    });
+
+    if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+        try {
+            const eventName = normalized === 'end'
+                ? 'previewtransitionend'
+                : 'previewtransitionstart';
+            document.dispatchEvent(new CustomEvent(eventName, { detail }));
+        } catch (error) {
+            // Ignore dispatch errors in environments without CustomEvent support.
+        }
+    }
+}
 
 if (typeof window !== 'undefined') {
     try {
@@ -680,10 +759,24 @@ if (typeof window !== 'undefined') {
                 disableBackgroundBlurOnTransition = Boolean(value);
             },
         });
+        Object.defineProperty(window, 'stabilizeLowerLayerDuringTransition', {
+            configurable: true,
+            get: () => stabilizeLowerLayerDuringTransition,
+            set: (value) => {
+                stabilizeLowerLayerDuringTransition = Boolean(value);
+            },
+        });
         Object.defineProperty(window, 'previewTransitionConfig', {
             configurable: true,
             get: () => previewTransitionConfig,
         });
+        Object.defineProperty(window, 'previewTransitionDiagnostics', {
+            configurable: true,
+            get: () => previewTransitionDiagnostics,
+        });
+        window.addPreviewTransitionEventListener = addPreviewTransitionEventListener;
+        window.removePreviewTransitionEventListener = removePreviewTransitionEventListener;
+        window.logPreviewTransitionDiagnostic = logPreviewTransitionDiagnostic;
     } catch (error) {
         // Ignore environments where defining globals is not permitted.
     }
@@ -701,6 +794,7 @@ const previewTransitionBufferState = {
     sourceUrl: null,
     targetObjectUrl: null,
     ignoreFrameIndex: false,
+    transitionActive: false,
 };
 
 function getPreviewTransitionQuality() {
@@ -729,8 +823,24 @@ function resetPreviewTransitionBufferElement() {
     }
 }
 
-function cleanupPreviewTransitionBuffer() {
+function cleanupPreviewTransitionBuffer(options = {}) {
     const transitionBuffer = previewImageTransitionBuffer;
+    const skipLowerLayerRelease = options.skipLowerLayerRelease === true;
+    const skipEvents = options.skipEvents === true;
+    const reason = options.reason || 'cleanup';
+
+    const wasActive = previewTransitionBufferState.transitionActive === true;
+    const wasHoldingFrame = previewTransitionBufferState.isHoldingFrame === true;
+    const lowerLayerLocked = stabilizeLowerLayerDuringTransition
+        && typeof isPreviewLowerLayerLockActive === 'function'
+        && isPreviewLowerLayerLockActive();
+
+    const transitionDetail = {
+        sourceUrl: previewTransitionBufferState.sourceUrl,
+        targetUrl: previewTransitionBufferState.targetObjectUrl,
+        frameIndex: previewTransitionBufferState.frameIndex,
+        reason,
+    };
 
     if (previewTransitionBufferState.finalizeHandler && transitionBuffer) {
         transitionBuffer.removeEventListener('transitionend', previewTransitionBufferState.finalizeHandler);
@@ -752,20 +862,41 @@ function cleanupPreviewTransitionBuffer() {
     previewTransitionBufferState.sourceUrl = null;
     previewTransitionBufferState.targetObjectUrl = null;
     previewTransitionBufferState.ignoreFrameIndex = false;
+    previewTransitionBufferState.transitionActive = false;
 
 
     if (!transitionBuffer) {
+        if (!skipLowerLayerRelease && (wasActive || wasHoldingFrame || lowerLayerLocked)) {
+            if (stabilizeLowerLayerDuringTransition && typeof releasePreviewLowerLayerLock === 'function') {
+                releasePreviewLowerLayerLock({ detail: transitionDetail });
+            }
+        }
+        if ((wasActive || wasHoldingFrame) && !skipEvents) {
+            emitPreviewTransitionEvent('end', transitionDetail);
+            logPreviewTransitionDiagnostic('Transition end', transitionDetail);
+        }
         return;
     }
 
     resetPreviewTransitionBufferElement();
+
+    if (!skipLowerLayerRelease && (wasActive || wasHoldingFrame || lowerLayerLocked)) {
+        if (stabilizeLowerLayerDuringTransition && typeof releasePreviewLowerLayerLock === 'function') {
+            releasePreviewLowerLayerLock({ detail: transitionDetail });
+        }
+    }
+
+    if ((wasActive || wasHoldingFrame) && !skipEvents) {
+        emitPreviewTransitionEvent('end', transitionDetail);
+        logPreviewTransitionDiagnostic('Transition end', transitionDetail);
+    }
 }
 
 function finalizePreviewTransitionBufferWhenReady(options = {}) {
     const force = Boolean(options?.force);
 
     if (force) {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'force-finalize' });
         return;
     }
 
@@ -778,7 +909,7 @@ function finalizePreviewTransitionBufferWhenReady(options = {}) {
     }
 
     if (previewTransitionBufferState.transitionCompleted && previewTransitionBufferState.nextFrameReady) {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'finalize' });
     }
 }
 
@@ -820,7 +951,7 @@ function attemptPreviewTransitionBufferRelease(options = {}) {
         return;
     }
 
-    cleanupPreviewTransitionBuffer();
+    cleanupPreviewTransitionBuffer({ reason: force ? 'force-release' : 'release' });
 }
 
 function requestPreviewTransitionBufferRelease(options = {}) {
@@ -838,20 +969,20 @@ function requestPreviewTransitionBufferRelease(options = {}) {
 
 function stagePreviewTransitionBuffer(options = {}) {
     if (!previewImageTransitionBuffer || !previewImage || previewImage.hidden) {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'stage-precondition' });
         return;
     }
 
     const { immediate = false } = options;
     const reduceMotion = typeof prefersReducedMotion === 'function' && prefersReducedMotion();
     if (immediate || reduceMotion) {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'stage-immediate' });
         return;
     }
 
     const currentSrc = previewImage.currentSrc || previewImage.src;
     if (!currentSrc) {
-        cleanupPreviewTransitionBuffer();
+        cleanupPreviewTransitionBuffer({ reason: 'stage-empty' });
         return;
     }
 
@@ -859,7 +990,41 @@ function stagePreviewTransitionBuffer(options = {}) {
 
     const pendingTargetUrl = previewTransitionBufferState.targetObjectUrl || stagedObjectUrl;
 
-    cleanupPreviewTransitionBuffer();
+    cleanupPreviewTransitionBuffer({ reason: 'stage-reset' });
+
+    const shouldStabilize = stabilizeLowerLayerDuringTransition !== false;
+    const alreadyLocked = shouldStabilize
+        && typeof isPreviewLowerLayerLockActive === 'function'
+        && isPreviewLowerLayerLockActive();
+
+    if (shouldStabilize && typeof primeActiveOverlayTextures === 'function') {
+        try {
+            primeActiveOverlayTextures();
+        } catch (error) {
+            // Ignore overlay priming errors to keep transitions responsive.
+        }
+    }
+
+    if (typeof primePreviewFrameCacheForSource === 'function') {
+        const viewportSize = typeof getPreviewViewportSize === 'function'
+            ? getPreviewViewportSize()
+            : null;
+        if (viewportSize
+            && Number.isFinite(viewportSize.width)
+            && Number.isFinite(viewportSize.height)
+            && viewportSize.width > 0
+            && viewportSize.height > 0) {
+            try {
+                primePreviewFrameCacheForSource(stagedObjectUrl, { viewportSize });
+            } catch (error) {
+                logPreviewTransitionDiagnostic('Preview frame cache warmup failed', {
+                    sourceUrl: stagedObjectUrl,
+                    error,
+                });
+            }
+        }
+    }
+
     previewTransitionBufferState.targetObjectUrl = pendingTargetUrl;
 
     previewTransitionBufferState.isHoldingFrame = true;
@@ -872,6 +1037,14 @@ function stagePreviewTransitionBuffer(options = {}) {
         : -1;
     previewTransitionBufferState.sourceUrl = stagedObjectUrl;
     previewTransitionBufferState.ignoreFrameIndex = false;
+    previewTransitionBufferState.transitionActive = shouldStabilize;
+
+    if (shouldStabilize && !alreadyLocked && typeof activatePreviewLowerLayerLock === 'function') {
+        activatePreviewLowerLayerLock({
+            sourceUrl: stagedObjectUrl,
+            targetUrl: pendingTargetUrl,
+        });
+    }
 
     previewImageTransitionBuffer.src = currentSrc;
     previewImageTransitionBuffer.hidden = false;
@@ -929,19 +1102,31 @@ function stagePreviewTransitionBuffer(options = {}) {
 
     const transitionQuality = getPreviewTransitionQuality();
 
+    const transitionDetail = {
+        sourceUrl: stagedObjectUrl,
+        targetUrl: pendingTargetUrl,
+        frameIndex: previewTransitionBufferState.frameIndex,
+        stabilized: shouldStabilize,
+        timestamp: (typeof performance !== 'undefined' && typeof performance.now === 'function')
+            ? performance.now()
+            : Date.now(),
+    };
+    logPreviewTransitionDiagnostic('Transition start', transitionDetail);
+    emitPreviewTransitionEvent('start', transitionDetail);
+
     if (transitionQuality === 'hard-cut') {
         previewTransitionBufferState.pendingRelease = () => {
             previewTransitionBufferState.transitionCompleted = true;
-            cleanupPreviewTransitionBuffer();
+            cleanupPreviewTransitionBuffer({ reason: 'hard-cut-complete' });
         };
     } else {
         previewTransitionBufferState.pendingRelease = () => {
             if (!previewImageTransitionBuffer) {
-                cleanupPreviewTransitionBuffer();
+                cleanupPreviewTransitionBuffer({ reason: 'transition-buffer-missing' });
                 return;
             }
 
-    if (previewTransitionBufferState.finalizeHandler && previewImageTransitionBuffer) {
+            if (previewTransitionBufferState.finalizeHandler && previewImageTransitionBuffer) {
                 previewImageTransitionBuffer.removeEventListener(
                     'transitionend',
                     previewTransitionBufferState.finalizeHandler,

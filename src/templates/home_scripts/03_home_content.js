@@ -603,17 +603,27 @@ function ensureExportMirrorBackBuffer(width, height) {
         exportMirrorBackBufferCanvas = document.createElement('canvas');
     }
 
-    if (exportMirrorBackBufferCanvas.width !== safeWidth
-        || exportMirrorBackBufferCanvas.height !== safeHeight) {
+    const sizeChanged = exportMirrorBackBufferCanvas.width !== safeWidth
+        || exportMirrorBackBufferCanvas.height !== safeHeight;
+    if (sizeChanged) {
         exportMirrorBackBufferCanvas.width = safeWidth;
         exportMirrorBackBufferCanvas.height = safeHeight;
         exportMirrorBackBufferContext = null;
+        if (typeof logPreviewTransitionDiagnostic === 'function') {
+            logPreviewTransitionDiagnostic('Resized export back buffer', { width: safeWidth, height: safeHeight });
+        }
     }
 
     if (!exportMirrorBackBufferContext && exportMirrorBackBufferCanvas) {
         exportMirrorBackBufferContext = exportMirrorBackBufferCanvas.getContext('2d', { alpha: true });
         if (!exportMirrorBackBufferContext) {
             exportMirrorBackBufferContext = exportMirrorBackBufferCanvas.getContext('2d');
+            if (!exportMirrorBackBufferContext && typeof logPreviewTransitionDiagnostic === 'function') {
+                logPreviewTransitionDiagnostic('Export back buffer context unavailable', {
+                    width: safeWidth,
+                    height: safeHeight,
+                });
+            }
         }
     }
 
@@ -1017,10 +1027,20 @@ function startPreviewMirroring(width, height, options = {}) {
         }
 
         if (!drewPrimaryFrame) {
-            const shouldHoldFrame = typeof isPreviewTransitionBufferHoldingFrame === 'function'
+            const bufferHoldingFrame = typeof isPreviewTransitionBufferHoldingFrame === 'function'
                 && isPreviewTransitionBufferHoldingFrame();
+            const lowerLayerLocked = stabilizeLowerLayerDuringTransition !== false
+                && typeof isPreviewLowerLayerLockActive === 'function'
+                && isPreviewLowerLayerLockActive();
+            const shouldHoldFrame = bufferHoldingFrame || lowerLayerLocked;
             if (shouldHoldFrame) {
                 drewPrimaryFrame = drawPreviewFrameCache(drawingContext, drawingWidth, drawingHeight);
+                if (drewPrimaryFrame && typeof logPreviewTransitionDiagnostic === 'function') {
+                    logPreviewTransitionDiagnostic('Drew cached preview frame', {
+                        bufferHoldingFrame,
+                        lowerLayerLocked,
+                    });
+                }
             }
         }
 
