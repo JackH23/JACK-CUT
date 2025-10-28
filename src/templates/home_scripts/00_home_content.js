@@ -1320,7 +1320,7 @@ function getTimelineItemAudioSettings(timelineItem) {
 function persistTimelineItemAudioSettings(timelineItem, settings) {
     const supportsAudio = isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
     if (!supportsAudio || !timelineItem?.dataset || !settings) {
-        return;
+        return null;
     }
 
     if (Object.prototype.hasOwnProperty.call(settings, 'volumePercent')) {
@@ -1353,16 +1353,25 @@ function persistTimelineItemAudioSettings(timelineItem, settings) {
     if (typeof syncTimelineItemVolumeControl === 'function') {
         syncTimelineItemVolumeControl(timelineItem);
     }
-    if (typeof refreshPreviewAudioMix === 'function') {
-        refreshPreviewAudioMix();
+
+    if (typeof markExportPlaybackContextDirty === 'function') {
+        markExportPlaybackContextDirty({ skipAutoRefresh: true });
     }
+
+    if (typeof refreshPreviewAudioMix === 'function') {
+        const activeItem = typeof activeTimelineItem !== 'undefined' ? activeTimelineItem : null;
+        const mixOptions = activeItem ? { activeItem } : {};
+        return refreshPreviewAudioMix(mixOptions);
+    }
+
+    return null;
 }
 
 function persistActiveTimelineAudioSettings(partialSettings) {
     if (!activeTimelineItem) {
-        return;
+        return null;
     }
-    persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
+    return persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
 }
 
 function formatMasterVolumeDisplay(percent) {
