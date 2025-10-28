@@ -55,10 +55,14 @@ const CANVAS_BACKDROP_GRADIENT_BOTTOM_COLOR = 'rgba(15, 23, 42, 0.5)';
 let canvasBackdropSnapshotCanvas = null;
 let canvasBackdropSnapshotContext = null;
 let hasCanvasBackdropSnapshot = false;
+let exportMirrorBackBufferCanvas = null;
+let exportMirrorBackBufferContext = null;
 
 let previewFrameCacheCanvas = null;
 let previewFrameCacheContext = null;
 let hasPreviewFrameCache = false;
+let previewFrameCacheSourceUrl = null;
+let currentPreviewTimelineFrameIndex = -1;
 
 function ensurePreviewFrameCacheContext(width, height) {
     const roundedWidth = Math.round(Number(width) || 0);
@@ -92,15 +96,17 @@ function ensurePreviewFrameCacheContext(width, height) {
     return previewFrameCacheContext;
 }
 
-function storePreviewFrameCacheFromCanvas(sourceCanvas, width, height) {
+function storePreviewFrameCacheFromCanvas(sourceCanvas, width, height, options = {}) {
     if (!sourceCanvas) {
         hasPreviewFrameCache = false;
+        previewFrameCacheSourceUrl = null;
         return;
     }
 
     const context = ensurePreviewFrameCacheContext(width, height);
     if (!context || !previewFrameCacheCanvas) {
         hasPreviewFrameCache = false;
+        previewFrameCacheSourceUrl = null;
         return;
     }
 
@@ -120,8 +126,10 @@ function storePreviewFrameCacheFromCanvas(sourceCanvas, width, height) {
             previewFrameCacheCanvas.height,
         );
         hasPreviewFrameCache = true;
+        previewFrameCacheSourceUrl = options?.sourceUrl || null;
     } catch (error) {
         hasPreviewFrameCache = false;
+        previewFrameCacheSourceUrl = null;
     }
 }
 
@@ -159,8 +167,106 @@ function drawPreviewFrameCache(targetContext, width, height) {
     return true;
 }
 
+function primePreviewFrameCacheForSource(objectURL, options = {}) {
+    if (!objectURL || typeof getPreloadedTimelineImageBitmap !== 'function') {
+        return false;
+    }
+
+    if (hasPreviewFrameCache
+        && previewFrameCacheSourceUrl === objectURL
+        && options.force !== true) {
+        return true;
+    }
+
+    const cached = getPreloadedTimelineImageBitmap(objectURL);
+    if (!cached || !cached.bitmap) {
+        return false;
+    }
+
+    const viewportSize = options.viewportSize
+        || (typeof getPreviewViewportSize === 'function'
+            ? getPreviewViewportSize()
+            : null);
+
+    if (!viewportSize
+        || !Number.isFinite(viewportSize.width)
+        || !Number.isFinite(viewportSize.height)
+        || viewportSize.width <= 0
+        || viewportSize.height <= 0) {
+        return false;
+    }
+
+    const context = ensurePreviewFrameCacheContext(viewportSize.width, viewportSize.height);
+    if (!context || !previewFrameCacheCanvas) {
+        return false;
+    }
+
+    const sourceBitmap = cached.bitmap;
+    const bitmapWidth = Math.max(1, Math.round(Number(sourceBitmap.width) || Number(cached.width) || 0));
+    const bitmapHeight = Math.max(1, Math.round(Number(sourceBitmap.height) || Number(cached.height) || 0));
+
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, previewFrameCacheCanvas.width, previewFrameCacheCanvas.height);
+
+    const contain = computeContainDimensions(
+        bitmapWidth,
+        bitmapHeight,
+        previewFrameCacheCanvas.width,
+        previewFrameCacheCanvas.height,
+    );
+
+    try {
+        context.drawImage(
+            sourceBitmap,
+            0,
+            0,
+            bitmapWidth,
+            bitmapHeight,
+            contain.x,
+            contain.y,
+            contain.width,
+            contain.height,
+        );
+        hasPreviewFrameCache = true;
+        previewFrameCacheSourceUrl = objectURL;
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+function setPreviewTimelineFrameIndex(frameIndex) {
+    if (!Number.isFinite(frameIndex)) {
+        currentPreviewTimelineFrameIndex = -1;
+        if (previewImageFrame?.style) {
+            previewImageFrame.style.removeProperty('--preview-frame-index');
+        }
+        previewImageTransitionBuffer?.removeAttribute?.('data-frame-index');
+        previewImage?.removeAttribute?.('data-frame-index');
+        return;
+    }
+
+    const safeIndex = Math.max(0, Math.floor(frameIndex));
+    if (currentPreviewTimelineFrameIndex === safeIndex) {
+        return;
+    }
+
+    currentPreviewTimelineFrameIndex = safeIndex;
+
+    if (previewImageFrame?.style) {
+        previewImageFrame.style.setProperty('--preview-frame-index', String(safeIndex));
+    }
+    if (previewImageTransitionBuffer) {
+        previewImageTransitionBuffer.dataset.frameIndex = String(safeIndex);
+    }
+    if (previewImage) {
+        previewImage.dataset.frameIndex = String(safeIndex);
+    }
+}
+
 function invalidatePreviewFrameCache() {
     hasPreviewFrameCache = false;
+    previewFrameCacheSourceUrl = null;
 }
 
 function computeCoverDimensions(sourceWidth, sourceHeight, targetWidth, targetHeight) {
@@ -316,8 +422,9 @@ function ensureCanvasBackdropSnapshotContext(width, height) {
     return canvasBackdropSnapshotContext;
 }
 
-function storeCanvasBackdropSnapshot(width, height) {
-    if (!exportMirrorCanvas || !exportMirrorContext) {
+function storeCanvasBackdropSnapshot(width, height, canvasOverride = null) {
+    const sourceCanvas = canvasOverride || exportMirrorCanvas;
+    if (!sourceCanvas) {
         hasCanvasBackdropSnapshot = false;
         return;
     }
@@ -330,7 +437,7 @@ function storeCanvasBackdropSnapshot(width, height) {
 
     context.clearRect(0, 0, canvasBackdropSnapshotCanvas.width, canvasBackdropSnapshotCanvas.height);
     context.drawImage(
-        exportMirrorCanvas,
+        sourceCanvas,
         0,
         0,
         Math.max(1, Math.round(Number(width) || 0)),
@@ -343,7 +450,7 @@ function storeCanvasBackdropSnapshot(width, height) {
     hasCanvasBackdropSnapshot = true;
 }
 
-function drawCanvasBackdropSnapshot(width, height) {
+function drawCanvasBackdropSnapshot(width, height, contextOverride = null) {
     if (!hasCanvasBackdropSnapshot || !canvasBackdropSnapshotCanvas) {
         return false;
     }
@@ -354,7 +461,12 @@ function drawCanvasBackdropSnapshot(width, height) {
         return false;
     }
 
-    exportMirrorContext.drawImage(
+    const context = contextOverride || exportMirrorContext;
+    if (!context) {
+        return false;
+    }
+
+    context.drawImage(
         canvasBackdropSnapshotCanvas,
         0,
         0,
@@ -391,7 +503,7 @@ function isCanvasBackdropActive() {
     return mode !== 'none';
 }
 
-function drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight) {
+function drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight, contextOverride = null, canvasOverride = null) {
     if (!previewCanvasBackdrop || viewportWidth <= 0 || viewportHeight <= 0) {
         return false;
     }
@@ -421,8 +533,15 @@ function drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight) {
         return false;
     }
 
-    const canvasWidth = Math.max(1, Math.round(exportMirrorCanvas.width || 0));
-    const canvasHeight = Math.max(1, Math.round(exportMirrorCanvas.height || 0));
+    const targetCanvas = canvasOverride || exportMirrorCanvas;
+    const context = contextOverride || exportMirrorContext;
+
+    if (!targetCanvas || !context) {
+        return false;
+    }
+
+    const canvasWidth = Math.max(1, Math.round(targetCanvas.width || 0));
+    const canvasHeight = Math.max(1, Math.round(targetCanvas.height || 0));
 
     if (canvasWidth <= 0 || canvasHeight <= 0) {
         return false;
@@ -442,16 +561,12 @@ function drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight) {
     const offsetY = cover.y - ((drawHeight - cover.height) / 2);
     const blurRadius = parseCanvasBackdropBlurRadius();
 
-    exportMirrorContext.save();
-    exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-    if (blurRadius > 0) {
-        exportMirrorContext.filter = `blur(${blurRadius}px)`;
-    } else {
-        exportMirrorContext.filter = 'none';
-    }
+    context.save();
+    context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    context.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
 
     try {
-        exportMirrorContext.drawImage(
+        context.drawImage(
             sourceElement,
             offsetX,
             offsetY,
@@ -459,21 +574,49 @@ function drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight) {
             drawHeight,
         );
     } catch (error) {
-        exportMirrorContext.restore();
-        exportMirrorContext.filter = 'none';
+        context.restore();
+        context.filter = 'none';
         return false;
     }
 
-    exportMirrorContext.filter = 'none';
+    context.filter = 'none';
 
-    const gradient = exportMirrorContext.createLinearGradient(0, 0, 0, viewportHeight);
+    const gradient = context.createLinearGradient(0, 0, 0, viewportHeight);
     gradient.addColorStop(0, CANVAS_BACKDROP_GRADIENT_TOP_COLOR);
     gradient.addColorStop(1, CANVAS_BACKDROP_GRADIENT_BOTTOM_COLOR);
-    exportMirrorContext.fillStyle = gradient;
-    exportMirrorContext.fillRect(0, 0, viewportWidth, viewportHeight);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, viewportWidth, viewportHeight);
 
-    exportMirrorContext.restore();
+    context.restore();
     return true;
+}
+
+function ensureExportMirrorBackBuffer(width, height) {
+    const safeWidth = Math.max(1, Math.round(Number(width) || 0));
+    const safeHeight = Math.max(1, Math.round(Number(height) || 0));
+
+    if (!exportMirrorBackBufferCanvas) {
+        exportMirrorBackBufferCanvas = document.createElement('canvas');
+    }
+
+    if (exportMirrorBackBufferCanvas.width !== safeWidth
+        || exportMirrorBackBufferCanvas.height !== safeHeight) {
+        exportMirrorBackBufferCanvas.width = safeWidth;
+        exportMirrorBackBufferCanvas.height = safeHeight;
+        exportMirrorBackBufferContext = null;
+    }
+
+    if (!exportMirrorBackBufferContext && exportMirrorBackBufferCanvas) {
+        exportMirrorBackBufferContext = exportMirrorBackBufferCanvas.getContext('2d', { alpha: true });
+        if (!exportMirrorBackBufferContext) {
+            exportMirrorBackBufferContext = exportMirrorBackBufferCanvas.getContext('2d');
+        }
+    }
+
+    return {
+        canvas: exportMirrorBackBufferCanvas,
+        context: exportMirrorBackBufferContext,
+    };
 }
 
 function getPreviewImageFrameBorderRadius() {
@@ -541,8 +684,15 @@ function getActivePreviewImageTransform(viewportWidth, viewportHeight) {
     });
 }
 
-function drawPreviewImageToExportCanvas() {
+function drawPreviewImageToExportCanvas(options = {}) {
     if (!previewImageFrame || !previewViewport) {
+        return false;
+    }
+
+    const targetCanvas = options.canvas || exportMirrorCanvas;
+    const context = options.context || exportMirrorContext;
+
+    if (!targetCanvas || !context) {
         return false;
     }
 
@@ -562,8 +712,8 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const canvasWidth = Math.max(1, exportMirrorCanvas.width);
-    const canvasHeight = Math.max(1, exportMirrorCanvas.height);
+    const canvasWidth = Math.max(1, targetCanvas.width);
+    const canvasHeight = Math.max(1, targetCanvas.height);
     const scaleX = canvasWidth / viewportWidth;
     const scaleY = canvasHeight / viewportHeight;
 
@@ -607,28 +757,28 @@ function drawPreviewImageToExportCanvas() {
             }
         }
 
-        exportMirrorContext.save();
-        exportMirrorContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-        exportMirrorContext.beginPath();
-        exportMirrorContext.rect(0, 0, viewportWidth, viewportHeight);
-        exportMirrorContext.clip();
+        context.save();
+        context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        context.beginPath();
+        context.rect(0, 0, viewportWidth, viewportHeight);
+        context.clip();
 
-        exportMirrorContext.save();
+        context.save();
         clipRoundRectPath(
-            exportMirrorContext,
+            context,
             transform.left,
             transform.top,
             transform.width,
             transform.height,
             getPreviewImageFrameBorderRadius(),
         );
-        exportMirrorContext.clip();
+        context.clip();
 
-        exportMirrorContext.save();
-        exportMirrorContext.translate(imageOffsetX, imageOffsetY);
+        context.save();
+        context.translate(imageOffsetX, imageOffsetY);
 
         if (cssMatrix && !cssMatrix.isIdentity) {
-            exportMirrorContext.transform(
+            context.transform(
                 cssMatrix.a,
                 cssMatrix.b,
                 cssMatrix.c,
@@ -639,24 +789,23 @@ function drawPreviewImageToExportCanvas() {
         } else if (rotation !== 0) {
             const originX = drawWidth / 2;
             const originY = drawHeight / 2;
-            exportMirrorContext.translate(originX, originY);
-            exportMirrorContext.rotate((rotation * Math.PI) / 180);
-            exportMirrorContext.translate(-originX, -originY);
+            context.translate(originX, originY);
+            context.rotate((rotation * Math.PI) / 180);
+            context.translate(-originX, -originY);
         }
 
         if (computedOpacity < 1) {
-            exportMirrorContext.globalAlpha *= computedOpacity;
+            context.globalAlpha *= computedOpacity;
         }
 
-        exportMirrorContext.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
-        exportMirrorContext.drawImage(element, 0, 0, drawWidth, drawHeight);
-        exportMirrorContext.filter = 'none';
+        context.filter = blurRadius > 0 ? `blur(${blurRadius}px)` : 'none';
+        context.drawImage(element, 0, 0, drawWidth, drawHeight);
+        context.filter = 'none';
 
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.restore();
-        exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+        context.restore();
+        context.restore();
+        context.restore();
+        context.setTransform(1, 0, 0, 1, 0, 0);
 
         return true;
     };
@@ -732,12 +881,23 @@ function startPreviewMirroring(width, height, options = {}) {
 
         lastDrawTimestamp = timestamp;
 
-        const canvasWidth = Math.max(1, exportMirrorCanvas.width);
-        const canvasHeight = Math.max(1, exportMirrorCanvas.height);
+        const captureWidth = Math.max(1, exportMirrorCanvas.width);
+        const captureHeight = Math.max(1, exportMirrorCanvas.height);
 
-        exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
-        exportMirrorContext.fillStyle = '#000000';
-        exportMirrorContext.fillRect(0, 0, canvasWidth, canvasHeight);
+        const { canvas: bufferCanvas, context: bufferContext } = ensureExportMirrorBackBuffer(
+            captureWidth,
+            captureHeight,
+        );
+        const drawingCanvas = bufferContext ? bufferCanvas : exportMirrorCanvas;
+        const drawingContext = bufferContext || exportMirrorContext;
+        const canvasWidth = captureWidth;
+        const canvasHeight = captureHeight;
+        const drawingWidth = Math.max(1, drawingCanvas.width);
+        const drawingHeight = Math.max(1, drawingCanvas.height);
+
+        drawingContext.setTransform(1, 0, 0, 1, 0, 0);
+        drawingContext.fillStyle = '#000000';
+        drawingContext.fillRect(0, 0, drawingWidth, drawingHeight);
 
         let viewportWidth = previewViewport ? Math.max(0, previewViewport.clientWidth) : 0;
         let viewportHeight = previewViewport ? Math.max(0, previewViewport.clientHeight) : 0;
@@ -754,10 +914,15 @@ function startPreviewMirroring(width, height, options = {}) {
         const hasViewport = viewportWidth > 0 && viewportHeight > 0;
 
         if (hasViewport && isCanvasBackdropActive()) {
-            const drewBackdrop = drawCanvasBackdropToExportCanvas(viewportWidth, viewportHeight);
+            const drewBackdrop = drawCanvasBackdropToExportCanvas(
+                viewportWidth,
+                viewportHeight,
+                drawingContext,
+                drawingCanvas,
+            );
             if (drewBackdrop) {
-                storeCanvasBackdropSnapshot(canvasWidth, canvasHeight);
-            } else if (!drawCanvasBackdropSnapshot(canvasWidth, canvasHeight)) {
+                storeCanvasBackdropSnapshot(canvasWidth, canvasHeight, drawingCanvas);
+            } else if (!drawCanvasBackdropSnapshot(canvasWidth, canvasHeight, drawingContext)) {
                 clearCanvasBackdropSnapshot();
             }
         } else {
@@ -765,7 +930,10 @@ function startPreviewMirroring(width, height, options = {}) {
         }
 
         if (overlaySnapshots.length && hasViewport) {
-            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight);
+            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'below', viewportWidth, viewportHeight, {
+                context: drawingContext,
+                canvas: drawingCanvas,
+            });
         }
 
         let drewPrimaryFrame = false;
@@ -774,10 +942,10 @@ function startPreviewMirroring(width, height, options = {}) {
             const dimensions = computeContainDimensions(
                 previewVideo.videoWidth,
                 previewVideo.videoHeight,
-                exportMirrorCanvas.width,
-                exportMirrorCanvas.height,
+                drawingWidth,
+                drawingHeight,
             );
-            exportMirrorContext.drawImage(
+            drawingContext.drawImage(
                 previewVideo,
                 dimensions.x,
                 dimensions.y,
@@ -786,15 +954,18 @@ function startPreviewMirroring(width, height, options = {}) {
             );
             drewPrimaryFrame = true;
         } else if (!previewImage.hidden && previewImage.complete) {
-            drewPrimaryFrame = drawPreviewImageToExportCanvas();
+            drewPrimaryFrame = drawPreviewImageToExportCanvas({
+                context: drawingContext,
+                canvas: drawingCanvas,
+            });
             if (!drewPrimaryFrame) {
                 const fallbackDimensions = computeContainDimensions(
                     previewImage.naturalWidth,
                     previewImage.naturalHeight,
-                    exportMirrorCanvas.width,
-                    exportMirrorCanvas.height,
+                    drawingWidth,
+                    drawingHeight,
                 );
-                exportMirrorContext.drawImage(
+                drawingContext.drawImage(
                     previewImage,
                     fallbackDimensions.x,
                     fallbackDimensions.y,
@@ -809,32 +980,54 @@ function startPreviewMirroring(width, height, options = {}) {
             const shouldHoldFrame = typeof isPreviewTransitionBufferHoldingFrame === 'function'
                 && isPreviewTransitionBufferHoldingFrame();
             if (shouldHoldFrame) {
-                drewPrimaryFrame = drawPreviewFrameCache(exportMirrorContext, canvasWidth, canvasHeight);
+                drewPrimaryFrame = drawPreviewFrameCache(drawingContext, drawingWidth, drawingHeight);
             }
         }
 
         if (!drewPrimaryFrame) {
             invalidatePreviewFrameCache();
-            exportMirrorContext.fillStyle = '#1f2937';
-            exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
-            exportMirrorContext.fillStyle = '#e2e8f0';
-            exportMirrorContext.textAlign = 'center';
-            exportMirrorContext.textBaseline = 'middle';
-            const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
-            exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
-            exportMirrorContext.fillText(
+            drawingContext.fillStyle = '#1f2937';
+            drawingContext.fillRect(0, 0, drawingWidth, drawingHeight);
+            drawingContext.fillStyle = '#e2e8f0';
+            drawingContext.textAlign = 'center';
+            drawingContext.textBaseline = 'middle';
+            const fontSize = Math.max(18, Math.round(drawingHeight / 18));
+            drawingContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
+            drawingContext.fillText(
                 'Preparing preview…',
-                exportMirrorCanvas.width / 2,
-                exportMirrorCanvas.height / 2,
+                drawingWidth / 2,
+                drawingHeight / 2,
             );
         }
 
         if (overlaySnapshots.length && hasViewport) {
-            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight);
+            drawOverlaySnapshotsToExportCanvas(overlaySnapshots, 'above', viewportWidth, viewportHeight, {
+                context: drawingContext,
+                canvas: drawingCanvas,
+            });
+        }
+
+        if (bufferContext) {
+            exportMirrorContext.setTransform(1, 0, 0, 1, 0, 0);
+            exportMirrorContext.clearRect(0, 0, canvasWidth, canvasHeight);
+            exportMirrorContext.drawImage(
+                bufferCanvas,
+                0,
+                0,
+                bufferCanvas.width,
+                bufferCanvas.height,
+                0,
+                0,
+                canvasWidth,
+                canvasHeight,
+            );
         }
 
         if (drewPrimaryFrame) {
-            storePreviewFrameCacheFromCanvas(exportMirrorCanvas, canvasWidth, canvasHeight);
+            const sourceUrl = previewImage?.currentSrc || previewImage?.src || null;
+            storePreviewFrameCacheFromCanvas(exportMirrorCanvas, canvasWidth, canvasHeight, {
+                sourceUrl,
+            });
         }
 
         scheduleNextFrame();

@@ -341,6 +341,12 @@
         previewPlaceholder.hidden = true;
         const imageBlurAmount = getTimelineItemImageBlur(timelineItem, initialProgress);
         applyImageBlurToPreview(imageBlurAmount);
+        if (typeof primePreviewFrameCacheForSource === 'function') {
+            const viewportSize = typeof getPreviewViewportSize === 'function'
+                ? getPreviewViewportSize()
+                : null;
+            primePreviewFrameCacheForSource(objectURL, { viewportSize, force: true });
+        }
         await revealPreviewImageSource(objectURL, {
             clipDurationMs: animationClipDuration,
             entranceConfigOverride,
@@ -358,6 +364,9 @@
             const resumeClipElapsed = initialElapsed;
             const resumeTimelineTime = clipTimelineStart + resumeClipElapsed;
             const playbackStartTimestamp = performance.now();
+            const playbackFrameRate = Math.max(1, Math.min(60, Math.round(options?.frameRate) || 30));
+            const frameDurationMs = 1000 / playbackFrameRate;
+            let lastFrameIndex = -1;
             if (typeof updateTimelinePlaybackSyncFallback === 'function') {
                 updateTimelinePlaybackSyncFallback(resumeTimelineTime);
             }
@@ -377,6 +386,14 @@
                     exitAnimationCompleteResolve = null;
                 }
             };
+
+            if (typeof setPreviewTimelineFrameIndex === 'function') {
+                const initialFrameIndex = frameDurationMs > 0
+                    ? Math.floor(resumeClipElapsed / frameDurationMs)
+                    : Math.floor(resumeClipElapsed);
+                setPreviewTimelineFrameIndex(initialFrameIndex);
+                lastFrameIndex = initialFrameIndex;
+            }
 
             const stopAnimation = () => {
                 if (animationFrameId) {
@@ -448,7 +465,17 @@
                     ? clampProgress(clipElapsed / clipDuration)
                     : 0;
 
-                setActiveClipProgress(playbackProgress, { source: 'image-playback' });
+                const frameIndex = frameDurationMs > 0
+                    ? Math.floor(clipElapsed / frameDurationMs)
+                    : Math.floor(clipElapsed);
+
+                if (frameIndex !== lastFrameIndex) {
+                    if (typeof setPreviewTimelineFrameIndex === 'function') {
+                        setPreviewTimelineFrameIndex(frameIndex);
+                    }
+                    lastFrameIndex = frameIndex;
+                    setActiveClipProgress(playbackProgress, { source: 'image-playback' });
+                }
 
                 if (exitConfig && !exitAnimationRequested) {
                     const shouldStartExit = clipPlaysToEnd
@@ -497,6 +524,9 @@
                     ? clampProgress(finalElapsed / clipDuration)
                     : 1;
                 setActiveClipProgress(finalProgress, { source: 'image-playback-end', updatePreview: false });
+                if (typeof setPreviewTimelineFrameIndex === 'function') {
+                    setPreviewTimelineFrameIndex(Number.NaN);
+                }
                 if (timelinePlaybackAbort === abortPlayback) {
                     timelinePlaybackAbort = null;
                 }
@@ -646,6 +676,12 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 const nextType = nextSegment.item.dataset?.fileType || '';
                 if (nextUrl && nextType.startsWith('image/')) {
                     preloadTimelineImage(nextUrl).catch(() => {});
+                    if (typeof primePreviewFrameCacheForSource === 'function') {
+                        const viewportSize = typeof getPreviewViewportSize === 'function'
+                            ? getPreviewViewportSize()
+                            : null;
+                        primePreviewFrameCacheForSource(nextUrl, { viewportSize });
+                    }
                 }
             }
             let segmentStartTime = start;
@@ -692,6 +728,16 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 : duration;
             animateTimelineProgress(startFraction, endFraction, remainingDuration);
             if (item) {
+                const itemType = item.dataset?.fileType || '';
+                if (itemType.startsWith('image/')) {
+                    const currentObjectUrl = item.dataset?.objectUrl || '';
+                    if (currentObjectUrl && typeof primePreviewFrameCacheForSource === 'function') {
+                        const viewportSize = typeof getPreviewViewportSize === 'function'
+                            ? getPreviewViewportSize()
+                            : null;
+                        primePreviewFrameCacheForSource(currentObjectUrl, { viewportSize });
+                    }
+                }
                 // eslint-disable-next-line no-await-in-loop
                 await playTimelineItem(item, remainingDuration, segment.items || null, {
                     startOffsetMs: segmentStartOffset,
@@ -1253,6 +1299,15 @@ async function primeExportStartFrame(playbackContext, options = {}) {
         await waitForPreviewImageReady(1500);
         if (signal?.aborted) {
             return;
+        }
+        if (typeof primePreviewFrameCacheForSource === 'function') {
+            const viewportSize = typeof getPreviewViewportSize === 'function'
+                ? getPreviewViewportSize()
+                : null;
+            const objectUrl = activeItem.dataset?.objectUrl || '';
+            if (objectUrl) {
+                primePreviewFrameCacheForSource(objectUrl, { viewportSize, force: true });
+            }
         }
         applyActiveImageKeyframe({ reason: 'export-pre-roll' });
         applyActiveImageBlurKeyframe({ reason: 'export-pre-roll' });

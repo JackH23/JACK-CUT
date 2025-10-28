@@ -54,6 +54,7 @@ const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
 const timelineImagePreloadCache = new Map();
+const timelineImageBitmapCache = new Map();
 const timelineVideoPreloadCache = new Map();
 const timelineAudioPreloadCache = new Map();
 const stagedUploadsByObjectUrl = new Map();

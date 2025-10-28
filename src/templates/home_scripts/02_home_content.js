@@ -211,6 +211,58 @@ function flushTimelineDragOverUpdate() {
     runTimelineDragOverUpdate();
 }
 
+function cacheTimelineImageBitmap(objectURL, bitmap, width, height) {
+    if (!objectURL || typeof timelineImageBitmapCache === 'undefined') {
+        return;
+    }
+
+    const safeWidth = Math.max(0, Math.round(Number(width) || 0));
+    const safeHeight = Math.max(0, Math.round(Number(height) || 0));
+    const timestamp = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+        ? performance.now()
+        : Date.now();
+
+    const existing = timelineImageBitmapCache.get(objectURL);
+    if (existing?.bitmap && existing.bitmap !== bitmap && typeof existing.bitmap.close === 'function') {
+        try {
+            existing.bitmap.close();
+        } catch (error) {
+            // Ignore bitmap close errors when replacing cached entries.
+        }
+    }
+
+    timelineImageBitmapCache.set(objectURL, {
+        bitmap: bitmap || null,
+        width: safeWidth,
+        height: safeHeight,
+        timestamp,
+    });
+}
+
+function discardTimelineImageBitmap(objectURL) {
+    if (!objectURL || typeof timelineImageBitmapCache === 'undefined') {
+        return;
+    }
+
+    const existing = timelineImageBitmapCache.get(objectURL);
+    if (existing?.bitmap && typeof existing.bitmap.close === 'function') {
+        try {
+            existing.bitmap.close();
+        } catch (error) {
+            // Ignore bitmap close errors during cache eviction.
+        }
+    }
+
+    timelineImageBitmapCache.delete(objectURL);
+}
+
+function getPreloadedTimelineImageBitmap(objectURL) {
+    if (!objectURL || typeof timelineImageBitmapCache === 'undefined') {
+        return null;
+    }
+    return timelineImageBitmapCache.get(objectURL) || null;
+}
+
 function preloadTimelineImage(objectURL) {
     if (!objectURL) {
         return Promise.resolve();
@@ -243,6 +295,8 @@ function preloadTimelineImage(objectURL) {
         };
 
         const handleLoad = () => {
+            const naturalWidth = Math.max(0, Math.round(Number(image.naturalWidth) || 0));
+            const naturalHeight = Math.max(0, Math.round(Number(image.naturalHeight) || 0));
             let decodePromise = Promise.resolve();
             if (typeof image.decode === 'function') {
                 try {
@@ -251,7 +305,27 @@ function preloadTimelineImage(objectURL) {
                     decodePromise = Promise.reject(decodeError);
                 }
             }
-            decodePromise.catch(() => {}).finally(finalize);
+            decodePromise
+                .catch(() => {})
+                .then(() => {
+                    if (typeof window !== 'undefined' && typeof window.createImageBitmap === 'function') {
+                        try {
+                            return window.createImageBitmap(image)
+                                .then((bitmap) => {
+                                    cacheTimelineImageBitmap(objectURL, bitmap, naturalWidth, naturalHeight);
+                                })
+                                .catch(() => {
+                                    cacheTimelineImageBitmap(objectURL, null, naturalWidth, naturalHeight);
+                                });
+                        } catch (createError) {
+                            cacheTimelineImageBitmap(objectURL, null, naturalWidth, naturalHeight);
+                        }
+                    } else {
+                        cacheTimelineImageBitmap(objectURL, null, naturalWidth, naturalHeight);
+                    }
+                    return null;
+                })
+                .finally(finalize);
         };
 
         const handleError = (event) => {
@@ -260,6 +334,7 @@ function preloadTimelineImage(objectURL) {
             }
             settled = true;
             cleanup();
+            discardTimelineImageBitmap(objectURL);
             reject(event?.error || new Error('Failed to preload image.'));
         };
 
@@ -269,6 +344,7 @@ function preloadTimelineImage(objectURL) {
         image.src = objectURL;
     }).catch((error) => {
         timelineImagePreloadCache.delete(objectURL);
+        discardTimelineImageBitmap(objectURL);
         throw error;
     });
 
@@ -434,6 +510,7 @@ function releaseTimelineImage(objectURL) {
         return;
     }
     timelineImagePreloadCache.delete(objectURL);
+    discardTimelineImageBitmap(objectURL);
 }
 
 function preloadTimelineAudio(objectURL) {
