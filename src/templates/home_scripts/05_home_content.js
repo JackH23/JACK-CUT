@@ -2234,7 +2234,7 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
 
     const overshoot = effectiveTimelineNow - descriptorEnd;
     if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) {
-        const activeEntry = activeOverlayLayers.get(descriptor.item);
+        const activeEntry = getOverlayEntryForDescriptor(descriptor);
         const previousOpacity = Number.isFinite(activeEntry?.opacity)
             ? activeEntry.opacity
             : 0;
@@ -2752,6 +2752,58 @@ function resetOverlayAnimationState(entry) {
     };
 }
 
+function resolveOverlayDescriptorBaseId(descriptor) {
+    if (!descriptor || !descriptor.item || !descriptor.item.dataset) {
+        return '';
+    }
+    const { dataset } = descriptor.item;
+    return dataset.instanceId
+        || dataset.objectUrl
+        || dataset.templateId
+        || dataset.timelineItemId
+        || dataset.displayName
+        || descriptor.item.id
+        || '';
+}
+
+function getOverlayDescriptorKey(descriptor) {
+    if (!descriptor || !descriptor.item) {
+        return null;
+    }
+    if (descriptor.layerKey) {
+        return descriptor.layerKey;
+    }
+    const baseId = resolveOverlayDescriptorBaseId(descriptor) || 'item';
+    const laneIndex = Number.isFinite(descriptor.laneIndex)
+        ? descriptor.laneIndex
+        : 'x';
+    const startKey = Number.isFinite(descriptor.start)
+        ? Math.round(descriptor.start)
+        : 'start';
+    const endKey = Number.isFinite(descriptor.end)
+        ? Math.round(descriptor.end)
+        : 'end';
+    const roleKey = descriptor.transitionKey
+        || descriptor.transitionRole
+        || descriptor.descriptorRole
+        || '';
+    const keyParts = ['overlay', baseId, laneIndex, `${startKey}-${endKey}`];
+    if (roleKey) {
+        keyParts.push(String(roleKey));
+    }
+    const resolvedKey = keyParts.join(':');
+    descriptor.layerKey = resolvedKey;
+    return resolvedKey;
+}
+
+function getOverlayEntryForDescriptor(descriptor) {
+    const key = getOverlayDescriptorKey(descriptor);
+    if (!key) {
+        return null;
+    }
+    return activeOverlayLayers.get(key) || null;
+}
+
 let activeOverlayDescriptorCache = [];
 
 function normalizeOverlayRenderOptions(input) {
@@ -2788,6 +2840,7 @@ function extractOverlayDescriptorCacheEntry(descriptor) {
         clipDuration: descriptor.clipDuration,
         animationSettings: descriptor.animationSettings,
         exitConfig: descriptor.exitConfig,
+        layerKey: descriptor.layerKey || null,
     };
 }
 
@@ -2867,9 +2920,25 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     const descriptorCacheInput = (normalizedOptions.descriptors && normalizedOptions.descriptors.length)
         ? normalizedOptions.descriptors
         : activeOverlayDescriptorCache;
-    const cachedDescriptorMap = (descriptorCacheInput && descriptorCacheInput.length)
-        ? new Map(descriptorCacheInput.map((descriptor) => [descriptor.item, descriptor]))
-        : null;
+    const cachedDescriptorMap = (() => {
+        if (!descriptorCacheInput || !descriptorCacheInput.length) {
+            return null;
+        }
+        const map = new Map();
+        descriptorCacheInput.forEach((descriptor) => {
+            if (!descriptor) {
+                return;
+            }
+            const key = getOverlayDescriptorKey(descriptor);
+            if (key) {
+                map.set(key, descriptor);
+            }
+            if (descriptor.item) {
+                map.set(descriptor.item, descriptor);
+            }
+        });
+        return map;
+    })();
     let entrySource = (normalizedOptions.entries && normalizedOptions.entries.length)
         ? normalizedOptions.entries
         : (descriptorCacheInput || []);
@@ -2889,7 +2958,6 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     const overlayEntries = (Array.isArray(entrySource) ? entrySource : [])
         .filter((entry) => entry && entry.item)
         .map((entry) => {
-            const cached = cachedDescriptorMap?.get(entry.item) || null;
             const laneIndex = resolveLaneIndex(entry.laneIndex ?? entry.item?.dataset?.laneIndex);
             const start = Number.isFinite(entry.start)
                 ? entry.start
@@ -2907,6 +2975,11 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 start,
                 end,
             };
+
+            const descriptorKey = getOverlayDescriptorKey(descriptor);
+            const cached = (descriptorKey && cachedDescriptorMap?.get(descriptorKey))
+                || cachedDescriptorMap?.get(entry.item)
+                || null;
 
             const explicitClipDuration = Number.isFinite(entry.clipDuration)
                 ? Math.max(0, Number(entry.clipDuration) || 0)
