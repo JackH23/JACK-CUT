@@ -129,10 +129,21 @@
         return computed;
     };
 
-        if (activeOverlayLayers.size) {
+    if (activeOverlayLayers.size) {
         const knownOverlayItems = new Set(overlayEntries.map((descriptor) => descriptor.item));
-        activeOverlayLayers.forEach((entry, item) => {
-            if (!entry || !entry.isVisible || !item || item === primaryTimelineItem || knownOverlayItems.has(item)) {
+        const knownOverlayKeys = new Set();
+        overlayEntries.forEach((descriptor) => {
+            const key = getOverlayDescriptorKey(descriptor);
+            if (key) {
+                knownOverlayKeys.add(key);
+            }
+        });
+        activeOverlayLayers.forEach((entry) => {
+            const item = entry?.timelineItem || null;
+            if (!entry || !entry.isVisible || !item || item === primaryTimelineItem) {
+                return;
+            }
+            if (knownOverlayItems.has(item) || (entry.key && knownOverlayKeys.has(entry.key))) {
                 return;
             }
 
@@ -217,6 +228,10 @@
 
             overlayEntries.push(descriptor);
             knownOverlayItems.add(item);
+            const descriptorKey = getOverlayDescriptorKey(descriptor);
+            if (descriptorKey) {
+                knownOverlayKeys.add(descriptorKey);
+            }
         });
     }
 
@@ -354,8 +369,8 @@
         return;
     }
 
-    const nextActiveItems = new Set();
-    const nextKnownItems = new Set();
+    const nextActiveKeys = new Set();
+    const nextKnownKeys = new Set();
 
     const overlayResizeHandleLabels = {
         n: 'Resize overlay from top edge',
@@ -373,12 +388,37 @@
             return null;
         }
 
+        const key = getOverlayDescriptorKey(descriptor);
+        if (!key) {
+            return null;
+        }
+
         const objectURL = descriptor.item.dataset.objectUrl || '';
         if (!objectURL) {
             return null;
         }
 
-        let entry = activeOverlayLayers.get(descriptor.item);
+        let entry = activeOverlayLayers.get(key);
+        if (!entry) {
+            const legacyEntry = activeOverlayLayers.get(descriptor.item);
+            if (legacyEntry) {
+                activeOverlayLayers.delete(descriptor.item);
+                entry = legacyEntry;
+            }
+        }
+
+        if (!entry) {
+            activeOverlayLayers.forEach((candidate, candidateKey) => {
+                if (entry || !candidate) {
+                    return;
+                }
+                if (candidate.timelineItem === descriptor.item) {
+                    activeOverlayLayers.delete(candidateKey);
+                    entry = candidate;
+                }
+            });
+        }
+
         if (!entry || !entry.layer || !entry.image) {
             const layer = document.createElement('div');
             layer.classList.add('preview-overlay-layer');
@@ -422,8 +462,16 @@
                 renderedZIndex: null,
                 renderedRotation: null,
                 renderedAnimation: null,
+                key,
+                timelineItem: descriptor.item,
             };
-            activeOverlayLayers.set(descriptor.item, entry);
+            activeOverlayLayers.set(key, entry);
+        } else {
+            entry.key = key;
+            entry.timelineItem = descriptor.item;
+            if (!activeOverlayLayers.has(key)) {
+                activeOverlayLayers.set(key, entry);
+            }
         }
 
         const { layer, image } = entry;
@@ -512,7 +560,10 @@
             return;
         }
 
-        nextKnownItems.add(descriptor.item);
+        const descriptorKey = entry.key || getOverlayDescriptorKey(descriptor);
+        if (descriptorKey) {
+            nextKnownKeys.add(descriptorKey);
+        }
 
         if (!descriptor.shouldRender) {
             if (entry.isVisible) {
@@ -540,6 +591,11 @@
         const entry = ensureOverlayLayerEntry(descriptor);
         if (!entry) {
             return false;
+        }
+
+        const descriptorKey = entry.key || getOverlayDescriptorKey(descriptor);
+        if (descriptorKey) {
+            nextKnownKeys.add(descriptorKey);
         }
 
         const { layer, image } = entry;
@@ -690,15 +746,20 @@
             const zIndex = getDescriptorZIndex(descriptor);
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, below);
             if (rendered) {
-                nextActiveItems.add(descriptor.item);
+                const descriptorKey = getOverlayDescriptorKey(descriptor);
+                if (descriptorKey) {
+                    nextActiveKeys.add(descriptorKey);
+                }
                 return;
             }
-            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            const fallbackEntry = getOverlayEntryForDescriptor(descriptor);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = Number.isFinite(fallbackEntry.renderedOpacity)
                     ? fallbackEntry.renderedOpacity
                     : computeOverlayEntryOpacity(fallbackEntry);
-                nextActiveItems.add(descriptor.item);
+                if (fallbackEntry.key) {
+                    nextActiveKeys.add(fallbackEntry.key);
+                }
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
@@ -714,15 +775,20 @@
             const zIndex = getDescriptorZIndex(descriptor);
             const rendered = renderDescriptorIntoContainer(descriptor, zIndex, above);
             if (rendered) {
-                nextActiveItems.add(descriptor.item);
+                const descriptorKey = getOverlayDescriptorKey(descriptor);
+                if (descriptorKey) {
+                    nextActiveKeys.add(descriptorKey);
+                }
                 return;
             }
-            const fallbackEntry = activeOverlayLayers.get(descriptor.item);
+            const fallbackEntry = getOverlayEntryForDescriptor(descriptor);
             if (fallbackEntry?.isVisible) {
                 fallbackEntry.opacity = Number.isFinite(fallbackEntry.renderedOpacity)
                     ? fallbackEntry.renderedOpacity
                     : computeOverlayEntryOpacity(fallbackEntry);
-                nextActiveItems.add(descriptor.item);
+                if (fallbackEntry.key) {
+                    nextActiveKeys.add(fallbackEntry.key);
+                }
                 fallbackEntry.lastTimelineTime = safeTimelineNow;
                 fallbackEntry.layerGroup = getDescriptorLayerGroup(descriptor);
                 fallbackEntry.zIndex = zIndex;
@@ -730,23 +796,24 @@
         });
     }
 
-    const staleItems = [];
-    activeOverlayLayers.forEach((entry, item) => {
-        if (!nextKnownItems.has(item)) {
-            staleItems.push(item);
+    const staleKeys = [];
+    activeOverlayLayers.forEach((entry, key) => {
+        const resolvedKey = entry?.key || key;
+        if (!resolvedKey || !nextKnownKeys.has(resolvedKey)) {
+            staleKeys.push(key);
             return;
         }
-        if (!nextActiveItems.has(item)) {
+        if (!nextActiveKeys.has(resolvedKey)) {
             hideOverlayLayerEntry(entry);
         }
     });
-    staleItems.forEach((item) => {
-        const entry = activeOverlayLayers.get(item);
+    staleKeys.forEach((key) => {
+        const entry = activeOverlayLayers.get(key);
         if (entry && entry.layer) {
             overlayLayerToTimelineItem.delete(entry.layer);
             entry.layer.remove();
         }
-        activeOverlayLayers.delete(item);
+        activeOverlayLayers.delete(key);
     });
 
     const hasLayers = Boolean((below && below.childElementCount) || (above && above.childElementCount));
@@ -765,6 +832,22 @@
 
     lastOverlayRenderTimestamp = safeTimelineNow;
     return overlayEntries;
+}
+
+function getActiveOverlayEntryForTimelineItem(timelineItem) {
+    if (!timelineItem) {
+        return null;
+    }
+    let matched = null;
+    activeOverlayLayers.forEach((entry) => {
+        if (matched || !entry) {
+            return;
+        }
+        if (entry.timelineItem === timelineItem) {
+            matched = entry;
+        }
+    });
+    return matched;
 }
 
 function getActiveOverlayLayerSnapshots() {
@@ -1025,7 +1108,7 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
         return false;
     }
 
-    const entry = activeOverlayLayers.get(timelineItem);
+    const entry = getActiveOverlayEntryForTimelineItem(timelineItem);
     if (!entry || !entry.frame) {
         return false;
     }
@@ -1147,7 +1230,7 @@ function onOverlayPointerMove(event) {
         return;
     }
 
-    const entry = activeOverlayLayers.get(timelineItem);
+    const entry = getActiveOverlayEntryForTimelineItem(timelineItem);
     if (!entry) {
         cancelOverlayPointerInteraction();
         return;
