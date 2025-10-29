@@ -2078,6 +2078,10 @@ function setTimelineItemDuration(timelineItem, durationKey, durationMs, options 
     applyTimelineItemDurationStyles(timelineItem, applied);
     updateTimelineItemDurationBadge(timelineItem, applied);
 
+    if (typeof refreshTimelineItemProperties === 'function') {
+        refreshTimelineItemProperties(timelineItem);
+    }
+
     if (!skipAnimationSync) {
         synchronizeImageAnimationDurations(timelineItem, {
             source: 'clip',
