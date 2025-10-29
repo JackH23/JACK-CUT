@@ -878,7 +878,7 @@ function syncAudioFadeControl(control, overrideSeconds = null) {
     readout.textContent = display;
 }
 
-const DEFAULT_AUDIO_VOLUME_PERCENT = 80;
+const DEFAULT_AUDIO_VOLUME_PERCENT = 100;
 const AUDIO_VOLUME_MIN_PERCENT = 0;
 const AUDIO_VOLUME_MAX_PERCENT = 100;
 const AUDIO_FADE_MAX_SECONDS = 5;
