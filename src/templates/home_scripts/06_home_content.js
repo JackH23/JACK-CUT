@@ -577,6 +577,22 @@
                     entry.layerGroup = getDescriptorLayerGroup(descriptor);
                     return;
                 }
+
+                const lastTime = Number(entry.lastTimelineTime);
+                if (Number.isFinite(lastTime)) {
+                    const age = Math.abs(safeTimelineNow - lastTime);
+                    if (age <= recentOverlayHoldThreshold) {
+                        const heldOpacity = Number.isFinite(entry.renderedOpacity)
+                            ? entry.renderedOpacity
+                            : computeOverlayEntryOpacity(entry);
+                        descriptor.shouldRender = true;
+                        entry.opacity = heldOpacity;
+                        entry.lastTimelineTime = safeTimelineNow;
+                        entry.layerGroup = getDescriptorLayerGroup(descriptor);
+                        entry.zIndex = getDescriptorZIndex(descriptor);
+                        return;
+                    }
+                }
             }
 
             hideOverlayLayerEntry(entry);
