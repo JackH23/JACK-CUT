@@ -1014,13 +1014,137 @@ function renderExportSummary(timelineItems, playbackCompleted = null, playbackSt
     exportSummaryLastRenderedVersion = exportPlaybackContextMutationVersion;
 }
 
+let exportDialogPreviouslyFocusedElement = null;
+let exportDialogFocusTrapListener = null;
+
+function getExportDialogFocusableElements() {
+    if (!exportDialog) {
+        return [];
+    }
+
+    const selectors = [
+        '#confirm-export-button',
+        'button:not([disabled])',
+        '[href]',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])',
+    ];
+
+    const elements = Array.from(exportDialog.querySelectorAll(selectors.join(', ')))
+        .filter((element) => element instanceof HTMLElement)
+        .filter((element) => {
+            if (element.hasAttribute('disabled')) {
+                return false;
+            }
+            if (element.getAttribute('aria-hidden') === 'true') {
+                return false;
+            }
+            if (element.closest('[aria-hidden="true"]')) {
+                return false;
+            }
+            return element.tabIndex >= 0;
+        });
+
+    const seen = new Set();
+    const uniqueElements = [];
+    elements.forEach((element) => {
+        if (!seen.has(element)) {
+            seen.add(element);
+            uniqueElements.push(element);
+        }
+    });
+    return uniqueElements;
+}
+
+function focusExportDialogInitialControl() {
+    if (!exportDialog) {
+        return;
+    }
+
+    const confirmButton = exportDialog.querySelector('#confirm-export-button');
+    if (confirmButton instanceof HTMLElement && typeof confirmButton.focus === 'function') {
+        confirmButton.focus({ preventScroll: true });
+        return;
+    }
+
+    const focusableElements = getExportDialogFocusableElements();
+    if (focusableElements.length > 0) {
+        focusableElements[0].focus({ preventScroll: true });
+    } else if (typeof exportDialog.focus === 'function') {
+        exportDialog.focus({ preventScroll: true });
+    }
+}
+
+function setupExportDialogFocusTrap() {
+    if (!exportDialog || exportDialogFocusTrapListener) {
+        return;
+    }
+
+    exportDialogFocusTrapListener = (event) => {
+        if (event.key !== 'Tab') {
+            return;
+        }
+
+        const focusableElements = getExportDialogFocusableElements();
+        if (focusableElements.length === 0) {
+            event.preventDefault();
+            if (typeof exportDialog.focus === 'function') {
+                exportDialog.focus({ preventScroll: true });
+            }
+            return;
+        }
+
+        const activeElement = document.activeElement;
+        let currentIndex = focusableElements.indexOf(activeElement);
+
+        if (event.shiftKey) {
+            if (currentIndex <= 0) {
+                currentIndex = focusableElements.length;
+            }
+            currentIndex -= 1;
+        } else {
+            if (currentIndex === -1 || currentIndex >= focusableElements.length - 1) {
+                currentIndex = -1;
+            }
+            currentIndex += 1;
+            if (currentIndex >= focusableElements.length) {
+                currentIndex = 0;
+            }
+        }
+
+        event.preventDefault();
+        const nextElement = focusableElements[(currentIndex + focusableElements.length) % focusableElements.length];
+        if (nextElement && typeof nextElement.focus === 'function') {
+            nextElement.focus({ preventScroll: true });
+        }
+    };
+
+    exportDialog.addEventListener('keydown', exportDialogFocusTrapListener);
+}
+
+function teardownExportDialogFocusTrap() {
+    if (!exportDialog || !exportDialogFocusTrapListener) {
+        return;
+    }
+
+    exportDialog.removeEventListener('keydown', exportDialogFocusTrapListener);
+    exportDialogFocusTrapListener = null;
+}
+
 function openExportDialog() {
     if (!exportDialog) {
         return;
     }
+    exportDialogPreviouslyFocusedElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     exportDialog.hidden = false;
     exportDialog.removeAttribute('hidden');
     exportDialog.setAttribute('aria-hidden', 'false');
+    focusExportDialogInitialControl();
+    setupExportDialogFocusTrap();
 }
 
 function closeExportDialog() {
@@ -1030,6 +1154,17 @@ function closeExportDialog() {
     exportDialog.hidden = true;
     exportDialog.setAttribute('hidden', '');
     exportDialog.setAttribute('aria-hidden', 'true');
+    teardownExportDialogFocusTrap();
+
+    const fallbackTarget = document.querySelector('.export-button');
+    const focusTarget = exportDialogPreviouslyFocusedElement instanceof HTMLElement
+        ? exportDialogPreviouslyFocusedElement
+        : fallbackTarget;
+    exportDialogPreviouslyFocusedElement = null;
+
+    if (focusTarget instanceof HTMLElement && typeof focusTarget.focus === 'function') {
+        focusTarget.focus({ preventScroll: true });
+    }
 }
 
 function isExportDialogOpen() {
