@@ -4140,7 +4140,14 @@ function updateTimelineAudioMetadata(timelineItem, metadata) {
         return;
     }
 
-    const { sampleRate, channelCount, bitrate, durationMs } = metadata;
+    const {
+        sampleRate,
+        channelCount,
+        bitrate,
+        bitDepth,
+        durationMs,
+        format,
+    } = metadata;
 
     if (Number.isFinite(sampleRate) && sampleRate > 0) {
         timelineItem.dataset.audioSampleRate = String(Math.round(sampleRate));
@@ -4152,6 +4159,14 @@ function updateTimelineAudioMetadata(timelineItem, metadata) {
 
     if (Number.isFinite(bitrate) && bitrate > 0) {
         timelineItem.dataset.audioBitrate = String(Math.round(bitrate));
+    }
+
+    if (Number.isFinite(bitDepth) && bitDepth > 0) {
+        timelineItem.dataset.audioBitDepth = String(Math.round(bitDepth));
+    }
+
+    if (typeof format === 'string' && format.length) {
+        timelineItem.dataset.audioMimeType = format;
     }
 
     if (Number.isFinite(durationMs) && durationMs > 0) {
@@ -4179,6 +4194,53 @@ function estimateAudioBitrateFromFile(file, durationMs) {
     return Math.round(bitsPerSecond);
 }
 
+function deriveAudioBitDepthFromBitrate(bitrate, sampleRate, channelCount) {
+    const bitsPerSecond = Number(bitrate);
+    const samplesPerSecond = Number(sampleRate) * Number(channelCount);
+    if (!Number.isFinite(bitsPerSecond)
+        || bitsPerSecond <= 0
+        || !Number.isFinite(samplesPerSecond)
+        || samplesPerSecond <= 0) {
+        return null;
+    }
+
+    const bitsPerSample = bitsPerSecond / samplesPerSecond;
+    if (!Number.isFinite(bitsPerSample) || bitsPerSample <= 0) {
+        return null;
+    }
+
+    const rounded = Math.round(bitsPerSample);
+    if (!Number.isFinite(rounded) || rounded <= 0) {
+        return null;
+    }
+
+    const normalized = Math.round(Math.max(8, Math.min(rounded, 64)) / 8) * 8;
+    return normalized > 0 ? normalized : null;
+}
+
+function estimateAudioBitDepthFromFile(file, metadata = {}) {
+    const { bitrate, durationMs, sampleRate, channelCount } = metadata;
+    const resolvedSampleRate = Number(sampleRate);
+    const resolvedChannelCount = Number(channelCount);
+    if (!Number.isFinite(resolvedSampleRate)
+        || resolvedSampleRate <= 0
+        || !Number.isFinite(resolvedChannelCount)
+        || resolvedChannelCount <= 0) {
+        return null;
+    }
+
+    let resolvedBitrate = Number(bitrate);
+    if (!Number.isFinite(resolvedBitrate) || resolvedBitrate <= 0) {
+        resolvedBitrate = estimateAudioBitrateFromFile(file, durationMs);
+    }
+
+    return deriveAudioBitDepthFromBitrate(
+        resolvedBitrate,
+        resolvedSampleRate,
+        resolvedChannelCount,
+    );
+}
+
 async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas) {
     const existing = audioWaveformByObjectUrl.get(objectURL);
     if (existing && existing.drawn && existing.durationMs) {
@@ -4188,11 +4250,22 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
             delete existing.audioBuffer;
         }
         const duration = Math.max(existing.durationMs, MIN_AUDIO_DURATION);
+        const sampleRate = cachedBuffer?.sampleRate || null;
+        const channelCount = cachedBuffer?.numberOfChannels || null;
+        const bitrate = estimateAudioBitrateFromFile(file, duration);
+        const bitDepth = estimateAudioBitDepthFromFile(file, {
+            bitrate,
+            durationMs: duration,
+            sampleRate,
+            channelCount,
+        });
         updateTimelineAudioMetadata(timelineItem, {
             durationMs: duration,
-            sampleRate: cachedBuffer?.sampleRate || null,
-            channelCount: cachedBuffer?.numberOfChannels || null,
-            bitrate: estimateAudioBitrateFromFile(file, duration),
+            sampleRate,
+            channelCount,
+            bitrate,
+            bitDepth,
+            format: file?.type || timelineItem?.dataset?.fileType || '',
         });
         setTimelineItemDuration(timelineItem, 'audioDuration', duration, { markCustom: false });
         if (waveformCanvas) {
@@ -4212,11 +4285,20 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     if (audioBuffer) {
         const durationMs = Math.max(MIN_AUDIO_DURATION, Math.round(audioBuffer.duration * 1000));
         const channelData = buildWaveformChannelDataFromAudioBuffer(audioBuffer);
+        const bitrate = estimateAudioBitrateFromFile(file, durationMs);
+        const bitDepth = estimateAudioBitDepthFromFile(file, {
+            bitrate,
+            durationMs,
+            sampleRate: audioBuffer.sampleRate,
+            channelCount: audioBuffer.numberOfChannels,
+        });
         updateTimelineAudioMetadata(timelineItem, {
             durationMs,
             sampleRate: audioBuffer.sampleRate,
             channelCount: audioBuffer.numberOfChannels,
-            bitrate: estimateAudioBitrateFromFile(file, durationMs),
+            bitrate,
+            bitDepth,
+            format: file?.type || timelineItem?.dataset?.fileType || '',
         });
         const cacheEntry = {
             imageDataUrl: null,
@@ -4259,11 +4341,14 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
                     durationMs,
                     drawn: false,
                 });
+                const bitrate = estimateAudioBitrateFromFile(file, durationMs);
                 updateTimelineAudioMetadata(timelineItem, {
                     durationMs,
                     sampleRate: null,
                     channelCount: null,
-                    bitrate: estimateAudioBitrateFromFile(file, durationMs),
+                    bitrate,
+                    bitDepth: null,
+                    format: file?.type || timelineItem?.dataset?.fileType || '',
                 });
                 setTimelineItemDuration(timelineItem, 'audioDuration', durationMs, { markCustom: false });
                 if (waveformCanvas) {

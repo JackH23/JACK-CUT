@@ -1076,17 +1076,63 @@ function getOrCreatePreviewAudioContext() {
         return null;
     }
 
+    let preferredSampleRate = null;
+    if (typeof getTimelineAudioProfile === 'function') {
+        try {
+            const profile = getTimelineAudioProfile();
+            if (profile?.sampleRate) {
+                preferredSampleRate = Math.max(0, Number(profile.sampleRate));
+            }
+        } catch (error) {
+            // Ignore profile lookup errors and fall back to default sample rate.
+        }
+    }
+
     if (sharedPreviewAudioContext && sharedPreviewAudioContext.state === 'closed') {
         sharedPreviewAudioContext = null;
         sharedPreviewAudioDestination = null;
     }
 
+    const desiredSampleRate = Number(preferredSampleRate);
+    if (sharedPreviewAudioContext) {
+        const currentSampleRate = Number(sharedPreviewAudioContext.sampleRate);
+        if (Number.isFinite(desiredSampleRate)
+            && desiredSampleRate > 0
+            && Number.isFinite(currentSampleRate)
+            && Math.abs(currentSampleRate - desiredSampleRate) > 1
+            && typeof sharedPreviewAudioContext.close === 'function') {
+            try {
+                sharedPreviewAudioContext.close().catch(() => {});
+            } catch (closeError) {
+                // Ignore close errors and continue with recreation.
+            }
+            sharedPreviewAudioContext = null;
+            sharedPreviewAudioDestination = null;
+        }
+    }
+
     if (!sharedPreviewAudioContext) {
+        const contextOptions = {};
+        if (Number.isFinite(desiredSampleRate) && desiredSampleRate > 0) {
+            const clampedRate = Math.max(8_000, Math.min(Math.round(desiredSampleRate), 192_000));
+            contextOptions.sampleRate = clampedRate;
+        }
+
         try {
-            sharedPreviewAudioContext = new AudioContextConstructor();
+            sharedPreviewAudioContext = Object.keys(contextOptions).length
+                ? new AudioContextConstructor(contextOptions)
+                : new AudioContextConstructor();
         } catch (error) {
             sharedPreviewAudioContext = null;
-            return null;
+            if (contextOptions.sampleRate) {
+                try {
+                    sharedPreviewAudioContext = new AudioContextConstructor();
+                } catch (fallbackError) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
         }
     }
 

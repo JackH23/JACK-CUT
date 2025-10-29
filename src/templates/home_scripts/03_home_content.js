@@ -2102,6 +2102,64 @@ function getTimelineItems() {
     return Array.from(timelineTrack.querySelectorAll('.timeline-item'));
 }
 
+function getTimelineAudioProfile() {
+    const items = getTimelineItems();
+    const formats = new Set();
+
+    let maxSampleRate = 0;
+    let maxChannelCount = 0;
+    let maxBitrate = 0;
+    let maxBitDepth = 0;
+
+    items.forEach((item) => {
+        const dataset = item?.dataset;
+        if (!dataset) {
+            return;
+        }
+
+        const fileType = dataset.fileType || '';
+        if (!fileType.startsWith('audio/')) {
+            return;
+        }
+
+        const declaredFormat = dataset.audioMimeType || fileType;
+        if (declaredFormat) {
+            formats.add(declaredFormat);
+        }
+
+        const sampleRate = Number(dataset.audioSampleRate);
+        if (Number.isFinite(sampleRate) && sampleRate > 0) {
+            maxSampleRate = Math.max(maxSampleRate, Math.round(sampleRate));
+        }
+
+        const channelCount = Number(dataset.audioChannelCount);
+        if (Number.isFinite(channelCount) && channelCount > 0) {
+            maxChannelCount = Math.max(maxChannelCount, Math.round(channelCount));
+        }
+
+        const bitrate = Number(dataset.audioBitrate);
+        if (Number.isFinite(bitrate) && bitrate > 0) {
+            maxBitrate = Math.max(maxBitrate, Math.round(bitrate));
+        }
+
+        const bitDepth = Number(dataset.audioBitDepth);
+        if (Number.isFinite(bitDepth) && bitDepth > 0) {
+            maxBitDepth = Math.max(maxBitDepth, Math.round(bitDepth));
+        }
+    });
+
+    const formatList = Array.from(formats);
+
+    return {
+        sampleRate: maxSampleRate > 0 ? maxSampleRate : null,
+        channelCount: maxChannelCount > 0 ? maxChannelCount : null,
+        bitrate: maxBitrate > 0 ? maxBitrate : null,
+        bitDepth: maxBitDepth > 0 ? maxBitDepth : null,
+        formats: formatList,
+        primaryFormat: formatList.length === 1 ? formatList[0] : null,
+    };
+}
+
 let timelineLaneEntriesCache = null;
 
 function invalidateTimelineLaneEntriesCache() {

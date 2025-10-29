@@ -1625,14 +1625,59 @@ function deriveAudioContentType(videoMimeType) {
 }
 
 async function resolveExportEncodingConfig(exportFormat, resolution, options = {}) {
-    const frameRate = Math.max(1, Math.min(60, Math.round(options.frameRate) || 30));
+    const {
+        frameRate: frameRateOption,
+        audioProfile = null,
+    } = options || {};
+    const frameRate = Math.max(1, Math.min(60, Math.round(frameRateOption) || 30));
     const config = {
         mimeType: exportFormat?.mimeType || 'video/webm',
         frameRate,
         videoBitsPerSecond: estimateVideoBitrate(resolution, frameRate),
         audioBitsPerSecond: estimateAudioBitrate(resolution),
+        audioSampleRate: null,
+        audioChannels: null,
+        audioBitDepth: null,
+        audioOriginalFormat: null,
+        audioContentType: null,
         timesliceMs: null,
     };
+
+    if (audioProfile) {
+        const {
+            sampleRate,
+            channelCount,
+            bitrate,
+            bitDepth,
+            primaryFormat,
+        } = audioProfile;
+
+        if (Number.isFinite(bitrate) && bitrate > 0) {
+            config.audioBitsPerSecond = Math.max(
+                config.audioBitsPerSecond,
+                Math.round(bitrate),
+            );
+        }
+
+        if (Number.isFinite(sampleRate) && sampleRate > 0) {
+            config.audioSampleRate = Math.max(1, Math.round(sampleRate));
+        }
+
+        if (Number.isFinite(channelCount) && channelCount > 0) {
+            config.audioChannels = Math.max(1, Math.round(channelCount));
+        }
+
+        if (Number.isFinite(bitDepth) && bitDepth > 0) {
+            config.audioBitDepth = Math.max(1, Math.round(bitDepth));
+        }
+
+        if (typeof primaryFormat === 'string' && primaryFormat.startsWith('audio/')) {
+            config.audioOriginalFormat = primaryFormat;
+        }
+    }
+
+    const derivedAudioContentType = deriveAudioContentType(config.mimeType);
+    config.audioContentType = derivedAudioContentType || config.audioOriginalFormat || null;
 
     const mediaCapabilities = typeof navigator !== 'undefined'
         ? navigator.mediaCapabilities
@@ -1652,14 +1697,19 @@ async function resolveExportEncodingConfig(exportFormat, resolution, options = {
                 framerate: frameRate,
             },
         };
-        const audioContentType = deriveAudioContentType(config.mimeType);
-        if (audioContentType) {
-            encodingQuery.audio = {
-                contentType: audioContentType,
+
+        if (config.audioContentType) {
+            const audioQuery = {
+                contentType: config.audioContentType,
                 bitrate: config.audioBitsPerSecond,
-                samplerate: 48000,
-                channels: 2,
             };
+            if (Number.isFinite(config.audioSampleRate) && config.audioSampleRate > 0) {
+                audioQuery.samplerate = config.audioSampleRate;
+            }
+            if (Number.isFinite(config.audioChannels) && config.audioChannels > 0) {
+                audioQuery.channels = config.audioChannels;
+            }
+            encodingQuery.audio = audioQuery;
         }
 
         const info = await mediaCapabilities.encodingInfo(encodingQuery);
@@ -1696,6 +1746,14 @@ function prepareExportPlaybackContext(existingItems = null) {
         ? getTimelinePlaybackMutationVersion()
         : 0;
     const mediaDescriptors = collectTimelineExportMedia(timelineItems);
+    let audioProfile = null;
+    if (typeof getTimelineAudioProfile === 'function') {
+        try {
+            audioProfile = getTimelineAudioProfile();
+        } catch (error) {
+            audioProfile = null;
+        }
+    }
     pendingExportPlaybackContext = {
         timelineItems,
         playbackState,
@@ -1703,6 +1761,7 @@ function prepareExportPlaybackContext(existingItems = null) {
         mediaDescriptors,
         warmupSummary: null,
         encodingConfig: null,
+        audioProfile,
     };
     return pendingExportPlaybackContext;
 }
@@ -1717,16 +1776,64 @@ function getOrCreateSharedExportAudioContext() {
         sharedExportAudioSources = new WeakMap();
     }
 
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+        return null;
+    }
+
+    let preferredSampleRate = null;
+    if (typeof getTimelineAudioProfile === 'function') {
+        try {
+            const profile = getTimelineAudioProfile();
+            if (profile?.sampleRate) {
+                preferredSampleRate = Math.max(0, Number(profile.sampleRate));
+            }
+        } catch (error) {
+            // Ignore audio profile lookup errors when configuring export audio context.
+        }
+    }
+
+    const desiredSampleRate = Number(preferredSampleRate);
+    if (sharedExportAudioContext) {
+        const currentSampleRate = Number(sharedExportAudioContext.sampleRate);
+        if (Number.isFinite(desiredSampleRate)
+            && desiredSampleRate > 0
+            && Number.isFinite(currentSampleRate)
+            && Math.abs(currentSampleRate - desiredSampleRate) > 1
+            && typeof sharedExportAudioContext.close === 'function') {
+            try {
+                sharedExportAudioContext.close().catch(() => {});
+            } catch (closeError) {
+                // Ignore close errors and continue with recreation.
+            }
+            sharedExportAudioContext = null;
+            sharedExportAudioSources = new WeakMap();
+        }
+    }
+
     if (!sharedExportAudioContext) {
-        const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextConstructor) {
-            return null;
+        const contextOptions = {};
+        if (Number.isFinite(desiredSampleRate) && desiredSampleRate > 0) {
+            const clampedRate = Math.max(8_000, Math.min(Math.round(desiredSampleRate), 192_000));
+            contextOptions.sampleRate = clampedRate;
         }
 
         try {
-            sharedExportAudioContext = new AudioContextConstructor();
+            sharedExportAudioContext = Object.keys(contextOptions).length
+                ? new AudioContextConstructor(contextOptions)
+                : new AudioContextConstructor();
         } catch (error) {
-            return null;
+            sharedExportAudioContext = null;
+            sharedExportAudioSources = new WeakMap();
+            if (contextOptions.sampleRate) {
+                try {
+                    sharedExportAudioContext = new AudioContextConstructor();
+                } catch (fallbackError) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
         }
     }
 
@@ -2130,6 +2237,19 @@ async function handleConfirmExport() {
 
     let encodingConfig = playbackContext?.encodingConfig || null;
     let warmupSummary = null;
+    const activeAudioProfile = (() => {
+        if (playbackContext?.audioProfile) {
+            return playbackContext.audioProfile;
+        }
+        if (typeof getTimelineAudioProfile === 'function') {
+            try {
+                return getTimelineAudioProfile();
+            } catch (profileError) {
+                return null;
+            }
+        }
+        return null;
+    })();
     try {
         warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500, signal });
         throwIfAborted();
@@ -2150,14 +2270,37 @@ async function handleConfirmExport() {
     try {
         encodingConfig = await resolveExportEncodingConfig(exportFormat, resolution, {
             frameRate: encodingConfig?.frameRate || 30,
+            audioProfile: activeAudioProfile,
         });
     } catch (encodingError) {
         console.warn('Falling back to default export encoding configuration.', encodingError);
+        const fallbackAudioBits = Number.isFinite(activeAudioProfile?.bitrate)
+            && activeAudioProfile.bitrate > 0
+            ? Math.max(96_000, Math.round(activeAudioProfile.bitrate))
+            : 192_000;
+        const fallbackSampleRate = Number.isFinite(activeAudioProfile?.sampleRate)
+            && activeAudioProfile.sampleRate > 0
+            ? Math.round(activeAudioProfile.sampleRate)
+            : null;
+        const fallbackChannels = Number.isFinite(activeAudioProfile?.channelCount)
+            && activeAudioProfile.channelCount > 0
+            ? Math.max(1, Math.round(activeAudioProfile.channelCount))
+            : null;
+        const fallbackBitDepth = Number.isFinite(activeAudioProfile?.bitDepth)
+            && activeAudioProfile.bitDepth > 0
+            ? Math.round(activeAudioProfile.bitDepth)
+            : null;
+        const derivedContentType = deriveAudioContentType(exportFormat?.mimeType || '');
         encodingConfig = {
             mimeType: exportFormat.mimeType,
             frameRate: 30,
             videoBitsPerSecond: 6_000_000,
-            audioBitsPerSecond: 192_000,
+            audioBitsPerSecond: fallbackAudioBits,
+            audioSampleRate: fallbackSampleRate,
+            audioChannels: fallbackChannels,
+            audioBitDepth: fallbackBitDepth,
+            audioOriginalFormat: activeAudioProfile?.primaryFormat || null,
+            audioContentType: derivedContentType || activeAudioProfile?.primaryFormat || null,
             timesliceMs: null,
         };
     }
