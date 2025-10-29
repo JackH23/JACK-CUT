@@ -7,6 +7,16 @@
     } else {
         timelineTrack.classList.add('timeline-track--empty');
     }
+
+    if (exportButton) {
+        exportButton.disabled = !hasItems;
+        exportButton.setAttribute('aria-disabled', hasItems ? 'false' : 'true');
+    }
+
+    if (typeof exportButtonHint !== 'undefined' && exportButtonHint) {
+        exportButtonHint.hidden = hasItems;
+        exportButtonHint.setAttribute('aria-hidden', hasItems ? 'true' : 'false');
+    }
 }
 
 function setActiveDropLane(nextLane) {

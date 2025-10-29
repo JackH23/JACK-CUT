@@ -18,12 +18,14 @@
             <nav class="nav-actions">
                 {% if username %}
                     <span style="color: var(--text-secondary); font-size: 0.95rem;">Hi, {{ username }} 👋</span>
-                    <button type="button" class="export-button">Export video</button>
+                    <button type="button" class="export-button" aria-describedby="export-button-hint">Export video</button>
+                    <span class="export-button-hint" id="export-button-hint" role="note">Add clips to enable export.</span>
                     <a class="primary" href="{{ url_for('signout') }}">Sign Out</a>
                 {% else %}
                     <a href="{{ url_for('login') }}">Log In</a>
                     <a class="primary" href="{{ url_for('signup') }}">Get Started</a>
-                    <button type="button" class="export-button">Export video</button>
+                    <button type="button" class="export-button" aria-describedby="export-button-hint">Export video</button>
+                    <span class="export-button-hint" id="export-button-hint" role="note">Add clips to enable export.</span>
                 {% endif %}
             </nav>
         </header>

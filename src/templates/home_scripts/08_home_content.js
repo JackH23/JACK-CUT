@@ -812,7 +812,6 @@ if (exportButton) {
     exportButton.addEventListener('click', () => {
         const timelineItems = getTimelineItems();
         if (!timelineItems.length) {
-            alert('Upload an image or video to build your timeline.');
             return;
         }
 

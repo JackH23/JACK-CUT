@@ -196,6 +196,7 @@ const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
 const exportButton = document.querySelector('.export-button');
+const exportButtonHint = document.getElementById('export-button-hint');
 const exportDialog = document.getElementById('export-dialog');
 const exportTimelineList = document.getElementById('export-timeline-list');
 const exportSummaryClips = document.getElementById('export-summary-clips');
