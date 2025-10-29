@@ -1679,8 +1679,12 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
     let completed = false;
     let wasCancelled = false;
 
-    const applyRestore = () => {
+    const applyRestore = (skipFlash = false) => {
         if (!previewImage || previewImage.hidden) {
+            return;
+        }
+        if (skipFlash) {
+            previewImage.classList.add('is-visible');
             return;
         }
         previewImage.classList.remove('is-visible');
@@ -1693,7 +1697,7 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
         });
     };
 
-    const finalize = (forceRestore = null) => {
+    const finalize = (forceRestore = null, didCancel = false) => {
         if (completed) {
             return;
         }
@@ -1712,8 +1716,10 @@ function runPreviewImageExitAnimation(options = {}, configOverride = null) {
 
         const shouldRestore = forceRestore === null ? restoreOnComplete : forceRestore;
         if (shouldRestore && previewImage && !previewImage.hidden) {
+            const skipFlash = didCancel === true;
+            const triggerRestore = () => applyRestore(skipFlash);
             if (restoreDelay > 0) {
-                window.setTimeout(applyRestore, restoreDelay);
+                window.setTimeout(triggerRestore, restoreDelay);
             } else {
-                applyRestore();
+                triggerRestore();
             }
