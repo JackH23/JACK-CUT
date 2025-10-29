@@ -3249,6 +3249,18 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     text-align: center;
 }
 
+.timeline-item__audio-summary {
+    width: 100%;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    color: rgba(148, 163, 184, 0.9);
+    text-align: center;
+}
+
+.timeline-item--audio .timeline-item__audio-summary {
+    color: rgba(191, 219, 254, 0.88);
+}
+
 .timeline-item-volume {
     display: flex;
     flex-direction: column;
