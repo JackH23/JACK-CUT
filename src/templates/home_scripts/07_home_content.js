@@ -4721,6 +4721,54 @@ function syncPreviewAudioOverlay(entries, segmentStartTimeMs) {
     });
 }
 
+function refreshTimelineItemProperties(timelineItem) {
+    if (!timelineItem) {
+        return;
+    }
+
+    const target = timelineItem.querySelector('.timeline-item__properties');
+    if (!target) {
+        return;
+    }
+
+    const segments = [];
+    const fileType = timelineItem.dataset.fileType || '';
+
+    if (timelineItem.classList.contains('timeline-item--text')) {
+        segments.push('Text overlay');
+    } else if (fileType.startsWith('video/')) {
+        segments.push('Video clip');
+    } else if (fileType.startsWith('image/')) {
+        segments.push('Image clip');
+    } else if (fileType.startsWith('audio/')) {
+        segments.push('Audio clip');
+    } else if (fileType) {
+        segments.push(fileType);
+    }
+
+    let durationMs = Number(timelineItem.dataset.videoDuration || 0);
+    if (!durationMs) {
+        durationMs = Number(timelineItem.dataset.imageDuration || 0);
+    }
+    if (!durationMs) {
+        durationMs = Number(timelineItem.dataset.audioDuration || 0);
+    }
+
+    if (durationMs > 0) {
+        if (typeof formatDurationBadgeLabel === 'function') {
+            segments.push(formatDurationBadgeLabel(durationMs));
+        } else {
+            segments.push(`${Math.max(0, Math.round(durationMs))}ms`);
+        }
+    }
+
+    if (segments.length > 0) {
+        target.textContent = segments.join(' • ');
+    } else {
+        target.textContent = '';
+    }
+}
+
 async function addToTimeline(file, objectURL) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
@@ -4738,10 +4786,20 @@ async function addToTimeline(file, objectURL) {
     assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
-    label.className = 'timeline-item__label';
     label.textContent = file.name;
 
     let shouldAppendLabelToItem = true;
+    let previewContainer = null;
+
+    const ensurePreviewContainer = () => {
+        if (previewContainer) {
+            return previewContainer;
+        }
+        previewContainer = document.createElement('div');
+        previewContainer.className = 'timeline-item__preview';
+        timelineItem.appendChild(previewContainer);
+        return previewContainer;
+    };
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
@@ -4750,6 +4808,7 @@ async function addToTimeline(file, objectURL) {
     removeButton.textContent = '✕';
 
     if (file.type.startsWith('video/')) {
+        const container = ensurePreviewContainer();
         const videoThumb = document.createElement('video');
         videoThumb.src = objectURL;
         videoThumb.muted = true;
@@ -4783,14 +4842,16 @@ async function addToTimeline(file, objectURL) {
                     updateActiveTimelineIndicators();
                 }
             }
+            refreshTimelineItemProperties(timelineItem);
         });
-        timelineItem.appendChild(videoThumb);
+        container.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
+        const container = ensurePreviewContainer();
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
-        timelineItem.appendChild(imageThumb);
+        container.appendChild(imageThumb);
         setTimelineItemDuration(
             timelineItem,
             'imageDuration',
@@ -4826,7 +4887,19 @@ async function addToTimeline(file, objectURL) {
     }
 
     if (shouldAppendLabelToItem) {
-        timelineItem.appendChild(label);
+        const container = ensurePreviewContainer();
+        const metadataOverlay = document.createElement('div');
+        metadataOverlay.className = 'timeline-item__meta';
+
+        label.classList.add('timeline-item__label');
+        metadataOverlay.appendChild(label);
+
+        const propertiesList = document.createElement('div');
+        propertiesList.className = 'timeline-item__properties';
+        metadataOverlay.appendChild(propertiesList);
+
+        container.appendChild(metadataOverlay);
+        refreshTimelineItemProperties(timelineItem);
     }
     timelineItem.appendChild(removeButton);
 
@@ -5258,6 +5331,7 @@ async function addDefaultTextOverlayToTimeline() {
     assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
 
     const removeButton = document.createElement('button');
@@ -5266,17 +5340,29 @@ async function addDefaultTextOverlayToTimeline() {
     removeButton.setAttribute('aria-label', 'Remove text overlay');
     removeButton.textContent = '✕';
 
+    const previewContainer = document.createElement('div');
+    previewContainer.className = 'timeline-item__preview';
+    timelineItem.appendChild(previewContainer);
+
     try {
         const thumbnail = document.createElement('img');
         thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
         thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
-        timelineItem.appendChild(thumbnail);
+        previewContainer.appendChild(thumbnail);
     } catch (error) {
         console.warn('Unable to generate thumbnail for text overlay.', error);
     }
 
-    timelineItem.appendChild(label);
+    const metadataOverlay = document.createElement('div');
+    metadataOverlay.className = 'timeline-item__meta';
+    metadataOverlay.appendChild(label);
+
+    const propertiesList = document.createElement('div');
+    propertiesList.className = 'timeline-item__properties';
+    metadataOverlay.appendChild(propertiesList);
+
+    previewContainer.appendChild(metadataOverlay);
     timelineItem.appendChild(removeButton);
 
     setTimelineItemDuration(
