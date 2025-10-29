@@ -882,17 +882,7 @@ const DEFAULT_AUDIO_VOLUME_PERCENT = 100;
 const AUDIO_VOLUME_MIN_PERCENT = 0;
 const AUDIO_VOLUME_MAX_PERCENT = 150;
 const AUDIO_FADE_MAX_SECONDS = 5;
-const MASTER_VOLUME_TOP_LAYER_BOOST_DB = 2;
-const MASTER_VOLUME_LOWER_LAYER_REDUCTION_DB = -6;
 const TIMELINE_AUDIO_SUMMARY_CLASS = 'timeline-item__audio-summary';
-
-function decibelsToGain(db) {
-    const numeric = Number(db);
-    if (!Number.isFinite(numeric)) {
-        return 1;
-    }
-    return 10 ** (numeric / 20);
-}
 
 function isVideoTimelineEntry(item) {
     if (!item) {
@@ -1065,25 +1055,10 @@ function computeTimelineAudioMix(entries = [], options = {}) {
 
     layers.sort((a, b) => a.laneIndex - b.laneIndex);
     const highestLaneIndex = layers[layers.length - 1].laneIndex;
-    const hasOverlap = layers.length > 1;
-
     layers.forEach((layer) => {
-        const isTopLayer = layer.laneIndex === highestLaneIndex;
-        const boost = hasOverlap && isTopLayer ? decibelsToGain(MASTER_VOLUME_TOP_LAYER_BOOST_DB) : 1;
-        const duck = hasOverlap && !isTopLayer
-            ? decibelsToGain(MASTER_VOLUME_LOWER_LAYER_REDUCTION_DB)
-            : 1;
-        layer.isTopLayer = isTopLayer;
-        layer.gain = clampVolume(layer.baseVolume * boost * duck);
+        layer.isTopLayer = layer.laneIndex === highestLaneIndex;
+        layer.gain = layer.baseVolume;
     });
-
-    const gainSum = layers.reduce((total, layer) => total + layer.gain, 0);
-    if (gainSum > 1) {
-        const scale = 1 / gainSum;
-        layers.forEach((layer) => {
-            layer.gain = clampVolume(layer.gain * scale);
-        });
-    }
 
     const gainsByItem = new Map();
     layers.forEach((layer) => {
@@ -1918,7 +1893,7 @@ audioFadeControls.forEach((control) => {
         } else if (input === audioFadeOutInput) {
             persisted = persistActiveTimelineAudioSettings({ fadeOutMs: milliseconds });
         }
-        
+
         const targetTimelineItem = typeof activeTimelineItem !== 'undefined'
             ? activeTimelineItem
             : null;
