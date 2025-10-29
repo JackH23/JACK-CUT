@@ -1970,6 +1970,9 @@ function reflowAllTimelineLanes() {
     getTimelineLanes().forEach((lane) => {
         reflowTimelineLane(lane);
     });
+    if (typeof ensureAudioTimelineIsolation === 'function') {
+        ensureAudioTimelineIsolation();
+    }
 }
 
 function setMainTrackMagnetEnabled(enable) {
@@ -2394,6 +2397,10 @@ function refreshTimelineLaneIndices() {
             item.dataset.laneIndex = laneIndex;
         });
     });
+
+    if (typeof updateAudioLaneLabels === 'function') {
+        updateAudioLaneLabels();
+    }
 
     invalidateTimelineLaneEntriesCache();
 }

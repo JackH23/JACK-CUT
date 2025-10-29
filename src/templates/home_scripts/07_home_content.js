@@ -2649,7 +2649,21 @@ function restoreTimelineItemFromSnapshot(snapshot, options = {}) {
     const targetLaneIndex = Number.isFinite(options.laneIndex)
         ? options.laneIndex
         : snapshot.laneIndex;
-    const lane = ensureTimelineLane(targetLaneIndex);
+    const isAudioSnapshot = typeof snapshot.fileType === 'string'
+        && snapshot.fileType.startsWith('audio/');
+    let lane = null;
+    if (isAudioSnapshot) {
+        if (Number.isFinite(targetLaneIndex)) {
+            lane = ensureAudioTimelineLane({ laneIndex: targetLaneIndex })
+                || ensureTimelineLane(targetLaneIndex);
+        }
+        if (!lane) {
+            lane = ensureAudioTimelineLane({ allocateNew: true })
+                || ensureTimelineLane(targetLaneIndex);
+        }
+    } else {
+        lane = ensureTimelineLane(targetLaneIndex);
+    }
     if (!lane) {
         return null;
     }
@@ -2697,6 +2711,10 @@ function restoreTimelineItemFromSnapshot(snapshot, options = {}) {
 
     flushTimelineLaneReflow(lane);
     scheduleTimelineLaneReflow(lane);
+
+    if (isAudioSnapshot) {
+        ensureAudioTimelineIsolation();
+    }
     updateTimelineEmptyState();
     updateActiveTimelineIndicators();
     markExportPlaybackContextDirty({ refreshSummary: true });
@@ -3781,20 +3799,211 @@ function getWaveformCssHeight(canvas, heightOverride) {
     return AUDIO_WAVEFORM_HEIGHT;
 }
 
-function ensureAudioTimelineLane() {
+function getAudioTimelineLanes() {
+    if (!timelineLaneList) {
+        return [];
+    }
+    return getTimelineLanes().filter((lane) => lane?.classList?.contains('timeline-lane--audio'));
+}
+
+function createAudioTimelineLane(options = {}) {
     if (!timelineLaneList) {
         return null;
     }
-    const lanes = getTimelineLanes();
-    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--audio'));
-    if (existing) {
-        return existing;
+
+    const lane = typeof createTimelineLaneElement === 'function'
+        ? createTimelineLaneElement()
+        : document.createElement('div');
+
+    if (!lane.classList.contains('timeline-lane')) {
+        lane.classList.add('timeline-lane');
     }
-    const lane = document.createElement('div');
-    lane.className = 'timeline-lane timeline-lane--audio';
-    timelineLaneList.appendChild(lane);
+    lane.classList.add('timeline-lane--audio');
+
+    if (Number.isFinite(options?.insertIndex)) {
+        const lanes = getTimelineLanes();
+        const insertIndex = Math.max(0, Math.min(options.insertIndex, lanes.length));
+        const referenceLane = lanes[insertIndex] || null;
+        timelineLaneList.insertBefore(lane, referenceLane);
+    } else {
+        timelineLaneList.appendChild(lane);
+    }
+
+    return lane;
+}
+
+function updateAudioLaneLabels() {
+    if (!timelineLaneList) {
+        return;
+    }
+
+    const lanes = getTimelineLanes();
+    const audioLanes = lanes.filter((lane) => lane?.classList?.contains('timeline-lane--audio'));
+    const shouldNumber = audioLanes.length > 1;
+
+    audioLanes.forEach((lane, index) => {
+        const label = shouldNumber ? `Audio ${index + 1}` : 'Audio';
+        lane.dataset.audioLabel = label;
+    });
+
+    lanes.forEach((lane) => {
+        if (!lane?.classList?.contains('timeline-lane--audio') && lane?.dataset?.audioLabel) {
+            delete lane.dataset.audioLabel;
+        }
+    });
+}
+
+function ensureAudioTimelineLane(options = {}) {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const { laneIndex = null, allocateNew = false } = options;
+
+    if (Number.isFinite(laneIndex)) {
+        const targetIndex = Math.max(0, laneIndex);
+        let lanes = getTimelineLanes();
+        while (lanes.length <= targetIndex) {
+            timelineLaneList.appendChild(createTimelineLaneElement());
+            lanes = getTimelineLanes();
+        }
+        const lane = lanes[targetIndex];
+        if (!lane.classList.contains('timeline-lane--audio')) {
+            lane.classList.add('timeline-lane--audio');
+        }
+        refreshTimelineLaneIndices();
+        return lane;
+    }
+
+    if (allocateNew) {
+        const lane = createAudioTimelineLane();
+        refreshTimelineLaneIndices();
+        return lane;
+    }
+
+    const audioLanes = getAudioTimelineLanes();
+    const emptyLane = audioLanes.find((lane) => !lane.querySelector('.timeline-item'));
+    if (emptyLane) {
+        return emptyLane;
+    }
+
+    const lane = createAudioTimelineLane();
     refreshTimelineLaneIndices();
     return lane;
+}
+
+function ensureAudioTimelineIsolation() {
+    if (!timelineLaneList || typeof getTimelineLaneEntryCache !== 'function') {
+        updateAudioLaneLabels();
+        return false;
+    }
+
+    const detectAudioItem = typeof isAudioTimelineItem === 'function'
+        ? isAudioTimelineItem
+        : ((item) => (item?.dataset?.fileType || '').startsWith('audio/'));
+
+    const laneCache = getTimelineLaneEntryCache({ useCache: false });
+    const audioEntries = laneCache.entries.filter((entry) => entry?.item && detectAudioItem(entry.item));
+
+    if (!audioEntries.length) {
+        updateAudioLaneLabels();
+        return false;
+    }
+
+    let needsIsolation = false;
+    const seenLanes = new Set();
+
+    audioEntries.forEach((entry) => {
+        const item = entry.item;
+        const lane = item.closest('.timeline-lane');
+        if (!lane) {
+            needsIsolation = true;
+            return;
+        }
+
+        if (!lane.classList.contains('timeline-lane--audio')) {
+            needsIsolation = true;
+        }
+
+        const laneItems = Array.from(lane.querySelectorAll('.timeline-item'));
+        const audioItems = laneItems.filter((child) => detectAudioItem(child));
+        const hasNonAudio = laneItems.some((child) => !detectAudioItem(child));
+        if (audioItems.length !== 1 || audioItems[0] !== item || hasNonAudio) {
+            needsIsolation = true;
+        }
+
+        if (seenLanes.has(lane)) {
+            needsIsolation = true;
+        } else {
+            seenLanes.add(lane);
+        }
+    });
+
+    if (!needsIsolation) {
+        updateAudioLaneLabels();
+        return false;
+    }
+
+    const resolveIndex = typeof resolveLaneIndex === 'function'
+        ? resolveLaneIndex
+        : ((value) => {
+            const parsed = Number.parseInt(value ?? '', 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+        });
+
+    const sortedEntries = audioEntries.slice().sort((a, b) => {
+        if (a.start !== b.start) {
+            return a.start - b.start;
+        }
+        if (a.end !== b.end) {
+            return a.end - b.end;
+        }
+        const aIndex = resolveIndex(a.laneIndex ?? a.item?.dataset?.laneIndex);
+        const bIndex = resolveIndex(b.laneIndex ?? b.item?.dataset?.laneIndex);
+        return aIndex - bIndex;
+    });
+
+    const audioItems = sortedEntries.map((entry) => entry.item);
+    const affectedLanes = new Set();
+
+    audioItems.forEach((item) => {
+        const parentLane = item.closest('.timeline-lane');
+        if (parentLane) {
+            affectedLanes.add(parentLane);
+            parentLane.removeChild(item);
+        }
+    });
+
+    affectedLanes.forEach((lane) => {
+        if (!lane.querySelector('.timeline-item')) {
+            lane.remove();
+            return;
+        }
+        if (lane.classList.contains('timeline-lane--audio')) {
+            lane.classList.remove('timeline-lane--audio');
+            delete lane.dataset.audioLabel;
+        }
+        scheduleTimelineLaneReflow(lane);
+    });
+
+    const newAudioLanes = [];
+    sortedEntries.forEach((entry) => {
+        const lane = createAudioTimelineLane();
+        if (!lane) {
+            return;
+        }
+        lane.appendChild(entry.item);
+        newAudioLanes.push(lane);
+    });
+
+    refreshTimelineLaneIndices();
+    updateAudioLaneLabels();
+    newAudioLanes.forEach((lane) => scheduleTimelineLaneReflow(lane));
+    invalidateTimelineLaneEntriesCache();
+    updateTimelineEmptyState();
+    updateActiveTimelineIndicators();
+    markExportPlaybackContextDirty({ refreshSummary: true });
+    return true;
 }
 
 async function decodeAudioBufferFromFile(file) {
@@ -4820,8 +5029,9 @@ async function addToTimeline(file, objectURL) {
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
-    if (file.type.startsWith('audio/')) {
-        const audioLane = ensureAudioTimelineLane();
+    const isAudioFile = file.type.startsWith('audio/');
+    if (isAudioFile) {
+        const audioLane = ensureAudioTimelineLane({ allocateNew: true });
         targetLane = audioLane || targetLane;
     }
     if (targetLane) {
@@ -4840,6 +5050,10 @@ async function addToTimeline(file, objectURL) {
     markExportPlaybackContextDirty({ refreshSummary: true });
 
     registerTimelineItemInteractions(timelineItem, removeButton);
+
+    if (isAudioFile) {
+        ensureAudioTimelineIsolation();
+    }
 
     pushTimelineUndoEntry({
         type: 'add-item',

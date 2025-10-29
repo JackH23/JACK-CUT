@@ -2990,7 +2990,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .timeline-lane--audio::before {
-    content: 'Audio';
+    content: attr(data-audio-label);
     position: absolute;
     top: 10px;
     left: 16px;
