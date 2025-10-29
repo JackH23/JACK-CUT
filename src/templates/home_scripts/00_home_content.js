@@ -1534,6 +1534,10 @@ function persistTimelineItemAudioSettings(timelineItem, settings) {
         refreshPreviewAudioMix();
     }
 
+    if (touched && typeof markExportPlaybackContextDirty === 'function') {
+        markExportPlaybackContextDirty({ refreshSummary: true });
+    }
+
     return touched ? persisted : null;
 }
 
@@ -1914,9 +1918,17 @@ audioFadeControls.forEach((control) => {
         } else if (input === audioFadeOutInput) {
             persisted = persistActiveTimelineAudioSettings({ fadeOutMs: milliseconds });
         }
-        cancelPreviewAudioEnvelope({ restoreVolume: false });
-        if (persisted && activeTimelineItem) {
-            syncAudioControlsToTimelineItem(activeTimelineItem);
+        
+        const targetTimelineItem = typeof activeTimelineItem !== 'undefined'
+            ? activeTimelineItem
+            : null;
+
+        if (targetTimelineItem) {
+            if (persisted) {
+                syncAudioControlsToTimelineItem(targetTimelineItem);
+            } else {
+                updateTimelineAudioSettingsSummary(targetTimelineItem);
+            }
         }
     };
 
