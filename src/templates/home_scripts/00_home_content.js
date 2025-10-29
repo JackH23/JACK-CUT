@@ -1420,37 +1420,110 @@ function getTimelineItemAudioSettings(timelineItem) {
     };
 }
 
-function persistTimelineItemAudioSettings(timelineItem, settings) {
-    const supportsAudio = isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
-    if (!supportsAudio || !timelineItem?.dataset || !settings) {
-        return;
+function normalizeTimelineAudioSettings(timelineItem, settings) {
+    const normalized = {};
+    if (!timelineItem || !settings || typeof settings !== 'object') {
+        return normalized;
     }
 
     if (Object.prototype.hasOwnProperty.call(settings, 'volumePercent')) {
-        const percent = clampVolumePercent(settings.volumePercent);
+        normalized.volumePercent = clampVolumePercent(settings.volumePercent);
+    }
+
+    const includesFadeIn = Object.prototype.hasOwnProperty.call(settings, 'fadeInMs');
+    const includesFadeOut = Object.prototype.hasOwnProperty.call(settings, 'fadeOutMs');
+
+    if (!includesFadeIn && !includesFadeOut) {
+        return normalized;
+    }
+
+    const currentSettings = getTimelineItemAudioSettings(timelineItem);
+    let nextFadeIn = includesFadeIn
+        ? sanitizeFadeMilliseconds(settings.fadeInMs)
+        : currentSettings.fadeInMs;
+    let nextFadeOut = includesFadeOut
+        ? sanitizeFadeMilliseconds(settings.fadeOutMs)
+        : currentSettings.fadeOutMs;
+
+    const clipDurationMs = typeof getTimelineItemPlaybackDuration === 'function'
+        ? Math.max(0, Math.round(getTimelineItemPlaybackDuration(timelineItem)))
+        : null;
+
+    if (clipDurationMs !== null) {
+        if (clipDurationMs <= 0) {
+            nextFadeIn = 0;
+            nextFadeOut = 0;
+        } else {
+            nextFadeIn = Math.min(nextFadeIn, clipDurationMs);
+            nextFadeOut = Math.min(nextFadeOut, clipDurationMs);
+
+            const totalFade = nextFadeIn + nextFadeOut;
+            if (totalFade > clipDurationMs) {
+                const adjustingFadeInOnly = includesFadeIn && !includesFadeOut;
+                const adjustingFadeOutOnly = includesFadeOut && !includesFadeIn;
+
+                if (adjustingFadeInOnly) {
+                    nextFadeIn = Math.max(0, clipDurationMs - nextFadeOut);
+                } else if (adjustingFadeOutOnly) {
+                    nextFadeOut = Math.max(0, clipDurationMs - nextFadeIn);
+                } else if (totalFade > 0) {
+                    const scale = clipDurationMs / totalFade;
+                    nextFadeIn = Math.round(nextFadeIn * scale);
+                    nextFadeOut = Math.round(nextFadeOut * scale);
+                } else {
+                    nextFadeIn = 0;
+                    nextFadeOut = 0;
+                }
+            }
+        }
+    }
+
+    normalized.fadeInMs = sanitizeFadeMilliseconds(nextFadeIn);
+    normalized.fadeOutMs = sanitizeFadeMilliseconds(nextFadeOut);
+    return normalized;
+}
+
+function persistTimelineItemAudioSettings(timelineItem, settings) {
+    const supportsAudio = isVideoTimelineItem(timelineItem) || isAudioTimelineItem(timelineItem);
+    if (!supportsAudio || !timelineItem?.dataset || !settings) {
+        return null;
+    }
+
+    const normalizedSettings = normalizeTimelineAudioSettings(timelineItem, settings);
+    const persisted = {};
+    let touched = false;
+
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'volumePercent')) {
+        const percent = normalizedSettings.volumePercent;
         if (percent === DEFAULT_AUDIO_VOLUME_PERCENT) {
             delete timelineItem.dataset.audioVolumePercent;
         } else {
             timelineItem.dataset.audioVolumePercent = String(percent);
         }
+        persisted.volumePercent = percent;
+        touched = true;
     }
 
-    if (Object.prototype.hasOwnProperty.call(settings, 'fadeInMs')) {
-        const milliseconds = sanitizeFadeMilliseconds(settings.fadeInMs);
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'fadeInMs')) {
+        const milliseconds = normalizedSettings.fadeInMs;
         if (milliseconds > 0) {
             timelineItem.dataset.audioFadeInMs = String(milliseconds);
         } else {
             delete timelineItem.dataset.audioFadeInMs;
         }
+        persisted.fadeInMs = milliseconds;
+        touched = true;
     }
 
-    if (Object.prototype.hasOwnProperty.call(settings, 'fadeOutMs')) {
-        const milliseconds = sanitizeFadeMilliseconds(settings.fadeOutMs);
+    if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'fadeOutMs')) {
+        const milliseconds = normalizedSettings.fadeOutMs;
         if (milliseconds > 0) {
             timelineItem.dataset.audioFadeOutMs = String(milliseconds);
         } else {
             delete timelineItem.dataset.audioFadeOutMs;
         }
+        persisted.fadeOutMs = milliseconds;
+        touched = true;
     }
 
     if (typeof syncTimelineItemVolumeControl === 'function') {
@@ -1460,13 +1533,15 @@ function persistTimelineItemAudioSettings(timelineItem, settings) {
     if (typeof refreshPreviewAudioMix === 'function') {
         refreshPreviewAudioMix();
     }
+
+    return touched ? persisted : null;
 }
 
 function persistActiveTimelineAudioSettings(partialSettings) {
     if (!activeTimelineItem) {
-        return;
+        return null;
     }
-    persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
+    return persistTimelineItemAudioSettings(activeTimelineItem, partialSettings);
 }
 
 function formatMasterVolumeDisplay(percent) {
@@ -1833,12 +1908,16 @@ audioFadeControls.forEach((control) => {
         syncAudioFadeControl(control);
         const seconds = Number.parseFloat(input.dataset.fadeSeconds || input.value || '0');
         const milliseconds = Math.max(0, Math.round(seconds * 1000));
+        let persisted = null;
         if (input === audioFadeInInput) {
-            persistActiveTimelineAudioSettings({ fadeInMs: milliseconds });
+            persisted = persistActiveTimelineAudioSettings({ fadeInMs: milliseconds });
         } else if (input === audioFadeOutInput) {
-            persistActiveTimelineAudioSettings({ fadeOutMs: milliseconds });
+            persisted = persistActiveTimelineAudioSettings({ fadeOutMs: milliseconds });
         }
         cancelPreviewAudioEnvelope({ restoreVolume: false });
+        if (persisted && activeTimelineItem) {
+            syncAudioControlsToTimelineItem(activeTimelineItem);
+        }
     };
 
     input.addEventListener('input', handleUpdate);
