@@ -4738,7 +4738,10 @@ async function addToTimeline(file, objectURL) {
     assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = file.name;
+
+    let shouldAppendLabelToItem = true;
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
@@ -4803,6 +4806,11 @@ async function addToTimeline(file, objectURL) {
         waveformContainer.className = 'timeline-waveform';
         const waveformCanvas = document.createElement('canvas');
         waveformContainer.appendChild(waveformCanvas);
+        const waveformMeta = document.createElement('div');
+        waveformMeta.className = 'timeline-waveform__meta';
+        label.classList.add('timeline-waveform__title');
+        waveformMeta.appendChild(label);
+        waveformContainer.appendChild(waveformMeta);
         timelineItem.appendChild(waveformContainer);
         const appliedDuration = setTimelineItemDuration(
             timelineItem,
@@ -4814,9 +4822,12 @@ async function addToTimeline(file, objectURL) {
         prepareAudioTimelineVisuals(timelineItem, file, objectURL, waveformCanvas).catch((error) => {
             console.warn('Failed to render audio waveform.', error);
         });
+        shouldAppendLabelToItem = false;
     }
 
-    timelineItem.appendChild(label);
+    if (shouldAppendLabelToItem) {
+        timelineItem.appendChild(label);
+    }
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);

@@ -923,11 +923,28 @@ function ensureTimelineItemAudioSummaryElement(timelineItem) {
     }
     const existing = getTimelineItemAudioSummaryElement(timelineItem);
     if (existing) {
+        if (timelineItem.classList?.contains?.('timeline-item--audio')) {
+            existing.classList.add('timeline-waveform__summary');
+            const waveformMeta = timelineItem.querySelector('.timeline-waveform__meta');
+            if (waveformMeta && existing.parentNode !== waveformMeta) {
+                waveformMeta.appendChild(existing);
+            }
+        }
         return existing;
     }
     const summary = document.createElement('span');
     summary.className = TIMELINE_AUDIO_SUMMARY_CLASS;
     summary.setAttribute('aria-live', 'polite');
+
+    if (timelineItem.classList?.contains?.('timeline-item--audio')) {
+        summary.classList.add('timeline-waveform__summary');
+        const waveformMeta = timelineItem.querySelector('.timeline-waveform__meta');
+        if (waveformMeta) {
+            waveformMeta.appendChild(summary);
+            return summary;
+        }
+    }
+
     const removeButton = timelineItem.querySelector('.timeline-item-remove');
     if (removeButton && removeButton.parentNode === timelineItem) {
         timelineItem.insertBefore(summary, removeButton);
