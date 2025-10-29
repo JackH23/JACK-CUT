@@ -880,7 +880,7 @@ function syncAudioFadeControl(control, overrideSeconds = null) {
 
 const DEFAULT_AUDIO_VOLUME_PERCENT = 100;
 const AUDIO_VOLUME_MIN_PERCENT = 0;
-const AUDIO_VOLUME_MAX_PERCENT = 100;
+const AUDIO_VOLUME_MAX_PERCENT = 150;
 const AUDIO_FADE_MAX_SECONDS = 5;
 const MASTER_VOLUME_TOP_LAYER_BOOST_DB = 2;
 const MASTER_VOLUME_LOWER_LAYER_REDUCTION_DB = -6;
@@ -1080,7 +1080,10 @@ function clampVolume(value) {
     if (!Number.isFinite(numeric)) {
         return 0;
     }
-    return Math.min(Math.max(numeric, 0), 1);
+    return Math.min(
+        Math.max(numeric, 0),
+        AUDIO_VOLUME_MAX_PERCENT / 100,
+    );
 }
 
 const mediaEnvelopeStates = new WeakMap();
