@@ -561,6 +561,30 @@ function waitForGapDuration(durationMs) {
 }
 
 async function playTimelineSequence(startIndex = 0, resumeOptions = null, playbackContext = null) {
+    if (!playbackContext && synchronizedPlaybackStateSnapshot) {
+        playbackContext = {
+            timelineItems: Array.isArray(synchronizedPlaybackStateSnapshot.timelineItems)
+                ? synchronizedPlaybackStateSnapshot.timelineItems.slice()
+                : null,
+            playbackState: synchronizedPlaybackStateSnapshot.playbackState,
+            version: synchronizedPlaybackStateSnapshot.mutationVersion,
+            mediaDescriptors: Array.isArray(synchronizedPlaybackStateSnapshot.mediaDescriptors)
+                ? synchronizedPlaybackStateSnapshot.mediaDescriptors.slice()
+                : null,
+            warmupSummary: null,
+            encodingConfig: null,
+        };
+    }
+
+    const contextVersion = Number.isFinite(playbackContext?.version)
+        ? Number(playbackContext.version)
+        : (Number.isFinite(synchronizedPlaybackStateSnapshot?.mutationVersion)
+            ? synchronizedPlaybackStateSnapshot.mutationVersion
+            : (typeof getTimelinePlaybackMutationVersion === 'function'
+                ? getTimelinePlaybackMutationVersion()
+                : null));
+    setTimelinePlaybackActiveMutationVersion(contextVersion);
+
     const timelineItems = Array.isArray(playbackContext?.timelineItems)
         ? playbackContext.timelineItems
         : getTimelineItems();
@@ -705,6 +729,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
     } finally {
         const preservePause = isTimelinePaused;
         stopTimelinePlayback(!preservePause, !preservePause, { preservePauseState: preservePause });
+        clearTimelinePlaybackActiveMutationVersion();
         if (completedNaturally && !isTimelinePaused) {
             resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
             updatePlaybackTimeDisplay(totalDuration, totalDuration);
@@ -898,6 +923,108 @@ if (cancelExportButton) {
 let sharedExportAudioContext = null;
 let sharedExportAudioSources = new WeakMap();
 let pendingExportPlaybackContext = null;
+let timelinePlaybackActiveMutationVersion = null;
+let synchronizedPlaybackStateSnapshot = null;
+let playbackStateSubscriptionCleanup = null;
+
+function setTimelinePlaybackActiveMutationVersion(version) {
+    if (Number.isFinite(version)) {
+        timelinePlaybackActiveMutationVersion = Number(version);
+    } else {
+        timelinePlaybackActiveMutationVersion = null;
+    }
+}
+
+function clearTimelinePlaybackActiveMutationVersion() {
+    timelinePlaybackActiveMutationVersion = null;
+}
+
+function sanitizeSnapshotTimelineItems(items) {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+    return items.filter((item) => item);
+}
+
+function adoptTimelineStateSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') {
+        return;
+    }
+
+    const payload = snapshot.payload || {};
+    const mutationVersion = Number.isFinite(payload.mutationVersion)
+        ? Number(payload.mutationVersion)
+        : null;
+    const timelineItems = sanitizeSnapshotTimelineItems(payload.timelineItems);
+    const playbackState = (payload.playbackState && typeof payload.playbackState === 'object')
+        ? payload.playbackState
+        : null;
+    const mediaDescriptors = Array.isArray(payload.mediaDescriptors)
+        ? payload.mediaDescriptors.slice()
+        : null;
+
+    synchronizedPlaybackStateSnapshot = {
+        mutationVersion,
+        timelineItems,
+        playbackState,
+        mediaDescriptors,
+    };
+
+    if (Number.isFinite(mutationVersion)) {
+        const normalizedItems = timelineItems.slice();
+        const normalizedPlaybackState = playbackState || (typeof getTimelinePlaybackSegments === 'function'
+            ? getTimelinePlaybackSegments()
+            : null);
+
+        if (!pendingExportPlaybackContext || pendingExportPlaybackContext.version !== mutationVersion) {
+            pendingExportPlaybackContext = {
+                timelineItems: normalizedItems,
+                playbackState: normalizedPlaybackState,
+                version: mutationVersion,
+                mediaDescriptors,
+                warmupSummary: null,
+                encodingConfig: null,
+            };
+        } else {
+            pendingExportPlaybackContext.timelineItems = normalizedItems;
+            pendingExportPlaybackContext.playbackState = normalizedPlaybackState;
+            pendingExportPlaybackContext.mediaDescriptors = mediaDescriptors;
+            pendingExportPlaybackContext.warmupSummary = null;
+            pendingExportPlaybackContext.encodingConfig = null;
+        }
+    }
+
+    const activeVersion = Number.isFinite(timelinePlaybackActiveMutationVersion)
+        ? timelinePlaybackActiveMutationVersion
+        : null;
+    if (isTimelinePlaying
+        && activeVersion !== null
+        && mutationVersion !== null
+        && mutationVersion !== activeVersion) {
+        const preservePause = isTimelinePaused;
+        stopTimelinePlayback(true, true, { preservePauseState: preservePause });
+    }
+}
+
+if (typeof getTimelineStateSnapshot === 'function') {
+    const initialSnapshot = getTimelineStateSnapshot('playback');
+    if (initialSnapshot) {
+        adoptTimelineStateSnapshot(initialSnapshot);
+    }
+}
+
+if (typeof subscribeToTimelineState === 'function') {
+    playbackStateSubscriptionCleanup = subscribeToTimelineState('playback', adoptTimelineStateSnapshot, {
+        skipInitial: true,
+    });
+    if (typeof notifyTimelineStateMutation === 'function') {
+        try {
+            notifyTimelineStateMutation({ reason: 'bootstrap' });
+        } catch (error) {
+            console.error('Failed to bootstrap timeline state synchronization.', error);
+        }
+    }
+}
 
 function stabilizeAudioTrack(track) {
     if (!track) {
@@ -1687,14 +1814,40 @@ async function resolveExportEncodingConfig(exportFormat, resolution, options = {
 }
 
 function prepareExportPlaybackContext(existingItems = null) {
-    const timelineItems = Array.isArray(existingItems)
-        ? existingItems
-        : getTimelineItems();
-    const playbackState = getTimelinePlaybackSegments();
-    const mutationVersion = (typeof getTimelinePlaybackMutationVersion === 'function')
-        ? getTimelinePlaybackMutationVersion()
-        : 0;
-    const mediaDescriptors = collectTimelineExportMedia(timelineItems);
+    const snapshot = typeof getTimelineStateSnapshot === 'function'
+        ? getTimelineStateSnapshot('playback')
+        : null;
+
+    let timelineItems = Array.isArray(existingItems)
+        ? existingItems.slice()
+        : null;
+    if (!timelineItems || !timelineItems.length) {
+        if (Array.isArray(snapshot?.payload?.timelineItems)) {
+            timelineItems = snapshot.payload.timelineItems.slice();
+        } else {
+            timelineItems = getTimelineItems();
+        }
+    }
+
+    let playbackState = snapshot?.payload?.playbackState;
+    if (!playbackState || !Array.isArray(playbackState?.segments)) {
+        playbackState = getTimelinePlaybackSegments();
+    }
+
+    let mutationVersion = Number.isFinite(snapshot?.payload?.mutationVersion)
+        ? Number(snapshot.payload.mutationVersion)
+        : null;
+    if (!Number.isFinite(mutationVersion) && typeof getTimelinePlaybackMutationVersion === 'function') {
+        mutationVersion = getTimelinePlaybackMutationVersion();
+    }
+    if (!Number.isFinite(mutationVersion)) {
+        mutationVersion = 0;
+    }
+
+    let mediaDescriptors = Array.isArray(snapshot?.payload?.mediaDescriptors)
+        ? snapshot.payload.mediaDescriptors.slice()
+        : null;
+
     pendingExportPlaybackContext = {
         timelineItems,
         playbackState,
@@ -1703,6 +1856,11 @@ function prepareExportPlaybackContext(existingItems = null) {
         warmupSummary: null,
         encodingConfig: null,
     };
+
+    if (!Array.isArray(pendingExportPlaybackContext.mediaDescriptors)) {
+        pendingExportPlaybackContext.mediaDescriptors = collectTimelineExportMedia(timelineItems);
+    }
+
     return pendingExportPlaybackContext;
 }
 

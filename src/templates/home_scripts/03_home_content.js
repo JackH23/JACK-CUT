@@ -872,6 +872,153 @@ function updatePreviewAspectLabel() {
 let exportPlaybackContextMutationVersion = 0;
 let exportSummaryLastRenderedVersion = -1;
 
+const TIMELINE_STATE_CHANNELS = Object.freeze({
+    edit: 'edit',
+    playback: 'playback',
+    export: 'export',
+});
+
+function createTimelineStateSynchronizer() {
+    const channels = new Map();
+    let sequence = 0;
+
+    const getTimestamp = () => {
+        if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+            return performance.now();
+        }
+        return Date.now();
+    };
+
+    const ensureChannel = (name) => {
+        if (!channels.has(name)) {
+            channels.set(name, { listeners: new Set(), snapshot: null });
+        }
+        return channels.get(name);
+    };
+
+    const publish = (name, payload, meta = {}) => {
+        const channel = ensureChannel(name);
+        const snapshot = {
+            channel: name,
+            sequence: sequence += 1,
+            timestamp: getTimestamp(),
+            payload,
+            meta: { ...meta },
+        };
+        channel.snapshot = snapshot;
+
+        channel.listeners.forEach((listener) => {
+            try {
+                listener(snapshot);
+            } catch (error) {
+                console.error('Timeline state listener failed.', error);
+            }
+        });
+
+        return snapshot;
+    };
+
+    const subscribe = (name, listener, options = {}) => {
+        if (typeof listener !== 'function') {
+            return () => {};
+        }
+
+        const channel = ensureChannel(name);
+        channel.listeners.add(listener);
+
+        if (!options?.skipInitial && channel.snapshot) {
+            try {
+                listener(channel.snapshot);
+            } catch (error) {
+                console.error('Timeline state listener failed during initial dispatch.', error);
+            }
+        }
+
+        return () => {
+            channel.listeners.delete(listener);
+        };
+    };
+
+    const getSnapshot = (name) => {
+        const channel = ensureChannel(name);
+        return channel.snapshot;
+    };
+
+    const hasSubscribers = (name = null) => {
+        if (name) {
+            const channel = ensureChannel(name);
+            return channel.listeners.size > 0;
+        }
+        return Array.from(channels.values()).some((entry) => entry.listeners.size > 0);
+    };
+
+    const syncAll = (payload, meta = {}) => {
+        const normalized = payload || {};
+        const snapshots = {};
+        Object.values(TIMELINE_STATE_CHANNELS).forEach((channelName) => {
+            snapshots[channelName] = publish(channelName, normalized, { ...meta, channel: channelName });
+        });
+        return snapshots;
+    };
+
+    return {
+        publish,
+        subscribe,
+        getSnapshot,
+        hasSubscribers,
+        syncAll,
+    };
+}
+
+const timelineStateSynchronizer = createTimelineStateSynchronizer();
+
+function subscribeToTimelineState(channel, listener, options = {}) {
+    return timelineStateSynchronizer.subscribe(channel, listener, options);
+}
+
+function getTimelineStateSnapshot(channel) {
+    return timelineStateSynchronizer.getSnapshot(channel);
+}
+
+function notifyTimelineStateMutation(options = {}) {
+    if (!timelineStateSynchronizer.hasSubscribers()) {
+        return;
+    }
+
+    const includeMediaDescriptors = Boolean(options.includeMediaDescriptors);
+    let timelineItems = [];
+    if (typeof getTimelineItems === 'function') {
+        timelineItems = getTimelineItems();
+    }
+
+    let playbackState = null;
+    if (typeof getTimelinePlaybackSegments === 'function') {
+        playbackState = getTimelinePlaybackSegments();
+    }
+
+    const payload = {
+        mutationVersion: exportPlaybackContextMutationVersion,
+        timelineItems,
+        playbackState,
+    };
+
+    if (includeMediaDescriptors && typeof collectTimelineExportMedia === 'function') {
+        try {
+            payload.mediaDescriptors = collectTimelineExportMedia(timelineItems);
+        } catch (error) {
+            console.error('Failed to collect timeline media descriptors.', error);
+        }
+    }
+
+    timelineStateSynchronizer.syncAll(payload, { reason: options.reason || 'mutation' });
+}
+
+if (typeof window !== 'undefined') {
+    window.subscribeToTimelineState = subscribeToTimelineState;
+    window.getTimelineStateSnapshot = getTimelineStateSnapshot;
+    window.notifyTimelineStateMutation = notifyTimelineStateMutation;
+}
+
 function getTimelinePlaybackMutationVersion() {
     return exportPlaybackContextMutationVersion;
 }
@@ -888,6 +1035,19 @@ function markExportPlaybackContextDirty(options = {}) {
         || (!skipAutoRefresh
             && typeof isExportDialogOpen === 'function'
             && isExportDialogOpen());
+
+    if (typeof notifyTimelineStateMutation === 'function') {
+        const includeMediaDescriptors = shouldRefreshSummary
+            || Boolean(options.includeMediaDescriptors);
+        try {
+            notifyTimelineStateMutation({
+                reason: options.reason || 'mutation',
+                includeMediaDescriptors,
+            });
+        } catch (error) {
+            console.error('Failed to broadcast timeline state mutation.', error);
+        }
+    }
 
     if (!shouldRefreshSummary) {
         return;
