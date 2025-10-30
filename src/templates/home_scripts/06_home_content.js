@@ -1461,11 +1461,33 @@ if (previewImageFrame) {
 
 if (previewTextEditor) {
     updatePreviewTextEditorPlaceholderState(previewTextEditor.textContent || '');
+    const canUpdateOverflow = typeof updatePreviewTextEditorOverflowState === 'function';
+    if (canUpdateOverflow) {
+        updatePreviewTextEditorOverflowState();
+    }
     previewTextEditor.addEventListener('input', onPreviewTextEditorInput);
     previewTextEditor.addEventListener('focus', onPreviewTextEditorFocus);
     previewTextEditor.addEventListener('blur', onPreviewTextEditorBlur);
     previewTextEditor.addEventListener('keydown', onPreviewTextEditorKeyDown);
     previewTextEditor.addEventListener('paste', onPreviewTextEditorPaste);
+
+    if (typeof ResizeObserver === 'function' && canUpdateOverflow) {
+        previewTextEditorResizeObserver = new ResizeObserver(() => {
+            updatePreviewTextEditorOverflowState();
+        });
+        previewTextEditorResizeObserver.observe(previewTextEditor);
+    }
+
+    if (typeof window !== 'undefined' && canUpdateOverflow) {
+        window.addEventListener('resize', updatePreviewTextEditorOverflowState, { passive: true });
+    }
+
+    if (typeof document !== 'undefined'
+        && document.fonts
+        && typeof document.fonts.addEventListener === 'function'
+        && canUpdateOverflow) {
+        document.fonts.addEventListener('loadingdone', updatePreviewTextEditorOverflowState);
+    }
 }
 
 if (textEffectFontSelect) {
