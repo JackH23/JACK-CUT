@@ -2139,10 +2139,25 @@ function storeTimelineImageKeyframes(timelineItem, keyframes) {
         .filter(Boolean)
         .sort((a, b) => a.progress - b.progress);
 
+    const dataset = timelineItem.dataset || null;
+    if (!dataset) {
+        return;
+    }
+    let didChange = false;
+
     if (sanitized.length) {
-        timelineItem.dataset.imageKeyframes = JSON.stringify(sanitized);
-    } else {
-        delete timelineItem.dataset.imageKeyframes;
+        const serialized = JSON.stringify(sanitized);
+        if (dataset.imageKeyframes !== serialized) {
+            dataset.imageKeyframes = serialized;
+            didChange = true;
+        }
+    } else if (Object.prototype.hasOwnProperty.call(dataset, 'imageKeyframes')) {
+        delete dataset.imageKeyframes;
+        didChange = true;
+    }
+
+    if (didChange && typeof markExportPlaybackContextDirty === 'function') {
+        markExportPlaybackContextDirty({ refreshSummary: false });
     }
 }
 

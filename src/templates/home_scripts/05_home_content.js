@@ -131,7 +131,9 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         return;
     }
 
-    activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
+    const dataset = activeTimelineItem.dataset || null;
+    const serializedTransform = JSON.stringify(normalized);
+    const transformChanged = updateDatasetValue(dataset, 'previewImageTransform', serializedTransform);
 
     const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
     const serializedExistingKeyframes = JSON.stringify(existingKeyframes);
@@ -156,6 +158,9 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     }
 
     if (!shouldPersistKeyframe) {
+        if (transformChanged) {
+            commitTimelineContentMutation();
+        }
         return;
     }
 
@@ -163,11 +168,17 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
 
     if (serializedUpdatedKeyframes === serializedExistingKeyframes) {
+        if (transformChanged) {
+            commitTimelineContentMutation();
+        }
         return;
     }
 
     storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
     renderImageKeyframeTracks(activeTimelineItem);
+    if (transformChanged) {
+        commitTimelineContentMutation();
+    }
 }
 
 let previewImageFrameUpdateHandle = 0;
@@ -499,8 +510,16 @@ function autoFitDefaultTextTimelineItem(timelineItem, textContent, style = null)
         return;
     }
 
-    timelineItem.dataset.previewImageTransform = JSON.stringify(transform);
-    timelineItem.dataset.autoFitText = 'true';
+    const dataset = timelineItem.dataset || null;
+    const serializedTransform = JSON.stringify(transform);
+    let didChange = false;
+
+    didChange = updateDatasetValue(dataset, 'previewImageTransform', serializedTransform) || didChange;
+    didChange = updateDatasetValue(dataset, 'autoFitText', 'true') || didChange;
+
+    if (didChange) {
+        commitTimelineContentMutation();
+    }
 
     if (timelineItem === activeTimelineItem) {
         applyStoredPreviewImageTransform(transform);
@@ -582,6 +601,37 @@ function normalizeTextColor(value) {
     return DEFAULT_TEXT_STYLE.color;
 }
 
+function commitTimelineContentMutation(options = {}) {
+    if (typeof markExportPlaybackContextDirty !== 'function') {
+        return;
+    }
+
+    const { refreshSummary = false } = options || {};
+    markExportPlaybackContextDirty({ refreshSummary });
+}
+
+function updateDatasetValue(dataset, key, value) {
+    if (!dataset || !key) {
+        return false;
+    }
+
+    if (value === undefined || value === null) {
+        if (Object.prototype.hasOwnProperty.call(dataset, key)) {
+            delete dataset[key];
+            return true;
+        }
+        return false;
+    }
+
+    const next = String(value);
+    if (dataset[key] === next) {
+        return false;
+    }
+
+    dataset[key] = next;
+    return true;
+}
+
 function getDefaultTextStyle() {
     return { ...DEFAULT_TEXT_STYLE };
 }
@@ -635,16 +685,23 @@ function storeTimelineTextStyle(timelineItem, styleOverrides = {}) {
     const transformCandidate = styleOverrides.transform || timelineItem.dataset.textTransform;
     const transform = TEXT_TRANSFORM_OPTIONS.has(transformCandidate) ? transformCandidate : DEFAULT_TEXT_STYLE.transform;
 
-    timelineItem.dataset.textFontKey = fontEntry.key;
-    timelineItem.dataset.textFontFamily = fontFamily;
-    timelineItem.dataset.textFontWeight = String(fontWeight);
-    timelineItem.dataset.textLetterSpacingScale = String(letterSpacingScale);
-    timelineItem.dataset.textFontSize = String(fontSize);
-    timelineItem.dataset.textFontStyle = fontStyle;
-    timelineItem.dataset.textDecoration = textDecoration;
-    timelineItem.dataset.textColor = color;
-    timelineItem.dataset.textAlign = align;
-    timelineItem.dataset.textTransform = transform;
+    const dataset = timelineItem.dataset || null;
+    let didChange = false;
+
+    didChange = updateDatasetValue(dataset, 'textFontKey', fontEntry.key) || didChange;
+    didChange = updateDatasetValue(dataset, 'textFontFamily', fontFamily) || didChange;
+    didChange = updateDatasetValue(dataset, 'textFontWeight', fontWeight) || didChange;
+    didChange = updateDatasetValue(dataset, 'textLetterSpacingScale', letterSpacingScale) || didChange;
+    didChange = updateDatasetValue(dataset, 'textFontSize', fontSize) || didChange;
+    didChange = updateDatasetValue(dataset, 'textFontStyle', fontStyle) || didChange;
+    didChange = updateDatasetValue(dataset, 'textDecoration', textDecoration) || didChange;
+    didChange = updateDatasetValue(dataset, 'textColor', color) || didChange;
+    didChange = updateDatasetValue(dataset, 'textAlign', align) || didChange;
+    didChange = updateDatasetValue(dataset, 'textTransform', transform) || didChange;
+
+    if (didChange) {
+        commitTimelineContentMutation();
+    }
 
     return {
         fontKey: fontEntry.key,
@@ -892,7 +949,8 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
     const rawText = timelineItem.dataset.textContent || '';
     const displayName = rawText.trim().length > 0 ? rawText : getDefaultTextTemplateLabel();
 
-    timelineItem.dataset.displayName = displayName;
+    const dataset = timelineItem.dataset || null;
+    let didChange = updateDatasetValue(dataset, 'displayName', displayName);
     const labelElement = timelineItem.querySelector('.timeline-item__label');
     if (labelElement) {
         labelElement.textContent = displayName;
@@ -919,7 +977,7 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
     }
 
     if (nextObjectUrl && nextObjectUrl !== previousObjectUrl) {
-        timelineItem.dataset.objectUrl = nextObjectUrl;
+        didChange = updateDatasetValue(dataset, 'objectUrl', nextObjectUrl) || didChange;
         const thumbnail = timelineItem.querySelector('.timeline-thumbnail--text');
         if (thumbnail) {
             thumbnail.src = nextObjectUrl;
@@ -947,10 +1005,10 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
         const lockedTransform = previewTextEditorState.lockedTransform;
 
         if (lockedSerialized) {
-            timelineItem.dataset.previewImageTransform = lockedSerialized;
+            didChange = updateDatasetValue(dataset, 'previewImageTransform', lockedSerialized) || didChange;
         } else if (lockedTransform) {
             const serializedLocked = JSON.stringify(lockedTransform);
-            timelineItem.dataset.previewImageTransform = serializedLocked;
+            didChange = updateDatasetValue(dataset, 'previewImageTransform', serializedLocked) || didChange;
             previewTextEditorState.lockedTransformSerialized = serializedLocked;
         }
 
@@ -963,6 +1021,10 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
 
     refreshActiveOverlayLayers();
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || rawText);
+
+    if (didChange) {
+        commitTimelineContentMutation();
+    }
 }
 
 function applyTimelineTextStyleUpdates(updates = {}) {
@@ -1214,7 +1276,7 @@ function schedulePreviewTextEditorCommit() {
 
 function syncDefaultTextTimelineItemDraft(timelineItem, rawText) {
     if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
-        return '';
+        return { displayName: '', didChange: false };
     }
 
     const normalizedText = normalizePreviewTextEditorValue(rawText);
@@ -1222,9 +1284,12 @@ function syncDefaultTextTimelineItemDraft(timelineItem, rawText) {
     const trimmed = normalizedText.trim();
     const displayName = trimmed.length > 0 ? normalizedText : fallbackLabel;
 
-    if (timelineItem.dataset) {
-        timelineItem.dataset.textContent = normalizedText;
-        timelineItem.dataset.displayName = displayName;
+    const dataset = timelineItem.dataset || null;
+    let didChange = false;
+
+    if (dataset) {
+        didChange = updateDatasetValue(dataset, 'textContent', normalizedText) || didChange;
+        didChange = updateDatasetValue(dataset, 'displayName', displayName) || didChange;
     }
 
     const labelElement = timelineItem.querySelector('.timeline-item__label');
@@ -1240,7 +1305,7 @@ function syncDefaultTextTimelineItemDraft(timelineItem, rawText) {
         }
     }
 
-    return displayName;
+    return { displayName, didChange };
 }
 
 function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
@@ -1249,12 +1314,16 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
     }
 
     const committedValue = normalizePreviewTextEditorValue(normalizedText);
-    syncDefaultTextTimelineItemDraft(timelineItem, committedValue);
+    const { didChange: draftChanged } = syncDefaultTextTimelineItemDraft(timelineItem, committedValue);
 
     regenerateDefaultTextOverlayAssets(timelineItem);
     applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
     previewTextEditorState.lastCommittedValue = committedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
+
+    if (draftChanged) {
+        commitTimelineContentMutation();
+    }
 }
 
 function commitPreviewTextEditorContent(options = {}) {
@@ -1315,7 +1384,9 @@ function onPreviewTextEditorFocus() {
     previewTextEditorState.lockedTransform = getStoredPreviewImageTransform(timelineItem);
 
     if (timelineItem.dataset) {
-        timelineItem.dataset.autoFitText = 'false';
+        if (updateDatasetValue(timelineItem.dataset, 'autoFitText', 'false')) {
+            commitTimelineContentMutation();
+        }
     }
 }
 
