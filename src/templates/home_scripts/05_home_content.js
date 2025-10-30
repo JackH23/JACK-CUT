@@ -1165,13 +1165,36 @@ function schedulePreviewTextEditorCommit() {
     }, PREVIEW_TEXT_COMMIT_DELAY_MS);
 }
 
+function syncDefaultTextTimelineItemDraft(timelineItem, rawText) {
+    if (!timelineItem || !isDefaultTextTimelineItem(timelineItem)) {
+        return '';
+    }
+
+    const normalizedText = normalizePreviewTextEditorValue(rawText);
+    const fallbackLabel = getDefaultTextTemplateLabel();
+    const trimmed = normalizedText.trim();
+    const displayName = trimmed.length > 0 ? normalizedText : fallbackLabel;
+
+    if (timelineItem.dataset) {
+        timelineItem.dataset.textContent = normalizedText;
+        timelineItem.dataset.displayName = displayName;
+    }
+
+    const labelElement = timelineItem.querySelector('span');
+    if (labelElement && labelElement.textContent !== displayName) {
+        labelElement.textContent = displayName;
+    }
+
+    return displayName;
+}
+
 function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
     if (!timelineItem) {
         return;
     }
 
-    const committedValue = normalizedText;
-    timelineItem.dataset.textContent = committedValue;
+    const committedValue = normalizePreviewTextEditorValue(normalizedText);
+    syncDefaultTextTimelineItemDraft(timelineItem, committedValue);
 
     regenerateDefaultTextOverlayAssets(timelineItem);
     applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
@@ -1211,6 +1234,9 @@ function onPreviewTextEditorInput() {
     }
 
     const currentValue = previewTextEditor.textContent || '';
+    if (previewTextEditorState.currentItem) {
+        syncDefaultTextTimelineItemDraft(previewTextEditorState.currentItem, currentValue);
+    }
     updatePreviewTextEditorPlaceholderState(currentValue);
     schedulePreviewTextEditorCommit();
 }
@@ -1259,6 +1285,9 @@ function onPreviewTextEditorKeyDown(event) {
         const revertValue = previewTextEditorState.lastCommittedValue || '';
         if (previewTextEditor.textContent !== revertValue) {
             previewTextEditor.textContent = revertValue;
+            if (previewTextEditorState.currentItem) {
+                syncDefaultTextTimelineItemDraft(previewTextEditorState.currentItem, revertValue);
+            }
             updatePreviewTextEditorPlaceholderState(revertValue);
         }
         previewTextEditor.blur();
