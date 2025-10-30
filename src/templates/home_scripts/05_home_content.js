@@ -861,9 +861,17 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
     const displayName = rawText.trim().length > 0 ? rawText : getDefaultTextTemplateLabel();
 
     timelineItem.dataset.displayName = displayName;
-    const labelElement = timelineItem.querySelector('span');
+    const labelElement = timelineItem.querySelector('.timeline-item__label');
     if (labelElement) {
         labelElement.textContent = displayName;
+    }
+
+    if (timelineItem && typeof timelineItem.setAttribute === 'function') {
+        if (displayName) {
+            timelineItem.setAttribute('aria-label', displayName);
+        } else if (typeof timelineItem.removeAttribute === 'function') {
+            timelineItem.removeAttribute('aria-label');
+        }
     }
 
     const previousObjectUrl = timelineItem.dataset.objectUrl || '';
@@ -1180,9 +1188,17 @@ function syncDefaultTextTimelineItemDraft(timelineItem, rawText) {
         timelineItem.dataset.displayName = displayName;
     }
 
-    const labelElement = timelineItem.querySelector('span');
+    const labelElement = timelineItem.querySelector('.timeline-item__label');
     if (labelElement && labelElement.textContent !== displayName) {
         labelElement.textContent = displayName;
+    }
+
+    if (timelineItem && typeof timelineItem.setAttribute === 'function') {
+        if (displayName) {
+            timelineItem.setAttribute('aria-label', displayName);
+        } else if (typeof timelineItem.removeAttribute === 'function') {
+            timelineItem.removeAttribute('aria-label');
+        }
     }
 
     return displayName;
