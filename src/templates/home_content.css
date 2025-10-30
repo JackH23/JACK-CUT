@@ -3238,8 +3238,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     background: transparent;
     border: 1px solid rgba(148, 163, 184, 0.32);
     box-shadow: none;
-    padding: 6px 6px 8px;
-    gap: 4px;
+    padding: 0;
+    gap: 0;
 }
 
 .timeline-item--audio .timeline-item-remove {
@@ -3311,6 +3311,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     border-radius: 8px;
     border: 1px solid rgba(148, 163, 184, 0.28);
     background: transparent;
+    padding: 0;
 }
 
 .timeline-item--text .timeline-item__visual--text {
@@ -3343,6 +3344,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     background: none;
     color: rgba(226, 232, 240, 0.92);
     text-shadow: none;
+    padding: 0;
 }
 
 .timeline-item__label {
