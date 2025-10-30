@@ -222,6 +222,7 @@ function preloadTimelineImage(objectURL) {
 
     const preloadPromise = new Promise((resolve, reject) => {
         const image = new Image();
+        ensureAnonymousCrossOrigin(image);
         image.decoding = 'async';
 
         let settled = false;
@@ -287,6 +288,7 @@ function preloadTimelineVideo(objectURL) {
     }
 
     const video = document.createElement('video');
+    ensureAnonymousCrossOrigin(video);
     video.preload = 'auto';
     video.muted = true;
     video.playsInline = true;
@@ -447,6 +449,7 @@ function preloadTimelineAudio(objectURL) {
     }
 
     const audio = document.createElement('audio');
+    ensureAnonymousCrossOrigin(audio);
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
 

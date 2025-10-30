@@ -3569,6 +3569,7 @@ async function stageUpload(file) {
 
     if (isImage) {
         const img = document.createElement('img');
+        ensureAnonymousCrossOrigin(img);
         img.src = objectURL;
         img.alt = file.name;
         img.loading = 'lazy';
@@ -3580,6 +3581,7 @@ async function stageUpload(file) {
         previewWrapper.appendChild(img);
     } else if (isVideo) {
         const video = document.createElement('video');
+        ensureAnonymousCrossOrigin(video);
         video.src = objectURL;
         video.muted = true;
         video.playsInline = true;
@@ -3663,6 +3665,7 @@ async function stageUpload(file) {
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
     return new Promise((resolve) => {
         const img = new Image();
+        ensureAnonymousCrossOrigin(img);
         img.onload = () => {
             const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
             const width = Math.max(1, Math.round(img.width * scale));
@@ -4059,6 +4062,7 @@ function applyCachedWaveform(canvas, cacheEntry, options = {}) {
     }
 
     const image = new Image();
+    ensureAnonymousCrossOrigin(image);
     image.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
@@ -4197,6 +4201,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
 
     await new Promise((resolve) => {
         const audio = new Audio();
+        ensureAnonymousCrossOrigin(audio);
         audio.preload = 'metadata';
         audio.src = objectURL;
         audio.addEventListener('loadedmetadata', () => {
@@ -4366,6 +4371,7 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
             if (!element) {
                 return;
             }
+            ensureAnonymousCrossOrigin(element);
             element.hidden = true;
             element.setAttribute('aria-hidden', 'true');
             element.preload = 'auto';
@@ -4757,6 +4763,7 @@ async function addToTimeline(file, objectURL) {
 
     if (file.type.startsWith('video/')) {
         const videoThumb = document.createElement('video');
+        ensureAnonymousCrossOrigin(videoThumb);
         videoThumb.src = objectURL;
         videoThumb.muted = true;
         videoThumb.loop = true;
@@ -4797,6 +4804,7 @@ async function addToTimeline(file, objectURL) {
         timelineItem.appendChild(imageFrame);
 
         const imageThumb = document.createElement('img');
+        ensureAnonymousCrossOrigin(imageThumb);
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;

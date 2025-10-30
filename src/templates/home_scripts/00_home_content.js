@@ -39,6 +39,35 @@ function getOverlayAudioElementForItem(timelineItem) {
 function getActiveOverlayAudioElements() {
     return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
 }
+function ensureAnonymousCrossOrigin(element) {
+    if (!element || typeof element !== 'object') {
+        return;
+    }
+
+    const setAttributeFallback = () => {
+        if (typeof element.setAttribute === 'function') {
+            try {
+                element.setAttribute('crossorigin', 'anonymous');
+            } catch (setAttributeError) {
+                // Ignore attribute assignment issues (e.g. SVG elements).
+            }
+        }
+    };
+
+    if ('crossOrigin' in element) {
+        try {
+            if (element.crossOrigin !== 'anonymous') {
+                element.crossOrigin = 'anonymous';
+            }
+        } catch (propertyError) {
+            setAttributeFallback();
+            return;
+        }
+    }
+
+    setAttributeFallback();
+}
+
 const previewImage = document.getElementById('preview-image');
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
@@ -49,6 +78,13 @@ const previewTextEditor = document.getElementById('preview-text-editor');
 const previewCanvasBackdrop = document.getElementById('preview-canvas-backdrop');
 const previewCanvasVideo = document.getElementById('preview-canvas-video');
 const previewCanvasImage = document.getElementById('preview-canvas-image');
+
+ensureAnonymousCrossOrigin(previewVideo);
+ensureAnonymousCrossOrigin(previewAudio);
+ensureAnonymousCrossOrigin(previewImage);
+ensureAnonymousCrossOrigin(previewCanvasVideo);
+ensureAnonymousCrossOrigin(previewCanvasImage);
+ensureAnonymousCrossOrigin(previewCanvasBackdrop);
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
