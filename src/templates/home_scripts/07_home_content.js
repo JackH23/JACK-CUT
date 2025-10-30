@@ -2206,6 +2206,12 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
     }
 
     refreshActiveOverlayLayers();
+
+    if (typeof clearTimelinePlaybackActiveMutationVersion === 'function') {
+        clearTimelinePlaybackActiveMutationVersion();
+    } else if (typeof timelinePlaybackActiveMutationVersion !== 'undefined') {
+        timelinePlaybackActiveMutationVersion = null;
+    }
 }
 
 function clearPreview() {
