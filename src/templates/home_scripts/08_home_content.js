@@ -1695,6 +1695,197 @@ function describeCrossOriginMedia(descriptors, limit = 3) {
     return names.join(', ');
 }
 
+function applyDescriptorObjectUrl(descriptor, nextObjectUrl, mimeType = '') {
+    if (!descriptor || !nextObjectUrl) {
+        return;
+    }
+
+    const element = descriptor.element;
+    if (element?.dataset) {
+        element.dataset.objectUrl = nextObjectUrl;
+        if (!element.dataset.fileType && mimeType) {
+            element.dataset.fileType = mimeType;
+        }
+    }
+
+    descriptor.objectUrl = nextObjectUrl;
+
+    const fileType = element?.dataset?.fileType
+        || descriptor.fileType
+        || mimeType
+        || '';
+
+    if (!element) {
+        return;
+    }
+
+    const updateMediaElementSrc = (mediaElement) => {
+        if (!mediaElement) {
+            return;
+        }
+        if (typeof ensureAnonymousCrossOrigin === 'function') {
+            try {
+                ensureAnonymousCrossOrigin(mediaElement);
+            } catch (error) {
+                // Ignore failures when updating crossorigin hints.
+            }
+        }
+        try {
+            if (mediaElement.src !== nextObjectUrl) {
+                if (typeof mediaElement.pause === 'function') {
+                    try {
+                        mediaElement.pause();
+                    } catch (pauseError) {
+                        // Ignore pause failures.
+                    }
+                }
+                mediaElement.src = nextObjectUrl;
+                if (typeof mediaElement.load === 'function') {
+                    mediaElement.load();
+                }
+            }
+            mediaElement.querySelectorAll?.('source').forEach((source) => {
+                try {
+                    if (source.src !== nextObjectUrl) {
+                        source.src = nextObjectUrl;
+                    }
+                } catch (sourceError) {
+                    // Ignore failures updating nested source elements.
+                }
+            });
+        } catch (assignError) {
+            // Ignore assignment errors caused by read-only media elements.
+        }
+    };
+
+    const hasVideoConstructor = typeof HTMLVideoElement !== 'undefined';
+    const hasAudioConstructor = typeof HTMLAudioElement !== 'undefined';
+    const hasImageConstructor = typeof HTMLImageElement !== 'undefined';
+
+    if (fileType.startsWith('video/')) {
+        if (hasVideoConstructor && element instanceof HTMLVideoElement) {
+            updateMediaElementSrc(element);
+        }
+        element.querySelectorAll?.('video').forEach((video) => {
+            updateMediaElementSrc(video);
+        });
+    } else if (fileType.startsWith('audio/')) {
+        if (hasAudioConstructor && element instanceof HTMLAudioElement) {
+            updateMediaElementSrc(element);
+        }
+        element.querySelectorAll?.('audio').forEach((audio) => {
+            updateMediaElementSrc(audio);
+        });
+    } else if (fileType.startsWith('image/')) {
+        const updateImageSource = (image) => {
+            if (!image) {
+                return;
+            }
+            if (typeof ensureAnonymousCrossOrigin === 'function') {
+                try {
+                    ensureAnonymousCrossOrigin(image);
+                } catch (error) {
+                    // Ignore crossorigin assignment failures.
+                }
+            }
+            if (image.dataset?.sourceObjectUrl !== undefined) {
+                image.dataset.sourceObjectUrl = nextObjectUrl;
+            }
+            if (typeof image.dataset === 'object' && 'thumbnailObjectUrl' in image.dataset) {
+                image.dataset.thumbnailObjectUrl = nextObjectUrl;
+            }
+            if (typeof generateImageThumbnail === 'function' && image.classList?.contains('timeline-thumbnail')) {
+                generateImageThumbnail(nextObjectUrl)
+                    .then((thumbnailUrl) => {
+                        image.src = thumbnailUrl || nextObjectUrl;
+                    })
+                    .catch(() => {
+                        image.src = nextObjectUrl;
+                    });
+                return;
+            }
+            image.src = nextObjectUrl;
+        };
+
+        if (hasImageConstructor && element instanceof HTMLImageElement) {
+            updateImageSource(element);
+        }
+        element.querySelectorAll?.('img').forEach((img) => {
+            updateImageSource(img);
+        });
+    }
+}
+
+async function localizeCrossOriginMedia(descriptors, options = {}) {
+    if (!Array.isArray(descriptors) || !descriptors.length || typeof fetch !== 'function') {
+        return { localized: [], failed: [] };
+    }
+
+    const signal = getAbortSignal(options);
+    const localized = [];
+    const failed = [];
+    const fetchCache = new Map();
+
+    const fetchWithCache = (objectUrl) => {
+        if (fetchCache.has(objectUrl)) {
+            return fetchCache.get(objectUrl);
+        }
+        const request = (async () => {
+            const requestInit = {
+                mode: 'cors',
+                credentials: 'omit',
+                cache: 'no-store',
+            };
+            if (signal) {
+                requestInit.signal = signal;
+            }
+            const response = await fetch(objectUrl, requestInit);
+            if (!response.ok) {
+                throw new Error(`Request for ${objectUrl} failed with status ${response.status}.`);
+            }
+            return response.blob();
+        })();
+        fetchCache.set(objectUrl, request);
+        return request;
+    };
+
+    for (const descriptor of descriptors) {
+        if (signal?.aborted) {
+            throw signal.reason || new DOMException('Localization aborted.', 'AbortError');
+        }
+
+        const objectUrl = descriptor?.objectUrl;
+        if (!objectUrl || typeof objectUrl !== 'string') {
+            continue;
+        }
+
+        try {
+            const blob = await fetchWithCache(objectUrl);
+            if (signal?.aborted) {
+                throw signal.reason || new DOMException('Localization aborted.', 'AbortError');
+            }
+            const nextObjectUrl = URL.createObjectURL(blob);
+            applyDescriptorObjectUrl(descriptor, nextObjectUrl, blob.type || descriptor.fileType || '');
+            localized.push({ descriptor, blob, objectUrl: nextObjectUrl });
+        } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+            failed.push({ descriptor, error });
+        }
+    }
+
+    if (localized.length && typeof refreshTimelineObjectUrlUsage === 'function') {
+        try {
+            refreshTimelineObjectUrlUsage();
+        } catch (error) {
+            console.warn('Unable to refresh timeline object URL usage after localization.', error);
+        }
+    }
+
+    return { localized, failed };
+}
+
 async function warmupExportPlaybackContext(playbackContext, options = {}) {
     const { timeoutMs = 4500 } = options || {};
     const signal = getAbortSignal(options);
@@ -2379,6 +2570,54 @@ async function handleConfirmExport() {
     if (!playbackContext.mediaDescriptors) {
         playbackContext.mediaDescriptors = mediaDescriptors;
     }
+
+    let localizationSummary = null;
+    let crossOriginMedia = getCrossOriginMediaDescriptors(mediaDescriptors);
+    if (crossOriginMedia.length) {
+        if (exportDialogStatus) {
+            const details = describeCrossOriginMedia(crossOriginMedia);
+            const intro = details
+                ? `Preparing external clips for export: ${details}.`
+                : 'Preparing external media for export.';
+            exportDialogStatus.dataset.state = 'progress';
+            exportDialogStatus.textContent = intro;
+        }
+        try {
+            localizationSummary = await localizeCrossOriginMedia(crossOriginMedia, { signal });
+            throwIfAborted();
+            if (localizationSummary.localized.length) {
+                console.info(`Localized ${localizationSummary.localized.length} cross-origin media item(s) for export.`);
+            }
+            if (localizationSummary.failed.length) {
+                console.warn('Some cross-origin media could not be localized before export.', localizationSummary.failed);
+                if (exportDialogStatus) {
+                    const failedDescriptors = localizationSummary.failed
+                        .map((entry) => entry.descriptor)
+                        .filter(Boolean);
+                    const details = describeCrossOriginMedia(failedDescriptors);
+                    const warning = details
+                        ? `We could not prepare these clips for export: ${details}. Please download them and re-upload from your device.`
+                        : 'We could not prepare some external clips for export. Please download them and re-upload from your device.';
+                    exportDialogStatus.dataset.state = 'warning';
+                    exportDialogStatus.textContent = warning;
+                }
+            }
+        } catch (localizationError) {
+            if (signal.aborted) {
+                throw localizationError;
+            }
+            console.warn('Unable to localize cross-origin media before export.', localizationError);
+            if (exportDialogStatus) {
+                exportDialogStatus.dataset.state = 'warning';
+                exportDialogStatus.textContent = 'We were unable to prepare external clips for export. Please re-upload them to continue.';
+            }
+        }
+        crossOriginMedia = getCrossOriginMediaDescriptors(mediaDescriptors);
+        if (!crossOriginMedia.length && exportDialogStatus && exportDialogStatus.dataset.state !== 'warning') {
+            exportDialogStatus.dataset.state = 'progress';
+            exportDialogStatus.textContent = 'Preparing media for export…';
+        }
+    }
     try {
         warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500, signal });
         throwIfAborted();
@@ -2454,8 +2693,16 @@ async function handleConfirmExport() {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
         if (!isCanvasOriginClean(exportMirrorCanvas, exportMirrorContext)) {
-            const crossOriginMedia = getCrossOriginMediaDescriptors(mediaDescriptors);
-            const details = describeCrossOriginMedia(crossOriginMedia);
+            const remainingCrossOrigin = getCrossOriginMediaDescriptors(mediaDescriptors);
+            if (exportDialogStatus) {
+                const details = describeCrossOriginMedia(remainingCrossOrigin);
+                const warning = details
+                    ? `Remove or re-upload these clips before exporting: ${details}.`
+                    : 'Remove any external media before exporting.';
+                exportDialogStatus.dataset.state = 'warning';
+                exportDialogStatus.textContent = warning;
+            }
+            const details = describeCrossOriginMedia(remainingCrossOrigin);
             const hint = details
                 ? `Remove or re-upload these clips before exporting: ${details}.`
                 : 'Remove any external media before exporting.';
@@ -2611,10 +2858,19 @@ async function handleConfirmExport() {
             closeExportDialog();
         } else {
             console.error('Failed to export timeline preview.', error);
-            alert(`Export failed: ${error?.message || error}`);
+            const errorMessage = error?.message || String(error || 'Unknown error');
+            alert(`Export failed: ${errorMessage}`);
+            if (error?.name === 'SecurityError') {
+                if (exportDialogStatus) {
+                    exportDialogStatus.textContent = errorMessage;
+                    exportDialogStatus.dataset.state = 'warning';
+                }
+            }
             if (exportDialogStatus) {
-                exportDialogStatus.textContent = 'Export failed. Please try again.';
-                exportDialogStatus.dataset.state = 'warning';
+                if (exportDialogStatus.dataset.state !== 'warning') {
+                    exportDialogStatus.textContent = 'Export failed. Please try again.';
+                    exportDialogStatus.dataset.state = 'warning';
+                }
             }
         }
     } finally {
