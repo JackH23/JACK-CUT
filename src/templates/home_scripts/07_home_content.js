@@ -5172,8 +5172,11 @@ if (typeof window !== 'undefined') {
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
 
-function escapeSvgTextContent(content) {
-    return String(content || '')
+function escapeForeignObjectHtml(content) {
+    if (content === null || content === undefined) {
+        return '';
+    }
+    return String(content)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -5184,30 +5187,61 @@ function escapeSvgTextContent(content) {
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
     const style = resolveTextTemplateStyle(styleOverrides);
     const transformedText = applyTextTransformToContent(textContent, style.transform);
-    const safeText = escapeSvgTextContent(transformedText);
-    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
-    const anchor = style.align === 'left'
-        ? 'start'
-        : (style.align === 'right' ? 'end' : 'middle');
-    let xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
-    if (style.align === 'left') {
-        xPosition = style.paddingInline;
-    } else if (style.align === 'right') {
-        xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
-    }
+    const sanitizedText = escapeForeignObjectHtml(transformedText)
+        .replace(/\r\n|\n|\r/g, '<br/>');
+    const sanitizedFontFamily = style.fontFamily
+        .replace(/"/g, '&quot;')
+        .replace(/&/g, '&amp;');
+    const alignItems = style.align === 'left'
+        ? 'flex-start'
+        : (style.align === 'right' ? 'flex-end' : 'center');
+    const textAlign = style.align === 'left'
+        ? 'left'
+        : (style.align === 'right' ? 'right' : 'center');
     const letterSpacingScale = typeof clampTextLetterSpacing === 'function'
         ? clampTextLetterSpacing(style.letterSpacingScale)
         : style.letterSpacingScale;
-    const letterSpacingPx = style.fontSize * letterSpacingScale;
+    const textTransform = style.transform || 'none';
+    const textDecoration = style.textDecoration || 'none';
+    const safeColor = escapeForeignObjectHtml(style.color || '#F8FAFC');
+    const contentHtml = sanitizedText || '&#8203;';
+    const containerStyle = [
+        'width:100%',
+        'height:100%',
+        'display:flex',
+        `align-items:${alignItems}`,
+        'justify-content:center',
+    ].join(';');
+    const textStyle = [
+        'box-sizing:border-box',
+        'width:100%',
+        'height:100%',
+        'display:flex',
+        'flex-direction:column',
+        `align-items:${alignItems}`,
+        'justify-content:center',
+        `padding:${style.paddingBlock}px ${style.paddingInline}px`,
+        `color:${safeColor}`,
+        `font-family:${sanitizedFontFamily}`,
+        `font-weight:${style.fontWeight}`,
+        `font-style:${style.fontStyle}`,
+        `letter-spacing:${letterSpacingScale}em`,
+        `font-size:${style.fontSize}px`,
+        'line-height:1.2',
+        `text-align:${textAlign}`,
+        `text-decoration:${textDecoration}`,
+        `text-transform:${textTransform}`,
+        'white-space:pre-wrap',
+        'overflow-wrap:anywhere',
+        'word-break:break-word',
+    ].join(';');
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <style>
-        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; font-style: ${style.fontStyle}; text-decoration: ${style.textDecoration}; }
-    </style>
-    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" font-style="${style.fontStyle}" text-decoration="${style.textDecoration}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
-        ${safeText}
-    </text>
+    <foreignObject x="0" y="0" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="${containerStyle}">
+            <div style="${textStyle}">${contentHtml}</div>
+        </div>
+    </foreignObject>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);

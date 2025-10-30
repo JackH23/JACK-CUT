@@ -1291,6 +1291,7 @@ function onPreviewTextEditorInput() {
     const currentValue = previewTextEditor.textContent || '';
     if (previewTextEditorState.currentItem) {
         syncDefaultTextTimelineItemDraft(previewTextEditorState.currentItem, currentValue);
+        regenerateDefaultTextOverlayAssets(previewTextEditorState.currentItem);
     }
     updatePreviewTextEditorPlaceholderState(currentValue);
     updatePreviewTextEditorOverflowState();
