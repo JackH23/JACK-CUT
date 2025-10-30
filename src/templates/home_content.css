@@ -3336,8 +3336,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: auto;
-    min-height: 0;
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    overflow: hidden;
 }
 
 .timeline-item__overlay {
@@ -3384,6 +3386,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .timeline-item--text .timeline-item__overlay--text {
     width: 100%;
     padding: 0 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .timeline-item__label {
@@ -3398,6 +3403,12 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 .timeline-item--text .timeline-item__label {
     width: auto;
     line-height: 1.1;
+    max-width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .timeline-waveform {
