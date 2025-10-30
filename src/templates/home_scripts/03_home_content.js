@@ -2017,12 +2017,16 @@ function ensureTimelineItemDurationBadge(timelineItem) {
         badge.className = 'timeline-item-duration';
         badge.setAttribute('aria-hidden', 'true');
         if (textOverlay) {
-            textOverlay.appendChild(badge);
+            textOverlay.insertBefore(badge, textOverlay.firstChild);
         } else {
             timelineItem.appendChild(badge);
         }
-    } else if (textOverlay && badge.parentElement !== textOverlay) {
-        textOverlay.appendChild(badge);
+    } else if (textOverlay) {
+        if (badge.parentElement !== textOverlay) {
+            textOverlay.insertBefore(badge, textOverlay.firstChild);
+        } else if (badge !== textOverlay.firstElementChild) {
+            textOverlay.insertBefore(badge, textOverlay.firstElementChild);
+        }
     }
     return badge;
 }
