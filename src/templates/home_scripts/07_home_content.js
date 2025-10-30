@@ -4738,6 +4738,7 @@ async function addToTimeline(file, objectURL) {
     assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = file.name;
 
     const removeButton = document.createElement('button');
@@ -4745,6 +4746,8 @@ async function addToTimeline(file, objectURL) {
     removeButton.className = 'timeline-item-remove';
     removeButton.setAttribute('aria-label', 'Remove clip');
     removeButton.textContent = '✕';
+
+    let labelInserted = false;
 
     if (file.type.startsWith('video/')) {
         const videoThumb = document.createElement('video');
@@ -4783,11 +4786,21 @@ async function addToTimeline(file, objectURL) {
         });
         timelineItem.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
+        const imageFrame = document.createElement('div');
+        imageFrame.className = 'timeline-item__visual timeline-item__visual--image';
+        timelineItem.appendChild(imageFrame);
+
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
-        timelineItem.appendChild(imageThumb);
+        imageFrame.appendChild(imageThumb);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'timeline-item__overlay timeline-item__overlay--media';
+        overlay.appendChild(label);
+        imageFrame.appendChild(overlay);
+        labelInserted = true;
         setTimelineItemDuration(
             timelineItem,
             'imageDuration',
@@ -4800,10 +4813,15 @@ async function addToTimeline(file, objectURL) {
     } else if (file.type.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
         const waveformContainer = document.createElement('div');
-        waveformContainer.className = 'timeline-waveform';
+        waveformContainer.className = 'timeline-waveform timeline-item__visual timeline-item__visual--audio';
         const waveformCanvas = document.createElement('canvas');
         waveformContainer.appendChild(waveformCanvas);
+        const overlay = document.createElement('div');
+        overlay.className = 'timeline-item__overlay timeline-item__overlay--audio';
+        overlay.appendChild(label);
+        waveformContainer.appendChild(overlay);
         timelineItem.appendChild(waveformContainer);
+        labelInserted = true;
         const appliedDuration = setTimelineItemDuration(
             timelineItem,
             'audioDuration',
@@ -4816,7 +4834,9 @@ async function addToTimeline(file, objectURL) {
         });
     }
 
-    timelineItem.appendChild(label);
+    if (!labelInserted) {
+        timelineItem.appendChild(label);
+    }
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
@@ -5247,6 +5267,7 @@ async function addDefaultTextOverlayToTimeline() {
     assignTimelineInstanceId(timelineItem);
 
     const label = document.createElement('span');
+    label.className = 'timeline-item__label';
     label.textContent = DEFAULT_TEXT_TEMPLATE_LABEL;
 
     const removeButton = document.createElement('button');
@@ -5255,17 +5276,25 @@ async function addDefaultTextOverlayToTimeline() {
     removeButton.setAttribute('aria-label', 'Remove text overlay');
     removeButton.textContent = '✕';
 
+    const visualContainer = document.createElement('div');
+    visualContainer.className = 'timeline-item__visual timeline-item__visual--text';
+
     try {
         const thumbnail = document.createElement('img');
         thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
         thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
-        timelineItem.appendChild(thumbnail);
+        visualContainer.appendChild(thumbnail);
     } catch (error) {
         console.warn('Unable to generate thumbnail for text overlay.', error);
     }
 
-    timelineItem.appendChild(label);
+     const overlay = document.createElement('div');
+    overlay.className = 'timeline-item__overlay timeline-item__overlay--text';
+    overlay.appendChild(label);
+    visualContainer.appendChild(overlay);
+
+    timelineItem.appendChild(visualContainer);
     timelineItem.appendChild(removeButton);
 
     setTimelineItemDuration(

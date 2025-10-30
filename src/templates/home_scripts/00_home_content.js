@@ -928,6 +928,17 @@ function ensureTimelineItemAudioSummaryElement(timelineItem) {
     const summary = document.createElement('span');
     summary.className = TIMELINE_AUDIO_SUMMARY_CLASS;
     summary.setAttribute('aria-live', 'polite');
+    const overlay = timelineItem.querySelector('.timeline-item__overlay--audio')
+        || timelineItem.querySelector('.timeline-item__overlay');
+    if (overlay) {
+        const labelElement = overlay.querySelector('.timeline-item__label');
+        if (labelElement && labelElement.nextSibling) {
+            overlay.insertBefore(summary, labelElement.nextSibling);
+        } else {
+            overlay.appendChild(summary);
+        }
+        return summary;
+    }
     const removeButton = timelineItem.querySelector('.timeline-item-remove');
     if (removeButton && removeButton.parentNode === timelineItem) {
         timelineItem.insertBefore(summary, removeButton);
