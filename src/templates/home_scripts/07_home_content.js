@@ -4769,6 +4769,21 @@ function refreshTimelineItemProperties(timelineItem) {
     }
 }
 
+const TIMELINE_MEDIA_ICON_MAP = {
+    audio: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 9.4h3.1L13 5.2v13.6l-4.9-3.6H5V9.4Z" fill="currentColor" fill-opacity="0.88"/><path d="M15.6 9.5a2.9 2.9 0 0 1 0 5.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M18 7.3a6.1 6.1 0 0 1 0 9.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.65"/></svg>`,
+    image: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4.8" y="5.6" width="14.4" height="12.8" rx="2.2" stroke="currentColor" stroke-width="1.6"/><path d="M7.6 15.3l2.6-3.4a1 1 0 0 1 1.6-.02l2 2.4 1.6-2a1 1 0 0 1 1.58.07l2.06 2.77" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.6" cy="9.7" r="1.4" fill="currentColor"/></svg>`,
+    text: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 5.5h12v2.2h-4.6V18.5h-3.4V7.7H6V5.5Z" fill="currentColor"/><path d="M8.4 18.5h7.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.6"/></svg>`,
+    video: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.2 5.5h15.6V9.7H4.2V5.5Z" fill="currentColor" fill-opacity="0.45"/><path d="M5.2 10.7h13.6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H5.2a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.2 5.5l2.4 4.2m1.6-4.2l2.4 4.2m1.6-4.2l2.4 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+};
+
+function createTimelineMediaIcon(type) {
+    const icon = document.createElement('span');
+    icon.className = `timeline-item__icon timeline-item__icon--${type}`;
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = TIMELINE_MEDIA_ICON_MAP[type] || TIMELINE_MEDIA_ICON_MAP.video;
+    return icon;
+}
+
 async function addToTimeline(file, objectURL) {
     const defaultLane = ensureTimelineLane(0);
     if (timelineEmptyState) {
@@ -4787,6 +4802,8 @@ async function addToTimeline(file, objectURL) {
 
     const label = document.createElement('span');
     label.textContent = file.name;
+
+    let mediaIconType = 'video';
 
     let shouldAppendLabelToItem = true;
     let previewContainer = null;
@@ -4808,6 +4825,7 @@ async function addToTimeline(file, objectURL) {
     removeButton.textContent = '✕';
 
     if (file.type.startsWith('video/')) {
+        timelineItem.classList.add('timeline-item--video');
         const container = ensurePreviewContainer();
         const videoThumb = document.createElement('video');
         videoThumb.src = objectURL;
@@ -4846,6 +4864,8 @@ async function addToTimeline(file, objectURL) {
         });
         container.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
+        timelineItem.classList.add('timeline-item--image');
+        mediaIconType = 'image';
         const container = ensurePreviewContainer();
         const imageThumb = document.createElement('img');
         imageThumb.className = 'timeline-thumbnail';
@@ -4863,6 +4883,7 @@ async function addToTimeline(file, objectURL) {
         });
     } else if (file.type.startsWith('audio/')) {
         timelineItem.classList.add('timeline-item--audio');
+        mediaIconType = 'audio';
         const waveformContainer = document.createElement('div');
         waveformContainer.className = 'timeline-waveform';
         const waveformCanvas = document.createElement('canvas');
@@ -4870,7 +4891,11 @@ async function addToTimeline(file, objectURL) {
         const waveformMeta = document.createElement('div');
         waveformMeta.className = 'timeline-waveform__meta';
         label.classList.add('timeline-waveform__title');
-        waveformMeta.appendChild(label);
+        const heading = document.createElement('div');
+        heading.className = 'timeline-item__heading';
+        heading.appendChild(createTimelineMediaIcon('audio'));
+        heading.appendChild(label);
+        waveformMeta.appendChild(heading);
         waveformContainer.appendChild(waveformMeta);
         timelineItem.appendChild(waveformContainer);
         const appliedDuration = setTimelineItemDuration(
@@ -4890,9 +4915,15 @@ async function addToTimeline(file, objectURL) {
         const container = ensurePreviewContainer();
         const metadataOverlay = document.createElement('div');
         metadataOverlay.className = 'timeline-item__meta';
-
         label.classList.add('timeline-item__label');
-        metadataOverlay.appendChild(label);
+        const heading = document.createElement('div');
+        heading.className = 'timeline-item__heading';
+        const iconType = timelineItem.classList.contains('timeline-item--text')
+            ? 'text'
+            : mediaIconType;
+        heading.appendChild(createTimelineMediaIcon(iconType));
+        heading.appendChild(label);
+        metadataOverlay.appendChild(heading);
 
         const propertiesList = document.createElement('div');
         propertiesList.className = 'timeline-item__properties';
@@ -5356,7 +5387,11 @@ async function addDefaultTextOverlayToTimeline() {
 
     const metadataOverlay = document.createElement('div');
     metadataOverlay.className = 'timeline-item__meta';
-    metadataOverlay.appendChild(label);
+    const heading = document.createElement('div');
+    heading.className = 'timeline-item__heading';
+    heading.appendChild(createTimelineMediaIcon('text'));
+    heading.appendChild(label);
+    metadataOverlay.appendChild(heading);
 
     const propertiesList = document.createElement('div');
     propertiesList.className = 'timeline-item__properties';
