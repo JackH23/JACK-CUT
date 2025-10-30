@@ -323,6 +323,7 @@ function clearPreviewImageTransform() {
 }
 
 const PREVIEW_TEXT_COMMIT_DELAY_MS = 200;
+let previewTextEditorResizeObserver = null;
 const PREVIEW_TEXT_DRAG_THRESHOLD = 6;
 const DEFAULT_TEXT_TEMPLATE_ID_FALLBACK = 'default-text';
 const DEFAULT_TEXT_TEMPLATE_PLACEHOLDER = '(Default Text)';
@@ -733,6 +734,37 @@ function applyTextStyleToPreviewEditor(styleOverrides = null) {
     previewTextEditor.style.textDecoration = style.textDecoration || 'none';
     previewTextEditor.style.textTransform = style.transform || 'none';
     previewTextEditor.dataset.align = style.align || 'center';
+
+    updatePreviewTextEditorOverflowState();
+}
+
+function isPreviewTextEditorOverflowing(element) {
+    if (!element) {
+        return false;
+    }
+
+    const tolerance = 1;
+    const verticalOverflow = element.scrollHeight - element.clientHeight > tolerance;
+    const horizontalOverflow = element.scrollWidth - element.clientWidth > tolerance;
+    return verticalOverflow || horizontalOverflow;
+}
+
+function updatePreviewTextEditorOverflowState() {
+    if (!previewTextEditor) {
+        return;
+    }
+
+    const isOverflowing = isPreviewTextEditorOverflowing(previewTextEditor);
+    previewTextEditor.classList.toggle('is-overflowing', isOverflowing);
+
+    if (isOverflowing) {
+        previewTextEditor.dataset.scrollable = 'true';
+    } else {
+        delete previewTextEditor.dataset.scrollable;
+        if (previewTextEditor.scrollTop !== 0) {
+            previewTextEditor.scrollTop = 0;
+        }
+    }
 }
 
 function getActiveDefaultTextTimelineItem() {
@@ -1066,6 +1098,7 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     }
 
     updatePreviewTextEditorPlaceholderState(storedValue);
+    updatePreviewTextEditorOverflowState();
 
     previewTextEditorState.isEnabled = true;
     previewTextEditorState.currentItem = timelineItem;
@@ -1109,6 +1142,11 @@ function disablePreviewTextEditor(options = {}) {
         previewTextEditor.textContent = '';
         previewTextEditor.hidden = true;
         updatePreviewTextEditorPlaceholderState('');
+        previewTextEditor.classList.remove('is-overflowing');
+        delete previewTextEditor.dataset.scrollable;
+        if (previewTextEditor.scrollTop !== 0) {
+            previewTextEditor.scrollTop = 0;
+        }
         if (previewTextEditor === document.activeElement) {
             previewTextEditor.blur();
         }
@@ -1146,6 +1184,7 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
     } else if (previewTextEditor.textContent !== storedValue) {
         previewTextEditor.textContent = storedValue;
         updatePreviewTextEditorPlaceholderState(storedValue);
+        updatePreviewTextEditorOverflowState();
     }
 
     previewTextEditorState.currentItem = timelineItem;
@@ -1254,6 +1293,7 @@ function onPreviewTextEditorInput() {
         syncDefaultTextTimelineItemDraft(previewTextEditorState.currentItem, currentValue);
     }
     updatePreviewTextEditorPlaceholderState(currentValue);
+    updatePreviewTextEditorOverflowState();
     schedulePreviewTextEditorCommit();
 }
 
@@ -1305,6 +1345,7 @@ function onPreviewTextEditorKeyDown(event) {
                 syncDefaultTextTimelineItemDraft(previewTextEditorState.currentItem, revertValue);
             }
             updatePreviewTextEditorPlaceholderState(revertValue);
+            updatePreviewTextEditorOverflowState();
         }
         previewTextEditor.blur();
     }
@@ -1344,6 +1385,7 @@ function onPreviewTextEditorPaste(event) {
         focusPreviewTextEditor();
     }
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || text);
+    updatePreviewTextEditorOverflowState();
     schedulePreviewTextEditorCommit();
 }
 
