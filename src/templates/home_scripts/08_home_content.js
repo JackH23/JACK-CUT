@@ -1609,6 +1609,92 @@ function collectTimelineExportMedia(timelineItems) {
     return descriptors;
 }
 
+function isCanvasOriginClean(canvas, context) {
+    if (!canvas || !context) {
+        return true;
+    }
+
+    const width = Math.max(0, canvas.width || 0);
+    const height = Math.max(0, canvas.height || 0);
+    if (width === 0 || height === 0) {
+        return true;
+    }
+
+    try {
+        context.getImageData(0, 0, 1, 1);
+        return true;
+    } catch (error) {
+        if (error && (error.name === 'SecurityError' || /tainted canvas/i.test(error.message))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function getCrossOriginMediaDescriptors(descriptors) {
+    if (!Array.isArray(descriptors) || !descriptors.length || typeof window === 'undefined') {
+        return [];
+    }
+
+    const currentOrigin = window.location?.origin || '';
+
+    return descriptors.filter((descriptor) => {
+        const objectUrl = descriptor?.objectUrl;
+        if (!objectUrl || typeof objectUrl !== 'string') {
+            return false;
+        }
+        if (objectUrl.startsWith('blob:')
+            || objectUrl.startsWith('data:')
+            || objectUrl.startsWith('mediastream:')) {
+            return false;
+        }
+
+        try {
+            const parsed = new URL(objectUrl, window.location.href);
+            if (!currentOrigin) {
+                return false;
+            }
+            return parsed.origin !== currentOrigin;
+        } catch (error) {
+            return false;
+        }
+    });
+}
+
+function describeCrossOriginMedia(descriptors, limit = 3) {
+    if (!Array.isArray(descriptors) || !descriptors.length) {
+        return '';
+    }
+
+    const names = descriptors.slice(0, limit).map((descriptor) => {
+        const dataset = descriptor?.element?.dataset || {};
+        const displayName = dataset.displayName || dataset.filename || dataset.fileType || '';
+        if (displayName) {
+            return displayName;
+        }
+
+        const objectUrl = descriptor?.objectUrl || '';
+        if (objectUrl.startsWith('blob:') || objectUrl.startsWith('data:')) {
+            return 'external media';
+        }
+
+        try {
+            const parsed = new URL(objectUrl, window.location.href);
+            return parsed.host || parsed.origin || objectUrl;
+        } catch (error) {
+            return objectUrl;
+        }
+    });
+
+    const remaining = descriptors.length - names.length;
+    if (remaining > 0) {
+        names.push(`+${remaining} more`);
+    }
+
+    return names.join(', ');
+}
+
 async function warmupExportPlaybackContext(playbackContext, options = {}) {
     const { timeoutMs = 4500 } = options || {};
     const signal = getAbortSignal(options);
@@ -2287,6 +2373,12 @@ async function handleConfirmExport() {
 
     let encodingConfig = playbackContext?.encodingConfig || null;
     let warmupSummary = null;
+    const mediaDescriptors = Array.isArray(playbackContext?.mediaDescriptors)
+        ? playbackContext.mediaDescriptors
+        : collectTimelineExportMedia(timelineItems);
+    if (!playbackContext.mediaDescriptors) {
+        playbackContext.mediaDescriptors = mediaDescriptors;
+    }
     try {
         warmupSummary = await warmupExportPlaybackContext(playbackContext, { timeoutMs: 4500, signal });
         throwIfAborted();
@@ -2360,6 +2452,15 @@ async function handleConfirmExport() {
         throwIfAborted();
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
+        }
+        if (!isCanvasOriginClean(exportMirrorCanvas, exportMirrorContext)) {
+            const crossOriginMedia = getCrossOriginMediaDescriptors(mediaDescriptors);
+            const details = describeCrossOriginMedia(crossOriginMedia);
+            const hint = details
+                ? `Remove or re-upload these clips before exporting: ${details}.`
+                : 'Remove any external media before exporting.';
+            const message = `Unable to export because the preview canvas contains media from another origin. ${hint}`;
+            throw new DOMException(message, 'SecurityError');
         }
         const canvasStream = exportMirrorCanvas.captureStream(captureFrameRate);
         if (!canvasStream) {
