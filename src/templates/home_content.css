@@ -3171,6 +3171,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     overflow: hidden;
     flex: 0 0 auto;
@@ -3294,6 +3295,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     width: 100%;
     border-radius: 10px;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .timeline-item__visual--image,
@@ -3329,6 +3333,11 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .timeline-item__label {
     font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    width: 100%;
 }
 
 .timeline-waveform {
