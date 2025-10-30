@@ -3347,6 +3347,19 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     padding: 0;
 }
 
+.timeline-item--text .timeline-item__overlay {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.timeline-item--text .timeline-item__overlay--text {
+    padding: 0 10px;
+}
+
 .timeline-item__label {
     font-weight: 600;
     display: inline-flex;
@@ -3354,6 +3367,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     justify-content: center;
     text-align: center;
     width: 100%;
+}
+
+.timeline-item--text .timeline-item__label {
+    width: auto;
 }
 
 .timeline-waveform {
@@ -3488,6 +3505,21 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     line-height: 1;
     pointer-events: none;
     backdrop-filter: blur(4px);
+     display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.timeline-item--text .timeline-item-duration {
+    position: static;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.26);
+    color: rgba(191, 219, 254, 0.88);
+    line-height: 1.2;
+    backdrop-filter: none;
 }
 
 .timeline-resize-handle {

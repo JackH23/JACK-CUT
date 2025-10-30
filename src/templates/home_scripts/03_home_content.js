@@ -2008,11 +2008,21 @@ function ensureTimelineItemDurationBadge(timelineItem) {
         return null;
     }
     let badge = timelineItem.querySelector('.timeline-item-duration');
+    const isTextTimelineItem = timelineItem.classList?.contains('timeline-item--text');
+    const textOverlay = isTextTimelineItem
+        ? timelineItem.querySelector('.timeline-item__overlay--text')
+        : null;
     if (!badge) {
         badge = document.createElement('span');
         badge.className = 'timeline-item-duration';
         badge.setAttribute('aria-hidden', 'true');
-        timelineItem.appendChild(badge);
+        if (textOverlay) {
+            textOverlay.appendChild(badge);
+        } else {
+            timelineItem.appendChild(badge);
+        }
+    } else if (textOverlay && badge.parentElement !== textOverlay) {
+        textOverlay.appendChild(badge);
     }
     return badge;
 }
