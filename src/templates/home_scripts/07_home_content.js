@@ -5279,17 +5279,7 @@ async function addDefaultTextOverlayToTimeline() {
     const visualContainer = document.createElement('div');
     visualContainer.className = 'timeline-item__visual timeline-item__visual--text';
 
-    try {
-        const thumbnail = document.createElement('img');
-        thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
-        thumbnail.src = await generateImageThumbnail(objectURL);
-        thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;
-        visualContainer.appendChild(thumbnail);
-    } catch (error) {
-        console.warn('Unable to generate thumbnail for text overlay.', error);
-    }
-
-     const overlay = document.createElement('div');
+    const overlay = document.createElement('div');
     overlay.className = 'timeline-item__overlay timeline-item__overlay--text';
     overlay.appendChild(label);
     visualContainer.appendChild(overlay);
