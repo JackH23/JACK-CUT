@@ -445,6 +445,7 @@
                 );
                 layer.appendChild(handle);
             });
+            entry.handles = Array.from(layer.querySelectorAll('.preview-resize-handle'));
             entry = {
                 layer,
                 content,
@@ -497,6 +498,7 @@
                 );
                 layer.appendChild(handle);
             });
+            entry.handles = Array.from(layer.querySelectorAll('.preview-resize-handle'));
         }
 
         layer.classList.add('preview-overlay-layer');
@@ -743,6 +745,15 @@
         layer.classList.toggle('is-active', isActiveItem);
         layer.classList.toggle('is-dragging', isDragging);
         layer.classList.toggle('is-resizing', isResizing);
+
+        if (typeof updateOverlayLayerHandlePositions === 'function') {
+            updateOverlayLayerHandlePositions(
+                entry,
+                resolvedFrame.width,
+                resolvedFrame.height,
+                resolvedFrame.rotation,
+            );
+        }
 
         entry.frame = resolvedFrame;
         entry.isVisible = true;
@@ -1055,6 +1066,10 @@ function applyOverlayLayerTransform(entry, transform) {
 
     if (entry.image) {
         entry.image.style.setProperty('--preview-overlay-rotation', `${rotationValue}deg`);
+    }
+
+    if (typeof updateOverlayLayerHandlePositions === 'function') {
+        updateOverlayLayerHandlePositions(entry, width, height, rotationValue);
     }
 
     entry.frame = {

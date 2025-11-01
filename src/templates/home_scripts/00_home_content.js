@@ -52,6 +52,72 @@ const previewCanvasImage = document.getElementById('preview-canvas-image');
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
+const RESIZE_HANDLE_ANCHORS = {
+    n: { x: 0, y: -1 },
+    s: { x: 0, y: 1 },
+    e: { x: 1, y: 0 },
+    w: { x: -1, y: 0 },
+    ne: { x: 1, y: -1 },
+    nw: { x: -1, y: -1 },
+    se: { x: 1, y: 1 },
+    sw: { x: -1, y: 1 },
+};
+function positionResizeHandles(handles, width, height, rotationDegrees) {
+    if (!Array.isArray(handles) || !handles.length) {
+        return;
+    }
+
+    const numericWidth = Number.isFinite(width) ? Math.max(width, 0) : 0;
+    const numericHeight = Number.isFinite(height) ? Math.max(height, 0) : 0;
+    const rotation = Number.isFinite(rotationDegrees) ? rotationDegrees : 0;
+    const radians = (rotation * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const centerX = numericWidth / 2;
+    const centerY = numericHeight / 2;
+
+    handles.forEach((handle) => {
+        if (!(handle instanceof HTMLElement)) {
+            return;
+        }
+
+        const handleKey = handle.dataset?.handle || '';
+        const anchor = RESIZE_HANDLE_ANCHORS[handleKey];
+
+        const localX = anchor ? centerX * anchor.x : 0;
+        const localY = anchor ? centerY * anchor.y : 0;
+
+        const rotatedX = (localX * cos) - (localY * sin);
+        const rotatedY = (localX * sin) + (localY * cos);
+
+        const finalX = centerX + rotatedX;
+        const finalY = centerY + rotatedY;
+
+        handle.style.left = `${finalX}px`;
+        handle.style.top = `${finalY}px`;
+        handle.style.right = 'auto';
+        handle.style.bottom = 'auto';
+        handle.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+    });
+}
+
+function updatePreviewResizeHandlePositions(width, height, rotationDegrees) {
+    positionResizeHandles(previewResizeHandles, width, height, rotationDegrees);
+}
+
+function updateOverlayLayerHandlePositions(entry, width, height, rotationDegrees) {
+    if (!entry) {
+        return;
+    }
+
+    if (!Array.isArray(entry.handles) || !entry.handles.length) {
+        entry.handles = entry.layer
+            ? Array.from(entry.layer.querySelectorAll('.preview-resize-handle'))
+            : [];
+    }
+
+    positionResizeHandles(entry.handles, width, height, rotationDegrees);
+}
 const timelineImagePreloadCache = new Map();
 const timelineVideoPreloadCache = new Map();
 const timelineAudioPreloadCache = new Map();
