@@ -79,7 +79,15 @@ const overlayPointerState = {
 let lastOverlayRenderTimestamp = null;
 const OVERLAY_TIMELINE_WINDOW_SLACK_MS = 8;
 const OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2;
-const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = 1;
+// Extend the edge tolerance to cover a full frame (and a little more) so that
+// overlays that end on the same frame as the primary layer stay resident long
+// enough for the next frame to render. This prevents a brief clearing of the
+// overlay stack that previously manifested as a flicker in the preview and
+// exported video when stacked clips ended together.
+const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = Math.max(
+    OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2,
+    24,
+);
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');
