@@ -5030,6 +5030,98 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
     };
 }
 
+function measureDefaultTextTemplateContent(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
+    const style = resolveTextTemplateStyle(styleOverrides);
+
+    const fallbackMeasurement = {
+        style,
+        lines: [applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform)],
+        lineCount: 1,
+        lineHeightPx: style.fontSize * 1.2,
+        contentWidthPx: DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX,
+        contentHeightPx: DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX,
+        totalWidthPx: DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX,
+        totalHeightPx: DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX,
+        scaledBaseWidthPx: DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX,
+        scaledBaseHeightPx: DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX,
+    };
+
+    if (typeof document === 'undefined') {
+        return fallbackMeasurement;
+    }
+
+    const context = getDefaultTextMeasurementContext();
+    if (!context) {
+        return fallbackMeasurement;
+    }
+
+    const transformedText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
+    const lines = transformedText.split(/\r\n|\r|\n/);
+    if (!lines.length) {
+        lines.push('');
+    }
+
+    const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
+    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
+    context.font = fontDescriptor;
+    context.textBaseline = 'alphabetic';
+    context.textAlign = 'left';
+
+    const letterSpacing = style.fontSize * style.letterSpacingScale;
+    const baseLineHeight = style.fontSize * 1.2;
+
+    let maxLineWidth = 0;
+    let totalContentHeight = 0;
+
+    lines.forEach((line) => {
+        const safeLine = line || '';
+        const metrics = context.measureText(safeLine || ' ');
+        const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
+        const totalLetterSpacing = Math.max(0, safeLine.length - 1) * letterSpacing;
+        const lineWidth = Math.max(0, baseWidth + totalLetterSpacing);
+        if (lineWidth > maxLineWidth) {
+            maxLineWidth = lineWidth;
+        }
+
+        const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
+            ? metrics.actualBoundingBoxAscent
+            : style.fontSize * 0.82;
+        const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
+            ? metrics.actualBoundingBoxDescent
+            : style.fontSize * 0.18;
+        const measuredLineHeight = Math.max(ascent + descent, baseLineHeight);
+        totalContentHeight += measuredLineHeight;
+    });
+
+    if (!Number.isFinite(totalContentHeight) || totalContentHeight <= 0) {
+        totalContentHeight = baseLineHeight * lines.length;
+    }
+
+    const contentWidthPx = Math.max(maxLineWidth, 0);
+    const contentHeightPx = Math.max(totalContentHeight, 0);
+    const totalWidthPx = Math.max(contentWidthPx + (style.paddingInline * 2), 0);
+    const totalHeightPx = Math.max(contentHeightPx + (style.paddingBlock * 2), 0);
+
+    const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
+        ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
+        : 1;
+    const scaledBaseWidthPx = DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX * Math.max(fontScale, 0.1);
+    const scaledBaseHeightPx = DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX * Math.max(fontScale, 0.1);
+
+    return {
+        style,
+        lines,
+        lineCount: lines.length,
+        lineHeightPx: baseLineHeight,
+        contentWidthPx,
+        contentHeightPx,
+        totalWidthPx,
+        totalHeightPx,
+        scaledBaseWidthPx,
+        scaledBaseHeightPx,
+    };
+}
+
 function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
     const fallback = {
         left: (1 - DEFAULT_TEXT_TEMPLATE_WIDTH) / 2,
@@ -5044,49 +5136,27 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         return fallback;
     }
 
-    const style = resolveTextTemplateStyle(styleOverrides);
-    const context = getDefaultTextMeasurementContext();
+    const measurement = measureDefaultTextTemplateContent(textContent, styleOverrides);
 
-    if (!context) {
+    if (!measurement) {
         return fallback;
     }
 
-    const measuredText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
-    const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
-    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
-    context.font = fontDescriptor;
-    context.textBaseline = 'alphabetic';
-    context.textAlign = 'left';
+    const desiredWidthPx = Math.max(
+        measurement.totalWidthPx,
+        measurement.scaledBaseWidthPx,
+    );
+    const desiredHeightPx = Math.max(
+        measurement.totalHeightPx,
+        measurement.scaledBaseHeightPx,
+    );
 
-    const metrics = context.measureText(measuredText);
-    const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-    const letterSpacing = style.fontSize * style.letterSpacingScale;
-    const totalLetterSpacing = Math.max(0, measuredText.length - 1) * letterSpacing;
-    const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
-
-    const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
-        ? metrics.actualBoundingBoxAscent
-        : style.fontSize * 0.82;
-    const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
-        ? metrics.actualBoundingBoxDescent
-        : style.fontSize * 0.18;
-    const measuredHeight = Math.max(0, ascent + descent);
-
-    const totalWidthPx = measuredWidth + (style.paddingInline * 2);
-    const totalHeightPx = measuredHeight + (style.paddingBlock * 2);
-
-    if (!Number.isFinite(totalWidthPx) || !Number.isFinite(totalHeightPx) || totalWidthPx <= 0 || totalHeightPx <= 0) {
+    if (!Number.isFinite(desiredWidthPx)
+        || !Number.isFinite(desiredHeightPx)
+        || desiredWidthPx <= 0
+        || desiredHeightPx <= 0) {
         return fallback;
     }
-
-    const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
-        ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
-        : 1;
-    const scaledBaseWidthPx = DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX * Math.max(fontScale, 0.1);
-    const scaledBaseHeightPx = DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX * Math.max(fontScale, 0.1);
-
-    const desiredWidthPx = Math.max(totalWidthPx, scaledBaseWidthPx);
-    const desiredHeightPx = Math.max(totalHeightPx, scaledBaseHeightPx);
 
     const normalizedWidth = desiredWidthPx / DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH;
     const normalizedHeight = desiredHeightPx / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT;
@@ -5095,10 +5165,6 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         || normalizedWidth <= 0 || normalizedHeight <= 0) {
         return fallback;
     }
-
-    const aspectRatio = desiredWidthPx > 0 && desiredHeightPx > 0
-        ? desiredWidthPx / desiredHeightPx
-        : DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
 
     let width = normalizedWidth;
     let height = normalizedHeight;
@@ -5126,7 +5192,9 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
     const top = (1 - height) / 2;
     const left = (1 - width) / 2;
 
-    const resolvedAspectRatio = width > 0 && height > 0 ? width / height : aspectRatio;
+    const resolvedAspectRatio = desiredHeightPx > 0
+        ? desiredWidthPx / desiredHeightPx
+        : DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
 
     const round = (value) => Math.round(value * 10000) / 10000;
 
@@ -5137,6 +5205,8 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
         height: round(height),
         aspectRatio: round(resolvedAspectRatio),
         rotation: 0,
+        naturalWidth: round(desiredWidthPx / DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH),
+        naturalHeight: round(desiredHeightPx / DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT),
     };
 }
 
@@ -5148,6 +5218,7 @@ if (typeof window !== 'undefined') {
     window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE = DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
     window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING = DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
     window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING = DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    window.measureDefaultTextTemplateContent = measureDefaultTextTemplateContent;
     window.calculateDefaultTextTemplateTransform = calculateDefaultTextTemplateTransform;
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }

@@ -1103,6 +1103,17 @@ function storeOverlayTransformOnTimelineItem(timelineItem, transform, options = 
             : 'default-text');
     if (templateId && templateId === defaultTemplateId) {
         timelineItem.dataset.autoFitText = 'false';
+        let resolvedStyle = null;
+        if (typeof resolveTimelineTextTemplateStyle === 'function') {
+            resolvedStyle = resolveTimelineTextTemplateStyle(timelineItem);
+        }
+        if (typeof updateTimelineTextAutoScale === 'function') {
+            updateTimelineTextAutoScale(timelineItem, resolvedStyle);
+        }
+        if (!options.skipKeyframes
+            && typeof regenerateDefaultTextOverlayAssets === 'function') {
+            regenerateDefaultTextOverlayAssets(timelineItem, resolvedStyle, { skipAutoFit: true });
+        }
     }
 
     if (options.skipKeyframes) {
