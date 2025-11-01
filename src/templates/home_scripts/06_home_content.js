@@ -54,9 +54,86 @@
         });
 
     const OVERLAY_BELOW_Z_BASE = 10;
-    const OVERLAY_BELOW_Z_MAX = 59;
     const OVERLAY_ABOVE_Z_BASE = 60;
-    const OVERLAY_ABOVE_Z_MAX = 140;
+    const OVERLAY_BELOW_Z_STRIDE = 1000;
+    const OVERLAY_ABOVE_Z_STRIDE = 1000;
+
+    const descriptorsByLaneIndex = new Map();
+    overlayEntries.forEach((descriptor) => {
+        if (!descriptor) {
+            return;
+        }
+        const laneIndex = resolveLaneIndex(descriptor.laneIndex);
+        if (!descriptorsByLaneIndex.has(laneIndex)) {
+            descriptorsByLaneIndex.set(laneIndex, []);
+        }
+        descriptorsByLaneIndex.get(laneIndex).push(descriptor);
+    });
+
+    const laneDescriptorOrderCache = new Map();
+    const overlayLaneOrderComparator = (a, b) => {
+        const aStart = Number.isFinite(a?.start) ? a.start : Number.POSITIVE_INFINITY;
+        const bStart = Number.isFinite(b?.start) ? b.start : Number.POSITIVE_INFINITY;
+        if (aStart !== bStart) {
+            return aStart - bStart;
+        }
+        const aEnd = Number.isFinite(a?.end) ? a.end : Number.POSITIVE_INFINITY;
+        const bEnd = Number.isFinite(b?.end) ? b.end : Number.POSITIVE_INFINITY;
+        if (aEnd !== bEnd) {
+            return aEnd - bEnd;
+        }
+        const aProgress = Number.isFinite(a?.progress) ? a.progress : Number.NEGATIVE_INFINITY;
+        const bProgress = Number.isFinite(b?.progress) ? b.progress : Number.NEGATIVE_INFINITY;
+        if (aProgress !== bProgress) {
+            return aProgress - bProgress;
+        }
+        const aKey = getOverlayDescriptorKey(a) || '';
+        const bKey = getOverlayDescriptorKey(b) || '';
+        if (aKey < bKey) {
+            return -1;
+        }
+        if (aKey > bKey) {
+            return 1;
+        }
+        return 0;
+    };
+
+    descriptorsByLaneIndex.forEach((laneDescriptors, laneIndex) => {
+        if (!Array.isArray(laneDescriptors) || !laneDescriptors.length) {
+            return;
+        }
+        const orderedDescriptors = laneDescriptors.slice().sort(overlayLaneOrderComparator);
+        const orderMap = new Map();
+        orderedDescriptors.forEach((descriptor, orderIndex) => {
+            const key = getOverlayDescriptorKey(descriptor);
+            if (key) {
+                orderMap.set(key, orderIndex);
+            }
+            if (descriptor?.item) {
+                orderMap.set(descriptor.item, orderIndex);
+            }
+        });
+        laneDescriptorOrderCache.set(laneIndex, orderMap);
+    });
+
+    const resolveDescriptorLaneOrder = (descriptor) => {
+        if (!descriptor) {
+            return 0;
+        }
+        const laneIndex = resolveLaneIndex(descriptor.laneIndex);
+        const orderMap = laneDescriptorOrderCache.get(laneIndex);
+        if (!orderMap) {
+            return 0;
+        }
+        const key = getOverlayDescriptorKey(descriptor);
+        if (key && orderMap.has(key)) {
+            return orderMap.get(key);
+        }
+        if (descriptor.item && orderMap.has(descriptor.item)) {
+            return orderMap.get(descriptor.item);
+        }
+        return 0;
+    };
 
     const resolveOverlayLaneRank = (laneIndex, group) => {
         const normalizedLaneIndex = resolveLaneIndex(laneIndex);
@@ -98,20 +175,19 @@
             return OVERLAY_ABOVE_Z_BASE + 1;
         }
 
-        const group = computeOverlayLayerGroup(descriptor);
+        const group = descriptor.layerGroup || computeOverlayLayerGroup(descriptor);
         const laneRank = resolveOverlayLaneRank(descriptor.laneIndex, group);
+        const laneStride = group === 'below' ? OVERLAY_BELOW_Z_STRIDE : OVERLAY_ABOVE_Z_STRIDE;
+        const groupBase = group === 'below' ? OVERLAY_BELOW_Z_BASE : OVERLAY_ABOVE_Z_BASE;
+        const laneOrder = Number.isFinite(descriptor.layerOrder)
+            ? descriptor.layerOrder
+            : resolveDescriptorLaneOrder(descriptor);
 
-        if (group === 'below') {
-            const range = Math.max(1, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
-            const clampedRank = Math.min(laneRank, range - 1);
-            const zIndex = OVERLAY_BELOW_Z_MAX - clampedRank;
-            return Math.max(OVERLAY_BELOW_Z_BASE + 1, zIndex);
-        }
+        const safeLaneRank = Number.isFinite(laneRank) ? Math.max(0, laneRank) : 0;
+        const safeLaneOrder = Number.isFinite(laneOrder) ? Math.max(0, laneOrder) : 0;
+        const clampedLaneOrder = Math.min(safeLaneOrder, Math.max(0, laneStride - 1));
 
-        const range = Math.max(1, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
-        const clampedRank = Math.min(laneRank, range - 1);
-        const zIndex = OVERLAY_ABOVE_Z_MAX - clampedRank;
-        return Math.max(OVERLAY_ABOVE_Z_BASE + 1, zIndex);
+        return groupBase + 1 + (safeLaneRank * laneStride) + clampedLaneOrder;
     };
 
     const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
@@ -173,6 +249,7 @@
             );
 
             descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
+            descriptor.layerOrder = resolveDescriptorLaneOrder(descriptor);
             descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
 
             if (!descriptor.isActive && !descriptor.intersectsWindow) {
@@ -351,6 +428,7 @@
 
     overlayEntries.forEach((descriptor) => {
         descriptor.layerGroup = computeOverlayLayerGroup(descriptor);
+        descriptor.layerOrder = resolveDescriptorLaneOrder(descriptor);
         descriptor.zIndex = computeOverlayLayerZIndex(descriptor);
         if (descriptor.layerGroup === 'below') {
             overlayGroups.below.push(descriptor);
@@ -359,8 +437,35 @@
         }
     });
 
-    overlayGroups.above.sort((a, b) => a.laneIndex - b.laneIndex);
-    overlayGroups.below.sort((a, b) => a.laneIndex - b.laneIndex);
+    const overlayGroupComparator = (a, b) => {
+        const zIndexA = Number.isFinite(a?.zIndex) ? a.zIndex : 0;
+        const zIndexB = Number.isFinite(b?.zIndex) ? b.zIndex : 0;
+        if (zIndexA !== zIndexB) {
+            return zIndexA - zIndexB;
+        }
+        const orderA = Number.isFinite(a?.layerOrder) ? a.layerOrder : 0;
+        const orderB = Number.isFinite(b?.layerOrder) ? b.layerOrder : 0;
+        if (orderA !== orderB) {
+            return orderA - orderB;
+        }
+        const laneA = resolveLaneIndex(a?.laneIndex);
+        const laneB = resolveLaneIndex(b?.laneIndex);
+        if (laneA !== laneB) {
+            return laneA - laneB;
+        }
+        const keyA = getOverlayDescriptorKey(a) || '';
+        const keyB = getOverlayDescriptorKey(b) || '';
+        if (keyA < keyB) {
+            return -1;
+        }
+        if (keyA > keyB) {
+            return 1;
+        }
+        return 0;
+    };
+
+    overlayGroups.above.sort(overlayGroupComparator);
+    overlayGroups.below.sort(overlayGroupComparator);
 
     const { below, above } = previewOverlayGroups;
 
