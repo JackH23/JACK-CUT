@@ -5182,13 +5182,20 @@ if (typeof window !== 'undefined') {
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
 
-function escapeForeignObjectContent(content) {
-    return String(content || '')
+function escapeSvgAttributeValue(value) {
+    return String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function escapeSvgTextContent(content) {
+    return String(content ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
@@ -5207,26 +5214,47 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
     const safePaddingBlock = Number.isFinite(style.paddingBlock)
         ? Math.max(style.paddingBlock, 0)
         : DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
-    const safeText = escapeForeignObjectContent(transformedText)
-        .replace(/\r?\n/g, '<br />');
-    const justifyContent = style.align === 'left'
-        ? 'flex-start'
-        : (style.align === 'right' ? 'flex-end' : 'center');
-    const textAlign = style.align === 'left'
-        ? 'left'
-        : (style.align === 'right' ? 'right' : 'center');
-    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
+    const textAnchor = style.align === 'left'
+        ? 'start'
+        : (style.align === 'right' ? 'end' : 'middle');
+    const xPosition = textAnchor === 'start'
+        ? safePaddingInline
+        : (textAnchor === 'end'
+            ? DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - safePaddingInline
+            : DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2);
+    const lineHeightPx = Math.max(safeFontSize * DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT, safeFontSize);
+    const rawLines = transformedText.split(/\r?\n/);
+    const lines = rawLines.length ? rawLines : [''];
+    const sanitizedLines = lines.map((line) => {
+        const escaped = escapeSvgTextContent(line);
+        return escaped.length ? escaped : '&#160;';
+    });
     const textDecoration = style.textDecoration || 'none';
     const transformStyle = style.transform || 'none';
-    const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <foreignObject x="0" y="0" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:${justifyContent};width:100%;height:100%;box-sizing:border-box;padding:${safePaddingBlock}px ${safePaddingInline}px;margin:0;color:${style.color};font-family:${sanitizedFontFamily};font-weight:${style.fontWeight};font-style:${style.fontStyle};font-size:${safeFontSize}px;line-height:${DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT};letter-spacing:${letterSpacingPx}px;text-align:${textAlign};text-decoration:${textDecoration};text-transform:${transformStyle};white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:transparent;">
-            <span style="display:block;width:100%;">${safeText}</span>
-        </div>
-    </foreignObject>
-</svg>`;
+    const textAttributes = [
+        'xml:space="preserve"',
+        `font-family="${escapeSvgAttributeValue(style.fontFamily)}"`,
+        `font-size="${escapeSvgAttributeValue(safeFontSize)}"`,
+        `font-weight="${escapeSvgAttributeValue(style.fontWeight)}"`,
+        `font-style="${escapeSvgAttributeValue(style.fontStyle)}"`,
+        `fill="${escapeSvgAttributeValue(style.color)}"`,
+        `letter-spacing="${escapeSvgAttributeValue(letterSpacingPx)}"`,
+        `text-decoration="${escapeSvgAttributeValue(textDecoration)}"`,
+        `text-anchor="${textAnchor}"`,
+        'dominant-baseline="text-before-edge"',
+    ];
+    if (transformStyle && transformStyle !== 'none') {
+        textAttributes.push(`text-transform="${escapeSvgAttributeValue(transformStyle)}"`);
+    }
+    const tspans = sanitizedLines.map((line, index) => {
+        const y = safePaddingBlock + (index * lineHeightPx);
+        return `        <tspan x="${xPosition}" y="${y}">${line}</tspan>`;
+    }).join('\n');
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>\n`
+        + `<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">\n`
+        + `    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />\n`
+        + `    <text ${textAttributes.join(' ')}>${sanitizedLines.length ? '\n' : ''}${tspans}${sanitizedLines.length ? '\n    ' : ''}</text>\n`
+        + `</svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);
 }
