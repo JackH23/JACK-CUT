@@ -3654,6 +3654,19 @@ async function stageUpload(file) {
     }
 }
 
+function safeCanvasToDataURL(canvas, type, fallbackValue) {
+    try {
+        return canvas.toDataURL(type);
+    } catch (error) {
+        if (error && typeof error === 'object' && 'name' in error && error.name === 'SecurityError') {
+            console.warn('Canvas is tainted, falling back to provided value.', error);
+            return fallbackValue;
+        }
+        console.error('Unable to export canvas as data URL.', error);
+        return fallbackValue;
+    }
+}
+
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
     return new Promise((resolve) => {
         const img = new Image();
@@ -3671,7 +3684,7 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
                 return;
             }
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/png'));
+            resolve(safeCanvasToDataURL(canvas, 'image/png', objectURL));
         };
         img.onerror = () => resolve(objectURL);
         img.src = objectURL;
@@ -4180,7 +4193,7 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
                 widthOverride,
             });
             try {
-                cacheEntry.imageDataUrl = waveformCanvas.toDataURL('image/png');
+                cacheEntry.imageDataUrl = safeCanvasToDataURL(waveformCanvas, 'image/png', null);
             } catch (error) {
                 cacheEntry.imageDataUrl = null;
             }
