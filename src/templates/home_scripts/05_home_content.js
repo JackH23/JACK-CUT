@@ -402,6 +402,7 @@ const previewTextEditorState = {
     isEnabled: false,
     currentItem: null,
     lastCommittedValue: '',
+    livePreviewValue: '',
     lockedTransform: null,
     lockedTransformSerialized: '',
 };
@@ -1062,6 +1063,7 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     previewTextEditorState.isEnabled = true;
     previewTextEditorState.currentItem = timelineItem;
     previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
+    previewTextEditorState.livePreviewValue = previewTextEditorState.lastCommittedValue;
     previewTextEditorState.lockedTransform = null;
     previewTextEditorState.lockedTransformSerialized = '';
 
@@ -1089,6 +1091,7 @@ function disablePreviewTextEditor(options = {}) {
     previewTextEditorState.isEnabled = false;
     previewTextEditorState.currentItem = null;
     previewTextEditorState.lastCommittedValue = '';
+    previewTextEditorState.livePreviewValue = '';
     previewTextEditorState.lockedTransform = null;
     previewTextEditorState.lockedTransformSerialized = '';
 
@@ -1142,6 +1145,7 @@ function syncPreviewTextEditorState(timelineItem, options = {}) {
 
     previewTextEditorState.currentItem = timelineItem;
     previewTextEditorState.lastCommittedValue = normalizePreviewTextEditorValue(storedValue);
+    previewTextEditorState.livePreviewValue = previewTextEditorState.lastCommittedValue;
     applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
     syncTextEffectsControlsToTimelineItem(timelineItem);
 
@@ -1165,17 +1169,21 @@ function schedulePreviewTextEditorCommit() {
     }, PREVIEW_TEXT_COMMIT_DELAY_MS);
 }
 
-function updateDefaultTextTimelineItemContent(timelineItem, normalizedText) {
+function updateDefaultTextTimelineItemContent(timelineItem, normalizedText, options = {}) {
     if (!timelineItem) {
         return;
     }
 
+    const { commitState = true } = options;
     const committedValue = normalizedText;
     timelineItem.dataset.textContent = committedValue;
 
     regenerateDefaultTextOverlayAssets(timelineItem);
     applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
-    previewTextEditorState.lastCommittedValue = committedValue;
+    if (commitState) {
+        previewTextEditorState.lastCommittedValue = committedValue;
+    }
+    previewTextEditorState.livePreviewValue = committedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
 }
 
@@ -1212,6 +1220,13 @@ function onPreviewTextEditorInput() {
 
     const currentValue = previewTextEditor.textContent || '';
     updatePreviewTextEditorPlaceholderState(currentValue);
+    const timelineItem = previewTextEditorState.currentItem;
+    if (timelineItem && timelineItem.isConnected && isDefaultTextTimelineItem(timelineItem)) {
+        const normalized = normalizePreviewTextEditorValue(currentValue);
+        if (normalized !== previewTextEditorState.livePreviewValue) {
+            updateDefaultTextTimelineItemContent(timelineItem, normalized, { commitState: false });
+        }
+    }
     schedulePreviewTextEditorCommit();
 }
 
@@ -1260,6 +1275,10 @@ function onPreviewTextEditorKeyDown(event) {
         if (previewTextEditor.textContent !== revertValue) {
             previewTextEditor.textContent = revertValue;
             updatePreviewTextEditorPlaceholderState(revertValue);
+        }
+        const timelineItem = previewTextEditorState.currentItem;
+        if (timelineItem && timelineItem.isConnected && isDefaultTextTimelineItem(timelineItem)) {
+            updateDefaultTextTimelineItemContent(timelineItem, revertValue, { commitState: false });
         }
         previewTextEditor.blur();
     }
