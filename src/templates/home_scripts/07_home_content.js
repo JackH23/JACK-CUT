@@ -3671,7 +3671,16 @@ async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) 
                 return;
             }
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/png'));
+            try {
+                resolve(canvas.toDataURL('image/png'));
+            } catch (error) {
+                if (error && error.name === 'SecurityError') {
+                    resolve(objectURL);
+                    return;
+                }
+
+                throw error;
+            }
         };
         img.onerror = () => resolve(objectURL);
         img.src = objectURL;
