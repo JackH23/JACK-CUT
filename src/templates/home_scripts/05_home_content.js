@@ -405,6 +405,7 @@ const previewTextEditorState = {
     livePreviewValue: '',
     lockedTransform: null,
     lockedTransformSerialized: '',
+    wasAutoFitEnabled: false,
 };
 
 let previewTextCommitTimer = null;
@@ -852,7 +853,7 @@ function syncTextEffectsControlsToTimelineItem(timelineItem) {
     });
 }
 
-function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) {
+function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null, options = {}) {
     if (!timelineItem) {
         return;
     }
@@ -899,11 +900,20 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
         }
     }
 
+    const preserveEditingTransform = options.preserveEditingTransform !== undefined
+        ? Boolean(options.preserveEditingTransform)
+        : true;
+    const forceAutoFit = options.forceAutoFit === true;
+
     const isEditingCurrentItem = previewTextEditorState.isEnabled
         && previewTextEditorState.currentItem
         && previewTextEditorState.currentItem === timelineItem;
 
-    if (isEditingCurrentItem) {
+    const shouldPreserveEditingTransform = isEditingCurrentItem
+        && preserveEditingTransform
+        && !forceAutoFit;
+
+    if (shouldPreserveEditingTransform) {
         const lockedSerialized = previewTextEditorState.lockedTransformSerialized || '';
         const lockedTransform = previewTextEditorState.lockedTransform;
 
@@ -919,6 +929,9 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null) 
             applyStoredPreviewImageTransform(lockedTransform);
         }
     } else {
+        if (forceAutoFit && timelineItem.dataset) {
+            timelineItem.dataset.autoFitText = 'true';
+        }
         autoFitDefaultTextTimelineItem(timelineItem, displayName, style);
     }
 
@@ -1066,6 +1079,7 @@ function enablePreviewTextEditor(timelineItem, options = {}) {
     previewTextEditorState.livePreviewValue = previewTextEditorState.lastCommittedValue;
     previewTextEditorState.lockedTransform = null;
     previewTextEditorState.lockedTransformSerialized = '';
+    previewTextEditorState.wasAutoFitEnabled = shouldAutoFitDefaultTextTimelineItem(timelineItem);
 
     const shouldFocus = options.forceFocus
         || (options.autoFocus !== false && document.activeElement !== previewTextEditor);
@@ -1085,7 +1099,10 @@ function disablePreviewTextEditor(options = {}) {
     }
 
     if (!options.skipCommit) {
-        commitPreviewTextEditorContent({ force: true });
+        commitPreviewTextEditorContent({
+            preserveEditingTransform: false,
+            autoFitOnCommit: true,
+        });
     }
 
     previewTextEditorState.isEnabled = false;
@@ -1094,6 +1111,7 @@ function disablePreviewTextEditor(options = {}) {
     previewTextEditorState.livePreviewValue = '';
     previewTextEditorState.lockedTransform = null;
     previewTextEditorState.lockedTransformSerialized = '';
+    previewTextEditorState.wasAutoFitEnabled = false;
 
     if (previewTextCommitTimer !== null) {
         window.clearTimeout(previewTextCommitTimer);
@@ -1165,7 +1183,7 @@ function schedulePreviewTextEditorCommit() {
     }
     previewTextCommitTimer = window.setTimeout(() => {
         previewTextCommitTimer = null;
-        commitPreviewTextEditorContent();
+        commitPreviewTextEditorContent({ preserveEditingTransform: true });
     }, PREVIEW_TEXT_COMMIT_DELAY_MS);
 }
 
@@ -1174,17 +1192,31 @@ function updateDefaultTextTimelineItemContent(timelineItem, normalizedText, opti
         return;
     }
 
-    const { commitState = true } = options;
+    const {
+        commitState = true,
+        preserveEditingTransform = true,
+        autoFitOnCommit = false,
+    } = options;
+
     const committedValue = normalizedText;
+    const previousValue = timelineItem.dataset.textContent || '';
     timelineItem.dataset.textContent = committedValue;
 
-    regenerateDefaultTextOverlayAssets(timelineItem);
+    const shouldForceAutoFit = Boolean(autoFitOnCommit);
+    regenerateDefaultTextOverlayAssets(timelineItem, null, {
+        preserveEditingTransform,
+        forceAutoFit: shouldForceAutoFit,
+    });
     applyTextStyleToPreviewEditor(getTimelineTextStyle(timelineItem));
     if (commitState) {
         previewTextEditorState.lastCommittedValue = committedValue;
     }
     previewTextEditorState.livePreviewValue = committedValue;
     updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || committedValue);
+
+    if (committedValue !== previousValue && typeof markExportPlaybackContextDirty === 'function') {
+        markExportPlaybackContextDirty({ refreshSummary: true });
+    }
 }
 
 function commitPreviewTextEditorContent(options = {}) {
@@ -1210,7 +1242,16 @@ function commitPreviewTextEditorContent(options = {}) {
         return;
     }
 
-    updateDefaultTextTimelineItemContent(timelineItem, normalized);
+    const preserveEditingTransform = options.preserveEditingTransform !== undefined
+        ? Boolean(options.preserveEditingTransform)
+        : true;
+    const shouldAutoFit = options.autoFitOnCommit === true
+        && previewTextEditorState.wasAutoFitEnabled !== false;
+
+    updateDefaultTextTimelineItemContent(timelineItem, normalized, {
+        preserveEditingTransform,
+        autoFitOnCommit: shouldAutoFit,
+    });
 }
 
 function onPreviewTextEditorInput() {
@@ -1239,12 +1280,14 @@ function onPreviewTextEditorFocus() {
     if (!timelineItem || !timelineItem.isConnected || !isDefaultTextTimelineItem(timelineItem)) {
         previewTextEditorState.lockedTransform = null;
         previewTextEditorState.lockedTransformSerialized = '';
+        previewTextEditorState.wasAutoFitEnabled = false;
         return;
     }
 
     const serializedTransform = timelineItem.dataset?.previewImageTransform || '';
     previewTextEditorState.lockedTransformSerialized = serializedTransform;
     previewTextEditorState.lockedTransform = getStoredPreviewImageTransform(timelineItem);
+    previewTextEditorState.wasAutoFitEnabled = shouldAutoFitDefaultTextTimelineItem(timelineItem);
 
     if (timelineItem.dataset) {
         timelineItem.dataset.autoFitText = 'false';
@@ -1255,7 +1298,10 @@ function onPreviewTextEditorBlur() {
     if (previewImageFrame) {
         previewImageFrame.classList.remove('is-text-editing');
     }
-    commitPreviewTextEditorContent({ force: true });
+    commitPreviewTextEditorContent({
+        preserveEditingTransform: false,
+        autoFitOnCommit: true,
+    });
     previewTextEditorState.lockedTransform = null;
     previewTextEditorState.lockedTransformSerialized = '';
 }
