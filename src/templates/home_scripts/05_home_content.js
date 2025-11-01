@@ -571,7 +571,7 @@ function normalizePreviewTextEditorValue(value) {
     if (value === null || value === undefined) {
         return '';
     }
-    return String(value);
+    return String(value).replace(/\r\n|\r/g, '\n');
 }
 
 function getFontLibraryEntry(fontKey) {
@@ -1469,11 +1469,6 @@ function onPreviewTextEditorKeyDown(event) {
     if (!previewTextEditorState.isEnabled) {
         return;
     }
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        previewTextEditor.blur();
-        return;
-    }
     if (event.key === 'Escape') {
         event.preventDefault();
         const revertValue = previewTextEditorState.lastCommittedValue || '';
@@ -1494,10 +1489,11 @@ function onPreviewTextEditorPaste(event) {
         return;
     }
     event.preventDefault();
+    const normalizedText = text.replace(/\r\n|\r/g, '\n');
     let didInsert = false;
     try {
         if (typeof document.execCommand === 'function') {
-            didInsert = document.execCommand('insertText', false, text);
+            didInsert = document.execCommand('insertText', false, normalizedText);
         }
     } catch (error) {
         didInsert = false;
@@ -1505,20 +1501,27 @@ function onPreviewTextEditorPaste(event) {
     if (!didInsert && typeof window !== 'undefined' && typeof window.getSelection === 'function') {
         const selection = window.getSelection();
         if (selection) {
-            selection.deleteFromDocument();
-            const range = selection.getRangeAt(0);
-            range.insertNode(document.createTextNode(text));
-            range.collapse(false);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            didInsert = true;
+            let range = null;
+            if (selection.rangeCount > 0) {
+                range = selection.getRangeAt(0);
+            }
+            if (range) {
+                range.deleteContents();
+                const textNode = document.createTextNode(normalizedText);
+                range.insertNode(textNode);
+                range.setStartAfter(textNode);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                didInsert = true;
+            }
         }
     }
     if (!didInsert && previewTextEditor) {
-        previewTextEditor.textContent += text;
+        previewTextEditor.textContent += normalizedText;
         focusPreviewTextEditor();
     }
-    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || text);
+    updatePreviewTextEditorPlaceholderState(previewTextEditor?.textContent || normalizedText);
     schedulePreviewTextEditorCommit();
 }
 

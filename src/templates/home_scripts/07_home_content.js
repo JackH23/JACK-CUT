@@ -4934,7 +4934,37 @@ const DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH *
 const DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT * DEFAULT_TEXT_TEMPLATE_HEIGHT;
 const MAX_TEXT_TEMPLATE_DIMENSION = 0.95;
 
+let defaultTextMeasurementElement = null;
 let defaultTextMeasurementContext = null;
+
+function getDefaultTextMeasurementElement() {
+    if (defaultTextMeasurementElement
+        && defaultTextMeasurementElement.outer?.isConnected
+        && defaultTextMeasurementElement.inner?.isConnected) {
+        return defaultTextMeasurementElement;
+    }
+
+    if (typeof document === 'undefined') {
+        return null;
+    }
+
+    const outer = document.createElement('div');
+    outer.style.position = 'fixed';
+    outer.style.left = '0';
+    outer.style.top = '0';
+    outer.style.width = '0';
+    outer.style.height = '0';
+    outer.style.visibility = 'hidden';
+    outer.style.pointerEvents = 'none';
+    outer.style.zIndex = '-1';
+
+    const inner = document.createElement('div');
+    outer.appendChild(inner);
+
+    document.body.appendChild(outer);
+    defaultTextMeasurementElement = { outer, inner };
+    return defaultTextMeasurementElement;
+}
 
 function getDefaultTextMeasurementContext() {
     if (defaultTextMeasurementContext) {
@@ -5046,6 +5076,79 @@ function measureDefaultTextTemplateContent(textContent = DEFAULT_TEXT_TEMPLATE_L
         scaledBaseHeightPx: DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX,
     };
 
+    const transformedText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
+
+    const measurementElement = getDefaultTextMeasurementElement();
+    if (measurementElement && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const { inner } = measurementElement;
+        if (inner) {
+            const maxWidthPx = Math.max(DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX, 1);
+            inner.textContent = '';
+            inner.style.cssText = [
+                'display:inline-block',
+                'position:static',
+                'box-sizing:border-box',
+                `max-width:${maxWidthPx}px`,
+                'min-width:1px',
+                'min-height:0',
+                'margin:0',
+                `padding:${style.paddingBlock}px ${style.paddingInline}px`,
+                'white-space:pre-wrap',
+                'word-break:break-word',
+                'overflow-wrap:anywhere',
+                `font-family:${style.fontFamily}`,
+                `font-weight:${style.fontWeight}`,
+                `font-style:${style.fontStyle || 'normal'}`,
+                `font-size:${style.fontSize}px`,
+                `letter-spacing:${style.letterSpacingScale}em`,
+                'line-height:1.2',
+                `text-align:${style.align || 'center'}`,
+                `text-decoration:${style.textDecoration || 'none'}`,
+                'background-color:transparent',
+                'color:transparent',
+            ].join('; ');
+
+            inner.textContent = transformedText;
+
+            const rect = inner.getBoundingClientRect();
+            const computedStyle = window.getComputedStyle(inner);
+            const parsedLineHeight = Number.parseFloat(computedStyle.lineHeight);
+            const baseLineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+                ? parsedLineHeight
+                : style.fontSize * 1.2;
+
+            const normalizedInnerText = (inner.innerText || transformedText || '').replace(/\r\n|\r/g, '\n');
+            const lines = normalizedInnerText.split('\n');
+            if (!lines.length) {
+                lines.push('');
+            }
+
+            const contentWidthPx = Math.max(rect.width - (style.paddingInline * 2), 0);
+            const contentHeightPx = Math.max(rect.height - (style.paddingBlock * 2), 0);
+
+            const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
+                ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
+                : 1;
+            const scaledBaseWidthPx = DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX * Math.max(fontScale, 0.1);
+            const scaledBaseHeightPx = DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX * Math.max(fontScale, 0.1);
+
+            inner.textContent = '';
+
+            return {
+                style,
+                lines,
+                lineCount: lines.length,
+                lineHeightPx: baseLineHeight,
+                contentWidthPx,
+                contentHeightPx,
+                totalWidthPx: rect.width,
+                totalHeightPx: rect.height,
+                scaledBaseWidthPx,
+                scaledBaseHeightPx,
+            };
+        }
+    }
+
     if (typeof document === 'undefined') {
         return fallbackMeasurement;
     }
@@ -5055,7 +5158,6 @@ function measureDefaultTextTemplateContent(textContent = DEFAULT_TEXT_TEMPLATE_L
         return fallbackMeasurement;
     }
 
-    const transformedText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
     const lines = transformedText.split(/\r\n|\r|\n/);
     if (!lines.length) {
         lines.push('');
@@ -5235,30 +5337,50 @@ function escapeSvgTextContent(content) {
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
     const style = resolveTextTemplateStyle(styleOverrides);
     const transformedText = applyTextTransformToContent(textContent, style.transform);
-    const safeText = escapeSvgTextContent(transformedText);
-    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
-    const anchor = style.align === 'left'
-        ? 'start'
-        : (style.align === 'right' ? 'end' : 'middle');
-    let xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
-    if (style.align === 'left') {
-        xPosition = style.paddingInline;
-    } else if (style.align === 'right') {
-        xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
-    }
-    const letterSpacingScale = typeof clampTextLetterSpacing === 'function'
+    const normalizedLetterSpacing = typeof clampTextLetterSpacing === 'function'
         ? clampTextLetterSpacing(style.letterSpacingScale)
         : style.letterSpacingScale;
-    const letterSpacingPx = style.fontSize * letterSpacingScale;
+    const safeText = escapeSvgTextContent(transformedText).replace(/\r\n|\r|\n/g, '<br />');
+    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
+    const justifyContent = style.align === 'left'
+        ? 'flex-start'
+        : (style.align === 'right' ? 'flex-end' : 'center');
+    const textAlign = style.align === 'left'
+        ? 'left'
+        : (style.align === 'right' ? 'right' : 'center');
+    const containerStyles = [
+        'width:100%',
+        'height:100%',
+        'display:flex',
+        'align-items:center',
+        `justify-content:${justifyContent}`,
+        `padding:${style.paddingBlock}px ${style.paddingInline}px`,
+        'box-sizing:border-box',
+        'background-color:transparent',
+    ].join('; ');
+    const textStyles = [
+        `color:${style.color}`,
+        `font-family:${sanitizedFontFamily}`,
+        `font-weight:${style.fontWeight}`,
+        `font-style:${style.fontStyle}`,
+        `font-size:${style.fontSize}px`,
+        `letter-spacing:${normalizedLetterSpacing}em`,
+        'line-height:1.2',
+        `text-align:${textAlign}`,
+        `text-decoration:${style.textDecoration}`,
+        'text-transform:none',
+        'white-space:pre-wrap',
+        'word-break:break-word',
+        'overflow-wrap:anywhere',
+        'margin:0',
+    ].join('; ');
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <style>
-        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; font-style: ${style.fontStyle}; text-decoration: ${style.textDecoration}; }
-    </style>
-    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" font-style="${style.fontStyle}" text-decoration="${style.textDecoration}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
-        ${safeText}
-    </text>
+    <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="${containerStyles}">
+            <div style="${textStyles}">${safeText}</div>
+        </div>
+    </foreignObject>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);
