@@ -1702,7 +1702,7 @@ function prepareExportPlaybackContext(existingItems = null) {
             console.warn('Unable to commit pending text edits before export.', error);
         }
     }
-    
+
     const timelineItems = Array.isArray(existingItems)
         ? existingItems
         : getTimelineItems();
@@ -2025,6 +2025,29 @@ function attachPreviewAudioToStream(mediaElements, combinedStream) {
     };
 }
 
+function ensureExportCanvasOriginClean() {
+    if (!exportMirrorCanvas || !exportMirrorContext) {
+        return;
+    }
+
+    const sampleWidth = Math.max(1, Math.min(exportMirrorCanvas.width || 0, 1));
+    const sampleHeight = Math.max(1, Math.min(exportMirrorCanvas.height || 0, 1));
+
+    try {
+        exportMirrorContext.getImageData(0, 0, sampleWidth, sampleHeight);
+    } catch (error) {
+        if (error && error.name === 'SecurityError') {
+            const message = 'The preview canvas is using media from another origin. '
+                + 'Please replace cross-origin images or videos with files that allow export and try again.';
+            const securityError = new DOMException(message, 'SecurityError');
+            securityError.cause = error;
+            throw securityError;
+        }
+
+        throw error;
+    }
+}
+
 async function handleConfirmExport() {
     if (isExportingTimeline) {
         return;
@@ -2219,6 +2242,7 @@ async function handleConfirmExport() {
         if (typeof exportMirrorCanvas.captureStream !== 'function') {
             throw new Error('Canvas captureStream is not supported in this browser.');
         }
+        ensureExportCanvasOriginClean();
         const canvasStream = exportMirrorCanvas.captureStream(captureFrameRate);
         if (!canvasStream) {
             throw new Error('Unable to access canvas capture stream.');
