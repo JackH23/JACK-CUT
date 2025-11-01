@@ -3563,6 +3563,7 @@ async function stageUpload(file) {
 
     if (isImage) {
         const img = document.createElement('img');
+        img.crossOrigin = 'anonymous';
         img.src = objectURL;
         img.alt = file.name;
         img.loading = 'lazy';
@@ -3574,6 +3575,7 @@ async function stageUpload(file) {
         previewWrapper.appendChild(img);
     } else if (isVideo) {
         const video = document.createElement('video');
+        video.crossOrigin = 'anonymous';
         video.src = objectURL;
         video.muted = true;
         video.playsInline = true;
@@ -3657,6 +3659,7 @@ async function stageUpload(file) {
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
     return new Promise((resolve) => {
         const img = new Image();
+        img.crossOrigin = 'anonymous';
         img.onload = () => {
             const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
             const width = Math.max(1, Math.round(img.width * scale));
@@ -4062,6 +4065,7 @@ function applyCachedWaveform(canvas, cacheEntry, options = {}) {
     }
 
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
@@ -4757,6 +4761,7 @@ async function addToTimeline(file, objectURL) {
 
     if (file.type.startsWith('video/')) {
         const videoThumb = document.createElement('video');
+        videoThumb.crossOrigin = 'anonymous';
         videoThumb.src = objectURL;
         videoThumb.muted = true;
         videoThumb.loop = true;
@@ -4793,6 +4798,7 @@ async function addToTimeline(file, objectURL) {
         timelineItem.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
         const imageThumb = document.createElement('img');
+        imageThumb.crossOrigin = 'anonymous';
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
@@ -5289,6 +5295,7 @@ async function addDefaultTextOverlayToTimeline() {
 
     try {
         const thumbnail = document.createElement('img');
+        thumbnail.crossOrigin = 'anonymous';
         thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
         thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;

@@ -7,7 +7,13 @@ const uploadGalleryList = document.getElementById('upload-gallery-list');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
+if (previewVideo) {
+    previewVideo.crossOrigin = 'anonymous';
+}
 const previewAudio = document.getElementById('preview-audio');
+if (previewAudio) {
+    previewAudio.crossOrigin = 'anonymous';
+}
 let activeAudioOverlayEntry = null;
 const overlayAudioElementRegistry = new Map();
 
@@ -40,6 +46,9 @@ function getActiveOverlayAudioElements() {
     return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
 }
 const previewImage = document.getElementById('preview-image');
+if (previewImage) {
+    previewImage.crossOrigin = 'anonymous';
+}
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
 let lastPreviewImageBlurValue = null;
@@ -48,7 +57,13 @@ const previewImageFrame = document.getElementById('preview-image-frame');
 const previewTextEditor = document.getElementById('preview-text-editor');
 const previewCanvasBackdrop = document.getElementById('preview-canvas-backdrop');
 const previewCanvasVideo = document.getElementById('preview-canvas-video');
+if (previewCanvasVideo) {
+    previewCanvasVideo.crossOrigin = 'anonymous';
+}
 const previewCanvasImage = document.getElementById('preview-canvas-image');
+if (previewCanvasImage) {
+    previewCanvasImage.crossOrigin = 'anonymous';
+}
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];

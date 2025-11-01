@@ -426,6 +426,7 @@
             content.className = 'preview-overlay-content';
             layer.appendChild(content);
             const image = document.createElement('img');
+            image.crossOrigin = 'anonymous';
             try {
                 image.decoding = 'async';
             } catch (error) {
