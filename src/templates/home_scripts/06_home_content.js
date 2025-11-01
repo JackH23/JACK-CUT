@@ -445,11 +445,11 @@
                 );
                 layer.appendChild(handle);
             });
-            entry.handles = Array.from(layer.querySelectorAll('.preview-resize-handle'));
             entry = {
                 layer,
                 content,
                 image,
+                handles: Array.from(layer.querySelectorAll('.preview-resize-handle')),
                 objectURL: '',
                 frame: null,
                 isVisible: false,
