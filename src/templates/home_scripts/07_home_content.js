@@ -4935,6 +4935,7 @@ const DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT
 const MAX_TEXT_TEMPLATE_DIMENSION = 0.95;
 
 let defaultTextMeasurementContext = null;
+let defaultTextMeasurementElement = null;
 
 function getDefaultTextMeasurementContext() {
     if (defaultTextMeasurementContext) {
@@ -4950,6 +4951,42 @@ function getDefaultTextMeasurementContext() {
     }
     defaultTextMeasurementContext = context;
     return defaultTextMeasurementContext;
+}
+
+function getDefaultTextMeasurementElement() {
+    if (defaultTextMeasurementElement && defaultTextMeasurementElement.isConnected) {
+        return defaultTextMeasurementElement;
+    }
+
+    if (typeof document === 'undefined') {
+        return null;
+    }
+
+    const outer = document.createElement('div');
+    outer.style.position = 'absolute';
+    outer.style.visibility = 'hidden';
+    outer.style.pointerEvents = 'none';
+    outer.style.left = '-10000px';
+    outer.style.top = '-10000px';
+    outer.style.boxSizing = 'border-box';
+    outer.style.display = 'block';
+    outer.style.background = 'transparent';
+
+    const inner = document.createElement('div');
+    inner.style.display = 'block';
+    inner.style.width = '100%';
+    inner.style.height = 'auto';
+    inner.style.whiteSpace = 'pre-wrap';
+    inner.style.wordBreak = 'break-word';
+    inner.style.overflowWrap = 'anywhere';
+    inner.style.margin = '0';
+    inner.style.padding = '0';
+
+    outer.appendChild(inner);
+    document.body.appendChild(outer);
+
+    defaultTextMeasurementElement = outer;
+    return defaultTextMeasurementElement;
 }
 
 function applyTextTransformToContent(content, transform) {
@@ -5014,6 +5051,18 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
     const paddingBlock = Number.isFinite(paddingBlockCandidate)
         ? paddingBlockCandidate
         : DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    const lineHeightCandidate = Number(base.lineHeight);
+    const lineHeight = Number.isFinite(lineHeightCandidate) && lineHeightCandidate > 0
+        ? lineHeightCandidate
+        : 1.2;
+    const boxWidthCandidate = Number(base.boxWidthPx);
+    const boxWidthPx = Number.isFinite(boxWidthCandidate) && boxWidthCandidate > 0
+        ? boxWidthCandidate
+        : null;
+    const boxHeightCandidate = Number(base.boxHeightPx);
+    const boxHeightPx = Number.isFinite(boxHeightCandidate) && boxHeightCandidate > 0
+        ? boxHeightCandidate
+        : null;
 
     return {
         fontFamily,
@@ -5027,6 +5076,9 @@ function resolveTextTemplateStyle(styleOverrides = {}) {
         textDecoration,
         paddingInline,
         paddingBlock,
+        lineHeight,
+        boxWidthPx,
+        boxHeightPx,
     };
 }
 
@@ -5050,57 +5102,74 @@ function measureDefaultTextTemplateContent(textContent = DEFAULT_TEXT_TEMPLATE_L
         return fallbackMeasurement;
     }
 
-    const context = getDefaultTextMeasurementContext();
-    if (!context) {
+    const measurementElement = getDefaultTextMeasurementElement();
+    if (!measurementElement) {
         return fallbackMeasurement;
     }
 
-    const transformedText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
-    const lines = transformedText.split(/\r\n|\r|\n/);
+    const measurementInner = measurementElement.firstChild;
+    if (!(measurementInner instanceof HTMLElement)) {
+        return fallbackMeasurement;
+    }
+
+    const requestedWidth = Number.isFinite(style.boxWidthPx) && style.boxWidthPx > 0
+        ? style.boxWidthPx
+        : DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX;
+    const lineHeight = Number.isFinite(style.lineHeight) && style.lineHeight > 0
+        ? style.lineHeight
+        : 1.2;
+
+    measurementElement.style.width = `${Math.max(requestedWidth, 1)}px`;
+    measurementElement.style.padding = `${style.paddingBlock}px ${style.paddingInline}px`;
+    measurementElement.style.fontFamily = style.fontFamily;
+    measurementElement.style.fontWeight = String(style.fontWeight);
+    measurementElement.style.fontStyle = style.fontStyle;
+    measurementElement.style.fontSize = `${style.fontSize}px`;
+    measurementElement.style.color = style.color;
+    measurementElement.style.textDecoration = style.textDecoration;
+    measurementElement.style.textAlign = style.align;
+    measurementElement.style.lineHeight = `${lineHeight}`;
+    measurementElement.style.letterSpacing = `${style.letterSpacingScale}em`;
+    measurementElement.style.textTransform = style.transform || 'none';
+
+    measurementInner.style.fontFamily = style.fontFamily;
+    measurementInner.style.fontWeight = String(style.fontWeight);
+    measurementInner.style.fontStyle = style.fontStyle;
+    measurementInner.style.fontSize = `${style.fontSize}px`;
+    measurementInner.style.color = style.color;
+    measurementInner.style.textDecoration = style.textDecoration;
+    measurementInner.style.textAlign = style.align;
+    measurementInner.style.lineHeight = `${lineHeight}`;
+    measurementInner.style.letterSpacing = `${style.letterSpacingScale}em`;
+    measurementInner.style.textTransform = style.transform || 'none';
+
+    measurementInner.textContent = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
+
+    const totalRect = measurementElement.getBoundingClientRect();
+    const innerRect = measurementInner.getBoundingClientRect();
+
+    let totalWidthPx = Math.max(totalRect.width, 0);
+    let totalHeightPx = Math.max(totalRect.height, 0);
+    let contentWidthPx = Math.max(innerRect.width, 0);
+    let contentHeightPx = Math.max(innerRect.height, 0);
+
+    if (!Number.isFinite(totalWidthPx) || totalWidthPx <= 0) {
+        totalWidthPx = Math.max(requestedWidth, DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX);
+    }
+    if (!Number.isFinite(contentWidthPx) || contentWidthPx <= 0) {
+        contentWidthPx = Math.max(totalWidthPx - (style.paddingInline * 2), 0);
+    }
+    if (!Number.isFinite(contentHeightPx) || contentHeightPx <= 0) {
+        contentHeightPx = Math.max(totalHeightPx - (style.paddingBlock * 2), DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX);
+    }
+    if (!Number.isFinite(totalHeightPx) || totalHeightPx <= 0) {
+        totalHeightPx = Math.max(contentHeightPx + (style.paddingBlock * 2), DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX);
+    }
+
+    const lines = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL).split(/\r\n|\r|\n/);
     if (!lines.length) {
         lines.push('');
     }
-
-    const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
-    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
-    context.font = fontDescriptor;
-    context.textBaseline = 'alphabetic';
-    context.textAlign = 'left';
-
-    const letterSpacing = style.fontSize * style.letterSpacingScale;
-    const baseLineHeight = style.fontSize * 1.2;
-
-    let maxLineWidth = 0;
-    let totalContentHeight = 0;
-
-    lines.forEach((line) => {
-        const safeLine = line || '';
-        const metrics = context.measureText(safeLine || ' ');
-        const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-        const totalLetterSpacing = Math.max(0, safeLine.length - 1) * letterSpacing;
-        const lineWidth = Math.max(0, baseWidth + totalLetterSpacing);
-        if (lineWidth > maxLineWidth) {
-            maxLineWidth = lineWidth;
-        }
-
-        const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
-            ? metrics.actualBoundingBoxAscent
-            : style.fontSize * 0.82;
-        const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
-            ? metrics.actualBoundingBoxDescent
-            : style.fontSize * 0.18;
-        const measuredLineHeight = Math.max(ascent + descent, baseLineHeight);
-        totalContentHeight += measuredLineHeight;
-    });
-
-    if (!Number.isFinite(totalContentHeight) || totalContentHeight <= 0) {
-        totalContentHeight = baseLineHeight * lines.length;
-    }
-
-    const contentWidthPx = Math.max(maxLineWidth, 0);
-    const contentHeightPx = Math.max(totalContentHeight, 0);
-    const totalWidthPx = Math.max(contentWidthPx + (style.paddingInline * 2), 0);
-    const totalHeightPx = Math.max(contentHeightPx + (style.paddingBlock * 2), 0);
 
     const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
         ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
@@ -5112,11 +5181,11 @@ function measureDefaultTextTemplateContent(textContent = DEFAULT_TEXT_TEMPLATE_L
         style,
         lines,
         lineCount: lines.length,
-        lineHeightPx: baseLineHeight,
+        lineHeightPx: style.fontSize * lineHeight,
         contentWidthPx,
         contentHeightPx,
-        totalWidthPx,
-        totalHeightPx,
+        totalWidthPx: Math.max(totalWidthPx, scaledBaseWidthPx),
+        totalHeightPx: Math.max(totalHeightPx, scaledBaseHeightPx),
         scaledBaseWidthPx,
         scaledBaseHeightPx,
     };
@@ -5233,32 +5302,87 @@ function escapeSvgTextContent(content) {
 }
 
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
-    const style = resolveTextTemplateStyle(styleOverrides);
-    const transformedText = applyTextTransformToContent(textContent, style.transform);
-    const safeText = escapeSvgTextContent(transformedText);
-    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
-    const anchor = style.align === 'left'
-        ? 'start'
-        : (style.align === 'right' ? 'end' : 'middle');
-    let xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
-    if (style.align === 'left') {
-        xPosition = style.paddingInline;
-    } else if (style.align === 'right') {
-        xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
-    }
-    const letterSpacingScale = typeof clampTextLetterSpacing === 'function'
-        ? clampTextLetterSpacing(style.letterSpacingScale)
-        : style.letterSpacingScale;
-    const letterSpacingPx = style.fontSize * letterSpacingScale;
+    const measurement = measureDefaultTextTemplateContent(textContent, styleOverrides);
+    const style = measurement.style;
+
+    const rawText = String(textContent || DEFAULT_TEXT_TEMPLATE_LABEL);
+    const safeText = escapeSvgTextContent(rawText);
+    const textWithBreaks = safeText.replace(/\r\n|\r|\n/g, '<br/>');
+
+    const lineHeight = Number.isFinite(style.lineHeight) && style.lineHeight > 0
+        ? style.lineHeight
+        : 1.2;
+    const justifyContent = style.align === 'left'
+        ? 'flex-start'
+        : (style.align === 'right' ? 'flex-end' : 'center');
+    const textAlign = style.align === 'left'
+        ? 'left'
+        : (style.align === 'right' ? 'right' : 'center');
+
+    const hasExplicitWidth = Number.isFinite(style.boxWidthPx) && style.boxWidthPx > 0;
+    const hasExplicitHeight = Number.isFinite(style.boxHeightPx) && style.boxHeightPx > 0;
+
+    const widthCandidates = [
+        measurement.totalWidthPx,
+        measurement.scaledBaseWidthPx,
+        DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    const heightCandidates = [
+        measurement.totalHeightPx,
+        measurement.scaledBaseHeightPx,
+        DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+
+    const svgWidth = hasExplicitWidth
+        ? Math.max(1, Math.round(style.boxWidthPx))
+        : Math.max(1, Math.round(Math.max(...widthCandidates)));
+    const svgHeight = hasExplicitHeight
+        ? Math.max(1, Math.round(style.boxHeightPx))
+        : Math.max(1, Math.round(Math.max(...heightCandidates)));
+
+    const containerStyles = [
+        'width:100%',
+        'height:100%',
+        'display:flex',
+        'align-items:center',
+        `justify-content:${justifyContent}`,
+        'box-sizing:border-box',
+        `padding:${style.paddingBlock}px ${style.paddingInline}px`,
+        'background:transparent',
+        `color:${style.color}`,
+        `font-family:${style.fontFamily}`,
+        `font-weight:${style.fontWeight}`,
+        `font-style:${style.fontStyle}`,
+        `font-size:${style.fontSize}px`,
+        `letter-spacing:${style.letterSpacingScale}em`,
+        `text-decoration:${style.textDecoration}`,
+        `text-transform:${style.transform}`,
+        `text-align:${textAlign}`,
+        'white-space:pre-wrap',
+        'word-break:break-word',
+        'overflow-wrap:anywhere',
+        `line-height:${lineHeight}`,
+    ].join('; ');
+
+    const textBlockStyles = [
+        'margin:0',
+        'width:100%',
+        'white-space:inherit',
+        'word-break:inherit',
+        'overflow-wrap:inherit',
+    ].join('; ');
+
+    const safeContainerStyles = escapeSvgTextContent(containerStyles);
+    const safeTextBlockStyles = escapeSvgTextContent(textBlockStyles);
+
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <style>
-        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; font-style: ${style.fontStyle}; text-decoration: ${style.textDecoration}; }
-    </style>
-    <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" font-style="${style.fontStyle}" text-decoration="${style.textDecoration}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
-        ${safeText}
-    </text>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">
+    <rect width="${svgWidth}" height="${svgHeight}" fill="rgba(15,23,42,0.0)" />
+    <foreignObject width="${svgWidth}" height="${svgHeight}">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="${safeContainerStyles}">
+            <p style="${safeTextBlockStyles}">${textWithBreaks}</p>
+        </div>
+    </foreignObject>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);

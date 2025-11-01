@@ -400,6 +400,7 @@ const DEFAULT_TEXT_STYLE = {
     color: '#F8FAFC',
     align: 'center',
     transform: 'none',
+    lineHeight: 1.2,
 };
 
 const previewTextEditorState = {
@@ -1085,12 +1086,59 @@ function regenerateDefaultTextOverlayAssets(timelineItem, styleOverride = null, 
     const autoScale = updateTimelineTextAutoScale(timelineItem, resolvedStyle);
     const scaledStyle = applyAutoScaleToTextTemplateStyle(resolvedStyle, autoScale) || resolvedStyle;
 
+    const resolveFramePixels = () => {
+        if (previewTextEditorState.isEnabled
+            && previewTextEditorState.currentItem
+            && previewTextEditorState.currentItem === timelineItem
+            && previewImageTransform
+            && Number.isFinite(previewImageTransform.width)
+            && Number.isFinite(previewImageTransform.height)) {
+            return {
+                width: Math.max(0, previewImageTransform.width),
+                height: Math.max(0, previewImageTransform.height),
+            };
+        }
+
+        const storedTransform = getStoredPreviewImageTransform(timelineItem);
+        const viewportSize = typeof getPreviewViewportSize === 'function'
+            ? getPreviewViewportSize()
+            : null;
+
+        if (storedTransform
+            && viewportSize
+            && typeof denormalizePreviewImageTransform === 'function') {
+            const denormalized = denormalizePreviewImageTransform(storedTransform, viewportSize);
+            if (denormalized
+                && Number.isFinite(denormalized.width)
+                && Number.isFinite(denormalized.height)) {
+                return {
+                    width: Math.max(0, denormalized.width),
+                    height: Math.max(0, denormalized.height),
+                };
+            }
+        }
+
+        return null;
+    };
+
+    const framePixels = resolveFramePixels();
+    const renderStyle = {
+        ...scaledStyle,
+    };
+
+    if (framePixels && Number.isFinite(framePixels.width)) {
+        renderStyle.boxWidthPx = framePixels.width;
+    }
+    if (framePixels && Number.isFinite(framePixels.height)) {
+        renderStyle.boxHeightPx = framePixels.height;
+    }
+
     const previousObjectUrl = timelineItem.dataset.objectUrl || '';
     let nextObjectUrl = previousObjectUrl;
 
     if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
         try {
-            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName, scaledStyle);
+            nextObjectUrl = window.createDefaultTextOverlayObjectURL(displayName, renderStyle);
         } catch (error) {
             console.warn('Failed to generate text overlay preview.', error);
             nextObjectUrl = previousObjectUrl;
