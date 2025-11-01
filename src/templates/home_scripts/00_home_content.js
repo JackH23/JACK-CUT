@@ -132,6 +132,26 @@ const previewRulerElements = previewGuidesLayer
 const previewPlaceholder = document.getElementById('preview-placeholder');
 const defaultPreviewPlaceholderText = previewPlaceholder ? previewPlaceholder.textContent : '';
 
+function getPreviewViewportPointerScale() {
+    if (!previewViewport) {
+        return { scaleX: 1, scaleY: 1 };
+    }
+
+    const rect = typeof previewViewport.getBoundingClientRect === 'function'
+        ? previewViewport.getBoundingClientRect()
+        : { width: previewViewport.clientWidth, height: previewViewport.clientHeight };
+
+    const logicalWidth = Math.max(1, previewViewport.clientWidth || 0);
+    const logicalHeight = Math.max(1, previewViewport.clientHeight || 0);
+    const rectWidth = Math.max(1, rect?.width || 0);
+    const rectHeight = Math.max(1, rect?.height || 0);
+
+    return {
+        scaleX: logicalWidth / rectWidth,
+        scaleY: logicalHeight / rectHeight,
+    };
+}
+
 if (previewImage) {
     try {
         previewImage.decoding = 'async';

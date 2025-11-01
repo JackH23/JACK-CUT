@@ -1844,6 +1844,16 @@ function onPreviewImagePointerDown(event) {
         && (event.target === previewTextEditor || previewTextEditor.contains(event.target));
 
     if (targetIsTextEditor) {
+        const pointerScale = typeof getPreviewViewportPointerScale === 'function'
+            ? getPreviewViewportPointerScale()
+            : { scaleX: 1, scaleY: 1 };
+        const scaleX = Number.isFinite(pointerScale?.scaleX) && pointerScale.scaleX > 0
+            ? pointerScale.scaleX
+            : 1;
+        const scaleY = Number.isFinite(pointerScale?.scaleY) && pointerScale.scaleY > 0
+            ? pointerScale.scaleY
+            : 1;
+
         previewImagePointerState.pointerId = event.pointerId;
         previewImagePointerState.mode = 'text-edit';
         previewImagePointerState.handle = 'se';
@@ -1857,6 +1867,8 @@ function onPreviewImagePointerDown(event) {
             aspectRatio: previewImageTransform.aspectRatio || 1,
             oppositeX: previewImageTransform.left + previewImageTransform.width,
             oppositeY: previewImageTransform.top + previewImageTransform.height,
+            scaleX,
+            scaleY,
         };
         return;
     }
@@ -1872,6 +1884,16 @@ function onPreviewImagePointerDown(event) {
         captureTarget.setPointerCapture(event.pointerId);
     }
 
+    const pointerScale = typeof getPreviewViewportPointerScale === 'function'
+        ? getPreviewViewportPointerScale()
+        : { scaleX: 1, scaleY: 1 };
+    const scaleX = Number.isFinite(pointerScale?.scaleX) && pointerScale.scaleX > 0
+        ? pointerScale.scaleX
+        : 1;
+    const scaleY = Number.isFinite(pointerScale?.scaleY) && pointerScale.scaleY > 0
+        ? pointerScale.scaleY
+        : 1;
+
     previewImagePointerState.pointerId = event.pointerId;
     previewImagePointerState.mode = handleElement ? 'resize' : 'drag';
     previewImagePointerState.handle = handleElement?.dataset.handle || 'se';
@@ -1885,6 +1907,8 @@ function onPreviewImagePointerDown(event) {
         aspectRatio: previewImageTransform.aspectRatio || 1,
         oppositeX: previewImageTransform.left + previewImageTransform.width,
         oppositeY: previewImageTransform.top + previewImageTransform.height,
+        scaleX,
+        scaleY,
     };
 
     if (previewImagePointerState.mode === 'resize') {
@@ -1912,8 +1936,11 @@ function onPreviewImagePointerMove(event) {
         return;
     }
 
-    const deltaX = event.clientX - previewImagePointerState.origin.pointerX;
-    const deltaY = event.clientY - previewImagePointerState.origin.pointerY;
+    const origin = previewImagePointerState.origin || {};
+    const scaleX = Number.isFinite(origin.scaleX) && origin.scaleX > 0 ? origin.scaleX : 1;
+    const scaleY = Number.isFinite(origin.scaleY) && origin.scaleY > 0 ? origin.scaleY : 1;
+    const deltaX = (event.clientX - origin.pointerX) * scaleX;
+    const deltaY = (event.clientY - origin.pointerY) * scaleY;
 
     if (previewImagePointerState.mode === 'text-edit') {
         const threshold = PREVIEW_TEXT_DRAG_THRESHOLD;

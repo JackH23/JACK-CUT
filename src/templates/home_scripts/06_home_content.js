@@ -1146,6 +1146,16 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
         ? entry.frame.width / entry.frame.height
         : 1;
 
+    const pointerScale = typeof getPreviewViewportPointerScale === 'function'
+        ? getPreviewViewportPointerScale()
+        : { scaleX: 1, scaleY: 1 };
+    const scaleX = Number.isFinite(pointerScale?.scaleX) && pointerScale.scaleX > 0
+        ? pointerScale.scaleX
+        : 1;
+    const scaleY = Number.isFinite(pointerScale?.scaleY) && pointerScale.scaleY > 0
+        ? pointerScale.scaleY
+        : 1;
+
     overlayPointerState.pointerId = pointerId;
     overlayPointerState.timelineItem = timelineItem;
     overlayPointerState.mode = mode;
@@ -1161,6 +1171,8 @@ function beginOverlayPointerInteraction(event, timelineItem, layer) {
         oppositeX: entry.frame.left + entry.frame.width,
         oppositeY: entry.frame.top + entry.frame.height,
         rotation: Number.isFinite(entry.frame.rotation) ? entry.frame.rotation : 0,
+        scaleX,
+        scaleY,
     };
     overlayPointerState.layer = layer;
     overlayPointerState.captureTarget = captureTarget || null;
@@ -1252,8 +1264,10 @@ function onOverlayPointerMove(event) {
         return;
     }
 
-    const deltaX = event.clientX - origin.pointerX;
-    const deltaY = event.clientY - origin.pointerY;
+    const scaleX = Number.isFinite(origin.scaleX) && origin.scaleX > 0 ? origin.scaleX : 1;
+    const scaleY = Number.isFinite(origin.scaleY) && origin.scaleY > 0 ? origin.scaleY : 1;
+    const deltaX = (event.clientX - origin.pointerX) * scaleX;
+    const deltaY = (event.clientY - origin.pointerY) * scaleY;
 
     let nextTransform;
     if (mode === 'resize') {
