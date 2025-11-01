@@ -3562,7 +3562,7 @@ async function stageUpload(file) {
     let previewController = null;
 
     if (isImage) {
-        const img = document.createElement('img');
+        const img = applyAnonymousCrossOrigin(document.createElement('img'));
         img.src = objectURL;
         img.alt = file.name;
         img.loading = 'lazy';
@@ -3573,7 +3573,7 @@ async function stageUpload(file) {
         }
         previewWrapper.appendChild(img);
     } else if (isVideo) {
-        const video = document.createElement('video');
+        const video = applyAnonymousCrossOrigin(document.createElement('video'));
         video.src = objectURL;
         video.muted = true;
         video.playsInline = true;
@@ -3669,7 +3669,7 @@ function safeCanvasToDataURL(canvas, type, fallbackValue) {
 
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {
     return new Promise((resolve) => {
-        const img = new Image();
+        const img = applyAnonymousCrossOrigin(new Image());
         img.onload = () => {
             const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
             const width = Math.max(1, Math.round(img.width * scale));
@@ -4065,7 +4065,7 @@ function applyCachedWaveform(canvas, cacheEntry, options = {}) {
         canvas.height = height;
     }
 
-    const image = new Image();
+    const image = applyAnonymousCrossOrigin(new Image());
     image.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
@@ -4203,8 +4203,11 @@ async function prepareAudioTimelineVisuals(timelineItem, file, objectURL, wavefo
     }
 
     await new Promise((resolve) => {
-        const audio = new Audio();
+        const audio = applyAnonymousCrossOrigin(new Audio());
         audio.preload = 'metadata';
+        if ('crossOrigin' in audio) {
+            audio.crossOrigin = 'anonymous';
+        }
         audio.src = objectURL;
         audio.addEventListener('loadedmetadata', () => {
             if (Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -4366,9 +4369,9 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
             const container = getSupplementalAudioContainer();
             let element = null;
             if (typeof Audio !== 'undefined') {
-                element = new Audio();
+                element = applyAnonymousCrossOrigin(new Audio());
             } else if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
-                element = document.createElement('audio');
+                element = applyAnonymousCrossOrigin(document.createElement('audio'));
             }
             if (!element) {
                 return;
@@ -4376,7 +4379,9 @@ function syncSupplementalOverlayPlayers(audioEntries, options = {}) {
             element.hidden = true;
             element.setAttribute('aria-hidden', 'true');
             element.preload = 'auto';
-            element.crossOrigin = 'anonymous';
+            if ('crossOrigin' in element) {
+                element.crossOrigin = 'anonymous';
+            }
             if (container) {
                 container.appendChild(element);
             }
@@ -4760,7 +4765,7 @@ async function addToTimeline(file, objectURL) {
     removeButton.textContent = '✕';
 
     if (file.type.startsWith('video/')) {
-        const videoThumb = document.createElement('video');
+        const videoThumb = applyAnonymousCrossOrigin(document.createElement('video'));
         videoThumb.src = objectURL;
         videoThumb.muted = true;
         videoThumb.loop = true;
@@ -4796,7 +4801,7 @@ async function addToTimeline(file, objectURL) {
         });
         timelineItem.appendChild(videoThumb);
     } else if (file.type.startsWith('image/')) {
-        const imageThumb = document.createElement('img');
+        const imageThumb = applyAnonymousCrossOrigin(document.createElement('img'));
         imageThumb.className = 'timeline-thumbnail';
         imageThumb.src = await generateImageThumbnail(objectURL);
         imageThumb.alt = file.name;
@@ -5321,7 +5326,7 @@ async function addDefaultTextOverlayToTimeline() {
     removeButton.textContent = '✕';
 
     try {
-        const thumbnail = document.createElement('img');
+        const thumbnail = applyAnonymousCrossOrigin(document.createElement('img'));
         thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
         thumbnail.src = await generateImageThumbnail(objectURL);
         thumbnail.alt = DEFAULT_TEXT_TEMPLATE_LABEL;

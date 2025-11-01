@@ -221,7 +221,7 @@ function preloadTimelineImage(objectURL) {
     }
 
     const preloadPromise = new Promise((resolve, reject) => {
-        const image = new Image();
+        const image = applyAnonymousCrossOrigin(new Image());
         image.decoding = 'async';
 
         let settled = false;
@@ -286,7 +286,7 @@ function preloadTimelineVideo(objectURL) {
         return cachedRecord.promise;
     }
 
-    const video = document.createElement('video');
+    const video = applyAnonymousCrossOrigin(document.createElement('video'));
     video.preload = 'auto';
     video.muted = true;
     video.playsInline = true;
@@ -446,7 +446,7 @@ function preloadTimelineAudio(objectURL) {
         return cachedRecord.promise;
     }
 
-    const audio = document.createElement('audio');
+    const audio = applyAnonymousCrossOrigin(document.createElement('audio'));
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
 

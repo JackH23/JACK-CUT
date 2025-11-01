@@ -6,10 +6,33 @@ const uploadGallery = document.getElementById('upload-gallery');
 const uploadGalleryList = document.getElementById('upload-gallery-list');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
-const previewVideo = document.getElementById('preview-video');
-const previewAudio = document.getElementById('preview-audio');
+const previewVideo = applyAnonymousCrossOrigin(document.getElementById('preview-video'));
+const previewAudio = applyAnonymousCrossOrigin(document.getElementById('preview-audio'));
 let activeAudioOverlayEntry = null;
 const overlayAudioElementRegistry = new Map();
+
+function applyAnonymousCrossOrigin(element) {
+    if (!element) {
+        return element;
+    }
+
+    try {
+        if ('crossOrigin' in element) {
+            element.crossOrigin = 'anonymous';
+        }
+        if (typeof element.setAttribute === 'function') {
+            element.setAttribute('crossorigin', 'anonymous');
+        }
+    } catch (error) {
+        // Ignore failures when updating cross origin configuration.
+    }
+
+    return element;
+}
+
+if (typeof window !== 'undefined' && typeof window.applyAnonymousCrossOrigin !== 'function') {
+    window.applyAnonymousCrossOrigin = applyAnonymousCrossOrigin;
+}
 
 function registerOverlayAudioElement(timelineItem, mediaElement) {
     if (!timelineItem || !mediaElement) {
@@ -39,7 +62,7 @@ function getOverlayAudioElementForItem(timelineItem) {
 function getActiveOverlayAudioElements() {
     return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
 }
-const previewImage = document.getElementById('preview-image');
+const previewImage = applyAnonymousCrossOrigin(document.getElementById('preview-image'));
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
 let lastPreviewImageBlurValue = null;
@@ -47,8 +70,8 @@ const previewImageLayer = document.getElementById('preview-image-layer');
 const previewImageFrame = document.getElementById('preview-image-frame');
 const previewTextEditor = document.getElementById('preview-text-editor');
 const previewCanvasBackdrop = document.getElementById('preview-canvas-backdrop');
-const previewCanvasVideo = document.getElementById('preview-canvas-video');
-const previewCanvasImage = document.getElementById('preview-canvas-image');
+const previewCanvasVideo = applyAnonymousCrossOrigin(document.getElementById('preview-canvas-video'));
+const previewCanvasImage = applyAnonymousCrossOrigin(document.getElementById('preview-canvas-image'));
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];

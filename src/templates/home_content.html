@@ -76,6 +76,7 @@
                         <div class="preview-canvas-backdrop" id="preview-canvas-backdrop" hidden aria-hidden="true">
                             <video
                                 id="preview-canvas-video"
+                                crossorigin="anonymous"
                                 muted
                                 loop
                                 playsinline
@@ -83,18 +84,18 @@
                                 hidden
                                 aria-hidden="true"
                             ></video>
-                            <img id="preview-canvas-image" alt="Canvas background" hidden aria-hidden="true">
+                            <img id="preview-canvas-image" alt="Canvas background" hidden aria-hidden="true" crossorigin="anonymous">
                         </div>
                         <span id="preview-placeholder">Drop clips here to preview your edit</span>
-                        <video id="preview-video" controls hidden preload="auto" playsinline></video>
-                        <audio id="preview-audio" preload="auto" hidden aria-hidden="true"></audio>
+                        <video id="preview-video" controls hidden preload="auto" playsinline crossorigin="anonymous"></video>
+                        <audio id="preview-audio" preload="auto" hidden aria-hidden="true" crossorigin="anonymous"></audio>
                         <div class="preview-overlay-stack" id="preview-overlay-stack" hidden aria-hidden="true">
                             <div class="preview-overlay-stack__group preview-overlay-stack__group--below" data-layer-group="below"></div>
                             <div class="preview-overlay-stack__group preview-overlay-stack__group--above" data-layer-group="above"></div>
                         </div>
                         <div class="preview-image-layer" id="preview-image-layer" hidden>
                             <div class="preview-image-frame" id="preview-image-frame" role="presentation">
-                                <img id="preview-image" alt="Preview" hidden>
+                                <img id="preview-image" alt="Preview" hidden crossorigin="anonymous">
                                 <div
                                     id="preview-text-editor"
                                     class="preview-text-editor"
