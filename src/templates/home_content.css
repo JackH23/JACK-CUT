@@ -2684,6 +2684,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     pointer-events: auto;
     padding: 0;
     z-index: 80;
+    --preview-resize-handle-inset: clamp(8px, 1.6vw, 14px);
 }
 
 .preview-resize-handle:focus-visible {
@@ -2692,52 +2693,52 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .preview-resize-handle.handle-nw {
-    top: -9px;
-    left: -9px;
+    top: var(--preview-resize-handle-inset);
+    left: var(--preview-resize-handle-inset);
     cursor: nwse-resize;
 }
 
 .preview-resize-handle.handle-ne {
-    top: -9px;
-    right: -9px;
+    top: var(--preview-resize-handle-inset);
+    right: var(--preview-resize-handle-inset);
     cursor: nesw-resize;
 }
 
 .preview-resize-handle.handle-n {
-    top: -9px;
+    top: var(--preview-resize-handle-inset);
     left: 50%;
     transform: translate(-50%, 0);
     cursor: ns-resize;
 }
 
 .preview-resize-handle.handle-se {
-    bottom: -9px;
-    right: -9px;
+    bottom: var(--preview-resize-handle-inset);
+    right: var(--preview-resize-handle-inset);
     cursor: nwse-resize;
 }
 
 .preview-resize-handle.handle-sw {
-    bottom: -9px;
-    left: -9px;
+    bottom: var(--preview-resize-handle-inset);
+    left: var(--preview-resize-handle-inset);
     cursor: nesw-resize;
 }
 
 .preview-resize-handle.handle-s {
-    bottom: -9px;
+    bottom: var(--preview-resize-handle-inset);
     left: 50%;
     transform: translate(-50%, 0);
     cursor: ns-resize;
 }
 
 .preview-resize-handle.handle-e {
-    right: -9px;
+    right: var(--preview-resize-handle-inset);
     top: 50%;
     transform: translate(0, -50%);
     cursor: ew-resize;
 }
 
 .preview-resize-handle.handle-w {
-    left: -9px;
+    left: var(--preview-resize-handle-inset);
     top: 50%;
     transform: translate(0, -50%);
     cursor: ew-resize;
