@@ -4928,6 +4928,7 @@ const DEFAULT_TEXT_TEMPLATE_WIDTH = 0.45;
 const DEFAULT_TEXT_TEMPLATE_HEIGHT = DEFAULT_TEXT_TEMPLATE_WIDTH / DEFAULT_TEXT_TEMPLATE_ASPECT_RATIO;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH = 1920;
 const DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT = 1080;
+const DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT = 1.2;
 const DEFAULT_TEXT_TEMPLATE_FONT_SIZE = 120;
 const DEFAULT_TEXT_TEMPLATE_MIN_WIDTH = 0.18;
 const DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH * DEFAULT_TEXT_TEMPLATE_WIDTH;
@@ -5053,34 +5054,47 @@ function calculateDefaultTextTemplateTransform(textContent = DEFAULT_TEXT_TEMPLA
 
     const measuredText = applyTextTransformToContent(textContent || DEFAULT_TEXT_TEMPLATE_LABEL, style.transform);
     const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
-    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
+    const safeFontSize = Number.isFinite(style.fontSize) && style.fontSize > 0
+        ? style.fontSize
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
+    const fontDescriptor = `${fontStyle} ${style.fontWeight} ${safeFontSize}px ${style.fontFamily}`;
     context.font = fontDescriptor;
     context.textBaseline = 'alphabetic';
     context.textAlign = 'left';
 
-    const metrics = context.measureText(measuredText);
-    const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
-    const letterSpacing = style.fontSize * style.letterSpacingScale;
-    const totalLetterSpacing = Math.max(0, measuredText.length - 1) * letterSpacing;
-    const measuredWidth = Math.max(0, baseWidth + totalLetterSpacing);
+    const lines = measuredText.split(/\r?\n/);
+    const safeLines = lines.length ? lines : [''];
+    const safePaddingInline = Number.isFinite(style.paddingInline)
+        ? Math.max(style.paddingInline, 0)
+        : DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    const safePaddingBlock = Number.isFinite(style.paddingBlock)
+        ? Math.max(style.paddingBlock, 0)
+        : DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    const letterSpacing = safeFontSize * style.letterSpacingScale;
 
-    const ascent = Number.isFinite(metrics.actualBoundingBoxAscent)
-        ? metrics.actualBoundingBoxAscent
-        : style.fontSize * 0.82;
-    const descent = Number.isFinite(metrics.actualBoundingBoxDescent)
-        ? metrics.actualBoundingBoxDescent
-        : style.fontSize * 0.18;
-    const measuredHeight = Math.max(0, ascent + descent);
+    let maxLineWidth = 0;
+    safeLines.forEach((line) => {
+        const metrics = context.measureText(line);
+        const baseWidth = Number.isFinite(metrics.width) ? metrics.width : 0;
+        const spacing = Math.max(0, line.length - 1) * letterSpacing;
+        const lineWidth = Math.max(0, baseWidth + spacing);
+        if (lineWidth > maxLineWidth) {
+            maxLineWidth = lineWidth;
+        }
+    });
 
-    const totalWidthPx = measuredWidth + (style.paddingInline * 2);
-    const totalHeightPx = measuredHeight + (style.paddingBlock * 2);
+    const lineHeightPx = Math.max(safeFontSize * DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT, safeFontSize);
+    const totalTextHeight = lineHeightPx * safeLines.length;
+
+    const totalWidthPx = maxLineWidth + (safePaddingInline * 2);
+    const totalHeightPx = totalTextHeight + (safePaddingBlock * 2);
 
     if (!Number.isFinite(totalWidthPx) || !Number.isFinite(totalHeightPx) || totalWidthPx <= 0 || totalHeightPx <= 0) {
         return fallback;
     }
 
-    const fontScale = Number.isFinite(style.fontSize) && style.fontSize > 0
-        ? style.fontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
+    const fontScale = Number.isFinite(safeFontSize) && safeFontSize > 0
+        ? safeFontSize / DEFAULT_TEXT_TEMPLATE_FONT_SIZE
         : 1;
     const scaledBaseWidthPx = DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX * Math.max(fontScale, 0.1);
     const scaledBaseHeightPx = DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX * Math.max(fontScale, 0.1);
@@ -5148,11 +5162,12 @@ if (typeof window !== 'undefined') {
     window.DEFAULT_TEXT_TEMPLATE_FONT_SIZE = DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
     window.DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING = DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
     window.DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING = DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    window.DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT = DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT;
     window.calculateDefaultTextTemplateTransform = calculateDefaultTextTemplateTransform;
     window.createDefaultTextOverlayObjectURL = createDefaultTextOverlayObjectURL;
 }
 
-function escapeSvgTextContent(content) {
+function escapeForeignObjectContent(content) {
     return String(content || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -5164,30 +5179,38 @@ function escapeSvgTextContent(content) {
 function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_LABEL, styleOverrides = {}) {
     const style = resolveTextTemplateStyle(styleOverrides);
     const transformedText = applyTextTransformToContent(textContent, style.transform);
-    const safeText = escapeSvgTextContent(transformedText);
-    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
-    const anchor = style.align === 'left'
-        ? 'start'
-        : (style.align === 'right' ? 'end' : 'middle');
-    let xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH / 2;
-    if (style.align === 'left') {
-        xPosition = style.paddingInline;
-    } else if (style.align === 'right') {
-        xPosition = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH - style.paddingInline;
-    }
+    const safeFontSize = Number.isFinite(style.fontSize) && style.fontSize > 0
+        ? style.fontSize
+        : DEFAULT_TEXT_TEMPLATE_FONT_SIZE;
     const letterSpacingScale = typeof clampTextLetterSpacing === 'function'
         ? clampTextLetterSpacing(style.letterSpacingScale)
         : style.letterSpacingScale;
-    const letterSpacingPx = style.fontSize * letterSpacingScale;
+    const letterSpacingPx = safeFontSize * letterSpacingScale;
+    const safePaddingInline = Number.isFinite(style.paddingInline)
+        ? Math.max(style.paddingInline, 0)
+        : DEFAULT_TEXT_TEMPLATE_HORIZONTAL_PADDING;
+    const safePaddingBlock = Number.isFinite(style.paddingBlock)
+        ? Math.max(style.paddingBlock, 0)
+        : DEFAULT_TEXT_TEMPLATE_VERTICAL_PADDING;
+    const safeText = escapeForeignObjectContent(transformedText)
+        .replace(/\r?\n/g, '<br />');
+    const justifyContent = style.align === 'left'
+        ? 'flex-start'
+        : (style.align === 'right' ? 'flex-end' : 'center');
+    const textAlign = style.align === 'left'
+        ? 'left'
+        : (style.align === 'right' ? 'right' : 'center');
+    const sanitizedFontFamily = style.fontFamily.replace(/"/g, '\\"');
+    const textDecoration = style.textDecoration || 'none';
+    const transformStyle = style.transform || 'none';
     const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" viewBox="0 0 ${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH} ${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
-    <style>
-        text { font-family: ${sanitizedFontFamily}; font-weight: ${style.fontWeight}; font-style: ${style.fontStyle}; text-decoration: ${style.textDecoration}; }
-    </style>
     <rect width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}" fill="rgba(15,23,42,0.0)" />
-    <text x="${xPosition}" y="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT / 2}" fill="${style.color}" font-size="${style.fontSize}" font-weight="${style.fontWeight}" font-style="${style.fontStyle}" text-decoration="${style.textDecoration}" text-anchor="${anchor}" dominant-baseline="middle" letter-spacing="${letterSpacingPx}">
-        ${safeText}
-    </text>
+    <foreignObject x="0" y="0" width="${DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH}" height="${DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT}">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:${justifyContent};width:100%;height:100%;box-sizing:border-box;padding:${safePaddingBlock}px ${safePaddingInline}px;margin:0;color:${style.color};font-family:${sanitizedFontFamily};font-weight:${style.fontWeight};font-style:${style.fontStyle};font-size:${safeFontSize}px;line-height:${DEFAULT_TEXT_TEMPLATE_LINE_HEIGHT};letter-spacing:${letterSpacingPx}px;text-align:${textAlign};text-decoration:${textDecoration};text-transform:${transformStyle};white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:transparent;">
+            <span style="display:block;width:100%;">${safeText}</span>
+        </div>
+    </foreignObject>
 </svg>`;
     const blob = new Blob([svg], { type: 'image/svg+xml' });
     return URL.createObjectURL(blob);

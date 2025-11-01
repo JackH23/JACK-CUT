@@ -569,6 +569,14 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
         return false;
     }
 
+    if (typeof commitPreviewTextEditorContent === 'function') {
+        try {
+            commitPreviewTextEditorContent({ force: true });
+        } catch (error) {
+            console.warn('Unable to commit pending text edits before playback.', error);
+        }
+    }
+
     const playbackState = playbackContext?.playbackState || getTimelinePlaybackSegments();
     const laneCache = playbackState?.laneCache || null;
     const segments = Array.isArray(playbackState?.segments)
@@ -1687,6 +1695,14 @@ async function resolveExportEncodingConfig(exportFormat, resolution, options = {
 }
 
 function prepareExportPlaybackContext(existingItems = null) {
+    if (typeof commitPreviewTextEditorContent === 'function') {
+        try {
+            commitPreviewTextEditorContent({ force: true });
+        } catch (error) {
+            console.warn('Unable to commit pending text edits before export.', error);
+        }
+    }
+    
     const timelineItems = Array.isArray(existingItems)
         ? existingItems
         : getTimelineItems();
