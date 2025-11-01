@@ -203,6 +203,9 @@ function commitPreviewImageFrameState(state) {
     previewImageFrame.style.transform = `translate3d(${left}px, ${top}px, 0)`;
     previewImageFrame.style.width = `${width}px`;
     previewImageFrame.style.height = `${height}px`;
+    if (typeof updatePreviewResizeHandlePositions === 'function') {
+        updatePreviewResizeHandlePositions(width, height, rotation);
+    }
 
     if (previewTextEditor) {
         if (!previewTextEditor.hidden) {
