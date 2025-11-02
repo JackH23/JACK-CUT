@@ -466,7 +466,13 @@
             animationFrameId = window.requestAnimationFrame(step);
 
             if (exitConfig && clipPlaysToEnd && safeEffectiveDuration === 0) {
-                startExitAnimation({ force: true });
+                // When there is no playback window remaining we previously forced
+                // the exit animation to run which removed the current frame before
+                // the next clip had a chance to render. That caused a brief flash
+                // at clip boundaries. Instead, skip triggering the exit animation
+                // and resolve the completion promise immediately so the existing
+                // frame stays visible until the next clip is ready.
+                markExitAnimationComplete();
             }
 
             let timeoutId = 0;
