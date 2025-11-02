@@ -154,6 +154,14 @@ const OVERLAY_TIMELINE_EDGE_TOLERANCE_MS = Math.max(
     OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2,
     24,
 );
+// Ensure we keep overlays resident long enough to bridge frame boundaries when
+// clips end together, even if playback stutters for a few frames. This value is
+// reused by the preview renderer and export pipeline.
+const OVERLAY_RECENT_HOLD_THRESHOLD_MS = Math.max(
+    OVERLAY_TIMELINE_WINDOW_SLACK_MS * 8,
+    OVERLAY_TIMELINE_EDGE_TOLERANCE_MS * 3,
+    96,
+);
 const timelineDragPreviewElements = new WeakMap();
 const timelineDragPointerOffsets = new WeakMap();
 const previewOutsideIndicator = document.getElementById('preview-outside-indicator');

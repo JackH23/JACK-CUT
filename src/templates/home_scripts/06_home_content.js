@@ -235,7 +235,10 @@
         });
     }
 
-        const recentOverlayHoldThreshold = OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6;
+    const recentOverlayHoldThreshold = Math.max(
+        Number(OVERLAY_RECENT_HOLD_THRESHOLD_MS) || 0,
+        OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6,
+    );
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -888,7 +891,11 @@ function getActiveOverlayLayerSnapshots() {
 
         if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
             const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
-            if (age > (OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2)) {
+            const snapshotHoldThreshold = Math.max(
+                OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2,
+                Number(OVERLAY_RECENT_HOLD_THRESHOLD_MS) || 0,
+            );
+            if (age > snapshotHoldThreshold) {
                 return;
             }
         }
