@@ -2262,14 +2262,30 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
+    const activeEntry = getOverlayEntryForDescriptor(descriptor);
+    const resolveEntryOpacity = (entry) => {
+        if (!entry) {
+            return 0;
+        }
+        if (Number.isFinite(entry.opacity)) {
+            return entry.opacity;
+        }
+        if (Number.isFinite(entry.renderedOpacity)) {
+            return entry.renderedOpacity;
+        }
+        return 0;
+    };
+    const previousOpacity = resolveEntryOpacity(activeEntry);
+
     const overshoot = effectiveTimelineNow - descriptorEnd;
-    if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) {
-        const activeEntry = getOverlayEntryForDescriptor(descriptor);
-        const previousOpacity = Number.isFinite(activeEntry?.opacity)
-            ? activeEntry.opacity
-            : 0;
-        if (previousOpacity <= 0) {
-            return false;
+    if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS && previousOpacity <= 0) {
+        return false;
+    }
+
+    if (overshoot >= 0) {
+        const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0);
+        if (overshoot <= tolerance && previousOpacity > 0 && activeEntry?.isVisible) {
+            return true;
         }
     }
 
