@@ -1426,6 +1426,9 @@ function refreshActiveOverlayLayers() {
         if (previewImage) {
             previewImage.style.removeProperty('mix-blend-mode');
         }
+        if (previewImageBuffer) {
+            previewImageBuffer.style.removeProperty('mix-blend-mode');
+        }
         clearPreviewOverlayLayers();
         return;
     }

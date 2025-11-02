@@ -40,6 +40,8 @@ function getActiveOverlayAudioElements() {
     return Array.from(new Set(overlayAudioElementRegistry.values())).filter(Boolean);
 }
 const previewImage = document.getElementById('preview-image');
+const previewImageBuffer = document.getElementById('preview-image-buffer');
+let previewImageBufferCleanupTimer = 0;
 const PREVIEW_IMAGE_BLUR_PRECISION = 2;
 const PREVIEW_IMAGE_BLUR_EPSILON = 1 / (10 ** (PREVIEW_IMAGE_BLUR_PRECISION + 1));
 let lastPreviewImageBlurValue = null;
@@ -234,6 +236,100 @@ if (previewImage) {
     }
 }
 
+function resetPreviewImageBufferState() {
+    if (!previewImageBuffer) {
+        return;
+    }
+
+    previewImageBuffer.hidden = true;
+    previewImageBuffer.removeAttribute('src');
+    previewImageBuffer.className = 'preview-image-buffer';
+    previewImageBuffer.style.cssText = '';
+    delete previewImageBuffer.dataset.enterAnimation;
+    delete previewImageBuffer.dataset.exitAnimation;
+}
+
+function activatePreviewImageBuffer() {
+    if (!previewImage || !previewImageBuffer) {
+        return false;
+    }
+
+    if (previewImage.hidden || !previewImage.classList.contains('is-visible')) {
+        return false;
+    }
+
+    const source = previewImage.currentSrc || previewImage.src;
+    if (!source) {
+        return false;
+    }
+
+    window.clearTimeout(previewImageBufferCleanupTimer);
+    previewImageBufferCleanupTimer = 0;
+
+    previewImageBuffer.hidden = false;
+    previewImageBuffer.src = source;
+    previewImageBuffer.className = 'preview-image-buffer';
+
+    previewImage.classList.forEach((className) => {
+        if (!className || className === 'is-entering' || className === 'is-exiting') {
+            return;
+        }
+        previewImageBuffer.classList.add(className);
+    });
+    previewImageBuffer.classList.add('is-visible');
+
+    if (previewImage.style && previewImage.style.cssText) {
+        previewImageBuffer.style.cssText = previewImage.style.cssText;
+    } else {
+        previewImageBuffer.style.cssText = '';
+    }
+
+    if (previewImage.dataset && previewImage.dataset.enterAnimation) {
+        previewImageBuffer.dataset.enterAnimation = previewImage.dataset.enterAnimation;
+    } else {
+        delete previewImageBuffer.dataset.enterAnimation;
+    }
+
+    if (previewImage.dataset && previewImage.dataset.exitAnimation) {
+        previewImageBuffer.dataset.exitAnimation = previewImage.dataset.exitAnimation;
+    } else {
+        delete previewImageBuffer.dataset.exitAnimation;
+    }
+
+    return true;
+}
+
+function deactivatePreviewImageBuffer(options = {}) {
+    if (!previewImageBuffer) {
+        return;
+    }
+
+    const { immediate = false } = options;
+
+    function cleanup() {
+        previewImageBuffer.removeEventListener('transitionend', handleTransitionEnd);
+        resetPreviewImageBufferState();
+    }
+
+    function handleTransitionEnd() {
+        window.clearTimeout(previewImageBufferCleanupTimer);
+        previewImageBufferCleanupTimer = 0;
+        cleanup();
+    }
+
+    if (immediate || previewImageBuffer.hidden) {
+        window.clearTimeout(previewImageBufferCleanupTimer);
+        previewImageBufferCleanupTimer = 0;
+        cleanup();
+        return;
+    }
+
+    previewImageBuffer.addEventListener('transitionend', handleTransitionEnd, { once: true });
+    window.clearTimeout(previewImageBufferCleanupTimer);
+    previewImageBufferCleanupTimer = window.setTimeout(handleTransitionEnd, 420);
+    previewImageBuffer.classList.remove('is-visible');
+}
+
 function formatBlurRadius(value, precision = PREVIEW_IMAGE_BLUR_PRECISION) {
     const safePrecision = Math.max(0, Math.min(6, Math.round(Number(precision) || 0)));
     if (safePrecision === 0) {
@@ -267,6 +363,15 @@ function applyImageBlurToPreview(blur) {
         previewImage.style.filter = `blur(${blurValue}px)`;
     } else {
         previewImage.style.removeProperty('filter');
+    }
+
+    if (previewImageBuffer) {
+        previewImageBuffer.style.setProperty('--preview-image-blur', `${blurValue}px`);
+        if (clamped > 0) {
+            previewImageBuffer.style.filter = `blur(${blurValue}px)`;
+        } else {
+            previewImageBuffer.style.removeProperty('filter');
+        }
     }
 }
 const timelineTrack = document.getElementById('timeline-track');

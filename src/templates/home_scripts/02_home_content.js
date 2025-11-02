@@ -621,6 +621,14 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    const shouldActivateBuffer = previewImage.src
+        && previewImage.src !== objectURL;
+    if (shouldActivateBuffer) {
+        activatePreviewImageBuffer();
+    } else {
+        deactivatePreviewImageBuffer({ immediate: true });
+    }
+
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
@@ -647,6 +655,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     }
                 });
             }
+            deactivatePreviewImageBuffer({ immediate });
             resolve();
         };
 

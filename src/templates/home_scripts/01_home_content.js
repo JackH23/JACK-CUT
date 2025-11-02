@@ -1618,6 +1618,7 @@ function cancelPreviewExitAnimation(options = {}) {
     cancelComboPreviewCycle();
 
     cancelPreviewEntranceAnimation();
+    deactivatePreviewImageBuffer({ immediate: true });
 
     if (previewExitAnimationState.cleanup) {
         previewExitAnimationState.cleanup(forceRestore ? true : null, true);

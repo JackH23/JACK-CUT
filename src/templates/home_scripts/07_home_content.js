@@ -2219,6 +2219,7 @@ function clearPreview() {
     setPreviewImageVisibility(false);
     previewImage.removeAttribute('src');
     previewImage.classList.remove('is-visible');
+    deactivatePreviewImageBuffer({ immediate: true });
     applyImageBlurToPreview(0);
     previewPlaceholder.hidden = false;
     playVideoButton.textContent = 'Play Back';
@@ -2226,6 +2227,9 @@ function clearPreview() {
     resetPreviewScroll();
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
+    }
+    if (previewImageBuffer) {
+        previewImageBuffer.style.removeProperty('mix-blend-mode');
     }
     clearPreviewCanvasBackdrop();
     clearPreviewOverlayLayers();

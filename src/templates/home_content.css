@@ -2217,6 +2217,17 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     will-change: transform, opacity;
 }
 
+.preview-image-buffer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+}
+
+#preview-image {
+    position: relative;
+    z-index: 1;
+}
+
 .preview-image-layer img.is-visible {
     opacity: 1;
 }

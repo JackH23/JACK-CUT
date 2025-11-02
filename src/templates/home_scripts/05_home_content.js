@@ -230,6 +230,9 @@ function commitPreviewImageFrameState(state) {
     if (previewImage) {
         previewImage.style.setProperty('--preview-image-rotation', `${rotation}deg`);
     }
+    if (previewImageBuffer) {
+        previewImageBuffer.style.setProperty('--preview-image-rotation', `${rotation}deg`);
+    }
 
     const transformForGuides = {
         left,
@@ -315,6 +318,9 @@ function clearPreviewImageTransform() {
     }
     if (previewImage) {
         previewImage.style.removeProperty('--preview-image-rotation');
+    }
+    if (previewImageBuffer) {
+        previewImageBuffer.style.removeProperty('--preview-image-rotation');
     }
     if (previewTextEditor) {
         previewTextEditor.style.removeProperty('font-size');
@@ -2064,10 +2070,12 @@ function setPreviewImageVisibility(isVisible) {
         } else {
             queuePreviewImageFrameReset();
         }
+        deactivatePreviewImageBuffer({ immediate: true });
     } else {
         previewImage.classList.remove('is-visible');
         previewImage.hidden = true;
         hidePreviewImageLayer();
+        deactivatePreviewImageBuffer({ immediate: true });
     }
 }
 
@@ -2893,6 +2901,9 @@ function extractOverlayDescriptorCacheEntry(descriptor) {
 function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
     if (previewImage) {
         previewImage.style.removeProperty('mix-blend-mode');
+    }
+    if (previewImageBuffer) {
+        previewImageBuffer.style.removeProperty('mix-blend-mode');
     }
 
     if (!previewOverlayStack || !previewOverlayGroups) {
