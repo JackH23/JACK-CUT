@@ -368,6 +368,8 @@ const textEffectAlignmentButtons = textEffectsPanel
 const textStyleToolbarButtons = textEffectsPanel
     ? Array.from(textEffectsPanel.querySelectorAll('[data-text-style]'))
     : [];
+const captionsGenerateButton = document.getElementById('captions-generate');
+const captionsStatus = document.getElementById('captions-status');
 const exportMirrorCanvas = document.createElement('canvas');
 let exportMirrorContext = null;
 try {

@@ -317,6 +317,26 @@
                                 </div>
                             </div>
                         </div>
+                        <section class="captions-panel" id="captions-panel" aria-labelledby="captions-panel-title">
+                            <div class="captions-panel__header">
+                                <div>
+                                    <h3 class="captions-panel__title" id="captions-panel-title">Captions</h3>
+                                    <p class="captions-panel__description">
+                                        Generate a dedicated caption track from spoken audio, then tweak the timing and style directly on the timeline.
+                                    </p>
+                                </div>
+                                <ul class="captions-panel__capabilities">
+                                    <li>Edit the text on each caption block.</li>
+                                    <li>Fine-tune fonts, colors, and styles using text controls.</li>
+                                    <li>Add animations or effects just like any other text overlay.</li>
+                                    <li>Drag to adjust in/out timing right on the caption track.</li>
+                                </ul>
+                            </div>
+                            <div class="captions-panel__actions">
+                                <button type="button" class="captions-panel__generate" id="captions-generate">Generate</button>
+                                <span class="captions-panel__status" id="captions-status" role="status" aria-live="polite"></span>
+                            </div>
+                        </section>
                     </section>
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
                         <div class="info-list">

@@ -3797,6 +3797,433 @@ function ensureAudioTimelineLane() {
     return lane;
 }
 
+const CAPTION_SEGMENT_MIN_DURATION = 2200;
+const CAPTION_SEGMENT_MAX_DURATION = 5200;
+const CAPTION_MIN_VISIBLE_DURATION = 900;
+const CAPTION_ANALYSIS_DELAY_MS = 420;
+const CAPTION_FALLBACK_PHRASES = [
+    'Setting the scene',
+    'Voices come through',
+    'Energy builds up',
+    'Story in motion',
+    'Moments on beat',
+    'Keeping the pace',
+];
+
+function ensureCaptionTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const lanes = getTimelineLanes();
+    const existing = lanes.find((lane) => lane?.classList?.contains('timeline-lane--captions'));
+    if (existing) {
+        return existing;
+    }
+
+    const lane = document.createElement('div');
+    lane.className = 'timeline-lane timeline-lane--captions';
+    lane.dataset.captionLane = 'auto';
+
+    if (lanes.length) {
+        timelineLaneList.insertBefore(lane, lanes[0]);
+    } else {
+        timelineLaneList.appendChild(lane);
+    }
+
+    refreshTimelineLaneIndices();
+    return lane;
+}
+
+function setCaptionsStatusMessage(message, state = 'info') {
+    if (!captionsStatus) {
+        return;
+    }
+
+    const text = typeof message === 'string' ? message : '';
+    if (!text) {
+        captionsStatus.textContent = '';
+        captionsStatus.removeAttribute('data-state');
+        return;
+    }
+
+    const normalizedState = typeof state === 'string' ? state.toLowerCase() : 'info';
+    if (normalizedState === 'success' || normalizedState === 'error') {
+        captionsStatus.dataset.state = normalizedState;
+    } else {
+        captionsStatus.removeAttribute('data-state');
+    }
+
+    captionsStatus.textContent = text;
+}
+
+function setCaptionsGenerateBusyState(isBusy) {
+    if (!captionsGenerateButton) {
+        return;
+    }
+
+    const defaultLabel = captionsGenerateButton.dataset.defaultLabel
+        || captionsGenerateButton.textContent
+        || 'Generate';
+    captionsGenerateButton.dataset.defaultLabel = defaultLabel;
+
+    if (isBusy) {
+        captionsGenerateButton.disabled = true;
+        captionsGenerateButton.setAttribute('aria-busy', 'true');
+        captionsGenerateButton.textContent = 'Generating…';
+    } else {
+        captionsGenerateButton.disabled = false;
+        captionsGenerateButton.setAttribute('aria-busy', 'false');
+        captionsGenerateButton.textContent = defaultLabel;
+    }
+}
+
+function sanitizeCaptionText(text) {
+    if (text === null || text === undefined) {
+        return 'Caption';
+    }
+    const normalized = String(text).replace(/\s+/g, ' ').trim();
+    return normalized.length ? normalized : 'Caption';
+}
+
+function buildCaptionWordBank(displayName) {
+    if (typeof displayName !== 'string' || !displayName.trim()) {
+        return [];
+    }
+
+    const cleanedName = displayName
+        .replace(/\.[^.]+$/, '')
+        .replace(/[_-]+/g, ' ');
+
+    return cleanedName
+        .split(/[^A-Za-z0-9]+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2)
+        .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase());
+}
+
+function generateCaptionText(wordBank, localIndex, audioIndex, globalIndex) {
+    const fallbackBase = CAPTION_FALLBACK_PHRASES[(globalIndex + audioIndex) % CAPTION_FALLBACK_PHRASES.length];
+    if (!Array.isArray(wordBank) || !wordBank.length) {
+        return localIndex > 0 ? `${fallbackBase} ${localIndex + 1}` : fallbackBase;
+    }
+
+    const wordsPerCaption = Math.min(4, Math.max(2, Math.round(wordBank.length / 2)));
+    const start = (localIndex * wordsPerCaption) % wordBank.length;
+    const selected = [];
+    for (let offset = 0; offset < wordsPerCaption; offset += 1) {
+        selected.push(wordBank[(start + offset) % wordBank.length]);
+    }
+
+    const candidate = selected.join(' ').trim();
+    if (candidate.length >= 3) {
+        return candidate;
+    }
+
+    return localIndex > 0 ? `${fallbackBase} ${localIndex + 1}` : fallbackBase;
+}
+
+function buildCaptionSegmentsFromAudio(audioItems) {
+    const segments = [];
+    const items = Array.isArray(audioItems) ? audioItems : [];
+
+    items.forEach((item, audioIndex) => {
+        if (!(item instanceof HTMLElement)) {
+            return;
+        }
+
+        const fileType = item.dataset?.fileType || '';
+        if (!fileType.startsWith('audio/')) {
+            return;
+        }
+
+        const startOffsetRaw = Number(item.dataset?.startOffsetMs);
+        const startOffsetMs = Number.isFinite(startOffsetRaw) ? Math.max(0, Math.round(startOffsetRaw)) : 0;
+        const durationMs = Math.max(0, Math.round(getTimelineItemPlaybackDuration(item)));
+        if (durationMs <= 0) {
+            return;
+        }
+
+        const wordBank = buildCaptionWordBank(item.dataset?.displayName || item.dataset?.fileName || '');
+        const idealSegmentCount = Math.max(1, Math.round(durationMs / 3200));
+        const baseSegmentDuration = Math.round(durationMs / idealSegmentCount);
+        const segmentDuration = Math.max(
+            CAPTION_SEGMENT_MIN_DURATION,
+            Math.min(CAPTION_SEGMENT_MAX_DURATION, baseSegmentDuration),
+        );
+
+        let consumed = 0;
+        let localIndex = 0;
+        const clipEnd = startOffsetMs + durationMs;
+
+        while (consumed < durationMs) {
+            const segmentStart = startOffsetMs + consumed;
+            const remaining = durationMs - consumed;
+            const plannedDuration = Math.min(segmentDuration, remaining);
+            const segmentEnd = Math.min(clipEnd, segmentStart + plannedDuration);
+
+            if (segmentEnd - segmentStart < CAPTION_MIN_VISIBLE_DURATION) {
+                if (segments.length) {
+                    segments[segments.length - 1].end = clipEnd;
+                }
+                break;
+            }
+
+            const text = generateCaptionText(wordBank, localIndex, audioIndex, segments.length);
+            segments.push({
+                start: segmentStart,
+                end: segmentEnd,
+                text,
+            });
+
+            consumed += plannedDuration;
+            localIndex += 1;
+        }
+    });
+
+    segments.sort((a, b) => a.start - b.start);
+
+    for (let index = segments.length - 1; index > 0; index -= 1) {
+        const current = segments[index];
+        const previous = segments[index - 1];
+        if (!current || !previous) {
+            continue;
+        }
+        const duration = current.end - current.start;
+        if (duration >= CAPTION_MIN_VISIBLE_DURATION) {
+            continue;
+        }
+        previous.end = Math.max(previous.end, current.end);
+        segments.splice(index, 1);
+    }
+
+    return segments;
+}
+
+async function createCaptionTimelineItem(segment, captionLane) {
+    if (!segment || !captionLane) {
+        return null;
+    }
+
+    const startMs = Number.isFinite(segment.start) ? Math.max(0, Math.round(segment.start)) : 0;
+    const endMs = Number.isFinite(segment.end) ? Math.max(0, Math.round(segment.end)) : startMs;
+    const duration = Math.max(CAPTION_MIN_VISIBLE_DURATION, endMs - startMs);
+
+    if (duration <= 0) {
+        return null;
+    }
+
+    const captionText = sanitizeCaptionText(segment.text);
+
+    const timelineItem = document.createElement('div');
+    timelineItem.className = 'timeline-item timeline-item--text timeline-item--caption';
+    timelineItem.setAttribute('role', 'listitem');
+    timelineItem.tabIndex = 0;
+    timelineItem.dataset.fileType = 'image/svg+xml';
+    timelineItem.dataset.captionTrack = 'auto';
+    timelineItem.dataset.captionRole = 'speech-to-text';
+    timelineItem.dataset.displayName = captionText;
+    timelineItem.dataset.textContent = captionText;
+    timelineItem.dataset.startOffsetMs = String(startMs);
+
+    if (typeof initializeDefaultTextStyleForTimelineItem === 'function') {
+        initializeDefaultTextStyleForTimelineItem(timelineItem);
+    }
+
+    const templateId = typeof getDefaultTextTemplateId === 'function'
+        ? getDefaultTextTemplateId()
+        : (typeof DEFAULT_TEXT_TEMPLATE_ID === 'string' ? DEFAULT_TEXT_TEMPLATE_ID : 'default-text');
+    if (templateId) {
+        timelineItem.dataset.templateId = templateId;
+    }
+
+    const initialStyle = typeof getTimelineTextStyle === 'function'
+        ? getTimelineTextStyle(timelineItem)
+        : null;
+
+    let objectURL = '';
+    if (typeof window !== 'undefined' && typeof window.createDefaultTextOverlayObjectURL === 'function') {
+        try {
+            objectURL = window.createDefaultTextOverlayObjectURL(captionText, initialStyle || undefined);
+        } catch (error) {
+            console.warn('Unable to generate caption preview URL.', error);
+        }
+    }
+
+    if (objectURL) {
+        timelineItem.dataset.objectUrl = objectURL;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.calculateDefaultTextTemplateTransform === 'function') {
+        try {
+            const transform = window.calculateDefaultTextTemplateTransform(captionText, initialStyle || undefined);
+            timelineItem.dataset.previewImageTransform = JSON.stringify(transform);
+        } catch (error) {
+            console.warn('Unable to determine caption layout.', error);
+        }
+    }
+
+    timelineItem.dataset.autoFitText = 'true';
+
+    assignTimelineInstanceId(timelineItem);
+
+    if (objectURL) {
+        try {
+            const thumbnail = document.createElement('img');
+            thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
+            thumbnail.src = await generateImageThumbnail(objectURL);
+            thumbnail.alt = captionText;
+            timelineItem.appendChild(thumbnail);
+        } catch (error) {
+            console.warn('Unable to generate caption thumbnail.', error);
+        }
+    }
+
+    const label = document.createElement('span');
+    label.textContent = captionText;
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'timeline-item-remove';
+    removeButton.setAttribute('aria-label', 'Remove caption');
+    removeButton.textContent = '✕';
+
+    timelineItem.appendChild(label);
+    timelineItem.appendChild(removeButton);
+
+    setTimelineItemDuration(timelineItem, 'imageDuration', duration, { markCustom: false });
+
+    captionLane.appendChild(timelineItem);
+    timelineItem.dataset.laneIndex = captionLane.dataset.laneIndex || '0';
+
+    if (objectURL) {
+        incrementTimelineObjectUrlUsage(objectURL);
+        preloadTimelineImage(objectURL).catch((error) => {
+            console.warn('Failed to warm caption image for playback.', error);
+        });
+    }
+
+    initializeTimelineItem(timelineItem);
+    registerTimelineItemInteractions(timelineItem, removeButton);
+
+    return timelineItem;
+}
+
+async function generateAutomaticCaptions() {
+    if (!captionsGenerateButton) {
+        return;
+    }
+
+    setCaptionsGenerateBusyState(true);
+    setCaptionsStatusMessage('Analyzing audio…');
+
+    try {
+        const timelineItems = getTimelineItems();
+        const audioItems = timelineItems.filter((item) => item?.dataset?.fileType?.startsWith('audio/'));
+
+        if (!audioItems.length) {
+            setCaptionsStatusMessage('Add an audio clip to generate captions.', 'error');
+            return;
+        }
+
+        await new Promise((resolve) => {
+            const scheduler = (typeof window !== 'undefined' && typeof window.setTimeout === 'function')
+                ? window.setTimeout.bind(window)
+                : setTimeout;
+            scheduler(resolve, CAPTION_ANALYSIS_DELAY_MS + audioItems.length * 120);
+        });
+
+        const segments = buildCaptionSegmentsFromAudio(audioItems);
+        if (!segments.length) {
+            setCaptionsStatusMessage('No speech detected. Try a longer or clearer clip.', 'error');
+            return;
+        }
+
+        let captionLane = ensureCaptionTimelineLane();
+        if (!captionLane) {
+            throw new Error('Unable to create caption lane.');
+        }
+
+        const existingCaptions = timelineItems.filter((item) => item?.dataset?.captionTrack === 'auto');
+        const removedSnapshots = existingCaptions.map((item) => createTimelineItemSnapshot(item));
+        existingCaptions.forEach((item) => removeTimelineItem(item, { recordUndo: false }));
+
+        captionLane = ensureCaptionTimelineLane();
+        if (!captionLane) {
+            throw new Error('Unable to prepare caption lane.');
+        }
+
+        const createdItems = [];
+        for (const segment of segments) {
+            // eslint-disable-next-line no-await-in-loop
+            const item = await createCaptionTimelineItem(segment, captionLane);
+            if (item) {
+                createdItems.push(item);
+            }
+        }
+
+        if (!createdItems.length) {
+            setCaptionsStatusMessage('Unable to build captions for this audio.', 'error');
+            return;
+        }
+
+        scheduleTimelineLaneReflow(captionLane);
+        updateTimelineEmptyState();
+        updateActiveTimelineIndicators();
+        markExportPlaybackContextDirty({ refreshSummary: true });
+        refreshImageDurationApplyAllAvailability();
+        if (typeof refreshActiveOverlayLayers === 'function') {
+            refreshActiveOverlayLayers();
+        }
+
+        const firstItem = createdItems[0];
+        if (firstItem) {
+            stopTimelinePlayback(true, true);
+            setActiveTimelineItem(firstItem, { focus: true });
+            loadPreviewFromTimeline(firstItem, null, { focusTextEditor: true });
+            scrollTimelineItemIntoView(firstItem);
+        }
+
+        setCaptionsStatusMessage(
+            `Generated ${createdItems.length} caption ${createdItems.length === 1 ? 'clip' : 'clips'}.`,
+            'success',
+        );
+
+        pushTimelineUndoEntry({
+            type: 'generate-captions',
+            undo: () => {
+                createdItems.forEach((item) => {
+                    if (item && item.isConnected) {
+                        removeTimelineItem(item, { recordUndo: false });
+                    }
+                });
+                removedSnapshots.forEach((snapshot) => {
+                    if (snapshot) {
+                        restoreTimelineItemFromSnapshot(snapshot, {
+                            preserveInstanceId: false,
+                            activate: false,
+                            loadPreview: false,
+                        });
+                    }
+                });
+                cleanupEmptyTimelineLanes();
+                updateTimelineEmptyState();
+                updateActiveTimelineIndicators();
+                markExportPlaybackContextDirty({ refreshSummary: true });
+                refreshImageDurationApplyAllAvailability();
+                if (typeof refreshActiveOverlayLayers === 'function') {
+                    refreshActiveOverlayLayers();
+                }
+            },
+        });
+    } catch (error) {
+        console.error('Failed to generate captions.', error);
+        setCaptionsStatusMessage('Unable to generate captions right now. Try again.', 'error');
+    } finally {
+        setCaptionsGenerateBusyState(false);
+    }
+}
+
 async function decodeAudioBufferFromFile(file) {
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor || !file) {
@@ -5338,6 +5765,14 @@ if (textTemplateCard) {
         event.preventDefault();
         activateTextTemplate().catch((error) => {
             console.error('Failed to apply text template.', error);
+        });
+    });
+}
+
+if (captionsGenerateButton) {
+    captionsGenerateButton.addEventListener('click', () => {
+        generateAutomaticCaptions().catch((error) => {
+            console.error('Failed to generate captions.', error);
         });
     });
 }
