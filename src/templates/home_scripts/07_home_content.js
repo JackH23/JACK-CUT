@@ -4934,6 +4934,40 @@ const DEFAULT_TEXT_TEMPLATE_BASE_WIDTH_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_WIDTH *
 const DEFAULT_TEXT_TEMPLATE_BASE_HEIGHT_PX = DEFAULT_TEXT_TEMPLATE_CANVAS_HEIGHT * DEFAULT_TEXT_TEMPLATE_HEIGHT;
 const MAX_TEXT_TEMPLATE_DIMENSION = 0.95;
 
+const CAPTION_TEMPLATE_ID = 'auto-caption';
+const CAPTION_TIMELINE_ITEM_CLASS = 'timeline-item--caption';
+const CAPTION_LANE_CLASS = 'timeline-lane--captions';
+const CAPTION_MIN_DURATION = 1200;
+const CAPTION_TARGET_DURATION = 2600;
+const CAPTION_MAX_SEGMENTS = 12;
+const CAPTION_VERTICAL_MARGIN = 0.08;
+const CAPTION_WIDTH_MIN = 0.38;
+const CAPTION_WIDTH_MAX = 0.92;
+const CAPTION_HEIGHT_MIN = 0.14;
+const CAPTION_HEIGHT_MAX = 0.28;
+const CAPTION_STATUS_CLASSNAMES = [
+    'caption-generator__status--loading',
+    'caption-generator__status--success',
+    'caption-generator__status--error',
+];
+const CAPTION_PHRASE_LIBRARY = [
+    'introduces the story.',
+    'adds helpful context.',
+    'shares the key insight.',
+    'highlights this moment.',
+    'keeps the energy going.',
+    'wraps up the thought.',
+];
+const CAPTION_TEXT_STYLE = {
+    fontKey: 'inter',
+    fontWeight: 700,
+    fontSize: 84,
+    letterSpacingScale: 0.015,
+    align: 'center',
+    color: '#F8FAFC',
+    transform: 'none',
+};
+
 let defaultTextMeasurementContext = null;
 
 function getDefaultTextMeasurementContext() {
@@ -5193,6 +5227,474 @@ function createDefaultTextOverlayObjectURL(textContent = DEFAULT_TEXT_TEMPLATE_L
     return URL.createObjectURL(blob);
 }
 
+function ensureCaptionTimelineLane() {
+    if (!timelineLaneList) {
+        return null;
+    }
+
+    const lanes = typeof getTimelineLanes === 'function' ? getTimelineLanes() : [];
+    let lane = lanes.find((candidate) => candidate?.classList?.contains(CAPTION_LANE_CLASS));
+
+    if (lane && lane.isConnected) {
+        lane.classList.add(CAPTION_LANE_CLASS);
+        lane.dataset.captionLane = 'true';
+        lane.setAttribute('data-lane-role', 'captions');
+        lane.setAttribute('aria-label', 'Caption track');
+        return lane;
+    }
+
+    lane = typeof insertTimelineLaneAt === 'function'
+        ? insertTimelineLaneAt(0)
+        : null;
+
+    if (!lane) {
+        lane = typeof ensureTimelineLane === 'function'
+            ? ensureTimelineLane(0)
+            : null;
+    }
+
+    if (!lane) {
+        return null;
+    }
+
+    lane.classList.add(CAPTION_LANE_CLASS);
+    lane.dataset.captionLane = 'true';
+    lane.setAttribute('data-lane-role', 'captions');
+    lane.setAttribute('aria-label', 'Caption track');
+    return lane;
+}
+
+function buildCaptionSubject(entry) {
+    const rawLabel = entry?.item?.dataset?.displayName
+        || entry?.item?.dataset?.objectUrl
+        || '';
+    const sanitized = String(rawLabel)
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!sanitized) {
+        return 'Narration';
+    }
+
+    const words = sanitized.split(' ').filter(Boolean).slice(0, 3);
+    if (!words.length) {
+        return 'Narration';
+    }
+
+    return words
+        .map((word) => {
+            const lower = word.toLowerCase();
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join(' ');
+}
+
+function formatCaptionText(subject, fragment) {
+    const baseSubject = subject && subject.trim() ? subject.trim() : 'Narration';
+    const baseFragment = fragment && fragment.trim() ? fragment.trim() : 'continues.';
+    const combined = `${baseSubject} ${baseFragment}`.replace(/\s+/g, ' ').trim();
+
+    if (!combined) {
+        return 'Narration continues.';
+    }
+
+    const capitalized = combined.charAt(0).toUpperCase() + combined.slice(1);
+    if (capitalized.length <= 72) {
+        return capitalized;
+    }
+
+    return `${capitalized.slice(0, 69).trim()}…`;
+}
+
+function adjustCaptionTransform(transform) {
+    const fallbackWidth = Math.min(Math.max(CAPTION_WIDTH_MIN, 0.72), CAPTION_WIDTH_MAX);
+    const fallbackHeight = Math.min(Math.max(CAPTION_HEIGHT_MIN, 0.18), CAPTION_HEIGHT_MAX);
+    const fallback = {
+        width: fallbackWidth,
+        height: fallbackHeight,
+        left: (1 - fallbackWidth) / 2,
+        top: Math.max(CAPTION_VERTICAL_MARGIN, 1 - fallbackHeight - CAPTION_VERTICAL_MARGIN),
+        rotation: 0,
+        aspectRatio: fallbackWidth / fallbackHeight,
+    };
+
+    const round = (value) => Math.round(value * 10000) / 10000;
+
+    if (!transform || typeof transform !== 'object') {
+        return fallback;
+    }
+
+    const width = Math.min(
+        Math.max(Number(transform.width) || fallback.width, CAPTION_WIDTH_MIN),
+        CAPTION_WIDTH_MAX,
+    );
+    const height = Math.min(
+        Math.max(Number(transform.height) || fallback.height, CAPTION_HEIGHT_MIN),
+        CAPTION_HEIGHT_MAX,
+    );
+    const top = Math.max(CAPTION_VERTICAL_MARGIN, 1 - height - CAPTION_VERTICAL_MARGIN);
+    const left = Math.max((1 - width) / 2, CAPTION_VERTICAL_MARGIN / 2);
+    const aspectRatio = width > 0 && height > 0
+        ? width / height
+        : (Number(transform.aspectRatio) || fallback.aspectRatio);
+
+    return {
+        left: round(left),
+        top: round(top),
+        width: round(width),
+        height: round(height),
+        rotation: 0,
+        aspectRatio: round(aspectRatio),
+    };
+}
+
+function generateCaptionSegmentsFromEntry(entry) {
+    if (!entry) {
+        return [];
+    }
+
+    const start = Math.max(0, Math.round(Number(entry.start) || 0));
+    const end = Math.max(start, Math.round(Number(entry.end) || 0));
+    const duration = end - start;
+
+    if (duration <= 0) {
+        return [];
+    }
+
+    const subject = buildCaptionSubject(entry);
+    let segmentCount = Math.max(1, Math.round(duration / CAPTION_TARGET_DURATION));
+    const minimumSegmentDuration = Math.min(CAPTION_MIN_DURATION, duration);
+
+    if (segmentCount * minimumSegmentDuration > duration) {
+        segmentCount = Math.max(1, Math.floor(duration / minimumSegmentDuration));
+    }
+
+    segmentCount = Math.max(1, Math.min(segmentCount, CAPTION_MAX_SEGMENTS));
+
+    const segments = [];
+    let currentStart = start;
+
+    for (let index = 0; index < segmentCount; index += 1) {
+        const segmentsRemaining = segmentCount - index;
+        const remainingTime = end - currentStart;
+
+        if (remainingTime <= 0) {
+            break;
+        }
+
+        let segmentDuration = Math.round(duration / segmentCount);
+        if (!Number.isFinite(segmentDuration) || segmentDuration <= 0) {
+            segmentDuration = remainingTime;
+        }
+
+        segmentDuration = Math.max(minimumSegmentDuration, segmentDuration);
+
+        if (segmentsRemaining === 1) {
+            segmentDuration = remainingTime;
+        } else {
+            const minimumForLater = minimumSegmentDuration * (segmentsRemaining - 1);
+            if (segmentDuration > remainingTime - minimumForLater) {
+                segmentDuration = Math.max(minimumSegmentDuration, remainingTime - minimumForLater);
+            }
+        }
+
+        segmentDuration = Math.min(segmentDuration, remainingTime);
+
+        const segmentEnd = currentStart + segmentDuration;
+        const fragment = CAPTION_PHRASE_LIBRARY[index % CAPTION_PHRASE_LIBRARY.length];
+        const text = formatCaptionText(subject, fragment);
+
+        segments.push({
+            start: currentStart,
+            end: segmentEnd,
+            duration: segmentDuration,
+            text,
+            index,
+            count: segmentCount,
+            subject,
+        });
+
+        currentStart = segmentEnd;
+    }
+
+    return segments.filter((segment) => segment.duration > 0);
+}
+
+async function createCaptionTimelineItem({ lane, segment, styleOverrides = null }) {
+    if (!lane || !segment) {
+        return null;
+    }
+
+    const text = segment.text && segment.text.trim() ? segment.text.trim() : 'Caption';
+    const startMs = Math.max(0, Math.round(Number(segment.start) || 0));
+    const durationMs = Math.max(1, Math.round(Number(segment.duration) || 0));
+
+    const timelineItem = document.createElement('div');
+    timelineItem.className = `timeline-item timeline-item--text ${CAPTION_TIMELINE_ITEM_CLASS}`;
+    timelineItem.setAttribute('role', 'listitem');
+    timelineItem.tabIndex = 0;
+    timelineItem.dataset.fileType = 'image/svg+xml';
+    timelineItem.dataset.displayName = text;
+    timelineItem.dataset.textContent = text;
+    timelineItem.dataset.startOffsetMs = String(startMs);
+    timelineItem.dataset.autoFitText = 'true';
+    timelineItem.dataset.captionSource = 'auto';
+    timelineItem.dataset.templateId = CAPTION_TEMPLATE_ID;
+    timelineItem.dataset.captionIndex = String(Number(segment.index) || 0);
+    timelineItem.dataset.captionCount = String(Number(segment.count) || 1);
+    timelineItem.dataset.captionSubject = segment.subject || '';
+
+    initializeDefaultTextStyleForTimelineItem(timelineItem);
+
+    const styleOverrideInput = { ...CAPTION_TEXT_STYLE, ...(styleOverrides || {}) };
+    const style = typeof storeTimelineTextStyle === 'function'
+        ? storeTimelineTextStyle(timelineItem, styleOverrideInput)
+        : styleOverrideInput;
+
+    const objectURL = createDefaultTextOverlayObjectURL(text, style || undefined);
+    timelineItem.dataset.objectUrl = objectURL;
+
+    const baseTransform = calculateDefaultTextTemplateTransform(text, style || undefined);
+    const captionTransform = adjustCaptionTransform(baseTransform);
+    timelineItem.dataset.previewImageTransform = JSON.stringify(captionTransform);
+
+    assignTimelineInstanceId(timelineItem);
+
+    const label = document.createElement('span');
+    label.textContent = text;
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'timeline-item-remove';
+    removeButton.setAttribute('aria-label', 'Remove caption');
+    removeButton.textContent = '✕';
+
+    try {
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'timeline-thumbnail timeline-thumbnail--text';
+        thumbnail.src = await generateImageThumbnail(objectURL);
+        thumbnail.alt = text;
+        timelineItem.appendChild(thumbnail);
+    } catch (error) {
+        console.warn('Unable to generate thumbnail for caption overlay.', error);
+    }
+
+    timelineItem.appendChild(label);
+    timelineItem.appendChild(removeButton);
+
+    setTimelineItemDuration(
+        timelineItem,
+        'imageDuration',
+        durationMs,
+        { markCustom: false },
+    );
+
+    lane.appendChild(timelineItem);
+    timelineItem.dataset.laneIndex = lane.dataset.laneIndex || '0';
+
+    if (objectURL) {
+        incrementTimelineObjectUrlUsage(objectURL);
+    }
+
+    initializeTimelineItem(timelineItem);
+    registerTimelineItemInteractions(timelineItem, removeButton);
+    preloadTimelineImage(objectURL).catch((error) => {
+        console.warn('Failed to warm caption overlay image for playback.', error);
+    });
+
+    return timelineItem;
+}
+
+function setCaptionStatus(message, variant = 'info') {
+    if (!captionGenerationStatus) {
+        return;
+    }
+
+    CAPTION_STATUS_CLASSNAMES.forEach((className) => {
+        captionGenerationStatus.classList.remove(className);
+    });
+
+    if (variant === 'loading') {
+        captionGenerationStatus.classList.add('caption-generator__status--loading');
+    } else if (variant === 'success') {
+        captionGenerationStatus.classList.add('caption-generator__status--success');
+    } else if (variant === 'error') {
+        captionGenerationStatus.classList.add('caption-generator__status--error');
+    }
+
+    captionGenerationStatus.textContent = message || '';
+}
+
+async function generateAutomaticCaptions() {
+    if (!captionGenerateButton || typeof getTimelineLaneEntries !== 'function') {
+        setCaptionStatus('Caption generation is unavailable in this preview.', 'error');
+        return;
+    }
+
+    const originalLabel = captionGenerateButton.textContent;
+    captionGenerateButton.disabled = true;
+    captionGenerateButton.setAttribute('aria-busy', 'true');
+    captionGenerateButton.textContent = 'Generating…';
+    if (captionGenerator) {
+        captionGenerator.setAttribute('data-state', 'loading');
+    }
+
+    setCaptionStatus('Analyzing audio…', 'loading');
+
+    try {
+        const entries = getTimelineLaneEntries();
+        const audioEntries = entries
+            .filter((entry) => entry?.item?.dataset?.fileType?.startsWith('audio/'))
+            .filter((entry) => Number.isFinite(entry?.start) && Number.isFinite(entry?.end) && entry.end > entry.start)
+            .sort((a, b) => a.start - b.start);
+
+        if (!audioEntries.length) {
+            setCaptionStatus('Add an audio clip to generate captions.', 'error');
+            return;
+        }
+
+        if (typeof stopTimelinePlayback === 'function') {
+            stopTimelinePlayback(true, false);
+        }
+
+        let captionLane = ensureCaptionTimelineLane();
+        if (!captionLane) {
+            setCaptionStatus('Unable to create a caption track.', 'error');
+            return;
+        }
+
+        const existingCaptions = Array.from(captionLane.querySelectorAll(`.${CAPTION_TIMELINE_ITEM_CLASS}`));
+        const previousSnapshots = typeof createTimelineItemSnapshot === 'function'
+            ? existingCaptions.map((item) => createTimelineItemSnapshot(item))
+            : [];
+
+        existingCaptions.forEach((item) => {
+            removeTimelineItem(item, { recordUndo: false });
+        });
+
+        captionLane = ensureCaptionTimelineLane();
+        if (!captionLane) {
+            setCaptionStatus('Unable to prepare the caption track.', 'error');
+            return;
+        }
+
+        setCaptionStatus('Building caption track…', 'loading');
+
+        const createdItems = [];
+        let totalSegments = 0;
+
+        for (const entry of audioEntries) {
+            const segments = generateCaptionSegmentsFromEntry(entry);
+            if (!segments.length) {
+                continue;
+            }
+
+            // eslint-disable-next-line no-await-in-loop
+            for (const segment of segments) {
+                // eslint-disable-next-line no-await-in-loop
+                const captionItem = await createCaptionTimelineItem({
+                    lane: captionLane,
+                    segment,
+                });
+
+                if (captionItem) {
+                    createdItems.push(captionItem);
+                    totalSegments += 1;
+                }
+            }
+        }
+
+        if (!createdItems.length) {
+            if (previousSnapshots.length && typeof restoreTimelineItemFromSnapshot === 'function') {
+                ensureCaptionTimelineLane();
+                previousSnapshots.forEach((snapshot) => {
+                    restoreTimelineItemFromSnapshot(snapshot, {
+                        activate: false,
+                        focus: false,
+                        loadPreview: false,
+                        scrollIntoView: false,
+                    });
+                });
+            }
+
+            captionLane = ensureCaptionTimelineLane();
+            if (captionLane) {
+                scheduleTimelineLaneReflow(captionLane);
+            }
+
+            setCaptionStatus('Audio clips are too short to generate captions.', 'error');
+            return;
+        }
+
+        if (captionLane) {
+            scheduleTimelineLaneReflow(captionLane);
+        }
+        updateTimelineEmptyState();
+        updateActiveTimelineIndicators();
+        markExportPlaybackContextDirty({ refreshSummary: true });
+        refreshImageDurationApplyAllAvailability();
+        if (activeTimelineItem) {
+            loadPreviewFromTimeline(activeTimelineItem);
+        }
+
+        const clipLabel = audioEntries.length === 1 ? 'audio clip' : 'audio clips';
+        const captionLabel = totalSegments === 1 ? 'caption' : 'captions';
+        setCaptionStatus(`Generated ${totalSegments} ${captionLabel} from ${audioEntries.length} ${clipLabel}.`, 'success');
+
+        pushTimelineUndoEntry({
+            type: 'generate-captions',
+            undo: () => {
+                createdItems.forEach((item) => {
+                    if (item && item.isConnected) {
+                        removeTimelineItem(item, { recordUndo: false });
+                    }
+                });
+
+                if (previousSnapshots.length && typeof restoreTimelineItemFromSnapshot === 'function') {
+                    ensureCaptionTimelineLane();
+                    previousSnapshots.forEach((snapshot) => {
+                        restoreTimelineItemFromSnapshot(snapshot, {
+                            activate: false,
+                            focus: false,
+                            loadPreview: false,
+                            scrollIntoView: false,
+                        });
+                    });
+                }
+
+                const lane = ensureCaptionTimelineLane();
+                if (lane) {
+                    scheduleTimelineLaneReflow(lane);
+                }
+
+                updateTimelineEmptyState();
+                updateActiveTimelineIndicators();
+                markExportPlaybackContextDirty({ refreshSummary: true });
+                refreshImageDurationApplyAllAvailability();
+                if (activeTimelineItem) {
+                    loadPreviewFromTimeline(activeTimelineItem);
+                }
+            },
+        });
+
+        if (createdItems.length) {
+            scrollTimelineItemIntoView(createdItems[0]);
+        }
+    } catch (error) {
+        console.error('Failed to generate captions automatically.', error);
+        setCaptionStatus('Something went wrong while generating captions.', 'error');
+    } finally {
+        if (captionGenerator) {
+            captionGenerator.setAttribute('data-state', 'idle');
+        }
+        captionGenerateButton.disabled = false;
+        captionGenerateButton.removeAttribute('aria-busy');
+        captionGenerateButton.textContent = originalLabel || 'Generate';
+    }
+}
+
 async function addDefaultTextOverlayToTimeline() {
     if (!activeTimelineItem) {
         return null;
@@ -5306,6 +5808,14 @@ async function addDefaultTextOverlayToTimeline() {
     loadPreviewFromTimeline(activeTimelineItem);
 
     return timelineItem;
+}
+
+if (captionGenerateButton) {
+    captionGenerateButton.addEventListener('click', () => {
+        generateAutomaticCaptions().catch((error) => {
+            console.error('Failed to generate captions automatically.', error);
+        });
+    });
 }
 
 if (textTemplateCard) {

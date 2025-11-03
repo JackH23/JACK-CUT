@@ -207,6 +207,27 @@
                                 <h3 class="text-template-card__title">(Default Text)</h3>
                             </div>
                         </div>
+                        <div
+                            class="caption-generator"
+                            id="caption-generator"
+                            data-state="idle"
+                        >
+                            <div class="caption-generator__header">
+                                <h3>Captions</h3>
+                                <p>Create a subtitle track that follows the dialogue in your timeline.</p>
+                            </div>
+                            <div class="caption-generator__actions">
+                                <button type="button" class="caption-generate-button" id="caption-generate-button">
+                                    Generate
+                                </button>
+                                <span
+                                    class="caption-generator__status"
+                                    id="caption-generation-status"
+                                    role="status"
+                                    aria-live="polite"
+                                ></span>
+                            </div>
+                        </div>
                         <div class="text-effects" id="text-effects-panel" aria-labelledby="text-effects-title">
                             <div class="text-effects__header">
                                 <h3 class="text-effects__title" id="text-effects-title">Effects</h3>
