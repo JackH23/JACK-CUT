@@ -1,30 +1,38 @@
 import logging
 import os
 import secrets
-from typing import Any, Dict, Optional
+from typing import Any, Mapping, Optional
 
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import (
+    Blueprint,
+    Flask,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
-from pymongo import MongoClient
-from pymongo.errors import ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError
 
 from templates import (
-    HOME_TEMPLATE,
-    HOME_STYLES,
     HOME_SCRIPTS,
+    HOME_STYLES,
+    HOME_TEMPLATE,
     LOGIN_HTML,
     SIGNUP_HTML,
 )
+from user_repository import UserStore, create_user_store_from_env
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-app = Flask(__name__)
-
-
 def configure_secret_key(flask_app: Flask, *, allow_generated: bool = False) -> None:
     """Configure the Flask secret key from the environment."""
+
+    if flask_app.config.get('SECRET_KEY'):
+        logger.debug('SECRET_KEY already configured on the Flask app. Skipping configuration.')
+        return
 
     secret_key = os.getenv('FLASK_SECRET_KEY')
     if secret_key:
@@ -47,115 +55,81 @@ def configure_secret_key(flask_app: Flask, *, allow_generated: bool = False) -> 
     )
 
 
-if __name__ != '__main__':
-    configure_secret_key(app)
+def _create_routes_blueprint(user_store: UserStore) -> Blueprint:
+    blueprint = Blueprint('main', __name__)
 
-
-class InMemoryCollection:
-    """Simple in-memory fallback for development and previews."""
-
-    def __init__(self) -> None:
-        self._documents: list[Dict[str, Any]] = []
-
-    def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        for document in self._documents:
-            if all(document.get(key) == value for key, value in query.items()):
-                return document
-        return None
-
-    def insert_one(self, document: Dict[str, Any]) -> None:
-        self._documents.append(document)
-
-
-def get_users_collection():
-    """Return a Mongo collection or an in-memory fallback."""
-    use_in_memory = os.getenv('USE_IN_MEMORY_DB', '0') == '1'
-    if use_in_memory:
-        logger.info('Using in-memory database because USE_IN_MEMORY_DB=1.')
-        return InMemoryCollection()
-
-    mongo_url = os.getenv('MONGO_URL')
-    if not mongo_url:
-        logger.warning(
-            'MONGO_URL environment variable is not set. Falling back to in-memory database.'
+    @blueprint.route('/')
+    def home():
+        username = session.get('username')
+        return render_template_string(
+            HOME_TEMPLATE,
+            username=username,
+            styles=HOME_STYLES,
+            scripts=HOME_SCRIPTS,
         )
-        return InMemoryCollection()
 
-    try:
-        mongo_client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000)
-        mongo_client.admin.command('ping')
-    except (ConfigurationError, ConnectionFailure, InvalidURI, PyMongoError) as exc:
-        logger.error(
-            'Failed to create MongoDB client. Falling back to in-memory database. %s',
-            exc,
-        )
-        return InMemoryCollection()
+    @blueprint.route('/login', methods=['GET', 'POST'])
+    def login():
+        error = None
+        if request.method == 'POST':
+            username = request.form['username']
+            password = request.form.get('password', '')
+            user = user_store.get_by_username(username)
+            if user:
+                stored_password = user.get('password', '')
+                try:
+                    if check_password_hash(stored_password, password):
+                        session['username'] = username
+                        return redirect(url_for('main.home'))
+                except ValueError:
+                    logger.error('Stored password for user %s is not a valid hash.', username)
+            error = "Invalid username or password. Please try again or sign up."
+        return render_template_string(LOGIN_HTML, error=error)
 
-    database_name = os.getenv('MONGO_DB_NAME', 'app')
-    db = mongo_client[database_name]
-    return db['users']
+    @blueprint.route('/signup', methods=['GET', 'POST'])
+    def signup():
+        error = None
+        if request.method == 'POST':
+            username = request.form['username']
+            email = request.form['email']
+            password = request.form['password']
+            if user_store.get_by_username(username):
+                error = "Username already exists. Please choose another."
+            else:
+                password_hash = generate_password_hash(password)
+                user_store.add_user(username, email, password_hash)
+                session['username'] = username
+                return redirect(url_for('main.home'))
+        return render_template_string(SIGNUP_HTML, error=error)
 
+    @blueprint.route('/signout')
+    def signout():
+        session.pop('username', None)
+        return redirect(url_for('main.home'))
 
-users_collection = get_users_collection()
-
-
-@app.route('/')
-def home():
-    username = session.get('username')
-    return render_template_string(
-        HOME_TEMPLATE,
-        username=username,
-        styles=HOME_STYLES,
-        scripts=HOME_SCRIPTS,
-    )
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    error = None
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form.get('password', '')
-        user = users_collection.find_one({'username': username})
-        if user:
-            stored_password = user.get('password', '')
-            try:
-                if check_password_hash(stored_password, password):
-                    session['username'] = username
-                    return redirect(url_for('home'))
-            except ValueError:
-                logger.error('Stored password for user %s is not a valid hash.', username)
-        error = "Invalid username or password. Please try again or sign up."
-    return render_template_string(LOGIN_HTML, error=error)
+    return blueprint
 
 
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    error = None
-    if request.method == 'POST':
-        username = request.form['username']
-        email = request.form['email']
-        password = request.form['password']
-        if users_collection.find_one({'username': username}):
-            error = "Username already exists. Please choose another."
-        else:
-            password_hash = generate_password_hash(password)
-            users_collection.insert_one({
-                'username': username,
-                'email': email,
-                'password': password_hash,
-            })
-            session['username'] = username
-            return redirect(url_for('home'))
-    return render_template_string(SIGNUP_HTML, error=error)
+def create_app(
+    config: Optional[Mapping[str, Any]] = None,
+    *,
+    user_store: Optional[UserStore] = None,
+    allow_generated_secret: bool = False,
+) -> Flask:
+    app = Flask(__name__)
 
+    if config:
+        app.config.from_mapping(config)
 
-@app.route('/signout')
-def signout():
-    session.pop('username', None)
-    return redirect(url_for('home'))
+    configure_secret_key(app, allow_generated=allow_generated_secret)
+
+    store = user_store or create_user_store_from_env()
+    app.user_store = store  # type: ignore[attr-defined]
+    app.register_blueprint(_create_routes_blueprint(store))
+
+    return app
 
 
 if __name__ == '__main__':
-    configure_secret_key(app, allow_generated=True)
-    app.run(debug=True)
+    application = create_app(allow_generated_secret=True)
+    application.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
