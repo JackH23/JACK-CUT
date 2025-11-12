@@ -439,7 +439,7 @@ function formatTimelineSnapLabel(state, laneIndex = null) {
 
     const numericLaneIndex = Number.isFinite(laneIndex) ? laneIndex : null;
     const laneSuffix = Number.isFinite(numericLaneIndex)
-        ? ` (Lane ${numericLaneIndex + 1})`
+        ? ` (Layer ${numericLaneIndex + 1})`
         : '';
 
     return `${edgeName} ↔ ${targetName}${laneSuffix}`;
@@ -1373,7 +1373,10 @@ function getTimelineLanes() {
 function refreshTimelineLaneIndices() {
     getTimelineLanes().forEach((lane, index) => {
         const laneIndex = String(index);
+        const layerLabel = `Layer ${index + 1}`;
         lane.dataset.laneIndex = laneIndex;
+        lane.dataset.layerLabel = layerLabel;
+        lane.setAttribute('aria-label', layerLabel);
         lane.querySelectorAll('.timeline-item').forEach((item) => {
             item.dataset.laneIndex = laneIndex;
         });
