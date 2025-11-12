@@ -30,23 +30,33 @@ body {
     color: var(--text-primary);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: clamp(16px, 3vh, 24px);
+    align-items: stretch;
+    padding: 0 0 clamp(16px, 3vh, 24px);
 }
 
 .app-shell {
     width: min(1200px, 100%);
+    margin: clamp(16px, 3vh, 24px) auto 0;
+    padding: 0 clamp(16px, 3vh, 24px);
     display: grid;
     grid-template-columns: 1fr;
     gap: clamp(18px, 3vh, 24px);
 }
 
 .nav-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    width: 100%;
+    margin: 0;
     background: rgba(17, 24, 39, 0.85);
     backdrop-filter: blur(14px);
-    border-radius: 22px;
+    border-radius: 0 0 0px 0px;
     padding: clamp(14px, 2.5vh, 18px) clamp(20px, 4vw, 28px);
-    border: 1px solid var(--border-color);
+    border: 0;
+    border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-soft);
     display: flex;
     align-items: center;
