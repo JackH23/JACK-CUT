@@ -6120,18 +6120,13 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
 
         const group = computeOverlayLayerGroup(descriptor);
         const laneRank = resolveOverlayLaneRank(descriptor.laneIndex, group);
+        const safeRank = Number.isFinite(laneRank) ? laneRank : 0;
 
         if (group === 'below') {
-            const range = Math.max(1, OVERLAY_BELOW_Z_MAX - OVERLAY_BELOW_Z_BASE);
-            const clampedRank = Math.min(laneRank, range - 1);
-            const zIndex = OVERLAY_BELOW_Z_MAX - clampedRank;
-            return Math.max(OVERLAY_BELOW_Z_BASE + 1, zIndex);
+            return OVERLAY_BELOW_Z_MAX - safeRank;
         }
 
-        const range = Math.max(1, OVERLAY_ABOVE_Z_MAX - OVERLAY_ABOVE_Z_BASE);
-        const clampedRank = Math.min(laneRank, range - 1);
-        const zIndex = OVERLAY_ABOVE_Z_MAX - clampedRank;
-        return Math.max(OVERLAY_ABOVE_Z_BASE + 1, zIndex);
+        return OVERLAY_ABOVE_Z_MAX - safeRank;
     };
 
     const getDescriptorLayerGroup = (descriptor) => (descriptor?.layerGroup === 'below'
