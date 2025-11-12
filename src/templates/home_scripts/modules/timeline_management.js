@@ -1102,6 +1102,14 @@ function createTimelineLaneEntryCache(entriesInput, { cloneEntries = true } = {}
             end: Number.isFinite(entry?.end) ? Number(entry.end) : 0,
             duration: Number.isFinite(entry?.duration) ? Number(entry.duration) : undefined,
             leadingGap: Number.isFinite(entry?.leadingGap) ? Number(entry.leadingGap) : undefined,
+            transitionOverride: entry?.transitionOverride
+                ? sanitizeOverlayTransitionOverride(
+                    entry.transitionOverride,
+                    Number.isFinite(entry?.duration)
+                        ? Number(entry.duration)
+                        : Number(entry?.end) - Number(entry?.start),
+                )
+                : undefined,
         }))
         : entriesSource;
 
@@ -1206,6 +1214,24 @@ function getTimelinePlaybackSegments(laneCacheOverride = null) {
     const laneCache = resolveTimelineLaneEntryCache(laneCacheOverride);
     const { entries, totalDuration } = laneCache;
 
+    entries.forEach((entry) => {
+        if (!entry || !entry.item) {
+            return;
+        }
+
+        const clipDuration = Number.isFinite(entry.duration)
+            ? Math.max(0, Number(entry.duration) || 0)
+            : Math.max(0, Number(entry.end) - Number(entry.start));
+        entry.duration = clipDuration;
+
+        const existingOverride = entry.transitionOverride
+            ? sanitizeOverlayTransitionOverride(entry.transitionOverride, clipDuration)
+            : null;
+        const computedOverride = existingOverride
+            || getTimelineItemOverlayTransitionDurations(entry.item, clipDuration);
+        entry.transitionOverride = sanitizeOverlayTransitionOverride(computedOverride, clipDuration);
+    });
+
     if (!entries.length || !Number.isFinite(totalDuration) || totalDuration <= 0) {
         return {
             segments: [],
@@ -1245,6 +1271,21 @@ function getTimelinePlaybackSegments(laneCacheOverride = null) {
                 return aIndex - bIndex;
             });
 
+        const segmentEntries = orderedEntries.map((entry) => ({
+            item: entry.item,
+            laneIndex: entry.laneIndex,
+            start: entry.start,
+            end: entry.end,
+            duration: entry.duration,
+            leadingGap: entry.leadingGap,
+            transitionOverride: entry.transitionOverride
+                ? {
+                    entrance: entry.transitionOverride.entrance,
+                    exit: entry.transitionOverride.exit,
+                }
+                : null,
+        }));
+
         const isAudioEntry = (entry) => {
             if (!entry?.item) {
                 return false;
@@ -1270,7 +1311,7 @@ function getTimelinePlaybackSegments(laneCacheOverride = null) {
             end,
             duration: end - start,
             item: activeEntry ? activeEntry.item : null,
-            items: orderedEntries,
+            items: segmentEntries,
         });
     }
 
@@ -4999,6 +5040,77 @@ function easeOverlayTransitionProgress(value) {
     return (t * t) * (3 - (2 * t));
 }
 
+const DEFAULT_OVERLAY_TRANSITION_DURATION_MS = 220;
+
+function sanitizeOverlayTransitionOverride(override, clipDurationMs = null) {
+    if (!override) {
+        return null;
+    }
+
+    const clipDuration = Math.max(0, Number(clipDurationMs) || 0);
+    const entrance = Math.max(0, Number(override.entrance) || 0);
+    const exit = Math.max(0, Number(override.exit) || 0);
+
+    const clampedEntrance = clipDuration > 0 ? Math.min(entrance, clipDuration) : entrance;
+    const clampedExit = clipDuration > 0 ? Math.min(exit, clipDuration) : exit;
+
+    if (clampedEntrance <= 0 && clampedExit <= 0) {
+        return null;
+    }
+
+    return {
+        entrance: clampedEntrance,
+        exit: clampedExit,
+    };
+}
+
+function getTimelineItemOverlayTransitionDurations(timelineItem, clipDurationMs = null) {
+    if (!timelineItem) {
+        return null;
+    }
+
+    const fileType = timelineItem.dataset?.fileType || '';
+    if (!fileType.startsWith('image/')) {
+        return null;
+    }
+
+    const clipDuration = Math.max(0, Number(clipDurationMs) || getTimelineItemPlaybackDuration(timelineItem));
+    const animationSettings = typeof getTimelineItemAnimationSettings === 'function'
+        ? getTimelineItemAnimationSettings(timelineItem)
+        : null;
+    const direction = sanitizeAnimationDirection(animationSettings?.direction);
+
+    let entranceWindow = 0;
+    let exitWindow = 0;
+
+    if (direction === 'in' || direction === 'combo') {
+        const entranceConfig = getPreviewImageEntranceConfig({
+            clipDurationMs: clipDuration,
+            settingsOverride: animationSettings,
+        });
+        entranceWindow = Math.max(0, Number(entranceConfig?.totalDuration) || 0);
+    }
+
+    if (direction === 'out' || direction === 'combo') {
+        const exitConfig = getPreviewImageExitConfig({
+            clipDurationMs: clipDuration,
+            settingsOverride: animationSettings,
+        });
+        exitWindow = Math.max(0, Number(exitConfig?.totalDuration) || 0);
+    }
+
+    if (direction === 'none' || !animationSettings) {
+        if (entranceWindow <= 0) {
+            entranceWindow = DEFAULT_OVERLAY_TRANSITION_DURATION_MS;
+        }
+        if (exitWindow <= 0) {
+            exitWindow = DEFAULT_OVERLAY_TRANSITION_DURATION_MS;
+        }
+    }
+
+    return sanitizeOverlayTransitionOverride({ entrance: entranceWindow, exit: exitWindow }, clipDuration);
+}
+
 function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
     if (!descriptor || !descriptor.item) {
         return false;
@@ -5169,6 +5281,33 @@ function computeOverlayDescriptorOpacity(descriptor) {
                     );
                     opacity *= 1 - exitProgress;
                 }
+            }
+        }
+    }
+
+    const transitionOverride = sanitizeOverlayTransitionOverride(
+        descriptor.transitionOverride,
+        clipDuration,
+    );
+    if ((direction === 'none' || !animationSettings) && transitionOverride) {
+        const entranceWindow = Math.max(0, Number(transitionOverride.entrance) || 0);
+        if (entranceWindow > 0) {
+            const entranceProgress = easeOverlayTransitionProgress(
+                Math.min(elapsed, entranceWindow) / entranceWindow,
+            );
+            opacity *= entranceProgress;
+        } else if (elapsed <= 0) {
+            opacity *= 1;
+        }
+
+        const exitWindow = Math.max(0, Number(transitionOverride.exit) || 0);
+        if (exitWindow > 0) {
+            const exitStart = Math.max(0, clipDuration - exitWindow);
+            if (elapsed >= exitStart) {
+                const exitProgress = easeOverlayTransitionProgress(
+                    (elapsed - exitStart) / exitWindow,
+                );
+                opacity *= 1 - exitProgress;
             }
         }
     }
@@ -5684,6 +5823,12 @@ function extractOverlayDescriptorCacheEntry(descriptor) {
         clipDuration: descriptor.clipDuration,
         animationSettings: descriptor.animationSettings,
         exitConfig: descriptor.exitConfig,
+        transitionOverride: descriptor.transitionOverride
+            ? {
+                entrance: descriptor.transitionOverride.entrance,
+                exit: descriptor.transitionOverride.exit,
+            }
+            : null,
         layerKey: descriptor.layerKey || null,
     };
 }
@@ -5876,6 +6021,28 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 descriptor.exitConfig = cached.exitConfig;
             }
 
+            const clipDuration = Number.isFinite(descriptor.clipDuration)
+                ? descriptor.clipDuration
+                : Number.isFinite(entry.duration)
+                    ? Math.max(0, Number(entry.duration) || 0)
+                    : Math.max(0, end - start);
+            if (clipDuration >= 0 && descriptor.clipDuration === undefined) {
+                descriptor.clipDuration = clipDuration;
+            }
+
+            const explicitTransition = sanitizeOverlayTransitionOverride(
+                entry.transitionOverride,
+                clipDuration,
+            );
+            if (explicitTransition) {
+                descriptor.transitionOverride = explicitTransition;
+            } else if (cached && cached.transitionOverride) {
+                descriptor.transitionOverride = sanitizeOverlayTransitionOverride(
+                    cached.transitionOverride,
+                    clipDuration,
+                );
+            }
+
             if (!Number.isFinite(descriptor.sampleTime)) {
                 if (descriptor.isActive) {
                     descriptor.sampleTime = safeTimelineNow;
@@ -6047,6 +6214,11 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
             if (animationSettings === undefined && clipDuration > 0) {
                 animationSettings = getTimelineItemAnimationSettings(item);
                 descriptor.animationSettings = animationSettings;
+            }
+
+            const transitionOverride = getTimelineItemOverlayTransitionDurations(item, clipDuration);
+            if (transitionOverride) {
+                descriptor.transitionOverride = transitionOverride;
             }
 
             let sampleEnd = end;
