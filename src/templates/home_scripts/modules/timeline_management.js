@@ -5566,18 +5566,52 @@ function resetOverlayAnimationState(entry) {
     };
 }
 
+const overlayDescriptorAnonymousItemKeys = new WeakMap();
+let overlayDescriptorAnonymousKeyCounter = 0;
+
+function getAnonymousOverlayDescriptorKey(item) {
+    if (!item) {
+        return 'item';
+    }
+
+    let key = overlayDescriptorAnonymousItemKeys.get(item);
+    if (!key) {
+        overlayDescriptorAnonymousKeyCounter += 1;
+        key = `item-${overlayDescriptorAnonymousKeyCounter}`;
+        overlayDescriptorAnonymousItemKeys.set(item, key);
+    }
+
+    return key;
+}
+
 function resolveOverlayDescriptorBaseId(descriptor) {
-    if (!descriptor || !descriptor.item || !descriptor.item.dataset) {
+    if (!descriptor || !descriptor.item) {
         return '';
     }
-    const { dataset } = descriptor.item;
-    return dataset.instanceId
-        || dataset.objectUrl
-        || dataset.templateId
-        || dataset.timelineItemId
-        || dataset.displayName
+
+    const dataset = descriptor.item.dataset || null;
+    const explicitId = dataset?.instanceId
+        || dataset?.objectUrl
+        || dataset?.templateId
+        || dataset?.timelineItemId
+        || dataset?.displayName
         || descriptor.item.id
         || '';
+
+    if (explicitId) {
+        return explicitId;
+    }
+
+    return getAnonymousOverlayDescriptorKey(descriptor.item);
+}
+
+function formatOverlayDescriptorTimeKey(value) {
+    if (!Number.isFinite(value)) {
+        return 'na';
+    }
+
+    const scaled = Math.round(Number(value) * 1000);
+    return String(scaled);
 }
 
 function getOverlayDescriptorKey(descriptor) {
@@ -5591,12 +5625,8 @@ function getOverlayDescriptorKey(descriptor) {
     const laneIndex = Number.isFinite(descriptor.laneIndex)
         ? descriptor.laneIndex
         : 'x';
-    const startKey = Number.isFinite(descriptor.start)
-        ? Math.round(descriptor.start)
-        : 'start';
-    const endKey = Number.isFinite(descriptor.end)
-        ? Math.round(descriptor.end)
-        : 'end';
+    const startKey = formatOverlayDescriptorTimeKey(descriptor.start);
+    const endKey = formatOverlayDescriptorTimeKey(descriptor.end);
     const roleKey = descriptor.transitionKey
         || descriptor.transitionRole
         || descriptor.descriptorRole
