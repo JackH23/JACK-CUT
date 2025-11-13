@@ -52,6 +52,9 @@ const previewCanvasImage = document.getElementById('preview-canvas-image');
 const previewResizeHandles = previewImageFrame
     ? Array.from(previewImageFrame.querySelectorAll('.preview-resize-handle'))
     : [];
+let activePreviewImagePlaceholder = null;
+let previewImagePlaceholderTransformSnapshot = null;
+let previewImagePlaceholderCleanupTimer = 0;
 const RESIZE_HANDLE_ANCHORS = {
     n: { x: 0, y: -1 },
     s: { x: 0, y: 1 },
@@ -4701,6 +4704,130 @@ function releaseTimelineAudio(objectURL) {
     }
 }
 
+function getPreviewImagePlaceholderElement() {
+    if (activePreviewImagePlaceholder && !activePreviewImagePlaceholder.isConnected) {
+        activePreviewImagePlaceholder = null;
+        previewImagePlaceholderTransformSnapshot = null;
+        window.clearTimeout(previewImagePlaceholderCleanupTimer);
+        previewImagePlaceholderCleanupTimer = 0;
+        return null;
+    }
+    return activePreviewImagePlaceholder || null;
+}
+
+function removePreviewImagePlaceholder(options = {}) {
+    const { immediate = false } = options;
+    const placeholder = getPreviewImagePlaceholderElement();
+    if (!placeholder) {
+        return;
+    }
+
+    window.clearTimeout(previewImagePlaceholderCleanupTimer);
+    previewImagePlaceholderCleanupTimer = 0;
+
+    const finalize = () => {
+        if (placeholder.parentElement) {
+            placeholder.parentElement.removeChild(placeholder);
+        }
+        if (activePreviewImagePlaceholder === placeholder) {
+            activePreviewImagePlaceholder = null;
+        }
+        previewImagePlaceholderTransformSnapshot = null;
+        previewImagePlaceholderCleanupTimer = 0;
+    };
+
+    if (immediate) {
+        finalize();
+        return;
+    }
+
+    const handleTransitionEnd = () => {
+        placeholder.removeEventListener('transitionend', handleTransitionEnd);
+        finalize();
+    };
+
+    placeholder.classList.remove('is-visible');
+    placeholder.addEventListener('transitionend', handleTransitionEnd, { once: true });
+    previewImagePlaceholderCleanupTimer = window.setTimeout(() => {
+        placeholder.removeEventListener('transitionend', handleTransitionEnd);
+        finalize();
+    }, 360);
+}
+
+function createPreviewImagePlaceholder() {
+    if (!previewImageFrame || !previewImage) {
+        removePreviewImagePlaceholder({ immediate: true });
+        return null;
+    }
+
+    const existing = getPreviewImagePlaceholderElement();
+    if (existing) {
+        removePreviewImagePlaceholder({ immediate: true });
+    }
+
+    if (previewImage.hidden
+        || !previewImage.complete
+        || !previewImage.naturalWidth
+        || !previewImage.naturalHeight) {
+        removePreviewImagePlaceholder({ immediate: true });
+        return null;
+    }
+
+    const currentSrc = previewImage.currentSrc || previewImage.src || '';
+    if (!currentSrc) {
+        removePreviewImagePlaceholder({ immediate: true });
+        return null;
+    }
+
+    const placeholder = document.createElement('img');
+    placeholder.src = currentSrc;
+    placeholder.alt = previewImage.alt || '';
+    placeholder.loading = 'eager';
+    placeholder.decoding = 'async';
+    placeholder.draggable = false;
+    placeholder.setAttribute('aria-hidden', 'true');
+    placeholder.classList.add('preview-image-placeholder');
+    placeholder.dataset.placeholder = 'true';
+
+    const computed = window.getComputedStyle ? window.getComputedStyle(previewImage) : null;
+    const variablesToCopy = ['--preview-image-rotation', '--preview-image-blur'];
+    variablesToCopy.forEach((property) => {
+        const inlineValue = previewImage.style?.getPropertyValue?.(property) || '';
+        if (inlineValue) {
+            placeholder.style.setProperty(property, inlineValue);
+            return;
+        }
+        const computedValue = computed?.getPropertyValue?.(property) || '';
+        if (computedValue) {
+            placeholder.style.setProperty(property, computedValue);
+        }
+    });
+
+    placeholder.style.transition = 'none';
+    placeholder.style.opacity = '1';
+
+    previewImageFrame.insertBefore(placeholder, previewImage);
+
+    placeholder.classList.add('is-visible');
+
+    requestAnimationFrame(() => {
+        if (!placeholder.isConnected) {
+            return;
+        }
+        placeholder.style.removeProperty('transition');
+        placeholder.style.removeProperty('opacity');
+    });
+
+    activePreviewImagePlaceholder = placeholder;
+    previewImagePlaceholderTransformSnapshot = previewImageTransform
+        && typeof previewImageTransform === 'object'
+        ? { ...previewImageTransform }
+        : null;
+
+    return placeholder;
+}
+
+
 async function revealPreviewImageSource(objectURL, options = {}) {
     const { immediate = false } = options;
     const clipDurationMs = Number.isFinite(options.clipDurationMs)
@@ -4713,6 +4840,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
     }
 
     if (!previewImage.hidden && previewImage.src === objectURL) {
+        removePreviewImagePlaceholder({ immediate: true });
         if (immediate) {
             cancelPreviewEntranceAnimation();
             previewImage.classList.add('is-visible');
@@ -4734,6 +4862,16 @@ async function revealPreviewImageSource(objectURL, options = {}) {
         console.warn('Unable to preload timeline image before preview.', error);
     }
 
+    let placeholder = null;
+    if (!previewImage.hidden
+        && previewImage.complete
+        && previewImage.naturalWidth > 0
+        && previewImage.naturalHeight > 0) {
+        placeholder = createPreviewImagePlaceholder();
+    } else {
+        removePreviewImagePlaceholder({ immediate: true });
+    }
+
     cancelPreviewEntranceAnimation();
     previewImage.classList.remove('is-visible');
 
@@ -4747,8 +4885,17 @@ async function revealPreviewImageSource(objectURL, options = {}) {
             settled = true;
             previewImage.removeEventListener('load', finish);
             previewImage.removeEventListener('error', finish);
+            const removePlaceholder = () => {
+                if (placeholder) {
+                    removePreviewImagePlaceholder();
+                } else {
+                    removePreviewImagePlaceholder({ immediate: true });
+                }
+            };
+
             if (immediate) {
                 previewImage.classList.add('is-visible');
+                removePlaceholder();
             } else {
                 requestAnimationFrame(() => {
                     const didAnimate = runPreviewImageEntranceAnimation({
@@ -4758,6 +4905,7 @@ async function revealPreviewImageSource(objectURL, options = {}) {
                     if (!didAnimate) {
                         previewImage.classList.add('is-visible');
                     }
+                    removePlaceholder();
                 });
             }
             resolve();
@@ -6127,18 +6275,19 @@ function parseCanvasBackdropBlurRadius() {
     return blur;
 }
 
-function parsePreviewImageBlurRadius(computedStyleOverride = null) {
-    if (!previewImage) {
+function parsePreviewImageBlurRadius(computedStyleOverride = null, elementOverride = null) {
+    const target = elementOverride || previewImage;
+    if (!target) {
         return 0;
     }
 
     let blur = Number.parseFloat(
-        previewImage.style?.getPropertyValue?.('--preview-image-blur') || '',
+        target.style?.getPropertyValue?.('--preview-image-blur') || '',
     );
 
     if (!Number.isFinite(blur) || blur < 0) {
         const styleSource = computedStyleOverride
-            || (window.getComputedStyle ? window.getComputedStyle(previewImage) : null);
+            || (window.getComputedStyle ? window.getComputedStyle(target) : null);
 
         if (styleSource) {
             const variableValue = styleSource.getPropertyValue?.('--preview-image-blur') || '';
@@ -6423,12 +6572,7 @@ function getActivePreviewImageTransform(viewportWidth, viewportHeight) {
 }
 
 function drawPreviewImageToExportCanvas() {
-    if (!previewImage
-        || previewImage.hidden
-        || !previewImage.complete
-        || !previewImageFrame
-        || !previewViewport
-    ) {
+    if (!previewImageFrame || !previewViewport) {
         return false;
     }
 
@@ -6439,13 +6583,38 @@ function drawPreviewImageToExportCanvas() {
         return false;
     }
 
-    const transform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
+    const placeholderElement = getPreviewImagePlaceholderElement();
+    const isRenderable = (element) => (
+        element
+        && !element.hidden
+        && element.complete
+        && element.naturalWidth > 0
+        && element.naturalHeight > 0
+    );
+
+    let imageElement = isRenderable(previewImage) ? previewImage : null;
+    let usingPlaceholder = false;
+
+    if (!imageElement && isRenderable(placeholderElement)) {
+        imageElement = placeholderElement;
+        usingPlaceholder = true;
+    }
+
+    if (!imageElement) {
+        return false;
+    }
+
+    let transform = getActivePreviewImageTransform(viewportWidth, viewportHeight);
+    if (usingPlaceholder && previewImagePlaceholderTransformSnapshot) {
+        transform = previewImagePlaceholderTransformSnapshot;
+    }
+
     if (!transform) {
         return false;
     }
 
-    const naturalWidth = Math.max(1, previewImage.naturalWidth || 0);
-    const naturalHeight = Math.max(1, previewImage.naturalHeight || 0);
+    const naturalWidth = Math.max(1, imageElement.naturalWidth || 0);
+    const naturalHeight = Math.max(1, imageElement.naturalHeight || 0);
 
     const canvasWidth = Math.max(1, exportMirrorCanvas.width);
     const canvasHeight = Math.max(1, exportMirrorCanvas.height);
@@ -6492,7 +6661,7 @@ function drawPreviewImageToExportCanvas() {
     let computedStyle = null;
 
     if (window.getComputedStyle) {
-        computedStyle = window.getComputedStyle(previewImage);
+        computedStyle = window.getComputedStyle(imageElement);
         if (computedStyle) {
             const opacityValue = Number.parseFloat(computedStyle.opacity);
             if (Number.isFinite(opacityValue)) {
@@ -6501,7 +6670,7 @@ function drawPreviewImageToExportCanvas() {
             cssMatrix = parseCssTransformMatrix(
                 computedStyle.transform || computedStyle.webkitTransform || '',
             );
-            blurRadius = parsePreviewImageBlurRadius(computedStyle);
+            blurRadius = parsePreviewImageBlurRadius(computedStyle, imageElement);
         }
     }
 
@@ -6533,7 +6702,7 @@ function drawPreviewImageToExportCanvas() {
     exportMirrorContext.filter = filterValue;
 
     exportMirrorContext.drawImage(
-        previewImage,
+        imageElement,
         0,
         0,
         drawWidth,
@@ -6632,36 +6801,43 @@ function startPreviewMirroring(width, height, options = {}) {
                 dimensions.width,
                 dimensions.height,
             );
-        } else if (!previewImage.hidden && previewImage.complete) {
+        } else {
             const drewImage = drawPreviewImageToExportCanvas();
             if (!drewImage) {
-                const fallbackDimensions = computeContainDimensions(
-                    previewImage.naturalWidth,
-                    previewImage.naturalHeight,
-                    exportMirrorCanvas.width,
-                    exportMirrorCanvas.height,
-                );
-                exportMirrorContext.drawImage(
-                    previewImage,
-                    fallbackDimensions.x,
-                    fallbackDimensions.y,
-                    fallbackDimensions.width,
-                    fallbackDimensions.height,
-                );
+                const placeholderSource = getPreviewImagePlaceholderElement();
+                const fallbackSource = (placeholderSource && placeholderSource.complete)
+                    ? placeholderSource
+                    : (previewImage && previewImage.complete ? previewImage : null);
+
+                if (fallbackSource && fallbackSource.naturalWidth > 0 && fallbackSource.naturalHeight > 0) {
+                    const fallbackDimensions = computeContainDimensions(
+                        fallbackSource.naturalWidth,
+                        fallbackSource.naturalHeight,
+                        exportMirrorCanvas.width,
+                        exportMirrorCanvas.height,
+                    );
+                    exportMirrorContext.drawImage(
+                        fallbackSource,
+                        fallbackDimensions.x,
+                        fallbackDimensions.y,
+                        fallbackDimensions.width,
+                        fallbackDimensions.height,
+                    );
+                } else {
+                    exportMirrorContext.fillStyle = '#1f2937';
+                    exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
+                    exportMirrorContext.fillStyle = '#e2e8f0';
+                    exportMirrorContext.textAlign = 'center';
+                    exportMirrorContext.textBaseline = 'middle';
+                    const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
+                    exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
+                    exportMirrorContext.fillText(
+                        'Preparing preview…',
+                        exportMirrorCanvas.width / 2,
+                        exportMirrorCanvas.height / 2,
+                    );
+                }
             }
-        } else {
-            exportMirrorContext.fillStyle = '#1f2937';
-            exportMirrorContext.fillRect(0, 0, exportMirrorCanvas.width, exportMirrorCanvas.height);
-            exportMirrorContext.fillStyle = '#e2e8f0';
-            exportMirrorContext.textAlign = 'center';
-            exportMirrorContext.textBaseline = 'middle';
-            const fontSize = Math.max(18, Math.round(exportMirrorCanvas.height / 18));
-            exportMirrorContext.font = `600 ${fontSize}px Inter, "Segoe UI", sans-serif`;
-            exportMirrorContext.fillText(
-                'Preparing preview…',
-                exportMirrorCanvas.width / 2,
-                exportMirrorCanvas.height / 2,
-            );
         }
 
         if (overlaySnapshots.length && hasViewport) {

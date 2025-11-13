@@ -4310,6 +4310,9 @@ function hidePreviewImageLayer() {
             }
         });
     }
+    if (typeof removePreviewImagePlaceholder === 'function') {
+        removePreviewImagePlaceholder({ immediate: true });
+    }
     previewImageLayer.setAttribute('hidden', '');
     clearPreviewImageTransform();
     pendingPreviewImageTransform = null;
