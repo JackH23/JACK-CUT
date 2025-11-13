@@ -2729,6 +2729,56 @@ function waitForGapDuration(durationMs) {
     });
 }
 
+function selectSegmentPrimaryTimelineItem(segment, previousItem = null) {
+    if (!segment) {
+        return null;
+    }
+
+    const entries = Array.isArray(segment.items) ? segment.items : [];
+
+    if (previousItem) {
+        const stillActive = entries.some((entry) => entry?.item === previousItem);
+        if (stillActive) {
+            return previousItem;
+        }
+    }
+
+    if (!entries.length) {
+        return segment.item || null;
+    }
+
+    const normalizeLaneIndex = (entry) => {
+        const laneValue = entry?.laneIndex ?? entry?.item?.dataset?.laneIndex;
+        if (typeof resolveLaneIndex === 'function') {
+            try {
+                return resolveLaneIndex(laneValue);
+            } catch (error) {
+                // Ignore lane resolution errors and fall back to numeric parsing.
+            }
+        }
+        const parsed = Number.parseInt(laneValue ?? '', 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const rankedEntries = entries
+        .filter((entry) => entry && entry.item)
+        .map((entry) => ({
+            entry,
+            laneIndex: normalizeLaneIndex(entry),
+            fileType: entry.item?.dataset?.fileType || '',
+        }));
+
+    if (!rankedEntries.length) {
+        return segment.item || null;
+    }
+
+    const visualEntries = rankedEntries.filter(({ fileType }) => !fileType.startsWith('audio/'));
+    const candidateSource = (visualEntries.length ? visualEntries : rankedEntries).slice();
+    candidateSource.sort((a, b) => a.laneIndex - b.laneIndex);
+
+    return candidateSource[0]?.entry?.item || segment.item || null;
+}
+
 async function playTimelineSequence(startIndex = 0, resumeOptions = null, playbackContext = null) {
     const timelineItems = Array.isArray(playbackContext?.timelineItems)
         ? playbackContext.timelineItems
@@ -2772,7 +2822,9 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
         }
     } else if (initialItem) {
         const foundSegmentIndex = segments.findIndex(
-            (segment) => segment.item === initialItem,
+            (segment) => segment.item === initialItem
+                || (Array.isArray(segment?.items)
+                    && segment.items.some((entry) => entry?.item === initialItem)),
         );
         if (foundSegmentIndex >= 0) {
             initialSegmentIndex = foundSegmentIndex;
@@ -2794,6 +2846,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
 
     let completedNaturally = true;
     let pendingResumeTime = resumeTimeMs;
+    let activePrimaryItem = initialItem || null;
 
     try {
         for (let index = initialSegmentIndex; index < segments.length; index += 1) {
@@ -2802,7 +2855,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 break;
             }
             const segment = segments[index];
-            const { item, start, end, duration } = segment;
+            const { start, end, duration } = segment;
             if (duration <= 0) {
                 continue;
             }
@@ -2810,12 +2863,18 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 continue;
             }
             const nextSegment = segments[index + 1];
-            if (nextSegment?.item) {
-                const nextUrl = nextSegment.item.dataset?.objectUrl;
-                const nextType = nextSegment.item.dataset?.fileType || '';
-                if (nextUrl && nextType.startsWith('image/')) {
-                    preloadTimelineImage(nextUrl).catch(() => {});
-                }
+            if (Array.isArray(nextSegment?.items)) {
+                nextSegment.items.forEach((entry) => {
+                    const candidate = entry?.item || null;
+                    if (!candidate || candidate === activePrimaryItem) {
+                        return;
+                    }
+                    const nextUrl = candidate.dataset?.objectUrl;
+                    const nextType = candidate.dataset?.fileType || '';
+                    if (nextUrl && nextType.startsWith('image/')) {
+                        preloadTimelineImage(nextUrl).catch(() => {});
+                    }
+                });
             }
             let segmentStartTime = start;
             
@@ -2832,14 +2891,15 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
             }
 
             let segmentStartOffset = 0;
-            if (item) {
+            const timelineItem = selectSegmentPrimaryTimelineItem(segment, activePrimaryItem);
+            if (timelineItem) {
                 const clipStartTime = Math.max(
                     0,
-                    Math.round(Number(getTimelineItemStartTime(item, laneCache)) || 0),
+                    Math.round(Number(getTimelineItemStartTime(timelineItem, laneCache)) || 0),
                 );
                 const clipDuration = Math.max(
                     0,
-                    Math.round(Number(getTimelineItemPlaybackDuration(item)) || 0),
+                    Math.round(Number(getTimelineItemPlaybackDuration(timelineItem)) || 0),
                 );
                 const offsetFromClipStart = Number.isFinite(segmentStartTime)
                     ? Math.round(segmentStartTime - clipStartTime)
@@ -2860,9 +2920,9 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 ? Math.max(0, Math.round(end - segmentStartTime))
                 : duration;
             animateTimelineProgress(startFraction, endFraction, remainingDuration);
-            if (item) {
+            if (timelineItem) {
                 // eslint-disable-next-line no-await-in-loop
-                await playTimelineItem(item, remainingDuration, segment.items || null, {
+                await playTimelineItem(timelineItem, remainingDuration, segment.items || null, {
                     startOffsetMs: segmentStartOffset,
                 });
             } else {
@@ -2870,6 +2930,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
                 await waitForGapDuration(remainingDuration);
             }
             pendingResumeTime = null;
+            activePrimaryItem = timelineItem || null;
         }
     } finally {
         const preservePause = isTimelinePaused;
@@ -2909,9 +2970,14 @@ function pauseTimelinePlayback() {
         (segment) => clampedTime >= segment.start && clampedTime < segment.end,
     );
     const activeIndex = activeTimelineItem ? timelineItems.indexOf(activeTimelineItem) : -1;
-    const fallbackIndex = segmentIndex >= 0 && segments[segmentIndex].item
-        ? timelineItems.indexOf(segments[segmentIndex].item)
-        : -1;
+    const fallbackIndex = (() => {
+        if (segmentIndex < 0) {
+            return -1;
+        }
+        const segment = segments[segmentIndex];
+        const primaryItem = selectSegmentPrimaryTimelineItem(segment, activeTimelineItem);
+        return primaryItem ? timelineItems.indexOf(primaryItem) : -1;
+    })();
     const resumeItemIndex = activeIndex >= 0
         ? activeIndex
         : (fallbackIndex >= 0 ? fallbackIndex : 0);
