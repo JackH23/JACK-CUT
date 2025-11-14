@@ -2736,13 +2736,6 @@ function selectSegmentPrimaryTimelineItem(segment, previousItem = null) {
 
     const entries = Array.isArray(segment.items) ? segment.items : [];
 
-    if (previousItem) {
-        const stillActive = entries.some((entry) => entry?.item === previousItem);
-        if (stillActive) {
-            return previousItem;
-        }
-    }
-
     if (!entries.length) {
         return segment.item || null;
     }
@@ -2773,10 +2766,66 @@ function selectSegmentPrimaryTimelineItem(segment, previousItem = null) {
     }
 
     const visualEntries = rankedEntries.filter(({ fileType }) => !fileType.startsWith('audio/'));
-    const candidateSource = (visualEntries.length ? visualEntries : rankedEntries).slice();
-    candidateSource.sort((a, b) => a.laneIndex - b.laneIndex);
+    const candidateSource = visualEntries.length ? visualEntries : rankedEntries;
+    const segmentStart = Number.isFinite(segment.start) ? Number(segment.start) : null;
+    const edgeTolerance = Math.max(0, Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0);
 
-    return candidateSource[0]?.entry?.item || segment.item || null;
+    const laneBuckets = new Map();
+    candidateSource.forEach((info) => {
+        const startTime = Number.isFinite(info.entry?.start)
+            ? Number(info.entry.start)
+            : Number.NEGATIVE_INFINITY;
+        const bucket = laneBuckets.get(info.laneIndex) || [];
+        bucket.push({
+            entry: info.entry,
+            item: info.entry?.item || null,
+            startTime,
+        });
+        laneBuckets.set(info.laneIndex, bucket);
+    });
+
+    const selectEntryForLane = (laneEntries) => {
+        if (!laneEntries || !laneEntries.length) {
+            return null;
+        }
+
+        const sorted = laneEntries.slice().sort((a, b) => a.startTime - b.startTime);
+        let candidate = null;
+
+        if (segmentStart !== null) {
+            for (let index = sorted.length - 1; index >= 0; index -= 1) {
+                const entryStart = sorted[index].startTime;
+                if (!Number.isFinite(entryStart)) {
+                    continue;
+                }
+                if (segmentStart + edgeTolerance >= entryStart) {
+                    candidate = sorted[index];
+                    break;
+                }
+            }
+        }
+
+        if (!candidate && previousItem) {
+            candidate = sorted.find((entry) => entry.item === previousItem) || null;
+        }
+
+        if (!candidate) {
+            candidate = sorted[sorted.length - 1] || sorted[0] || null;
+        }
+
+        return candidate ? candidate.item : null;
+    };
+
+    const orderedLaneIndices = Array.from(laneBuckets.keys()).sort((a, b) => a - b);
+    for (let index = 0; index < orderedLaneIndices.length; index += 1) {
+        const laneIndex = orderedLaneIndices[index];
+        const item = selectEntryForLane(laneBuckets.get(laneIndex));
+        if (item) {
+            return item;
+        }
+    }
+
+    return segment.item || null;
 }
 
 async function playTimelineSequence(startIndex = 0, resumeOptions = null, playbackContext = null) {
