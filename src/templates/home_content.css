@@ -842,12 +842,13 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: none;
     animation: fadeIn 0.18s ease;
     min-height: 0;
+    flex: 1;
 }
 
 .settings-section.is-active {
     display: block;
-    height: var(--settings-panel-height, auto);
-    max-height: 320px;
+    height: 100%;
+    max-height: none;
     overflow-y: auto;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
