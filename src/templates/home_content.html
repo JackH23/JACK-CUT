@@ -9,8 +9,8 @@
     </style>
 </head>
 <body>
-    <div class="app-shell">
-        <header class="nav-bar">
+    <header class="nav-bar">
+        <div class="nav-bar__inner">
             <div class="nav-brand">
                 <span class="brand-icon">🎬</span>
                 <span>Video Editor Pro</span>
@@ -26,8 +26,10 @@
                     <button type="button" class="export-button">Export video</button>
                 {% endif %}
             </nav>
-        </header>
+        </div>
+    </header>
 
+    <div class="app-shell">
         <section id="features" class="editor-layout">
             <article class="panel upload-card">
                 <div class="panel-header">
