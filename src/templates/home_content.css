@@ -43,7 +43,7 @@ body {
     display: grid;
     grid-template-rows: auto auto;
     gap: 0;
-    padding: 0 clamp(12px, 2vw, 24px) clamp(16px, 3vh, 24px);
+    padding: 0 0 clamp(16px, 3vh, 24px);
 }
 
 .nav-bar {
@@ -62,7 +62,7 @@ body {
 .nav-bar__inner {
     width: 100%;
     margin: 0;
-    padding: var(--nav-padding-y) clamp(14px, 2.5vw, 24px);
+    padding: var(--nav-padding-y) 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
