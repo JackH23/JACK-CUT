@@ -788,6 +788,9 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     gap: 14px;
     --settings-panel-height: auto;
     min-height: 0;
+    height: var(--settings-panel-height, auto);
+    max-height: var(--settings-panel-height, none);
+    overflow: hidden;
 }
 
 .settings-tabs {
