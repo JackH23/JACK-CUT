@@ -34,7 +34,7 @@ body {
     display: flex;
     flex-direction: column;
     padding: 0;
-    padding-top: calc(var(--nav-height) + clamp(12px, 2vh, 18px));
+    padding-top: var(--nav-height);
 }
 
 .app-shell {
@@ -42,7 +42,7 @@ body {
     width: 100%;
     display: grid;
     grid-template-rows: auto auto;
-    gap: clamp(12px, 2vh, 18px);
+    gap: 0;
     padding: 0 clamp(12px, 2vw, 24px) clamp(16px, 3vh, 24px);
 }
 
@@ -197,7 +197,7 @@ body {
 
 .editor-layout {
     display: grid;
-    gap: clamp(10px, 2vw, 18px);
+    gap: 0;
     grid-template-columns: minmax(220px, 0.95fr) minmax(0, 2fr) minmax(260px, 1fr);
     grid-template-areas: "upload preview settings";
     align-items: start;
@@ -229,7 +229,7 @@ body {
 }
 
 .timeline-footer {
-    margin-top: clamp(8px, 1.5vh, 14px);
+    margin-top: 0;
 }
 
 .panel {
