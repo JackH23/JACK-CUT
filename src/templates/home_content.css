@@ -12,8 +12,8 @@
     --border-color: rgba(148, 163, 184, 0.18);
     --shadow-soft: 0 24px 60px rgba(2, 6, 23, 0.55);
     --shadow-inner: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
-    --nav-padding-y: clamp(14px, 2.5vh, 18px);
-    --nav-height: calc((var(--nav-padding-y) * 2) + 44px);
+    --nav-padding-y: clamp(8px, 1.8vh, 12px);
+    --nav-height: calc((var(--nav-padding-y) * 2) + 36px);
     --editor-panel-max-height: clamp(320px, 58vh, 480px);
     font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
 }
@@ -62,7 +62,7 @@ body {
 .nav-bar__inner {
     width: 100%;
     margin: 0;
-    padding: var(--nav-padding-y) clamp(16px, 3vw, 28px);
+    padding: var(--nav-padding-y) clamp(14px, 2.5vw, 24px);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -72,25 +72,25 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
-    font-size: 20px;
-    font-weight: 600;
+    gap: 12px;
+    font-size: 18px;
     letter-spacing: 0.4px;
 }
 
 .brand-icon {
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
     background: linear-gradient(135deg, rgba(124, 58, 237, 0.85), rgba(244, 114, 182, 0.7));
-    box-shadow: 0 10px 30px rgba(124, 58, 237, 0.35);
-    font-size: 26px;
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.28);
+    font-size: 20px;
 }
 
 .nav-actions {
     display: flex;
-    gap: 12px;
+    gap: 10px;
     align-items: center;
 }
 
@@ -99,8 +99,8 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 18px;
-    border-radius: 12px;
+    padding: 8px 14px;
+    border-radius: 10px;
     background: rgba(15, 23, 42, 0.7);
     border: 1px solid transparent;
     color: var(--text-secondary);
