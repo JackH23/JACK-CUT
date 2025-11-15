@@ -2389,7 +2389,18 @@ function getTimelineLanes() {
 function refreshTimelineLaneIndices() {
     getTimelineLanes().forEach((lane, index) => {
         const laneIndex = String(index);
+        const layerNumber = index + 1;
+        const layerLabel = `Layer ${layerNumber}`;
+        const isAudioLane = lane.classList.contains('timeline-lane--audio');
         lane.dataset.laneIndex = laneIndex;
+        lane.dataset.layerLabel = layerLabel;
+        if (isAudioLane) {
+            lane.dataset.layerType = 'Audio';
+            lane.setAttribute('aria-label', `${layerLabel} (Audio track)`);
+        } else {
+            lane.removeAttribute('data-layer-type');
+            lane.setAttribute('aria-label', layerLabel);
+        }
         lane.querySelectorAll('.timeline-item').forEach((item) => {
             item.dataset.laneIndex = laneIndex;
         });

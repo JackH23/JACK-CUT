@@ -2956,7 +2956,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     flex-wrap: nowrap;
     align-items: stretch;
     gap: 0;
-    padding: 12px;
+    padding: 28px 12px 12px;
     border-radius: 12px;
     background: rgba(15, 23, 42, 0.6);
     border: 1px dashed rgba(148, 163, 184, 0.22);
@@ -2966,13 +2966,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     transition: border-color 0.2s ease, background 0.2s ease;
 }
 
-.timeline-lane--audio {
-    padding-top: 28px;
-    padding-bottom: 28px;
-}
-
-.timeline-lane--audio::before {
-    content: 'Audio';
+.timeline-lane::before {
+    content: attr(data-layer-label);
     position: absolute;
     top: 10px;
     left: 16px;
@@ -2980,6 +2975,14 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: rgba(148, 163, 184, 0.72);
+}
+
+.timeline-lane--audio {
+    padding-bottom: 28px;
+}
+
+.timeline-lane--audio::before {
+    content: attr(data-layer-label) ' • ' attr(data-layer-type);
 }
 
 .timeline-lane.is-drop-target {
