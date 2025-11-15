@@ -2803,7 +2803,8 @@ function resolveOverlayDescriptorBaseId(descriptor) {
         return '';
     }
     const { dataset } = descriptor.item;
-    return dataset.instanceId
+    return dataset.timelineInstanceId
+        || dataset.instanceId
         || dataset.objectUrl
         || dataset.templateId
         || dataset.timelineItemId
