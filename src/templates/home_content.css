@@ -14,6 +14,7 @@
     --shadow-inner: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
     --nav-padding-y: clamp(14px, 2.5vh, 18px);
     --nav-height: calc((var(--nav-padding-y) * 2) + 44px);
+    --editor-panel-max-height: clamp(320px, 58vh, 480px);
     font-family: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
 }
 
@@ -40,7 +41,7 @@ body {
     flex: 1;
     width: 100%;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     gap: clamp(12px, 2vh, 18px);
     padding: 0 clamp(12px, 2vw, 24px) clamp(16px, 3vh, 24px);
 }
@@ -199,12 +200,13 @@ body {
     gap: clamp(10px, 2vw, 18px);
     grid-template-columns: minmax(220px, 0.95fr) minmax(0, 2fr) minmax(260px, 1fr);
     grid-template-areas: "upload preview settings";
-    align-items: stretch;
-    height: 100%;
+    align-items: start;
 }
 
 .editor-layout > .panel {
-    height: 100%;
+    height: auto;
+    max-height: var(--editor-panel-max-height);
+    min-height: 0;
 }
 
 .upload-card {
@@ -239,6 +241,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: clamp(10px, 2vh, 16px);
+    min-height: 0;
 }
 
 .panel.upload-card,
@@ -281,7 +284,13 @@ body {
 
 .upload-card {
     position: relative;
-    gap: 12px;
+    gap: 10px;
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.upload-card > * {
+    min-height: 0;
 }
 
 .upload-dropzone {
@@ -289,7 +298,7 @@ body {
     display: grid;
     gap: 6px;
     justify-items: center;
-    padding: 14px 12px;
+    padding: 12px 10px;
     border-radius: 10px;
     border: 1.5px dashed rgba(148, 163, 184, 0.28);
     background: linear-gradient(140deg, rgba(124, 58, 237, 0.06), rgba(56, 189, 248, 0.04));
@@ -305,14 +314,14 @@ body {
 }
 
 .upload-dropzone__icon {
-    width: 38px;
-    height: 38px;
+    width: 34px;
+    height: 34px;
     border-radius: 10px;
     display: grid;
     place-items: center;
     background: linear-gradient(135deg, rgba(124, 58, 237, 0.32), rgba(56, 189, 248, 0.18));
     color: rgba(244, 114, 182, 0.9);
-    font-size: 18px;
+    font-size: 16px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -382,9 +391,11 @@ body {
 }
 
 .upload-gallery {
-    margin-top: 6px;
-    display: grid;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+    min-height: 0;
 }
 
 .upload-gallery__title {
@@ -400,8 +411,10 @@ body {
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 10px;
-    max-height: 260px;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+    max-height: none;
     overflow-y: auto;
     padding-right: 4px;
     scrollbar-gutter: stable;
@@ -539,7 +552,9 @@ body {
 
 .preview-card {
     position: relative;
-    gap: 18px;
+    gap: 14px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .preview-header {
@@ -648,8 +663,9 @@ body {
     justify-content: center;
     color: var(--text-secondary);
     font-size: 1rem;
-    padding: 12px;
-    min-height: clamp(180px, 28vh, 240px);
+    padding: 10px;
+    min-height: clamp(150px, 22vh, 200px);
+    max-height: 100%;
     overflow: visible;
 }
 
@@ -702,7 +718,14 @@ body {
 .preview-meta {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 10px;
+    gap: 8px;
+    align-self: stretch;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
 }
 
 .preview-meta__item {
@@ -783,10 +806,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .settings-card {
     grid-area: settings;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    --settings-panel-height: auto;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 12px;
+    --settings-panel-height: var(--editor-panel-max-height);
     min-height: 0;
     height: var(--settings-panel-height, auto);
     max-height: var(--settings-panel-height, none);
@@ -797,6 +820,8 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: flex;
     gap: 4px;
     align-items: center;
+    flex-wrap: wrap;
+    row-gap: 6px;
     border-radius: 10px;
     padding: 4px;
     background: rgba(15, 23, 42, 0.58);
@@ -810,14 +835,14 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 7px 12px;
+    padding: 6px 10px;
     border-radius: 9px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
     font: inherit;
     font-weight: 500;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     cursor: pointer;
     transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
@@ -3701,6 +3726,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 @media (max-width: 960px) {
+    :root {
+        --editor-panel-max-height: none;
+    }
+
     .editor-layout {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas:
