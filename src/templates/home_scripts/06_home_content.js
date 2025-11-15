@@ -459,7 +459,7 @@
                 layerGroup: null,
                 zIndex: 0,
                 borderRadius: 0,
-                opacity: 1,
+                opacity: 0,
                 lastTimelineTime: null,
                 renderedFrame: null,
                 renderedOpacity: null,
@@ -541,7 +541,7 @@
         entry.layerGroup = null;
         entry.zIndex = 0;
         entry.borderRadius = 0;
-        entry.opacity = 1;
+        entry.opacity = 0;
         entry.frame = null;
         entry.lastTimelineTime = null;
         entry.renderedFrame = null;
@@ -552,6 +552,7 @@
 
         if (entry.layer) {
             entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
+            entry.layer.style.opacity = '0';
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
