@@ -2318,6 +2318,19 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
+    const exitWindowEnd = descriptorEnd + totalExitWindow;
+    const exitHoldAllowance = Math.max(
+        Number(OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) || 0,
+        Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0,
+    );
+
+    if (Number.isFinite(exitWindowEnd)
+        && Number.isFinite(effectiveTimelineNow)
+        && effectiveTimelineNow > exitWindowEnd + exitHoldAllowance
+    ) {
+        return false;
+    }
+
     return effectiveTimelineNow >= exitWindowStart;
 }
 
