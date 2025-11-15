@@ -6076,6 +6076,58 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
             return false;
         });
 
+    if (overlayEntries.length > 1) {
+        const normalizeSortBoundary = (value, fallback = Number.POSITIVE_INFINITY) => {
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : fallback;
+        };
+        const normalizeSortLane = (value) => {
+            const lane = resolveLaneIndex(value);
+            return Number.isFinite(lane) ? lane : Number.POSITIVE_INFINITY;
+        };
+        const compareNumeric = (aValue, bValue) => {
+            const delta = aValue - bValue;
+            if (!Number.isFinite(delta) || Math.abs(delta) < 1e-6) {
+                return 0;
+            }
+            return delta;
+        };
+
+        overlayEntries.sort((a, b) => {
+            const startDelta = compareNumeric(
+                normalizeSortBoundary(a?.start),
+                normalizeSortBoundary(b?.start),
+            );
+            if (startDelta !== 0) {
+                return startDelta;
+            }
+
+            const laneDelta = compareNumeric(
+                normalizeSortLane(a?.laneIndex),
+                normalizeSortLane(b?.laneIndex),
+            );
+            if (laneDelta !== 0) {
+                return laneDelta;
+            }
+
+            const endDelta = compareNumeric(
+                normalizeSortBoundary(a?.end),
+                normalizeSortBoundary(b?.end),
+            );
+            if (endDelta !== 0) {
+                return endDelta;
+            }
+
+            const aLabel = (a?.item?.dataset?.displayName || '').toLowerCase();
+            const bLabel = (b?.item?.dataset?.displayName || '').toLowerCase();
+            if (aLabel && bLabel && aLabel !== bLabel) {
+                return aLabel.localeCompare(bLabel);
+            }
+
+            return 0;
+        });
+    }
+
     const OVERLAY_BELOW_Z_BASE = 10;
     const OVERLAY_BELOW_Z_MAX = 59;
     const OVERLAY_ABOVE_Z_BASE = 60;
@@ -6598,7 +6650,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 const liveOpacity = Number.isFinite(entry.renderedOpacity)
                     ? entry.renderedOpacity
                     : computeOverlayEntryOpacity(entry);
-                if (liveOpacity > 0 && liveOpacity < 0.999) {
+                if (liveOpacity > OVERLAY_OPACITY_EPSILON && liveOpacity < 0.999) {
                     descriptor.shouldRender = true;
                     entry.opacity = liveOpacity;
                     entry.lastTimelineTime = safeTimelineNow;
@@ -6613,12 +6665,14 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                         const heldOpacity = Number.isFinite(entry.renderedOpacity)
                             ? entry.renderedOpacity
                             : computeOverlayEntryOpacity(entry);
-                        descriptor.shouldRender = true;
-                        entry.opacity = heldOpacity;
-                        entry.lastTimelineTime = safeTimelineNow;
-                        entry.layerGroup = getDescriptorLayerGroup(descriptor);
-                        entry.zIndex = getDescriptorZIndex(descriptor);
-                        return;
+                        if (heldOpacity > OVERLAY_OPACITY_EPSILON) {
+                            descriptor.shouldRender = true;
+                            entry.opacity = heldOpacity;
+                            entry.lastTimelineTime = safeTimelineNow;
+                            entry.layerGroup = getDescriptorLayerGroup(descriptor);
+                            entry.zIndex = getDescriptorZIndex(descriptor);
+                            return;
+                        }
                     }
                 }
             }
