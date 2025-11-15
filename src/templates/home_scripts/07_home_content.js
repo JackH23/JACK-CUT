@@ -2278,6 +2278,7 @@ const TIMELINE_UNDO_STACK_LIMIT = 50;
 const timelineUndoStack = [];
 let timelineClipboardSnapshot = null;
 const timelineObjectUrlUsage = new Map();
+const timelineInstanceIdRegistry = new Map();
 const timelineItemVolumeControls = new WeakMap();
 
 function getTimelineItemVolumeControlState(timelineItem) {
@@ -2500,12 +2501,29 @@ function assignTimelineInstanceId(timelineItem, options = {}) {
         return null;
     }
 
-    if (!options.force && timelineItem.dataset.timelineInstanceId) {
-        return timelineItem.dataset.timelineInstanceId;
+    const existingId = timelineItem.dataset.timelineInstanceId;
+    if (!options.force && existingId) {
+        const owner = timelineInstanceIdRegistry.get(existingId);
+        if (!owner || owner === timelineItem || !owner.isConnected) {
+            timelineInstanceIdRegistry.set(existingId, timelineItem);
+            return existingId;
+        }
     }
 
-    const id = generateTimelineInstanceId();
+    if (existingId) {
+        const previousOwner = timelineInstanceIdRegistry.get(existingId);
+        if (previousOwner === timelineItem) {
+            timelineInstanceIdRegistry.delete(existingId);
+        }
+    }
+
+    let id = generateTimelineInstanceId();
+    while (timelineInstanceIdRegistry.has(id)) {
+        id = generateTimelineInstanceId();
+    }
+
     timelineItem.dataset.timelineInstanceId = id;
+    timelineInstanceIdRegistry.set(id, timelineItem);
     return id;
 }
 
@@ -2538,9 +2556,27 @@ function decrementTimelineObjectUrlUsage(objectURL) {
     }
 }
 
+function releaseTimelineInstanceId(timelineItem) {
+    if (!timelineItem || !timelineItem.dataset) {
+        return;
+    }
+
+    const { timelineInstanceId: instanceId } = timelineItem.dataset;
+    if (!instanceId) {
+        return;
+    }
+
+    const owner = timelineInstanceIdRegistry.get(instanceId);
+    if (!owner || owner === timelineItem || !owner.isConnected) {
+        timelineInstanceIdRegistry.delete(instanceId);
+    }
+}
+
 function refreshTimelineObjectUrlUsage() {
     timelineObjectUrlUsage.clear();
+    timelineInstanceIdRegistry.clear();
     getTimelineItems().forEach((item) => {
+        assignTimelineInstanceId(item);
         const objectURL = item?.dataset?.objectUrl || '';
         if (!objectURL) {
             return;
@@ -2882,6 +2918,7 @@ function removeTimelineItem(timelineItem, options = {}) {
     const wasActive = timelineItem === activeTimelineItem;
 
     detachAudioWaveformResizeObserver(timelineItem);
+    releaseTimelineInstanceId(timelineItem);
     if (typeof detachTimelineItemVolumeControl === 'function') {
         detachTimelineItemVolumeControl(timelineItem);
     }
