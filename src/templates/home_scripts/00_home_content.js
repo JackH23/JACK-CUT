@@ -277,11 +277,19 @@ const timelineProgressLine = document.getElementById('timeline-progress-line');
 const timelinePlayheadLine = document.getElementById('timeline-playhead-line');
 const timelineSnapLine = document.getElementById('timeline-snap-line');
 const timelineProgressInput = document.getElementById('timeline-progress');
+const syncTimelineSliderFill = (rawValue) => {
+    const safeValue = Number.isFinite(rawValue) ? Math.min(Math.max(rawValue, 0), 100) : 0;
+    if (timelineProgressInput) {
+        timelineProgressInput.style.setProperty('--progress-fill', `${safeValue}%`);
+    }
+    return safeValue / 100;
+};
 if (timelineProgressInput) {
+    syncTimelineSliderFill(Number(timelineProgressInput.value));
     timelineProgressInput.addEventListener('input', () => {
         stopTimelinePlayback(true, false);
         const rawValue = Number(timelineProgressInput.value);
-        const fraction = Number.isFinite(rawValue) ? rawValue / 100 : 0;
+        const fraction = syncTimelineSliderFill(rawValue);
         seekTimelineToFraction(fraction);
     });
 }

@@ -1645,7 +1645,11 @@ function updateTimelineProgressInput(fraction) {
     if (!timelineProgressInput) {
         return;
     }
-    timelineProgressInput.value = String(Math.round(clampProgress(fraction) * 100));
+    const percent = Math.round(clampProgress(fraction) * 100);
+    timelineProgressInput.value = String(percent);
+    if (typeof syncTimelineSliderFill === 'function') {
+        syncTimelineSliderFill(percent);
+    }
 }
 
 function getTimelineProgressGeometry() {

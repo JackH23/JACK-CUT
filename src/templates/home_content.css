@@ -576,7 +576,7 @@ body {
     position: relative;
     gap: 8px;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .preview-header {
@@ -3524,48 +3524,111 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .playback-time {
     font-variant-numeric: tabular-nums;
-    font-size: 0.82rem;
+    font-size: 0.86rem;
     color: var(--text-secondary);
-    padding: 5px 8px;
-    border-radius: 8px;
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 0 10px;
+    border-radius: 10px;
+    background: transparent;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    line-height: 1.4;
 }
 
 .timeline-progress {
-    margin-top: 8px;
-    display: flex;
-    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    width: min(1100px, calc(100% - clamp(24px, 5vw, 72px)));
+    margin: clamp(6px, 1.6vh, 14px) auto 2px;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(8, 12, 24, 0.6);
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    gap: 12px;
+    padding: 0;
 }
 
-.timeline-progress label {
-    font-size: 0.8rem;
+.timeline-progress__label {
+    font-size: 0.86rem;
     color: var(--text-secondary);
+    font-weight: 700;
+    letter-spacing: 0.02em;
     white-space: nowrap;
 }
 
-.timeline-progress input[type="range"] {
+.timeline-progress__bar {
     flex: 1;
-    accent-color: rgba(124, 58, 237, 0.85);
-    min-width: 110px;
+    min-width: 160px;
+    width: 100%;
+}
+
+.timeline-progress input[type="range"] {
+    --progress-fill: 0%;
+    appearance: none;
+    width: 100%;
+    height: 12px;
+    background: linear-gradient(
+        90deg,
+        #b25cff 0%,
+        #b25cff var(--progress-fill, 0%),
+        #1a1d27 var(--progress-fill, 0%),
+        #1a1d27 100%
+    );
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5), 0 10px 26px rgba(178, 92, 255, 0.25);
+    padding: 0;
+}
+
+.timeline-progress input[type="range"]::-webkit-slider-runnable-track {
+    height: 12px;
+    background: transparent;
+    border-radius: 999px;
+}
+
+.timeline-progress input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(180deg, #c272ff 0%, #a04bf7 100%);
+    border: 3px solid #f7e9ff;
+    border-radius: 50%;
+    box-shadow: 0 6px 18px rgba(162, 103, 255, 0.45);
+    margin-top: -5px;
+    cursor: pointer;
+}
+
+.timeline-progress input[type="range"]::-moz-range-track {
+    height: 12px;
+    background: #1a1d27;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.timeline-progress input[type="range"]::-moz-range-progress {
+    height: 12px;
+    background: #b25cff;
+    border-radius: 999px;
+    border: 1px solid rgba(178, 92, 255, 0.35);
+}
+
+.timeline-progress input[type="range"]::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    background: linear-gradient(180deg, #c272ff 0%, #a04bf7 100%);
+    border: 3px solid #f7e9ff;
+    border-radius: 50%;
+    box-shadow: 0 6px 18px rgba(162, 103, 255, 0.45);
+    cursor: pointer;
 }
 
 .timeline-progress button {
-    padding: 7px 12px;
-    border-radius: 8px;
+    padding: 9px 16px;
+    border-radius: 12px;
     border: none;
-    background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(56, 189, 248, 0.88));
-    color: #0b1020;
-    font-weight: 600;
+    background: linear-gradient(135deg, #1bc6ff, #09aaf7);
+    color: #041020;
+    font-weight: 700;
     cursor: pointer;
-    box-shadow: 0 10px 22px rgba(124, 58, 237, 0.22);
-    transition: transform 0.2s ease;
+    box-shadow: 0 12px 26px rgba(27, 198, 255, 0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .timeline-progress-line {
@@ -3713,7 +3776,25 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 }
 
 .timeline-progress button:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(27, 198, 255, 0.28);
+}
+
+@media (max-width: 900px) {
+    .timeline-progress {
+        grid-template-columns: 1fr;
+        width: calc(100% - clamp(16px, 6vw, 40px));
+        row-gap: 10px;
+    }
+
+    .timeline-progress__label,
+    .playback-time {
+        justify-self: start;
+    }
+
+    .timeline-progress button {
+        justify-self: end;
+    }
 }
 
 .info-list {
