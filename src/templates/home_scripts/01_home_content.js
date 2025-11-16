@@ -68,7 +68,7 @@ function setImageBlurApplyStatus(message, options = {}) {
     imageBlurApplyStatusTimer = 0;
 
     const nextMessage = message || '';
-    imageBlurApplyStatus.textContent = nextMessage;
+    const showInline = options.inline !== false;
 
     if (nextMessage && options.toast && typeof showApplyFeedback === 'function') {
         showApplyFeedback(nextMessage, {
@@ -77,6 +77,12 @@ function setImageBlurApplyStatus(message, options = {}) {
             timeoutMs: options.toast.timeoutMs,
         });
     }
+
+    if (!showInline) {
+        return;
+    }
+
+    imageBlurApplyStatus.textContent = nextMessage;
 
     if (!nextMessage) {
         return;
@@ -722,6 +728,7 @@ if (imageBlurApplyButton) {
         if (!activeIsImage || !activeTimelineItem) {
             setImageBlurApplyStatus('Select an image clip to apply blur.', {
                 timeoutMs: 3200,
+                inline: false,
                 toast: { tone: 'warning', contextLabel: 'Canvas' },
             });
             return;
@@ -796,6 +803,7 @@ if (imageBlurApplyButton) {
                 : `Applied blur to ${changedCount} images in this lane.`;
             setImageBlurApplyStatus(message, {
                 timeoutMs: 3600,
+                inline: false,
                 toast: { tone: 'success', contextLabel: 'Canvas' },
             });
             return;
@@ -803,6 +811,7 @@ if (imageBlurApplyButton) {
 
         setImageBlurApplyStatus('Blur already applied to this lane.', {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'info', contextLabel: 'Canvas' },
         });
     });

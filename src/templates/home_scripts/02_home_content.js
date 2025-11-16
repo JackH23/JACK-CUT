@@ -1073,7 +1073,7 @@ function setImageDurationApplyStatus(message, options = {}) {
     imageDurationApplyStatusTimer = 0;
 
     const nextMessage = message || '';
-    imageDurationApplyStatus.textContent = nextMessage;
+    const showInline = options.inline !== false;
 
     if (nextMessage && options.toast && typeof showApplyFeedback === 'function') {
         showApplyFeedback(nextMessage, {
@@ -1082,6 +1082,12 @@ function setImageDurationApplyStatus(message, options = {}) {
             timeoutMs: options.toast.timeoutMs,
         });
     }
+
+    if (!showInline) {
+        return;
+    }
+
+    imageDurationApplyStatus.textContent = nextMessage;
 
     if (!nextMessage) {
         return;
@@ -1150,6 +1156,7 @@ function handleImageDurationApplyAllClick() {
     if (!isImageTimelineItem(activeTimelineItem)) {
         setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'warning', contextLabel: 'Video' },
         });
         refreshImageDurationApplyAllAvailability();
@@ -1166,6 +1173,7 @@ function handleImageDurationApplyAllClick() {
     if (!(targetDuration > 0)) {
         setImageDurationApplyStatus('The selected image has no duration to copy.', {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'warning', contextLabel: 'Video' },
         });
         refreshImageDurationApplyAllAvailability();
@@ -1181,6 +1189,7 @@ function handleImageDurationApplyAllClick() {
     if (!sameLaneTargets.length) {
         setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'warning', contextLabel: 'Video' },
         });
         refreshImageDurationApplyAllAvailability();
@@ -1206,6 +1215,7 @@ function handleImageDurationApplyAllClick() {
     if (appliedCount === 0) {
         setImageDurationApplyStatus(IMAGE_DURATION_APPLY_ALREADY_APPLIED_MESSAGE, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'info', contextLabel: 'Video' },
         });
     } else {
@@ -1213,6 +1223,7 @@ function handleImageDurationApplyAllClick() {
         const feedbackMessage = `Applied to ${appliedCount} image${pluralSuffix} in this layer.`;
         setImageDurationApplyStatus(feedbackMessage, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'success', contextLabel: 'Video' },
         });
         updateActiveTimelineIndicators();
@@ -1366,7 +1377,7 @@ function setAnimationComboApplyStatus(message, options = {}) {
     animationComboApplyStatusTimer = 0;
 
     const nextMessage = message || '';
-    animationComboApplyStatus.textContent = nextMessage;
+    const showInline = options.inline !== false;
 
     if (nextMessage && options.toast && typeof showApplyFeedback === 'function') {
         showApplyFeedback(nextMessage, {
@@ -1375,6 +1386,12 @@ function setAnimationComboApplyStatus(message, options = {}) {
             timeoutMs: options.toast.timeoutMs,
         });
     }
+
+    if (!showInline) {
+        return;
+    }
+
+    animationComboApplyStatus.textContent = nextMessage;
 
     if (!nextMessage) {
         return;
@@ -1575,6 +1592,7 @@ function handleComboApplyAllClick() {
     if (!isImageTimelineItem(activeTimelineItem)) {
         setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'warning', contextLabel: 'Animation' },
         });
         refreshComboApplyAllAvailability();
@@ -1593,6 +1611,7 @@ function handleComboApplyAllClick() {
     if (!layerItems.length) {
         setAnimationComboApplyStatus('No clips found in this layer to update.', {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'warning', contextLabel: 'Animation' },
         });
         refreshComboApplyAllAvailability();
@@ -1613,6 +1632,7 @@ function handleComboApplyAllClick() {
     if (appliedCount === 0) {
         setAnimationComboApplyStatus(COMBO_APPLY_LAYER_UNCHANGED_MESSAGE, {
             timeoutMs: 3200,
+            inline: false,
             toast: { tone: 'info', contextLabel: 'Animation' },
         });
     } else {
@@ -1623,6 +1643,7 @@ function handleComboApplyAllClick() {
             `Applied to ${appliedCount} clip${pluralSuffix} on ${layerLabel}.`,
             {
                 timeoutMs: 3200,
+                inline: false,
                 toast: { tone: 'success', contextLabel: 'Animation' },
             },
         );
