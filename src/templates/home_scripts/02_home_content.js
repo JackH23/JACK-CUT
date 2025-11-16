@@ -1075,6 +1075,14 @@ function setImageDurationApplyStatus(message, options = {}) {
     const nextMessage = message || '';
     imageDurationApplyStatus.textContent = nextMessage;
 
+    if (nextMessage && options.toast && typeof showApplyFeedback === 'function') {
+        showApplyFeedback(nextMessage, {
+            tone: options.toast.tone || 'info',
+            contextLabel: options.toast.contextLabel || 'Video',
+            timeoutMs: options.toast.timeoutMs,
+        });
+    }
+
     if (!nextMessage) {
         return;
     }
@@ -1140,7 +1148,10 @@ function handleImageDurationApplyAllClick() {
     }
 
     if (!isImageTimelineItem(activeTimelineItem)) {
-        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_SELECT_MESSAGE, {
+            timeoutMs: 3200,
+            toast: { tone: 'warning', contextLabel: 'Video' },
+        });
         refreshImageDurationApplyAllAvailability();
         return;
     }
@@ -1153,7 +1164,10 @@ function handleImageDurationApplyAllClick() {
     );
 
     if (!(targetDuration > 0)) {
-        setImageDurationApplyStatus('The selected image has no duration to copy.', { timeoutMs: 3200 });
+        setImageDurationApplyStatus('The selected image has no duration to copy.', {
+            timeoutMs: 3200,
+            toast: { tone: 'warning', contextLabel: 'Video' },
+        });
         refreshImageDurationApplyAllAvailability();
         return;
     }
@@ -1165,7 +1179,10 @@ function handleImageDurationApplyAllClick() {
         && getTimelineItemLaneIndex(timelineItem) === activeLaneIndex);
 
     if (!sameLaneTargets.length) {
-        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, { timeoutMs: 3200 });
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_NEED_TARGET_MESSAGE, {
+            timeoutMs: 3200,
+            toast: { tone: 'warning', contextLabel: 'Video' },
+        });
         refreshImageDurationApplyAllAvailability();
         refreshCanvasBlurApplyAllAvailability();
         return;
@@ -1187,11 +1204,17 @@ function handleImageDurationApplyAllClick() {
     });
 
     if (appliedCount === 0) {
-        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_ALREADY_APPLIED_MESSAGE, { timeoutMs: 3200 });
+        setImageDurationApplyStatus(IMAGE_DURATION_APPLY_ALREADY_APPLIED_MESSAGE, {
+            timeoutMs: 3200,
+            toast: { tone: 'info', contextLabel: 'Video' },
+        });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
         const feedbackMessage = `Applied to ${appliedCount} image${pluralSuffix} in this layer.`;
-        setImageDurationApplyStatus(feedbackMessage, { timeoutMs: 3200 });
+        setImageDurationApplyStatus(feedbackMessage, {
+            timeoutMs: 3200,
+            toast: { tone: 'success', contextLabel: 'Video' },
+        });
         updateActiveTimelineIndicators();
         renderExportSummary(getTimelineItems(), null);
         updatedItems.forEach((item) => {
@@ -1344,6 +1367,14 @@ function setAnimationComboApplyStatus(message, options = {}) {
 
     const nextMessage = message || '';
     animationComboApplyStatus.textContent = nextMessage;
+
+    if (nextMessage && options.toast && typeof showApplyFeedback === 'function') {
+        showApplyFeedback(nextMessage, {
+            tone: options.toast.tone || 'info',
+            contextLabel: options.toast.contextLabel || 'Animation',
+            timeoutMs: options.toast.timeoutMs,
+        });
+    }
 
     if (!nextMessage) {
         return;
@@ -1542,7 +1573,10 @@ function handleComboApplyAllClick() {
     }
 
     if (!isImageTimelineItem(activeTimelineItem)) {
-        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, { timeoutMs: 3200 });
+        setAnimationComboApplyStatus(COMBO_APPLY_SELECT_MESSAGE, {
+            timeoutMs: 3200,
+            toast: { tone: 'warning', contextLabel: 'Animation' },
+        });
         refreshComboApplyAllAvailability();
         return;
     }
@@ -1557,7 +1591,10 @@ function handleComboApplyAllClick() {
     });
 
     if (!layerItems.length) {
-        setAnimationComboApplyStatus('No clips found in this layer to update.', { timeoutMs: 3200 });
+        setAnimationComboApplyStatus('No clips found in this layer to update.', {
+            timeoutMs: 3200,
+            toast: { tone: 'warning', contextLabel: 'Animation' },
+        });
         refreshComboApplyAllAvailability();
         return;
     }
@@ -1574,14 +1611,20 @@ function handleComboApplyAllClick() {
     refreshComboApplyAllAvailability();
 
     if (appliedCount === 0) {
-        setAnimationComboApplyStatus(COMBO_APPLY_LAYER_UNCHANGED_MESSAGE, { timeoutMs: 3200 });
+        setAnimationComboApplyStatus(COMBO_APPLY_LAYER_UNCHANGED_MESSAGE, {
+            timeoutMs: 3200,
+            toast: { tone: 'info', contextLabel: 'Animation' },
+        });
     } else {
         const pluralSuffix = appliedCount === 1 ? '' : 's';
         const laneIndex = getLaneIndexForTimelineItem(activeTimelineItem, laneCache);
         const layerLabel = Number.isFinite(laneIndex) ? `Layer ${laneIndex + 1}` : 'this layer';
         setAnimationComboApplyStatus(
             `Applied to ${appliedCount} clip${pluralSuffix} on ${layerLabel}.`,
-            { timeoutMs: 3200 },
+            {
+                timeoutMs: 3200,
+                toast: { tone: 'success', contextLabel: 'Animation' },
+            },
         );
         if (typeof markExportPlaybackContextDirty === 'function') {
             markExportPlaybackContextDirty({ refreshSummary: true });

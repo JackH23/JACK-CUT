@@ -335,6 +335,7 @@ const animationComboApplyStatus = document.getElementById('animation-combo-apply
 const imageDurationApplyAllButton = document.getElementById('image-duration-apply-all');
 const imageDurationApplyStatus = document.getElementById('image-duration-apply-status');
 const imageBlurApplyStatus = document.getElementById('image-blur-apply-status');
+const applyFeedbackStack = document.getElementById('apply-feedback-stack');
 const imageRotationInput = document.getElementById('image-rotation');
 const imageRotationValue = document.getElementById('image-rotation-value');
 const masterVolumeInput = document.getElementById('video-volume');
@@ -627,6 +628,100 @@ let comboPreviewExitTimeoutId = 0;
 let animationComboApplyStatusTimer = 0;
 let imageDurationApplyStatusTimer = 0;
 let imageBlurApplyStatusTimer = 0;
+let applyFeedbackTimeouts = new WeakMap();
+
+const APPLY_FEEDBACK_TONES = ['success', 'info', 'warning'];
+const APPLY_FEEDBACK_TIMEOUT_MS = 4400;
+
+function sanitizeApplyFeedbackTone(tone) {
+    if (APPLY_FEEDBACK_TONES.includes(tone)) {
+        return tone;
+    }
+    return 'info';
+}
+
+function showApplyFeedback(message, options = {}) {
+    if (!applyFeedbackStack || !message) {
+        return null;
+    }
+
+    const tone = sanitizeApplyFeedbackTone(options.tone);
+    const toast = document.createElement('div');
+    toast.className = `apply-feedback-toast apply-feedback-toast--${tone}`;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+
+    const icon = document.createElement('span');
+    icon.className = 'apply-feedback-toast__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = tone === 'success'
+        ? '✓'
+        : tone === 'warning'
+            ? '!'
+            : 'ℹ';
+
+    const body = document.createElement('div');
+    body.className = 'apply-feedback-toast__body';
+
+    const contextLabel = document.createElement('span');
+    contextLabel.className = 'apply-feedback-toast__context';
+    contextLabel.textContent = options.contextLabel || 'Action applied';
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'apply-feedback-toast__message';
+    messageEl.textContent = message;
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'apply-feedback-toast__close';
+    closeButton.setAttribute('aria-label', 'Dismiss notification');
+    closeButton.innerHTML = '&times;';
+
+    body.append(contextLabel, messageEl);
+    toast.append(icon, body, closeButton);
+
+    const scheduleRemoval = (delayMs) => {
+        if (!toast.isConnected) {
+            return;
+        }
+
+        if (applyFeedbackTimeouts.has(toast)) {
+            window.clearTimeout(applyFeedbackTimeouts.get(toast));
+        }
+
+        const timer = window.setTimeout(() => {
+            toast.classList.add('is-leaving');
+            const removeTimer = window.setTimeout(() => {
+                toast.remove();
+                applyFeedbackTimeouts.delete(toast);
+            }, 240);
+            applyFeedbackTimeouts.set(toast, removeTimer);
+        }, Math.max(0, delayMs));
+
+        applyFeedbackTimeouts.set(toast, timer);
+    };
+
+    closeButton.addEventListener('click', () => {
+        scheduleRemoval(0);
+    });
+
+    applyFeedbackStack.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            toast.classList.add('is-visible');
+        });
+    });
+
+    const timeoutMs = Number.isFinite(options.timeoutMs)
+        ? options.timeoutMs
+        : APPLY_FEEDBACK_TIMEOUT_MS;
+    scheduleRemoval(timeoutMs);
+
+    return toast;
+}
+
+window.showApplyFeedback = showApplyFeedback;
 
 function cancelComboPreviewCycle() {
     window.clearTimeout(comboPreviewExitTimeoutId);
