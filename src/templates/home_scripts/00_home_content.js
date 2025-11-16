@@ -269,6 +269,47 @@ function applyImageBlurToPreview(blur) {
         previewImage.style.removeProperty('filter');
     }
 }
+const editorLayout = document.querySelector('.editor-layout');
+const timelineCard = document.querySelector('.timeline-card');
+let timelineHeightSyncFrame = null;
+
+function syncTimelineCardHeight() {
+    if (!editorLayout || !timelineCard) {
+        return;
+    }
+
+    if (timelineHeightSyncFrame) {
+        window.cancelAnimationFrame(timelineHeightSyncFrame);
+        timelineHeightSyncFrame = null;
+    }
+
+    timelineHeightSyncFrame = window.requestAnimationFrame(() => {
+        const layoutRect = editorLayout.getBoundingClientRect();
+        const nextHeight = Math.round(layoutRect.height);
+
+        if (!Number.isFinite(nextHeight) || nextHeight <= 0) {
+            return;
+        }
+
+        const nextValue = `${nextHeight}px`;
+        const currentValue = document.documentElement.style.getPropertyValue('--timeline-height');
+
+        if (currentValue !== nextValue) {
+            document.documentElement.style.setProperty('--timeline-height', nextValue);
+        }
+    });
+}
+
+if (typeof ResizeObserver === 'function' && editorLayout) {
+    const timelineHeightObserver = new ResizeObserver(() => {
+        syncTimelineCardHeight();
+    });
+    timelineHeightObserver.observe(editorLayout);
+}
+
+window.addEventListener('resize', syncTimelineCardHeight);
+syncTimelineCardHeight();
+
 const timelineTrack = document.getElementById('timeline-track');
 const timelineLaneList = document.getElementById('timeline-lane-list');
 const timelineEmptyState = document.getElementById('timeline-empty-state');

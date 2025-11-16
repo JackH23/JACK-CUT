@@ -3109,6 +3109,10 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     position: relative;
     overflow: hidden;
     gap: 8px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: var(--timeline-height, var(--editor-panel-max-height));
+    height: var(--timeline-height, var(--editor-panel-max-height));
 }
 
 .timeline-track {
