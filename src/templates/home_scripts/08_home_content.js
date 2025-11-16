@@ -1197,8 +1197,8 @@ async function primeExportStartFrame(playbackContext, options = {}) {
                 }
                 if (placeholderSnapshot && typeof placeholderSnapshot.text === 'string') {
                     previewPlaceholder.textContent = placeholderSnapshot.text;
-                } else if (!previewPlaceholder.hidden && defaultPreviewPlaceholderText) {
-                    previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+                } else if (!previewPlaceholder.hidden) {
+                    resetPreviewPlaceholderContent();
                 }
             }
         };

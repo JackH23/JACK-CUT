@@ -3207,7 +3207,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
 
     previewPlaceholder.hidden = true;
     if (previewPlaceholder) {
-        previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+        resetPreviewPlaceholderContent();
     }
 
     if (isTimelinePlaying) {
@@ -5510,8 +5510,8 @@ async function playTimelineItem(
                 }
                 if (placeholderState && typeof placeholderState.text === 'string') {
                     previewPlaceholder.textContent = placeholderState.text;
-                } else if (defaultPreviewPlaceholderText) {
-                    previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+                } else {
+                    resetPreviewPlaceholderContent();
                 }
                 previewPlaceholder.hidden = true;
             };
