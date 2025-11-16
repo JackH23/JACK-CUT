@@ -337,7 +337,13 @@ function handleKeyframeMarkerPointerUp(event) {
         }
 
         if (moved && Number.isFinite(finalProgress)) {
-            showKeyframeStatus(`Keyframe moved to ${Math.round(finalProgress * 100)}%`);
+            const message = `Keyframe moved to ${Math.round(finalProgress * 100)}%`;
+            showKeyframeStatus(message, {
+                toast: true,
+                suppressInline: true,
+                tone: 'success',
+                contextLabel: 'Video keyframes',
+            });
         }
     }
 }
@@ -564,7 +570,13 @@ function handleImageBlurKeyframeMarkerPointerUp(event) {
         }
 
         if (moved && Number.isFinite(finalProgress)) {
-            showImageBlurKeyframeStatus(`Keyframe moved to ${Math.round(finalProgress * 100)}%`);
+            const message = `Keyframe moved to ${Math.round(finalProgress * 100)}%`;
+            showImageBlurKeyframeStatus(message, {
+                toast: true,
+                suppressInline: true,
+                tone: 'success',
+                contextLabel: 'Canvas keyframes',
+            });
         }
     }
 }
