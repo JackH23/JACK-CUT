@@ -417,6 +417,7 @@ body {
     padding: 0;
     display: grid;
     gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     flex: 1;
     min-height: 0;
     max-height: none;
@@ -438,6 +439,12 @@ body {
 
 .upload-gallery__list::-webkit-scrollbar-track {
     background: transparent;
+}
+
+@media (max-width: 720px) {
+    .upload-gallery__list {
+        grid-template-columns: 1fr;
+    }
 }
 
 .upload-gallery__item {
