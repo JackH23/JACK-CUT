@@ -51,24 +51,16 @@
 
             <article class="panel preview-card">
                 <div class="panel-header preview-header">
-                    <div class="preview-title">
-                        <p class="preview-title__eyebrow">Canvas</p>
+                    <div>
                         <h2>Preview window</h2>
-                        <p class="panel-subtitle preview-title__subtitle">Refine framing, overlays, and timing before you export.</p>
                     </div>
                     <div class="preview-toolbar">
                         <div class="preview-toolbar__group">
-                            <span class="preview-toolbar__label">Aspect ratio</span>
-                            <label class="preview-toolbar__field" for="preview-aspect">
-                                <select id="preview-aspect">
-                                    <option value="16:9" selected>16:9 (Landscape)</option>
-                                    <option value="9:16">9:16 (Portrait)</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="preview-toolbar__group preview-toolbar__group--status" aria-live="polite">
-                            <span class="preview-toolbar__label">Guides</span>
-                            <span class="preview-toolbar__pill">Smart alignment</span>
+                            <label for="preview-aspect">Aspect ratio</label>
+                            <select id="preview-aspect">
+                                <option value="16:9" selected>16:9 (Landscape)</option>
+                                <option value="9:16">9:16 (Portrait)</option>
+                            </select>
                         </div>
                         <button
                             type="button"
@@ -79,20 +71,6 @@
                         >
                             <span class="preview-fullscreen-toggle__icon" aria-hidden="true"></span>
                         </button>
-                    </div>
-                </div>
-                <div class="preview-meta">
-                    <div class="preview-meta__item">
-                        <span>Viewing mode</span>
-                        <strong>Adaptive fit</strong>
-                    </div>
-                    <div class="preview-meta__item">
-                        <span>Canvas safety</span>
-                        <strong>Safe zones on</strong>
-                    </div>
-                    <div class="preview-meta__item">
-                        <span>Quality</span>
-                        <strong>High fidelity</strong>
                     </div>
                 </div>
                 <div class="preview-area">
