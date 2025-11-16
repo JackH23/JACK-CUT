@@ -1099,12 +1099,16 @@ function showImageBlurKeyframeStatus(message, options = {}) {
         window.clearTimeout(imageBlurKeyframeStatusTimeout);
         imageBlurKeyframeStatusTimeout = null;
     }
-    imageBlurKeyframeStatus.textContent = message || '';
     if (message && options.toast && typeof showApplyFeedback === 'function') {
         const tone = options.tone || 'info';
         const contextLabel = options.contextLabel || 'Canvas keyframes';
         showApplyFeedback(message, { tone, contextLabel });
     }
+    if (options.suppressInline) {
+        imageBlurKeyframeStatus.textContent = '';
+        return;
+    }
+    imageBlurKeyframeStatus.textContent = message || '';
     if (message) {
         imageBlurKeyframeStatusTimeout = window.setTimeout(() => {
             imageBlurKeyframeStatus.textContent = '';
@@ -1225,6 +1229,7 @@ function createActiveImageBlurKeyframe(progressOverride = null) {
             toast: true,
             tone: 'success',
             contextLabel: 'Canvas keyframes',
+            suppressInline: true,
         },
     );
 
@@ -1429,6 +1434,7 @@ function createActiveTimelineKeyframe(progressOverride = null) {
             toast: true,
             tone: 'success',
             contextLabel: 'Video keyframes',
+            suppressInline: true,
         },
     );
 }

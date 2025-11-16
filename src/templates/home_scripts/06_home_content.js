@@ -1680,7 +1680,7 @@ updateTimelineZoomDisplay();
 if (addKeyframeButton) {
     addKeyframeButton.addEventListener('click', () => {
         if (!isImageTimelineItem(activeTimelineItem)) {
-            showKeyframeStatus('Select an image clip to add keyframes.');
+            showKeyframeStatus('Select an image clip to add keyframes.', { suppressInline: true });
             return;
         }
         if (!previewImageTransform) {
@@ -1694,11 +1694,11 @@ if (addKeyframeButton) {
 if (imageBlurAddKeyframeButton) {
     imageBlurAddKeyframeButton.addEventListener('click', () => {
         if (!isImageTimelineItem(activeTimelineItem)) {
-            showImageBlurKeyframeStatus('Select an image clip to add keyframes.');
+            showImageBlurKeyframeStatus('Select an image clip to add keyframes.', { suppressInline: true });
             return;
         }
         if (!imageBlurInput || imageBlurInput.disabled || imageBlurControls?.hidden) {
-            showImageBlurKeyframeStatus('Enable image blur to add keyframes.');
+            showImageBlurKeyframeStatus('Enable image blur to add keyframes.', { suppressInline: true });
             return;
         }
         createActiveImageBlurKeyframe();
@@ -2502,12 +2502,16 @@ function showKeyframeStatus(message, options = {}) {
         window.clearTimeout(keyframeStatusTimeout);
         keyframeStatusTimeout = null;
     }
-    keyframeStatus.textContent = message || '';
     if (message && options.toast && typeof showApplyFeedback === 'function') {
         const tone = options.tone || 'info';
         const contextLabel = options.contextLabel || 'Video keyframes';
         showApplyFeedback(message, { tone, contextLabel });
     }
+    if (options.suppressInline) {
+        keyframeStatus.textContent = '';
+        return;
+    }
+    keyframeStatus.textContent = message || '';
     if (message) {
         keyframeStatusTimeout = window.setTimeout(() => {
             keyframeStatus.textContent = '';
