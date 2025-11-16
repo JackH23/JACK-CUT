@@ -204,7 +204,19 @@ const previewRulerElements = previewGuidesLayer
     }
     : null;
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const defaultPreviewPlaceholderMarkup = previewPlaceholder ? previewPlaceholder.innerHTML : '';
 const defaultPreviewPlaceholderText = previewPlaceholder ? previewPlaceholder.textContent : '';
+
+function resetPreviewPlaceholderContent() {
+    if (!previewPlaceholder) {
+        return;
+    }
+    if (defaultPreviewPlaceholderMarkup) {
+        previewPlaceholder.innerHTML = defaultPreviewPlaceholderMarkup;
+    } else if (defaultPreviewPlaceholderText) {
+        previewPlaceholder.textContent = defaultPreviewPlaceholderText;
+    }
+}
 
 function getPreviewViewportPointerScale() {
     if (!previewViewport) {
