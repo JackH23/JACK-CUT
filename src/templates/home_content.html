@@ -140,6 +140,14 @@
                         </div>
                     </div>
                 </div>
+                <div class="timeline-progress">
+                    <label class="timeline-progress__label" for="timeline-progress">Progress</label>
+                    <div class="timeline-progress__bar">
+                        <input type="range" id="timeline-progress" min="0" max="100" value="0">
+                    </div>
+                    <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
+                    <button type="button" id="play-video-button">Play Back</button>
+                </div>
                 <div class="preview-outside-indicator" id="preview-outside-indicator" hidden aria-hidden="true">
                     <div class="preview-outside-indicator__segment preview-outside-indicator__segment--top" data-segment="top"></div>
                     <div class="preview-outside-indicator__segment preview-outside-indicator__segment--right" data-segment="right"></div>
@@ -746,12 +754,6 @@
                     <div class="timeline-lane" data-lane-index="0" data-layer-label="Layer 1" aria-label="Layer 1"></div>
                 </div>
                 <span id="timeline-empty-state">Upload media to build your timeline</span>
-            </div>
-            <div class="timeline-progress">
-                <label for="timeline-progress">Progress</label>
-                <input type="range" id="timeline-progress" min="0" max="100" value="0">
-                <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
-                <button type="button" id="play-video-button">Play Back</button>
             </div>
         </section>
 
