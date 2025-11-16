@@ -1091,7 +1091,7 @@ function updateActiveImageBlurKeyframeMarker(progress = activeClipProgress) {
     });
 }
 
-function showImageBlurKeyframeStatus(message) {
+function showImageBlurKeyframeStatus(message, options = {}) {
     if (!imageBlurKeyframeStatus) {
         return;
     }
@@ -1100,6 +1100,11 @@ function showImageBlurKeyframeStatus(message) {
         imageBlurKeyframeStatusTimeout = null;
     }
     imageBlurKeyframeStatus.textContent = message || '';
+    if (message && options.toast && typeof showApplyFeedback === 'function') {
+        const tone = options.tone || 'info';
+        const contextLabel = options.contextLabel || 'Canvas keyframes';
+        showApplyFeedback(message, { tone, contextLabel });
+    }
     if (message) {
         imageBlurKeyframeStatusTimeout = window.setTimeout(() => {
             imageBlurKeyframeStatus.textContent = '';
@@ -1212,9 +1217,16 @@ function createActiveImageBlurKeyframe(progressOverride = null) {
     updateActiveImageBlurKeyframeMarker(targetProgress);
 
     const percent = Math.round(targetProgress * 100);
-    showImageBlurKeyframeStatus(hadExisting
-        ? `Keyframe updated at ${percent}%`
-        : `Keyframe added at ${percent}%`);
+    showImageBlurKeyframeStatus(
+        hadExisting
+            ? `Keyframe updated at ${percent}%`
+            : `Keyframe added at ${percent}%`,
+        {
+            toast: true,
+            tone: 'success',
+            contextLabel: 'Canvas keyframes',
+        },
+    );
 
     applyActiveImageBlurKeyframe({ reason: 'image-blur-keyframe-create' });
 }
@@ -1409,9 +1421,16 @@ function createActiveTimelineKeyframe(progressOverride = null) {
     updateActiveKeyframeMarker(targetProgress);
 
     const percent = Math.round(targetProgress * 100);
-    showKeyframeStatus(hasExisting
-        ? `Keyframe updated at ${percent}%`
-        : `Keyframe added at ${percent}%`);
+    showKeyframeStatus(
+        hasExisting
+            ? `Keyframe updated at ${percent}%`
+            : `Keyframe added at ${percent}%`,
+        {
+            toast: true,
+            tone: 'success',
+            contextLabel: 'Video keyframes',
+        },
+    );
 }
 
 function deleteActiveTimelineKeyframe(progressOverride = null) {

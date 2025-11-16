@@ -2494,7 +2494,7 @@ function updateActiveKeyframeMarker(progress = activeClipProgress) {
     });
 }
 
-function showKeyframeStatus(message) {
+function showKeyframeStatus(message, options = {}) {
     if (!keyframeStatus) {
         return;
     }
@@ -2503,6 +2503,11 @@ function showKeyframeStatus(message) {
         keyframeStatusTimeout = null;
     }
     keyframeStatus.textContent = message || '';
+    if (message && options.toast && typeof showApplyFeedback === 'function') {
+        const tone = options.tone || 'info';
+        const contextLabel = options.contextLabel || 'Video keyframes';
+        showApplyFeedback(message, { tone, contextLabel });
+    }
     if (message) {
         keyframeStatusTimeout = window.setTimeout(() => {
             keyframeStatus.textContent = '';
