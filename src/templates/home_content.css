@@ -253,6 +253,13 @@ body {
     gap: clamp(7px, 1.5vh, 12px);
 }
 
+.panel.upload-card,
+.panel.preview-card,
+.panel.settings-card,
+.panel.timeline-card {
+    border-radius: 0;
+}
+
 .panel-header {
     display: flex;
     flex-direction: column;
