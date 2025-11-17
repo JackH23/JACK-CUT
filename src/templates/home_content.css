@@ -61,13 +61,13 @@ body {
 }
 
 .nav-bar__inner {
-    width: min(1200px, 100%);
+    width: min(1580px, 100%);
     margin: 0 auto;
-    padding: var(--nav-padding-y) clamp(14px, 3vw, 24px);
+    padding: var(--nav-padding-y) clamp(20px, 3.8vw, 30px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 14px;
+    gap: 60px;
 }
 
 .nav-brand {
