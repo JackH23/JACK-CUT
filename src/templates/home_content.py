@@ -8,27 +8,23 @@ _BASE_PATH = Path(__file__).resolve()
 _TEMPLATE_PATH = _BASE_PATH.with_suffix('.html')
 _STYLES_PATH = _BASE_PATH.with_suffix('.css')
 _SCRIPTS_DIR = _BASE_PATH.with_name('home_scripts')
-_SCRIPT_PART_PATTERN = "[0-9][0-9]_home_content.js"
+_SCRIPTS_PATH = _SCRIPTS_DIR / 'home_content.js'
 
 
 def _load_home_scripts() -> str:
-    """Load and merge the home page scripts from their parts."""
+    """Load the merged home page script."""
 
     if not _SCRIPTS_DIR.exists():
         raise FileNotFoundError(
             f"Expected home scripts in {_SCRIPTS_DIR}, but the directory does not exist.",
         )
 
-    script_parts = sorted(_SCRIPTS_DIR.glob(_SCRIPT_PART_PATTERN))
-
-    if not script_parts:
+    if not _SCRIPTS_PATH.exists():
         raise FileNotFoundError(
-            f"Expected one or more script parts matching {_SCRIPT_PART_PATTERN} in {_SCRIPTS_DIR},"
-            " but none were found.",
+            f"Expected merged script at {_SCRIPTS_PATH}, but the file does not exist.",
         )
 
-    merged_scripts = "\n".join(part.read_text(encoding='utf-8') for part in script_parts)
-    return f"{merged_scripts}\n"
+    return _SCRIPTS_PATH.read_text(encoding='utf-8') + "\n"
 
 HOME_TEMPLATE = _TEMPLATE_PATH.read_text(encoding='utf-8')
 HOME_STYLES = _STYLES_PATH.read_text(encoding='utf-8')
