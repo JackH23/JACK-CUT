@@ -801,7 +801,10 @@ function getOverlayDescriptorKey(descriptor) {
     const baseId = resolveOverlayDescriptorBaseId(descriptor) || 'item';
     const laneIndex = Number.isFinite(descriptor.laneIndex)
         ? descriptor.laneIndex
-        : 'x';
+        : resolveLaneIndex(descriptor.item.dataset?.laneIndex);
+    if (Number.isFinite(laneIndex)) {
+        descriptor.laneIndex = laneIndex;
+    }
     const startKey = Number.isFinite(descriptor.start)
         ? Math.round(descriptor.start)
         : 'start';
@@ -1595,10 +1598,15 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
         if (entry.layer) {
             entry.layer.classList.remove('is-active', 'is-dragging', 'is-resizing');
             entry.layer.style.opacity = '0';
+            entry.layer.setAttribute('hidden', '');
             overlayLayerToTimelineItem.delete(entry.layer);
             if (entry.layer.parentElement) {
                 entry.layer.remove();
             }
+        }
+
+        if (entry.image) {
+            entry.image.hidden = true;
         }
     };
 
@@ -1751,6 +1759,14 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
 
         if (layer.parentElement !== container) {
             container.appendChild(layer);
+        }
+
+        if (layer.hasAttribute('hidden')) {
+            layer.removeAttribute('hidden');
+        }
+
+        if (image.hidden) {
+            image.hidden = false;
         }
 
         overlayLayerToTimelineItem.set(layer, descriptor.item);
