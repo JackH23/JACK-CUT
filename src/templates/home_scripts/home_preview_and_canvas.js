@@ -1295,10 +1295,18 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 if (!entry || !entry.isVisible) {
                     return;
                 }
-                entry.lastTimelineTime = safeTimelineNow;
-                entry.opacity = Number.isFinite(entry.renderedOpacity)
+                const liveOpacity = Number.isFinite(entry.renderedOpacity)
                     ? entry.renderedOpacity
                     : computeOverlayEntryOpacity(entry);
+
+                if (!liveOpacity || liveOpacity <= 0) {
+                    hideOverlayLayerEntry(entry);
+                    return;
+                }
+
+
+                entry.lastTimelineTime = safeTimelineNow;
+                entry.opacity = liveOpacity;
             });
             lastOverlayRenderTimestamp = safeTimelineNow;
             return;
@@ -1606,37 +1614,34 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
         }
 
         if (!descriptor.shouldRender) {
-            if (entry.isVisible) {
-                const liveOpacity = Number.isFinite(entry.renderedOpacity)
-                    ? entry.renderedOpacity
-                    : computeOverlayEntryOpacity(entry);
-                if (liveOpacity > 0 && liveOpacity < 0.999) {
-                    descriptor.shouldRender = true;
-                    entry.opacity = liveOpacity;
-                    entry.lastTimelineTime = safeTimelineNow;
-                    entry.layerGroup = getDescriptorLayerGroup(descriptor);
-                    return;
-                }
-
-                const lastTime = Number(entry.lastTimelineTime);
-                if (Number.isFinite(lastTime)) {
-                    const age = Math.abs(safeTimelineNow - lastTime);
-                    if (age <= recentOverlayHoldThreshold) {
-                        const heldOpacity = Number.isFinite(entry.renderedOpacity)
-                            ? entry.renderedOpacity
-                            : computeOverlayEntryOpacity(entry);
+                if (entry.isVisible) {
+                    const liveOpacity = Number.isFinite(entry.renderedOpacity)
+                        ? entry.renderedOpacity
+                        : computeOverlayEntryOpacity(entry);
+                    if (liveOpacity > 0 && liveOpacity < 0.999) {
                         descriptor.shouldRender = true;
-                        entry.opacity = heldOpacity;
+                        entry.opacity = liveOpacity;
                         entry.lastTimelineTime = safeTimelineNow;
                         entry.layerGroup = getDescriptorLayerGroup(descriptor);
-                        entry.zIndex = getDescriptorZIndex(descriptor);
                         return;
                     }
-                }
-            }
 
-            hideOverlayLayerEntry(entry);
-        }
+                    const lastTime = Number(entry.lastTimelineTime);
+                    if (Number.isFinite(lastTime)) {
+                        const age = Math.abs(safeTimelineNow - lastTime);
+                        if (age <= recentOverlayHoldThreshold && liveOpacity > 0) {
+                            descriptor.shouldRender = true;
+                            entry.opacity = liveOpacity;
+                            entry.lastTimelineTime = safeTimelineNow;
+                            entry.layerGroup = getDescriptorLayerGroup(descriptor);
+                            entry.zIndex = getDescriptorZIndex(descriptor);
+                            return;
+                        }
+                    }
+                }
+
+                hideOverlayLayerEntry(entry);
+            }
     });
 
     const renderDescriptorIntoContainer = (descriptor, zIndex, container) => {
