@@ -8,23 +8,23 @@ _BASE_PATH = Path(__file__).resolve()
 _TEMPLATE_PATH = _BASE_PATH.with_suffix('.html')
 _STYLES_PATH = _BASE_PATH.with_suffix('.css')
 _SCRIPTS_DIR = _BASE_PATH.with_name('home_scripts')
+_SCRIPTS_PATH = _SCRIPTS_DIR / 'home_content.js'
 
 
 def _load_home_scripts() -> str:
-    """Load the home page scripts by concatenating the module files."""
+    """Load the merged home page script."""
 
     if not _SCRIPTS_DIR.exists():
         raise FileNotFoundError(
-            f"Expected split script modules in {_SCRIPTS_DIR}, but the directory does not exist.",
+            f"Expected home scripts in {_SCRIPTS_DIR}, but the directory does not exist.",
         )
 
-    script_paths = sorted(_SCRIPTS_DIR.glob('*.js'))
-    if not script_paths:
+    if not _SCRIPTS_PATH.exists():
         raise FileNotFoundError(
-            f"No JavaScript modules were found in {_SCRIPTS_DIR}.",  # pragma: no cover - configuration guard
+            f"Expected merged script at {_SCRIPTS_PATH}, but the file does not exist.",
         )
 
-    return "\n".join(path.read_text(encoding='utf-8') for path in script_paths) + "\n"
+    return _SCRIPTS_PATH.read_text(encoding='utf-8') + "\n"
 
 HOME_TEMPLATE = _TEMPLATE_PATH.read_text(encoding='utf-8')
 HOME_STYLES = _STYLES_PATH.read_text(encoding='utf-8')
