@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 
 class MockEventTarget {
@@ -187,7 +188,18 @@ const context = vm.createContext({
     },
 });
 
-const source = fs.readFileSync('src/templates/home_scripts/02_home_content.js', 'utf8');
+const scriptsDir = path.join(__dirname, '..', 'src', 'templates', 'home_scripts');
+const scriptParts = fs.readdirSync(scriptsDir)
+    .filter((name) => /^[0-9]{2}_home_content\.js$/.test(name))
+    .sort();
+
+if (scriptParts.length === 0) {
+    throw new Error('No home content script parts found to test');
+}
+
+const source = scriptParts
+    .map((name) => fs.readFileSync(path.join(scriptsDir, name), 'utf8'))
+    .join('\n');
 const imageStart = source.indexOf('function preloadTimelineImage');
 const snippetEnd = source.indexOf('function waitForMediaReady');
 const snippet = source.slice(imageStart, snippetEnd);
