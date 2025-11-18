@@ -1194,6 +1194,9 @@ function openExportDialog() {
     exportDialog.hidden = false;
     exportDialog.removeAttribute('hidden');
     exportDialog.setAttribute('aria-hidden', 'false');
+    if (navBar) {
+        navBar.classList.add('nav-bar--hidden');
+    }
 }
 
 function closeExportDialog() {
@@ -1203,6 +1206,9 @@ function closeExportDialog() {
     exportDialog.hidden = true;
     exportDialog.setAttribute('hidden', '');
     exportDialog.setAttribute('aria-hidden', 'true');
+    if (navBar) {
+        navBar.classList.remove('nav-bar--hidden');
+    }
 }
 
 function isExportDialogOpen() {

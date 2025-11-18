@@ -60,6 +60,10 @@ body {
     z-index: 1000;
 }
 
+.nav-bar.nav-bar--hidden {
+    display: none;
+}
+
 .nav-bar__inner {
     width: min(1580px, 100%);
     margin: 0 auto;

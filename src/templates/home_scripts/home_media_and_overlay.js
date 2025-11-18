@@ -346,6 +346,7 @@ const timelineMagnetToggleButton = document.getElementById('timeline-magnet-togg
 const previewAspectSelect = document.getElementById('preview-aspect');
 const previewAspectLabel = document.getElementById('preview-aspect-label');
 const playbackTimeDisplay = document.getElementById('playback-time');
+const navBar = document.querySelector('.nav-bar');
 const exportButton = document.querySelector('.export-button');
 const exportDialog = document.getElementById('export-dialog');
 const exportTimelineList = document.getElementById('export-timeline-list');
