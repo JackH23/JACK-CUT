@@ -1174,6 +1174,17 @@ function ensureTimelineItemAudioSummaryElement(timelineItem) {
     const summary = document.createElement('span');
     summary.className = TIMELINE_AUDIO_SUMMARY_CLASS;
     summary.setAttribute('aria-live', 'polite');
+    const waveformOverlay = timelineItem.querySelector('.timeline-waveform__overlay');
+    if (waveformOverlay) {
+        summary.classList.add('timeline-waveform__summary');
+        const waveformTitle = waveformOverlay.querySelector('.timeline-waveform__title');
+        if (waveformTitle && waveformTitle.parentNode === waveformOverlay) {
+            waveformOverlay.insertBefore(summary, waveformTitle.nextSibling);
+        } else {
+            waveformOverlay.appendChild(summary);
+        }
+        return summary;
+    }
     const removeButton = timelineItem.querySelector('.timeline-item-remove');
     if (removeButton && removeButton.parentNode === timelineItem) {
         timelineItem.insertBefore(summary, removeButton);

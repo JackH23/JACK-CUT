@@ -2604,6 +2604,12 @@ async function addToTimeline(file, objectURL) {
         waveformContainer.className = 'timeline-waveform';
         const waveformCanvas = document.createElement('canvas');
         waveformContainer.appendChild(waveformCanvas);
+
+        const waveformOverlay = document.createElement('div');
+        waveformOverlay.className = 'timeline-waveform__overlay';
+        label.classList.add('timeline-waveform__title');
+        waveformOverlay.appendChild(label);
+        waveformContainer.appendChild(waveformOverlay);
         timelineItem.appendChild(waveformContainer);
         const appliedDuration = setTimelineItemDuration(
             timelineItem,
@@ -2617,7 +2623,9 @@ async function addToTimeline(file, objectURL) {
         });
     }
 
-    timelineItem.appendChild(label);
+    if (!file.type.startsWith('audio/')) {
+        timelineItem.appendChild(label);
+    }
     timelineItem.appendChild(removeButton);
 
     let targetLane = defaultLane || ensureTimelineLane(0);
