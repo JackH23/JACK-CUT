@@ -4459,9 +4459,18 @@ function runTimelineDragOverUpdate() {
     const styles = window.getComputedStyle(lane);
     const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
     const rect = lane.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
     const relativeX = clientX - rect.left - paddingLeft;
+    const pointerOffset = timelineDragPointerOffsets.get(item);
+    const fallbackOffset = itemRect && Number.isFinite(itemRect.width)
+        ? itemRect.width / 2
+        : 0;
+    const offsetX = pointerOffset && Number.isFinite(pointerOffset.x)
+        ? Math.max(0, Math.min(pointerOffset.x, itemRect?.width || fallbackOffset))
+        : fallbackOffset;
+    const adjustedRelativeX = relativeX - offsetX;
     const perPixel = getTimelineDurationPerPixel();
-    const desiredStartMs = Math.max(0, Math.round(Math.max(relativeX, 0) * perPixel));
+    const desiredStartMs = Math.max(0, Math.round(Math.max(adjustedRelativeX, 0) * perPixel));
     const clipDuration = Math.max(0, getTimelineItemPlaybackDuration(item));
     const snap = resolveTimelineSnapForMovement({
         desiredStartMs,
