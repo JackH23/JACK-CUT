@@ -4078,6 +4078,37 @@ function applyStoredPreviewImageTransform(storedTransform, viewportSizeOverride 
     return applyNormalizedPreviewImageTransform(storedTransform, { viewportSize });
 }
 
+const PREVIEW_VIEWPORT_UNDO_LIMIT = 20;
+const previewViewportUndoStack = [];
+
+function pushPreviewViewportUndoEntry(entry) {
+    if (!entry || typeof entry.undo !== 'function') {
+        return;
+    }
+
+    previewViewportUndoStack.push(entry);
+
+    if (previewViewportUndoStack.length > PREVIEW_VIEWPORT_UNDO_LIMIT) {
+        previewViewportUndoStack.shift();
+    }
+}
+
+function undoLastPreviewViewportChange() {
+    if (!previewViewportUndoStack.length) {
+        return false;
+    }
+
+    const entry = previewViewportUndoStack.pop();
+
+    try {
+        const result = entry.undo();
+        return result !== false;
+    } catch (error) {
+        console.error('Failed to undo preview viewport change.', error);
+        return false;
+    }
+}
+
 function tryRestorePreviewImageTransform(timelineItem) {
     const storedTransform = getStoredPreviewImageTransform(timelineItem);
 
@@ -4108,14 +4139,19 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
     const viewportSize = getPreviewViewportSize();
     const normalized = normalizePreviewImageTransform(previewImageTransform, viewportSize);
 
+    const previousTransform = getStoredPreviewImageTransform(activeTimelineItem);
+    const serializedPreviousTransform = previousTransform ? JSON.stringify(previousTransform) : '';
+    const serializedNormalized = normalized ? JSON.stringify(normalized) : '';
+
+    const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
+    const previousKeyframes = JSON.parse(JSON.stringify(existingKeyframes || []));
+    const serializedExistingKeyframes = JSON.stringify(existingKeyframes);
+
     if (!normalized) {
         return;
     }
 
     activeTimelineItem.dataset.previewImageTransform = JSON.stringify(normalized);
-
-    const existingKeyframes = getTimelineItemImageKeyframes(activeTimelineItem);
-    const serializedExistingKeyframes = JSON.stringify(existingKeyframes);
 
     const targetProgress = Object.prototype.hasOwnProperty.call(options, 'progressOverride')
         ? clampProgress(options.progressOverride)
@@ -4136,19 +4172,41 @@ function persistPreviewImageTransformForActiveTimelineItem(options = {}) {
         );
     }
 
-    if (!shouldPersistKeyframe) {
-        return;
+    const transformChanged = serializedNormalized !== serializedPreviousTransform;
+
+    let keyframesChanged = false;
+    if (shouldPersistKeyframe) {
+        const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
+        const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
+
+    keyframesChanged = serializedUpdatedKeyframes !== serializedExistingKeyframes;
+
+        if (keyframesChanged) {
+            storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
+            renderImageKeyframeTracks(activeTimelineItem);
+        }
     }
 
-    const updatedKeyframes = upsertTimelineImageKeyframe(existingKeyframes, targetProgress, normalized);
-    const serializedUpdatedKeyframes = JSON.stringify(updatedKeyframes);
-
-    if (serializedUpdatedKeyframes === serializedExistingKeyframes) {
-        return;
+    if (transformChanged || keyframesChanged) {
+        pushPreviewViewportUndoEntry({
+            type: 'preview-viewport-transform',
+            undo: () => {
+                if (!activeTimelineItem) {
+                    return false;
+                }
+                if (previousTransform) {
+                    activeTimelineItem.dataset.previewImageTransform = JSON.stringify(previousTransform);
+                } else {
+                    delete activeTimelineItem.dataset.previewImageTransform;
+                }
+                storeTimelineImageKeyframes(activeTimelineItem, previousKeyframes);
+                renderImageKeyframeTracks(activeTimelineItem);
+                applyStoredPreviewImageTransform(previousTransform);
+                schedulePreviewViewportSizeUpdate();
+                return true;
+            },
+        });
     }
-
-    storeTimelineImageKeyframes(activeTimelineItem, updatedKeyframes);
-    renderImageKeyframeTracks(activeTimelineItem);
 }
 
 let previewImageFrameUpdateHandle = 0;
@@ -6014,3 +6072,36 @@ function onPreviewImagePointerUp(event) {
     endPreviewImagePointerInteraction();
 }
 
+function handlePreviewViewportKeyboardShortcuts(event) {
+    if (!event || event.defaultPrevented || event.repeat) {
+        return;
+    }
+
+    const isModifierPressed = event.ctrlKey || event.metaKey;
+    const key = String(event.key || '').toLowerCase();
+
+    if (!isModifierPressed || event.altKey || key !== 'z' || event.shiftKey) {
+        return;
+    }
+
+    const targetNode = event.target;
+    const targetIsPreviewTextEditor = Boolean(
+        previewTextEditor
+            && targetNode
+            && typeof previewTextEditor.contains === 'function'
+            && (targetNode === previewTextEditor || previewTextEditor.contains(targetNode))
+    );
+
+    if (targetIsPreviewTextEditor) {
+        return;
+    }
+
+    const handled = undoLastPreviewViewportChange();
+    if (handled) {
+        event.preventDefault();
+    }
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', handlePreviewViewportKeyboardShortcuts);
+}
