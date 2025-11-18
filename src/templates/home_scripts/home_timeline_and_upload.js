@@ -44,6 +44,7 @@ let timelineClipboardSnapshot = null;
 const timelineObjectUrlUsage = new Map();
 const timelineInstanceIdRegistry = new Map();
 const timelineItemVolumeControls = new WeakMap();
+const timelineItemEditSnapshots = new WeakMap();
 
 function getTimelineItemVolumeControlState(timelineItem) {
     return timelineItemVolumeControls.get(timelineItem) || null;
@@ -358,6 +359,8 @@ function createTimelineItemSnapshot(timelineItem) {
         return null;
     }
 
+    assignTimelineInstanceId(timelineItem);
+
     const template = timelineItem.cloneNode(true);
     sanitizeTimelineItemClone(template);
 
@@ -385,6 +388,104 @@ function createTimelineItemSnapshot(timelineItem) {
         file: stagedEntry?.file || null,
         wasActive: timelineItem === activeTimelineItem,
     };
+}
+
+function getTimelineItemByInstanceId(instanceId) {
+    if (!instanceId) {
+        return null;
+    }
+
+    const owner = timelineInstanceIdRegistry.get(instanceId);
+    if (owner?.isConnected) {
+        return owner;
+    }
+
+    return document.querySelector(`[data-timeline-instance-id="${instanceId}"]`);
+}
+
+function normalizeSnapshotDataset(dataset) {
+    const entries = Object.entries(dataset || {});
+    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return entries;
+}
+
+function hasTimelineSnapshotChanged(before, after) {
+    if (!before || !after) {
+        return false;
+    }
+
+    const comparableKeys = ['laneIndex', 'childIndex', 'startOffsetMs', 'duration', 'objectUrl'];
+    const changed = comparableKeys.some((key) => (before[key] ?? null) !== (after[key] ?? null));
+    if (changed) {
+        return true;
+    }
+
+    const previousDataset = normalizeSnapshotDataset(before.dataset);
+    const nextDataset = normalizeSnapshotDataset(after.dataset);
+    if (previousDataset.length !== nextDataset.length) {
+        return true;
+    }
+
+    for (let index = 0; index < previousDataset.length; index += 1) {
+        const [prevKey, prevValue] = previousDataset[index];
+        const [nextKey, nextValue] = nextDataset[index];
+        if (prevKey !== nextKey || prevValue !== nextValue) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function beginTimelineItemChangeTracking(timelineItem) {
+    if (!(timelineItem instanceof HTMLElement) || timelineItemEditSnapshots.has(timelineItem)) {
+        return;
+    }
+
+    const snapshot = createTimelineItemSnapshot(timelineItem);
+    if (snapshot) {
+        timelineItemEditSnapshots.set(timelineItem, snapshot);
+    }
+}
+
+function finalizeTimelineItemChangeTracking(timelineItem) {
+    const previousSnapshot = timelineItemEditSnapshots.get(timelineItem);
+    timelineItemEditSnapshots.delete(timelineItem);
+
+    if (!previousSnapshot) {
+        return;
+    }
+
+    const latestSnapshot = createTimelineItemSnapshot(timelineItem);
+    if (!latestSnapshot || !hasTimelineSnapshotChanged(previousSnapshot, latestSnapshot)) {
+        return;
+    }
+
+    const instanceId = latestSnapshot.dataset?.timelineInstanceId
+        || previousSnapshot.dataset?.timelineInstanceId
+        || null;
+
+    pushTimelineUndoEntry({
+        type: 'edit-item',
+        undo: () => {
+            const target = instanceId ? getTimelineItemByInstanceId(instanceId) : timelineItem;
+            if (target && target.isConnected) {
+                removeTimelineItem(target, { recordUndo: false, skipObjectUrlRelease: true });
+            }
+            const restored = restoreTimelineItemFromSnapshot(previousSnapshot, {
+                activate: previousSnapshot.wasActive,
+                focus: previousSnapshot.wasActive,
+                loadPreview: previousSnapshot.wasActive,
+                scrollIntoView: true,
+                preserveInstanceId: true,
+            });
+            if (restored && instanceId) {
+                restored.dataset.timelineInstanceId = instanceId;
+                timelineInstanceIdRegistry.set(instanceId, restored);
+            }
+            return restored;
+        },
+    });
 }
 
 function refreshTimelineItemSnapshotResources(timelineItem, snapshot) {
@@ -673,7 +774,7 @@ function removeTimelineItem(timelineItem, options = {}) {
         return false;
     }
 
-    const { recordUndo = true } = options;
+    const { recordUndo = true, skipObjectUrlRelease = false } = options;
     const snapshot = recordUndo ? createTimelineItemSnapshot(timelineItem) : null;
     const parentLane = timelineItem.closest('.timeline-lane');
     const fileType = timelineItem.dataset?.fileType || '';
@@ -703,7 +804,7 @@ function removeTimelineItem(timelineItem, options = {}) {
         } else if (fileType.startsWith('audio/')) {
             releaseTimelineAudio(objectUrl);
         }
-        if (!hasStagedUpload) {
+        if (!hasStagedUpload && !skipObjectUrlRelease) {
             try {
                 URL.revokeObjectURL(objectUrl);
             } catch (error) {

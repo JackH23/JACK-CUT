@@ -2949,6 +2949,10 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
     stopTimelinePlayback();
     setActiveTimelineItem(timelineItem);
 
+    if (typeof beginTimelineItemChangeTracking === 'function') {
+        beginTimelineItemChangeTracking(timelineItem);
+    }
+
     const handle = event.currentTarget;
     const resizeEdge = resizeEdgeOverride
         || handle?.dataset?.resizeEdge
@@ -3076,6 +3080,9 @@ function startTimelineItemResize(event, timelineItem, resizeEdgeOverride = null)
         const parentLane = timelineItem.closest('.timeline-lane');
         if (parentLane) {
             flushTimelineLaneReflow(parentLane);
+        }
+        if (typeof finalizeTimelineItemChangeTracking === 'function') {
+            finalizeTimelineItemChangeTracking(timelineItem);
         }
         if (activeTimelineResizeItem === timelineItem) {
             activeTimelineResizeItem = null;
@@ -3243,6 +3250,9 @@ function enableTimelineItemDragging(timelineItem) {
     timelineItem.addEventListener('pointercancel', clearPointerOffset);
 
     timelineItem.addEventListener('dragstart', (event) => {
+        if (typeof beginTimelineItemChangeTracking === 'function') {
+            beginTimelineItemChangeTracking(timelineItem);
+        }
         stopTimelinePlayback();
         activeTimelineDragItem = timelineItem;
         timelineItem.classList.add('dragging');
@@ -3289,6 +3299,9 @@ function enableTimelineItemDragging(timelineItem) {
         reflowAllTimelineLanes();
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
+        if (typeof finalizeTimelineItemChangeTracking === 'function') {
+            finalizeTimelineItemChangeTracking(timelineItem);
+        }
         cleanupTimelineDragPreviewElement(timelineItem);
     });
 }
@@ -3388,6 +3401,9 @@ if (timelineTrack) {
         updateTimelineEmptyState();
         updateActiveTimelineIndicators();
         if (draggingItem) {
+            if (typeof finalizeTimelineItemChangeTracking === 'function') {
+                finalizeTimelineItemChangeTracking(draggingItem);
+            }
             markExportPlaybackContextDirty({ refreshSummary: true });
         }
         activeTimelineDragItem = null;
