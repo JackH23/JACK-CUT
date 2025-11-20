@@ -1089,7 +1089,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
             previewVideo.load();
         }
         applyMasterVolumeToPreview(audioSettings.volumePercent, { mediaElement: previewVideo });
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         applyImageBlurToPreview(0);
     } else if (fileType.startsWith('image/')) {
         cancelPreviewExitAnimation({ forceRestore: true });
@@ -1102,7 +1102,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         applyImageBlurToPreview(imageBlurAmount);
         void revealPreviewImageSource(objectURL, { immediate: true });
         resetPreviewScroll();
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         applyActiveImageKeyframe({ deferReset: true });
     } else if (fileType.startsWith('audio/')) {
         stopPreviewAudio({ resetTime: true });
@@ -1112,7 +1112,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
         previewVideo.removeAttribute('src');
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
-            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+            previewPlaceholder.textContent = 'Audio clip ready — press Play to hear it';
         }
         if (previewAudio && objectURL && previewAudio.src !== objectURL) {
             previewAudio.src = objectURL;
@@ -1122,7 +1122,7 @@ function loadPreviewFromTimeline(timelineItem, overlayEntriesOverride = null, op
                 // Ignore preload errors for audio preview.
             }
         }
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         applyImageBlurToPreview(0);
     }
 
@@ -3670,7 +3670,7 @@ async function playTimelineItem(
         previewVideo.removeAttribute('src');
         if (previewPlaceholder) {
             previewPlaceholder.hidden = false;
-            previewPlaceholder.textContent = 'Audio clip ready — press Play Back to hear it';
+            previewPlaceholder.textContent = 'Audio clip ready — press Play to hear it';
         }
 
         preloadTimelineAudio(objectURL).catch(() => {});
@@ -3690,7 +3690,7 @@ async function playTimelineItem(
         const segmentStartTime = baseSegmentStart + startOffsetMs;
 
         syncPreviewAudioOverlay(overlayEntries, segmentStartTime);
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         applyImageBlurToPreview(0);
         await waitForGapDuration(effectiveDuration);
     } else if (fileType.startsWith('image/')) {
@@ -4015,7 +4015,7 @@ async function playTimelineSequence(startIndex = 0, resumeOptions = null, playba
     isTimelinePaused = false;
     timelinePauseState = null;
     isTimelinePlaying = true;
-    playVideoButton.textContent = 'Pause playback';
+    setPlayButtonState('pause');
     updateKeyframeControlsState();
     resetTimelineProgressLine(getTimelineFractionForTime(startElapsed, laneCache));
     updatePlaybackTimeDisplay(startElapsed, totalDuration);
@@ -4161,7 +4161,7 @@ function pauseTimelinePlayback() {
     applyTimelineProgressGeometry();
     setTimelineProgressVisuals(pausedFraction, { forceGeometryUpdate: true });
     updatePlaybackTimeDisplay(clampedTime, totalDuration);
-    playVideoButton.textContent = 'Resume playback';
+    setPlayButtonState('play');
 }
 
 function resumeTimelinePlayback() {
@@ -4173,7 +4173,7 @@ function resumeTimelinePlayback() {
     if (!timelineItems.length) {
         isTimelinePaused = false;
         timelinePauseState = null;
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         return;
     }
 
@@ -4189,7 +4189,7 @@ function resumeTimelinePlayback() {
         timelinePauseState = null;
         resetTimelineProgressLine(totalDuration > 0 ? 1 : 0);
         updatePlaybackTimeDisplay(totalDuration, totalDuration);
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
         return;
     }
 
@@ -5870,6 +5870,6 @@ previewVideo.addEventListener('ended', () => {
     if (isTimelinePlaying) {
         return;
     }
-    playVideoButton.textContent = 'Play Back';
+    setPlayButtonState('play');
     previewVideo.currentTime = 0;
 });

@@ -5779,6 +5779,32 @@ renderImageKeyframeTracks(activeTimelineItem);
 updateImageRotationControlState();
 refreshImageDurationApplyAllAvailability();
 
+function setPlayButtonState(state) {
+    if (!playVideoButton) {
+        return;
+    }
+
+    const normalizedState = state === 'pause' ? 'pause' : 'play';
+    const isPlaying = normalizedState === 'pause';
+    const label = playVideoButton.querySelector('.playback-toggle__label');
+
+    playVideoButton.dataset.state = normalizedState;
+    playVideoButton.setAttribute('aria-pressed', String(isPlaying));
+    playVideoButton.setAttribute(
+        'aria-label',
+        isPlaying ? 'Pause timeline playback' : 'Play timeline',
+    );
+    playVideoButton.classList.toggle('is-active', isPlaying);
+
+    if (label) {
+        label.textContent = isPlaying ? 'Pause' : 'Play';
+    } else {
+        playVideoButton.textContent = isPlaying ? 'Pause' : 'Play';
+    }
+}
+
+setPlayButtonState('play');
+
 function stopTimelinePlayback(resetButton = true, resetProgress = true, options = {}) {
     const preservePauseState = options && options.preservePauseState === true;
     const abort = timelinePlaybackAbort;
@@ -5818,7 +5844,7 @@ function stopTimelinePlayback(resetButton = true, resetProgress = true, options 
     }
 
     if (resetButton) {
-        playVideoButton.textContent = 'Play Back';
+        setPlayButtonState('play');
     }
 
     refreshActiveOverlayLayers();
@@ -5837,7 +5863,7 @@ function clearPreview() {
     previewImage.classList.remove('is-visible');
     applyImageBlurToPreview(0);
     previewPlaceholder.hidden = false;
-    playVideoButton.textContent = 'Play Back';
+    setPlayButtonState('play');
     setPreviewMode(null);
     resetPreviewScroll();
     if (previewImage) {
