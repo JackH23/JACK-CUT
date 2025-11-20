@@ -153,7 +153,28 @@
                         <input type="range" id="timeline-progress" min="0" max="100" value="0">
                     </div>
                     <span class="playback-time" id="playback-time" aria-live="polite">00:00 / 00:00</span>
-                    <button type="button" id="play-video-button">Play Back</button>
+                    <button
+                        type="button"
+                        id="play-video-button"
+                        class="playback-toggle"
+                        data-state="play"
+                        aria-pressed="false"
+                        aria-label="Play timeline"
+                    >
+                        <span class="playback-toggle__halo" aria-hidden="true"></span>
+                        <span class="playback-toggle__face" aria-hidden="true">
+                            <span class="playback-toggle__icon">
+                                <svg viewBox="0 0 48 48" role="presentation" focusable="false">
+                                    <polygon class="playback-toggle__shape playback-toggle__shape--play" points="18,14 34,24 18,34"></polygon>
+                                    <g class="playback-toggle__shape playback-toggle__shape--pause">
+                                        <rect x="16" y="14" width="7" height="20" rx="2"></rect>
+                                        <rect x="25" y="14" width="7" height="20" rx="2"></rect>
+                                    </g>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="playback-toggle__label">Play</span>
+                    </button>
                 </div>
                 <div class="preview-outside-indicator" id="preview-outside-indicator" hidden aria-hidden="true">
                     <div class="preview-outside-indicator__segment preview-outside-indicator__segment--top" data-segment="top"></div>
