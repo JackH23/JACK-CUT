@@ -7,6 +7,7 @@ const uploadGalleryList = document.getElementById('upload-gallery-list');
 const uploadGalleryEmptyState = document.getElementById('upload-gallery-empty');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
+const previewToolbar = document.querySelector('.preview-toolbar');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
 let activeAudioOverlayEntry = null;
