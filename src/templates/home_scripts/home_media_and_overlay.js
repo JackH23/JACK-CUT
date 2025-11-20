@@ -4,12 +4,30 @@ const uploadMetaStatus = document.querySelector('.upload-meta__status');
 const uploadMetaHint = document.querySelector('.upload-meta__hint');
 const uploadGallery = document.getElementById('upload-gallery');
 const uploadGalleryList = document.getElementById('upload-gallery-list');
+const uploadGalleryEmptyState = document.getElementById('upload-gallery-empty');
 const previewArea = document.querySelector('.preview-area');
 const previewViewport = document.querySelector('.preview-viewport');
 const previewVideo = document.getElementById('preview-video');
 const previewAudio = document.getElementById('preview-audio');
 let activeAudioOverlayEntry = null;
 const overlayAudioElementRegistry = new Map();
+
+function updateUploadGalleryEmptyState() {
+    if (!uploadGallery || !uploadGalleryList) {
+        return;
+    }
+
+    const hasItems = uploadGalleryList.children.length > 0;
+    if (uploadGalleryEmptyState) {
+        uploadGalleryEmptyState.hidden = hasItems;
+    }
+
+    if (uploadGallery.classList) {
+        uploadGallery.classList.toggle('upload-gallery--has-items', hasItems);
+    }
+}
+
+updateUploadGalleryEmptyState();
 
 function registerOverlayAudioElement(timelineItem, mediaElement) {
     if (!timelineItem || !mediaElement) {

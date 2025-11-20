@@ -356,6 +356,7 @@ body {
     gap: 6px;
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-height: var(--editor-panel-max-height);
 }
 
 .upload-card > * {
@@ -465,6 +466,29 @@ body {
     flex-direction: column;
     gap: 6px;
     min-height: 0;
+    position: relative;
+}
+
+.upload-gallery__empty {
+    flex: 1;
+    border-radius: 10px;
+    border: 1px dashed rgba(148, 163, 184, 0.25);
+    padding: clamp(12px, 2vh, 16px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    background: linear-gradient(140deg, rgba(124, 58, 237, 0.08), rgba(56, 189, 248, 0.05));
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.65);
+}
+
+.upload-gallery__empty strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
 }
 
 .upload-gallery__title {

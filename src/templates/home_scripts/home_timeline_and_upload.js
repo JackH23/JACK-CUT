@@ -1401,6 +1401,8 @@ function handleUploadGalleryItemRemoval(item) {
         }
         stagedUploadsByObjectUrl.delete(objectURL);
     }
+
+    updateUploadGalleryEmptyState();
 }
 
 function ensureUploadGalleryListObserver() {
@@ -1554,6 +1556,8 @@ async function stageUpload(file) {
     if (uploadGallery) {
         uploadGallery.hidden = false;
     }
+
+    updateUploadGalleryEmptyState();
 }
 
 async function generateImageThumbnail(objectURL, maxWidth = 90, maxHeight = 60) {

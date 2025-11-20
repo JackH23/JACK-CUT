@@ -48,7 +48,11 @@
                 </label>
                 <div class="upload-meta" aria-live="polite">
                 </div>
-                <div class="upload-gallery" id="upload-gallery" hidden>
+                <div class="upload-gallery" id="upload-gallery">
+                    <div class="upload-gallery__empty" id="upload-gallery-empty" role="status" aria-live="polite">
+                        <strong>No staged media yet</strong>
+                        <span>Drop videos, images, or audio files to build your media bin.</span>
+                    </div>
                     <ul class="upload-gallery__list" id="upload-gallery-list" aria-live="polite"></ul>
                 </div>
             </article>
