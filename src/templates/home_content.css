@@ -3871,7 +3871,7 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 14px 8px 10px;
+    padding: 5px 14px 5px 8px;
     border-radius: 999px;
     border: 1px solid rgba(14, 165, 233, 0.45);
     background: radial-gradient(circle at 30% 20%, #66ecff 0%, rgba(14, 185, 255, 0.95) 45%, #0a7bff 100%);
@@ -3879,10 +3879,6 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
     font-weight: 800;
     letter-spacing: 0.02em;
     cursor: pointer;
-    box-shadow:
-        0 14px 32px rgba(14, 185, 255, 0.28),
-        0 4px 18px rgba(4, 16, 32, 0.32),
-        inset 0 1px 0 rgba(255, 255, 255, 0.5);
     overflow: hidden;
     isolation: isolate;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.2s ease;
@@ -3895,10 +3891,6 @@ body.preview-fullscreen-active .preview-card.preview-card--fullscreen {
 
 .playback-toggle:hover {
     transform: translateY(-1px);
-    box-shadow:
-        0 16px 36px rgba(14, 185, 255, 0.32),
-        0 6px 22px rgba(4, 16, 32, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .playback-toggle:active {
