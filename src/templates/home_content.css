@@ -658,8 +658,13 @@ body {
 .preview-card {
     position: relative;
     gap: 8px;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    display: flex;
+    flex-direction: column;
+    min-height: var(--editor-panel-max-height);
+}
+
+.preview-card > * {
+    min-height: 0;
 }
 
 .preview-header {
