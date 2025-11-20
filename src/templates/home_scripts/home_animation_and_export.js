@@ -1470,16 +1470,43 @@ function setTimelineDurationPerPixel(value, options = {}) {
     return timelineDurationPerPixel;
 }
 
-function setPreviewFullscreenState(enable, options = {}) {
-    if (!previewCard) {
-        return false;
-    }
+const PREVIEW_FULLSCREEN_UI_HIDE_DELAY = 2600;
+let previewFullscreenUiHideTimeout = null;
 
-    const target = Boolean(enable);
-    if (target === isPreviewFullscreen) {
-        return isPreviewFullscreen;
+function clearPreviewToolbarAutoHide() {
+    if (previewFullscreenUiHideTimeout) {
+        window.clearTimeout(previewFullscreenUiHideTimeout);
+        previewFullscreenUiHideTimeout = null;
     }
+}
 
+function schedulePreviewToolbarAutoHide() {
+    if (!previewToolbar || !isPreviewFullscreen) {
+        return;
+    }
+    clearPreviewToolbarAutoHide();
+    previewFullscreenUiHideTimeout = window.setTimeout(() => {
+        previewToolbar.classList.add('is-auto-hidden');
+    }, PREVIEW_FULLSCREEN_UI_HIDE_DELAY);
+}
+
+function revealPreviewToolbar(options = {}) {
+    if (!previewToolbar) {
+        return;
+    }
+    previewToolbar.classList.remove('is-auto-hidden');
+    if (options.temporary && isPreviewFullscreen) {
+        schedulePreviewToolbarAutoHide();
+    } else {
+        clearPreviewToolbarAutoHide();
+    }
+}
+
+function isPreviewCardInNativeFullscreen() {
+    return document.fullscreenElement === previewCard;
+}
+
+function applyPreviewFullscreenUiState(target, options = {}) {
     isPreviewFullscreen = target;
     previewCard.classList.toggle('preview-card--fullscreen', target);
     if (document.body) {
@@ -1492,6 +1519,18 @@ function setPreviewFullscreenState(enable, options = {}) {
             'aria-label',
             target ? 'Exit fullscreen preview' : 'Enter fullscreen preview',
         );
+    }
+
+    if (previewToolbar) {
+        previewToolbar.classList.toggle('preview-toolbar--floating', target);
+        previewToolbar.classList.toggle('preview-toolbar--auto-hide', target);
+        if (target) {
+            revealPreviewToolbar({ temporary: true });
+        } else {
+            previewToolbar.classList.remove('is-auto-hidden');
+            previewToolbar.classList.remove('preview-toolbar--auto-hide');
+            clearPreviewToolbarAutoHide();
+        }
     }
 
     if (target && options.scrollIntoView !== false) {
@@ -1509,6 +1548,48 @@ function setPreviewFullscreenState(enable, options = {}) {
 
     updateActiveTimelineIndicators();
     return isPreviewFullscreen;
+}
+
+function setPreviewFullscreenState(enable, options = {}) {
+    if (!previewCard) {
+        return false;
+    }
+
+    const target = Boolean(enable);
+    const skipNativeToggle = Boolean(options.skipNativeToggle);
+    if (target === isPreviewFullscreen && !options.forceApply && !skipNativeToggle) {
+        return isPreviewFullscreen;
+    }
+
+    const applyState = () => applyPreviewFullscreenUiState(target, options);
+
+    if (!skipNativeToggle) {
+        if (target && previewCard.requestFullscreen && document.fullscreenEnabled !== false) {
+            try {
+                const requestResult = previewCard.requestFullscreen({ navigationUI: 'hide' });
+                if (requestResult && typeof requestResult.then === 'function') {
+                    requestResult.then(() => applyState(), () => applyPreviewFullscreenUiState(false, options));
+                    return target;
+                }
+            } catch (error) {
+                // Fall back to applying state directly
+            }
+        }
+
+        if (!target && isPreviewCardInNativeFullscreen() && document.exitFullscreen) {
+            try {
+                const exitResult = document.exitFullscreen();
+                if (exitResult && typeof exitResult.then === 'function') {
+                    exitResult.finally(() => applyState());
+                    return target;
+                }
+            } catch (error) {
+                // Fall through to applying state directly
+            }
+        }
+    }
+
+    return applyState();
 }
 
 function togglePreviewFullscreen() {

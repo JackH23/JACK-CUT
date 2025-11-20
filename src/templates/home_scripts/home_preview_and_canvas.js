@@ -2691,6 +2691,50 @@ if (previewFullscreenToggle) {
     });
 }
 
+function handlePreviewFullscreenActivity() {
+    if (!isPreviewFullscreen) {
+        return;
+    }
+    revealPreviewToolbar({ temporary: true });
+}
+
+if (previewCard) {
+    previewCard.addEventListener('pointermove', handlePreviewFullscreenActivity);
+    previewCard.addEventListener('keydown', handlePreviewFullscreenActivity);
+}
+
+if (previewToolbar) {
+    previewToolbar.addEventListener('mouseenter', () => {
+        if (isPreviewFullscreen) {
+            revealPreviewToolbar();
+        }
+    });
+    previewToolbar.addEventListener('focusin', () => {
+        if (isPreviewFullscreen) {
+            revealPreviewToolbar();
+        }
+    });
+    previewToolbar.addEventListener('mouseleave', () => {
+        if (isPreviewFullscreen) {
+            schedulePreviewToolbarAutoHide();
+        }
+    });
+}
+
+document.addEventListener('fullscreenchange', () => {
+    const isNativeFullscreen = document.fullscreenElement === previewCard;
+    if (isNativeFullscreen !== isPreviewFullscreen) {
+        setPreviewFullscreenState(isNativeFullscreen, {
+            scrollIntoView: false,
+            restoreFocus: false,
+            skipNativeToggle: true,
+            forceApply: true,
+        });
+    } else if (isNativeFullscreen && isPreviewFullscreen) {
+        revealPreviewToolbar({ temporary: true });
+    }
+});
+
 if (previewArea) {
     previewArea.addEventListener('dblclick', (event) => {
         if (event.defaultPrevented) {
