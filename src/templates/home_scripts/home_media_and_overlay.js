@@ -20,6 +20,7 @@ function updateUploadGalleryEmptyState() {
     const hasItems = uploadGalleryList.children.length > 0;
     if (uploadGalleryEmptyState) {
         uploadGalleryEmptyState.hidden = hasItems;
+        uploadGalleryEmptyState.setAttribute('aria-hidden', hasItems ? 'true' : 'false');
     }
 
     if (uploadGallery.classList) {
