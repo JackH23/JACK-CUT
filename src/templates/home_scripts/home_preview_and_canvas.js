@@ -227,31 +227,8 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
-    const activeEntry = getOverlayEntryForDescriptor(descriptor);
-    const resolveEntryOpacity = (entry) => {
-        if (!entry) {
-            return 0;
-        }
-        if (Number.isFinite(entry.opacity)) {
-            return entry.opacity;
-        }
-        if (Number.isFinite(entry.renderedOpacity)) {
-            return entry.renderedOpacity;
-        }
-        return 0;
-    };
-    const previousOpacity = resolveEntryOpacity(activeEntry);
-
-    const overshoot = effectiveTimelineNow - descriptorEnd;
-    if (overshoot > OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS && previousOpacity <= 0) {
+    if (effectiveTimelineNow >= descriptorEnd) {
         return false;
-    }
-
-    if (overshoot >= 0) {
-        const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0);
-        if (overshoot <= tolerance && previousOpacity > 0 && activeEntry?.isVisible) {
-            return true;
-        }
     }
 
     const animationSettings = descriptor.animationSettings
@@ -278,25 +255,12 @@ function shouldRenderOverlayDescriptor(descriptor, timelineNow) {
         return false;
     }
 
-    const exitWindowStart = descriptorEnd - totalExitWindow;
+    const exitWindowStart = Math.max(0, descriptorEnd - totalExitWindow);
     if (!Number.isFinite(exitWindowStart)) {
         return false;
     }
 
-    const exitWindowEnd = descriptorEnd + totalExitWindow;
-    const exitHoldAllowance = Math.max(
-        Number(OVERLAY_EXIT_OVERSHOOT_ALLOWANCE_MS) || 0,
-        Number(OVERLAY_TIMELINE_EDGE_TOLERANCE_MS) || 0,
-    );
-
-    if (Number.isFinite(exitWindowEnd)
-        && Number.isFinite(effectiveTimelineNow)
-        && effectiveTimelineNow > exitWindowEnd + exitHoldAllowance
-    ) {
-        return false;
-    }
-
-    return effectiveTimelineNow >= exitWindowStart;
+    return effectiveTimelineNow >= exitWindowStart && effectiveTimelineNow < descriptorEnd;
 }
 
 function computeOverlayDescriptorOpacity(descriptor) {
@@ -1233,26 +1197,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
                 descriptor.animationSettings = animationSettings;
             }
 
-            let sampleEnd = end;
-            if (!descriptor.isActive && clipDuration > 0) {
-                let exitConfig = descriptor.exitConfig;
-                if (exitConfig === undefined) {
-                    exitConfig = getPreviewImageExitConfig({
-                        clipDurationMs: clipDuration,
-                        settingsOverride: animationSettings,
-                    }) || null;
-                    descriptor.exitConfig = exitConfig;
-                }
-
-                const totalExitWindow = Math.min(
-                    clipDuration,
-                    Math.max(0, Number(exitConfig?.totalDuration) || 0),
-                );
-
-                if (totalExitWindow > 0 && Number.isFinite(end)) {
-                    sampleEnd = end + totalExitWindow;
-                }
-            }
+            const sampleEnd = end;
 
             if (!Number.isFinite(descriptor.sampleTime)) {
                 const clampedSample = Number.isFinite(sampleEnd)
@@ -1272,10 +1217,7 @@ function renderPreviewOverlayLayers(primaryTimelineItem, options = null) {
         });
     }
 
-    const recentOverlayHoldThreshold = Math.max(
-        Number(OVERLAY_RECENT_HOLD_THRESHOLD_MS) || 0,
-        OVERLAY_TIMELINE_WINDOW_SLACK_MS * 6,
-    );
+    const recentOverlayHoldThreshold = 0;
     let hasRecentOverlayLayers = false;
     activeOverlayLayers.forEach((entry) => {
         if (hasRecentOverlayLayers || !entry || !entry.isVisible) {
@@ -1946,12 +1888,7 @@ function getActiveOverlayLayerSnapshots() {
         }
 
         if (Number.isFinite(lastOverlayRenderTimestamp) && Number.isFinite(entry.lastTimelineTime)) {
-            const age = Math.abs(lastOverlayRenderTimestamp - entry.lastTimelineTime);
-            const snapshotHoldThreshold = Math.max(
-                OVERLAY_TIMELINE_WINDOW_SLACK_MS * 2,
-                Number(OVERLAY_RECENT_HOLD_THRESHOLD_MS) || 0,
-            );
-            if (age > snapshotHoldThreshold) {
+            if (entry.lastTimelineTime < lastOverlayRenderTimestamp) {
                 return;
             }
         }

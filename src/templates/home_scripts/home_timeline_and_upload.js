@@ -3485,9 +3485,7 @@ async function playTimelineItem(
                     Math.max(0, maximumSeekDuration),
                 );
                 const startOffsetSeconds = safeStartOffset / 1000;
-                const shouldLoop = intrinsicDuration > 0
-                    && effectiveDuration > intrinsicDuration + 50;
-                previewVideo.loop = shouldLoop;
+                previewVideo.loop = false;
                 window.clearTimeout(timeoutId);
                 if (effectiveDuration > 0) {
                     timeoutId = window.setTimeout(() => {
@@ -3631,8 +3629,8 @@ async function playTimelineItem(
             timelinePlaybackAbort = abortPlayback;
 
             onEnded = () => {
-                if (!previewVideo.loop) {
-                    finalize();
+                if (!resolved) {
+                    previewVideo.pause();
                 }
             };
 

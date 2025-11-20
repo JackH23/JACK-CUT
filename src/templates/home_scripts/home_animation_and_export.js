@@ -937,7 +937,7 @@ function shouldRefreshOverlayWindowForTimelineTime(timelineItem, timelineTime) {
         return true;
     }
 
-    const tolerance = Math.max(0, Number(OVERLAY_TIMELINE_WINDOW_SLACK_MS) || 0);
+    const tolerance = 0;
     const paddedStart = state.windowStart - tolerance;
     const paddedEnd = state.windowEnd + tolerance;
 
