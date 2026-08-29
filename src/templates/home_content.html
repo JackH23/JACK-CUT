@@ -9,6 +9,7 @@
     </style>
 </head>
 <body>
+    <!-- Navigation Section -->
     <header class="nav-bar">
         <div class="nav-bar__inner">
             <div class="nav-brand">
@@ -33,8 +34,11 @@
         </div>
     </header>
 
+    <!-- Main Editor Application -->
     <div class="app-shell">
+        <!-- Editor Workspace Section -->
         <section id="features" class="editor-layout">
+            <!-- Media Upload Section -->
             <article class="panel upload-card">
                 <div class="panel-header">
                     <h2>Upload footage</h2>
@@ -56,6 +60,7 @@
                 </div>
             </article>
 
+            <!-- Preview Section -->
             <article class="panel preview-card">
                 <div class="panel-header preview-header">
                     <div>
@@ -184,6 +189,7 @@
                 </div>
             </article>
 
+            <!-- Creative Controls Section -->
             <article class="panel settings-card">
                 <div class="panel-header">
                     <h2>Creative controls</h2>
@@ -196,6 +202,7 @@
                     <button type="button" class="settings-tab" id="settings-tab-canvas" role="tab" aria-selected="false" aria-controls="settings-canvas" data-section="canvas">Canvas</button>
                 </div>
                 <div class="settings-content">
+                    <!-- Video Settings Section -->
                     <section class="settings-section is-active" id="settings-video" data-section="video" role="tabpanel" aria-labelledby="settings-tab-video">
                         <div class="info-list">
                             <div class="info-item clip-duration-info">
@@ -236,6 +243,7 @@
                             </div>
                         </div>
                     </section>
+                    <!-- Text Settings Section -->
                     <section class="settings-section" id="settings-text" data-section="text" role="tabpanel" aria-labelledby="settings-tab-text" hidden>
                         <div class="text-template-card" role="button" tabindex="0" aria-pressed="false">
                             <span class="text-template-card__icon" aria-hidden="true">＋</span>
@@ -354,6 +362,7 @@
                             </div>
                         </div>
                     </section>
+                    <!-- Animation Settings Section -->
                     <section class="settings-section" id="settings-animation" data-section="animation" role="tabpanel" aria-labelledby="settings-tab-animation" hidden>
                         <div class="info-list">
                             <div class="info-item">
@@ -457,6 +466,7 @@
                                     <span class="animation-combo-apply-status" id="animation-combo-apply-status" role="status" aria-live="polite"></span>
                                 </div>
                                 <div class="animation-combo-grid">
+                                    <!-- Combo Timing Section -->
                                     <section class="animation-combo-section animation-combo-section--duration" aria-label="Combo timing settings">
                                         <h3 class="animation-mode__subtitle">Timing</h3>
                                         <div class="info-list">
@@ -481,6 +491,7 @@
                                             </div>
                                         </div>
                                     </section>
+                                    <!-- Combo Entrance Section -->
                                     <section class="animation-combo-section" aria-label="Combo entrance settings">
                                         <h3 class="animation-mode__subtitle">Entrance</h3>
                                         <div class="info-list">
@@ -500,6 +511,7 @@
                                             </div>
                                         </div>
                                     </section>
+                                    <!-- Combo Exit Section -->
                                     <section class="animation-combo-section" aria-label="Combo exit settings">
                                         <h3 class="animation-mode__subtitle">Exit</h3>
                                         <div class="info-list">
@@ -523,6 +535,7 @@
                             </div>
                         </div>
                     </section>
+                    <!-- Audio Settings Section -->
                     <section class="settings-section" id="settings-audio" data-section="audio" role="tabpanel" aria-labelledby="settings-tab-audio" hidden>
                         <div class="info-list">
                             <div class="info-item">
@@ -562,6 +575,7 @@
                             </div>
                         </div>
                     </section>
+                    <!-- Canvas Settings Section -->
                     <section class="settings-section" id="settings-canvas" data-section="canvas" role="tabpanel" aria-labelledby="settings-tab-canvas" hidden>
                         <div class="info-list">
                             <div class="info-item">
@@ -663,6 +677,7 @@
             </article>
         </section>
 
+        <!-- Timeline Section -->
         <section class="panel timeline-card timeline-footer">
             <div class="timeline-overview-header">
                 <h2>Timeline overview</h2>
@@ -722,6 +737,7 @@
             </div>
         </section>
 
+        <!-- Export Dialog Section -->
         <div class="export-dialog" id="export-dialog" hidden aria-hidden="true">
             <div class="export-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
                 <h3 id="export-dialog-title">Export timeline to MP4</h3>
@@ -753,7 +769,9 @@
             </div>
         </div>
     </div>
+    <!-- User Feedback Notifications -->
     <div class="apply-feedback-stack" id="apply-feedback-stack" aria-live="polite" aria-atomic="true"></div>
+    <!-- Application Scripts -->
     <script>
         {{ scripts | safe }}
     </script>
