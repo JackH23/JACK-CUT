@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
 import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
@@ -16,6 +17,7 @@ type PreviewMonitorProps = {
   duration: number;
   playheadPosition: number;
   onPlayheadPositionChange: (position: number) => void;
+  onPlayingChange: (playing: boolean) => void;
 };
 
 export default function PreviewMonitor({
@@ -25,6 +27,7 @@ export default function PreviewMonitor({
   duration,
   playheadPosition,
   onPlayheadPositionChange,
+  onPlayingChange,
 }: PreviewMonitorProps) {
   const {
     videoRef,
@@ -46,6 +49,10 @@ export default function PreviewMonitor({
     playheadPosition,
     onPlayheadPositionChange,
   });
+
+  useEffect(() => {
+    onPlayingChange(isPlaying);
+  }, [isPlaying, onPlayingChange]);
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
@@ -134,11 +141,6 @@ function TimelineSound({
   });
 
   return (
-    <audio
-      ref={audioRef}
-      src={item.file.url}
-      muted={isMuted}
-      preload="auto"
-    />
+    <audio ref={audioRef} src={item.file.url} muted={isMuted} preload="auto" />
   );
 }

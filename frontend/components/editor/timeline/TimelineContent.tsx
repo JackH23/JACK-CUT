@@ -13,6 +13,7 @@ type TimelineContentProps = {
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   playheadPosition: number;
+  isPlaying: boolean;
   onPlayheadPositionChange: (position: number) => void;
 };
 
@@ -21,6 +22,7 @@ export default function TimelineContent({
   onItemsChange,
   onRemoveItem,
   playheadPosition,
+  isPlaying,
   onPlayheadPositionChange,
 }: TimelineContentProps) {
   const { tracks, timelineTimes, timelineDuration } = useTimeline(items);
@@ -58,6 +60,7 @@ export default function TimelineContent({
 
         {/* Scrollable tracks */}
         <ScrollableTracks
+          isPlaying={isPlaying}
           items={items}
           tracks={tracks}
           timelineTimes={timelineTimes}

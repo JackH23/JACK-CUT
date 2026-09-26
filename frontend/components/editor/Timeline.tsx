@@ -11,6 +11,7 @@ type TimelineProps = {
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   playheadPosition: number;
+  isPlaying: boolean;
   onPlayheadPositionChange: (position: number) => void;
 };
 
@@ -19,6 +20,7 @@ export default function Timeline({
   onItemsChange,
   onRemoveItem,
   playheadPosition,
+  isPlaying,
   onPlayheadPositionChange,
 }: TimelineProps) {
   return (
@@ -29,6 +31,7 @@ export default function Timeline({
         onItemsChange={onItemsChange}
         onRemoveItem={onRemoveItem}
         playheadPosition={playheadPosition}
+        isPlaying={isPlaying}
         onPlayheadPositionChange={onPlayheadPositionChange}
       />
     </section>

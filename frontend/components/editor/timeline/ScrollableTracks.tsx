@@ -11,6 +11,7 @@ type ScrollableTracksProps = {
   timelineTimes: string[];
   timelineDuration: number;
   playheadPosition: number;
+  isPlaying: boolean; // add
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onPlayheadPositionChange: (position: number) => void;
@@ -22,10 +23,12 @@ export default function ScrollableTracks({
   timelineTimes,
   timelineDuration,
   playheadPosition,
+  isPlaying,
   onItemsChange,
   onRemoveItem,
   onPlayheadPositionChange,
 }: ScrollableTracksProps) {
+  
   const {
     timelineRef,
     scrollContainerRef,
@@ -50,6 +53,7 @@ export default function ScrollableTracks({
     items,
     timelineDuration,
     playheadPosition,
+    isPlaying,
     onItemsChange,
     onRemoveItem,
     onPlayheadPositionChange,

@@ -73,6 +73,7 @@ function EditorWorkspace({ project }: { project: Project }) {
     closeExportSuccess,
   } = useEditorWorkspace(project.id);
 
+  const [isPlaying, setIsPlaying] = useState(false);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const currentError = exportError || timelineError;
 
@@ -148,6 +149,7 @@ function EditorWorkspace({ project }: { project: Project }) {
               items={timelineItems}
               playheadPosition={playheadPosition}
               onPlayheadPositionChange={setPlayheadPosition}
+              onPlayingChange={setIsPlaying}
               duration={timelineDuration}
             />
 
@@ -168,6 +170,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             onItemsChange={setTimelineItems}
             onRemoveItem={handleRemoveTimelineItem}
             playheadPosition={playheadPosition}
+            isPlaying={isPlaying}
             onPlayheadPositionChange={setPlayheadPosition}
           />
         </div>

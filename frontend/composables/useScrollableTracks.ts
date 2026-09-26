@@ -20,6 +20,7 @@ type UseScrollableTracksOptions = {
   items: TimelineItem[];
   timelineDuration: number;
   playheadPosition: number;
+  isPlaying: boolean;
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onPlayheadPositionChange: (position: number) => void;
@@ -53,6 +54,7 @@ export function useScrollableTracks({
   items: rawItems,
   timelineDuration,
   playheadPosition,
+  isPlaying,
   onItemsChange,
   onRemoveItem,
   onPlayheadPositionChange,
@@ -83,20 +85,20 @@ export function useScrollableTracks({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isPlaying) return;
+
     const container = scrollContainerRef.current;
     const timeline = timelineRef.current;
     if (!container || !timeline) return;
 
     const playheadX = (playheadPosition / 100) * timeline.clientWidth;
-    const leftEdge = container.scrollLeft;
-    const visibleWidth = container.clientWidth;
+    const viewportCenter = container.clientWidth / 2;
+    const playheadInViewport = playheadX - container.scrollLeft;
 
-    if (playheadX > leftEdge + visibleWidth * 0.7) {
-      container.scrollLeft = playheadX - visibleWidth * 0.7;
-    } else if (playheadX < leftEdge + visibleWidth * 0.3) {
-      container.scrollLeft = Math.max(0, playheadX - visibleWidth * 0.3);
+    if (playheadInViewport >= viewportCenter) {
+      container.scrollLeft = playheadX - viewportCenter;
     }
-  }, [playheadPosition, displayDuration]);
+  }, [isPlaying, playheadPosition]);
 
   const dragStateRef = useRef<{
     itemId: string;
