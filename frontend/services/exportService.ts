@@ -1,12 +1,5 @@
 import axios from "axios";
-
-export type ExportJob = {
-  id: string;
-  status: "processing" | "completed" | "failed";
-  error?: string | null;
-  downloadUrl?: string | null;
-  statusUrl?: string;
-};
+import type { ExportJob } from "@/lib/export";
 
 const EXPORT_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/exports`;
 
@@ -20,6 +13,7 @@ export const exportService = {
     const { data } = await axios.get<ExportJob>(
       `${EXPORT_URL}/${encodeURIComponent(id)}`,
     );
+
     return data;
   },
 

@@ -23,7 +23,7 @@ export default function TimelineContent({
   playheadPosition,
   onPlayheadPositionChange,
 }: TimelineContentProps) {
-  const { tracks, timelineTimes } = useTimeline();
+  const { tracks, timelineTimes, timelineDuration } = useTimeline(items);
 
   return (
     <div className="media-scrollbar min-h-0 flex-1 overflow-y-auto">
@@ -61,6 +61,7 @@ export default function TimelineContent({
           items={items}
           tracks={tracks}
           timelineTimes={timelineTimes}
+          timelineDuration={timelineDuration}
           playheadPosition={playheadPosition}
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}

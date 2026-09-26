@@ -1,22 +1,32 @@
-import axios from "axios";
-
-export type Project = {
-  id: string;
-  name: string;
-};
-
-const PROJECTS_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/projects`;
+import { api } from "./api";
+import type {
+  CreateProjectResponse,
+  GetProjectsResponse,
+  Project,
+} from "@/lib/project";
 
 export const projectService = {
   async getAll(): Promise<Project[]> {
-    const { data } = await axios.get<{ projects: Project[] }>(PROJECTS_URL);
+    const { data } = await api.get<GetProjectsResponse>("/projects");
     return data.projects;
   },
 
+  async getProjectById(id: string): Promise<Project> {
+    const projects = await projectService.getAll();
+    const project = projects.find((item) => item.id === id);
+
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    return project;
+  },
+
   async create(name: string): Promise<Project> {
-    const { data } = await axios.post<{ project: Project }>(PROJECTS_URL, {
+    const { data } = await api.post<CreateProjectResponse>("/projects", {
       name,
     });
+
     return data.project;
   },
 };

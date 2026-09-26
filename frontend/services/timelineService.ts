@@ -1,54 +1,16 @@
 import axios from "axios";
-import type { MediaFile } from "@/lib/media";
+import type {
+  AddTimelineItemInput,
+  AddTimelineItemResponse,
+  GetTimelineDurationResponse,
+  GetTimelineItemsResponse,
+  GetTimelineTracksResponse,
+  RemoveTimelineItemResponse,
+  TimelineItemUpdateInput,
+} from "@/lib/timeline";
 
-type AddTimelineItemInput = {
-  projectId: string;
-  mediaId: string;
-  trackId: string;
-  startTime: number;
-  duration: number;
-};
-
-type AddTimelineItemResponse = {
-  message: string;
-  item: {
-    id: string;
-    project_id: string;
-    media_id: string;
-    track_id: string;
-    start_time: number;
-    duration: number;
-  };
-};
-
-export type SavedTimelineItem = {
-  id: string;
-  mediaId: string;
-  trackId: string;
-  startTime: number;
-  duration: number;
-  media: MediaFile | null;
-};
-
-type GetTimelineItemsResponse = {
-  total: number;
-  items: SavedTimelineItem[];
-};
-
-export type SavedTimelineTrack = {
-  id: string;
-  name: string;
-  type: "video" | "audio";
-  color: string;
-  sort_order: number;
-};
-
-type GetTimelineTracksResponse = {
-  total: number;
-  tracks: SavedTimelineTrack[];
-};
-
-const TIMELINE_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/timeline/items`;
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const TIMELINE_URL = `${API_URL}/api/timeline/items`;
 
 export const timelineService = {
   async addItem(input: AddTimelineItemInput): Promise<AddTimelineItemResponse> {
@@ -68,8 +30,8 @@ export const timelineService = {
     return data;
   },
 
-  async removeItem(id: string): Promise<{ message: string; id: string }> {
-    const { data } = await axios.delete<{ message: string; id: string }>(
+  async removeItem(id: string): Promise<RemoveTimelineItemResponse> {
+    const { data } = await axios.delete<RemoveTimelineItemResponse>(
       `${TIMELINE_URL}/${encodeURIComponent(id)}`,
     );
 
@@ -78,11 +40,7 @@ export const timelineService = {
 
   async updateItem(
     id: string,
-    input: {
-      startTime: number;
-      duration: number;
-      trackId: string;
-    },
+    input: TimelineItemUpdateInput,
   ): Promise<AddTimelineItemResponse> {
     const { data } = await axios.patch<AddTimelineItemResponse>(
       `${TIMELINE_URL}/${encodeURIComponent(id)}`,
@@ -93,8 +51,8 @@ export const timelineService = {
   },
 
   async getDuration(): Promise<number> {
-    const { data } = await axios.get<{ duration: number }>(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/timeline/duration`,
+    const { data } = await axios.get<GetTimelineDurationResponse>(
+      `${API_URL}/api/timeline/duration`,
     );
 
     return data.duration;
@@ -102,7 +60,7 @@ export const timelineService = {
 
   async getTracks(): Promise<GetTimelineTracksResponse> {
     const { data } = await axios.get<GetTimelineTracksResponse>(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/timeline/tracks`,
+      `${API_URL}/api/timeline/tracks`,
     );
 
     return data;

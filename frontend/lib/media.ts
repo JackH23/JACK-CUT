@@ -12,7 +12,7 @@ export type MediaFile = {
   url: string;
   size: number;
   mimeType: string;
-  duration?: number;
+  durationSeconds: number | null;
 };
 
 export type UploadMediaResponse = {

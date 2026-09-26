@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const TIMELINE_DURATION = 210;
 const FRAME_RATE = 30;
 
 type UsePreviewPlaybackOptions = {
@@ -31,13 +30,12 @@ export function usePreviewPlayback({
 }: UsePreviewPlaybackOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-
   const playheadRef = useRef(playheadPosition);
+  const onPositionChangeRef = useRef(onPlayheadPositionChange);
 
-  const endPosition = Math.min(
-    100,
-    (duration / TIMELINE_DURATION) * 100,
-  );
+  useEffect(() => {
+    onPositionChangeRef.current = onPlayheadPositionChange;
+  }, [onPlayheadPositionChange]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -56,14 +54,13 @@ export function usePreviewPlayback({
         const elapsedSeconds = (time - previousTime) / 1000;
 
         playheadRef.current = Math.min(
-          endPosition,
-          playheadRef.current +
-            (elapsedSeconds / TIMELINE_DURATION) * 100,
+          100,
+          playheadRef.current + (elapsedSeconds / duration) * 100,
         );
 
-        onPlayheadPositionChange(playheadRef.current);
+        onPositionChangeRef.current(playheadRef.current);
 
-        if (playheadRef.current >= endPosition) {
+        if (playheadRef.current >= 100) {
           setIsPlaying(false);
           return;
         }
@@ -76,17 +73,12 @@ export function usePreviewPlayback({
     frameId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(frameId);
-  }, [
-    duration,
-    endPosition,
-    isPlaying,
-    onPlayheadPositionChange,
-  ]);
+  }, [duration, isPlaying]);
 
   const handlePlayPause = useCallback(() => {
     if (duration <= 0) return;
 
-    if (!isPlaying && playheadPosition >= endPosition) {
+    if (!isPlaying && playheadPosition >= 100) {
       playheadRef.current = 0;
       onPlayheadPositionChange(0);
     } else {
@@ -94,20 +86,13 @@ export function usePreviewPlayback({
     }
 
     setIsPlaying((current) => !current);
-  }, [
-    duration,
-    endPosition,
-    isPlaying,
-    onPlayheadPositionChange,
-    playheadPosition,
-  ]);
+  }, [duration, isPlaying, onPlayheadPositionChange, playheadPosition]);
 
   const handleMuteToggle = useCallback(() => {
     setIsMuted((current) => !current);
   }, []);
 
-  const elapsed =
-    (playheadPosition / 100) * TIMELINE_DURATION;
+  const elapsed = (playheadPosition / 100) * duration;
 
   return {
     isPlaying,

@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
+import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
+import type { MediaFile } from "@/lib/media";
 
-import { usePreviewPlayback } from "@/composables/usePreviewPlayback";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
 import PlaybackControls from "./PlaybackControls";
-import type { MediaFile } from "@/lib/media";
 
 type PreviewMonitorProps = {
   file: MediaFile | null;
   activeItem: TimelineItem | null;
+  items: TimelineItem[];
   duration: number;
   playheadPosition: number;
   onPlayheadPositionChange: (position: number) => void;
@@ -20,56 +21,34 @@ type PreviewMonitorProps = {
 export default function PreviewMonitor({
   file,
   activeItem,
+  items,
   duration,
   playheadPosition,
   onPlayheadPositionChange,
 }: PreviewMonitorProps) {
   const {
+    videoRef,
+    previewFile,
     isPlaying,
     isMuted,
     currentTime,
     totalTime,
+    playheadSeconds,
+    activeSoundItems,
+    handleVideoLoadedMetadata,
     handlePlayPause,
     handleMuteToggle,
-  } = usePreviewPlayback({
+  } = usePreviewMonitor({
+    file,
+    activeItem,
+    items,
     duration,
     playheadPosition,
     onPlayheadPositionChange,
   });
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !activeItem || file?.type !== "video") return;
-
-    // usePreviewPlayback defines 100% as 210 seconds.
-    const playheadSeconds = (playheadPosition / 100) * 210;
-
-    const sourceTime = Math.max(
-      0,
-      playheadSeconds - activeItem.startTime + activeItem.sourceStart,
-    );
-
-    if (Math.abs(video.currentTime - sourceTime) > 0.15) {
-      video.currentTime = sourceTime;
-    }
-  }, [activeItem, file, playheadPosition]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying) {
-      void video.play().catch(console.error);
-    } else {
-      video.pause();
-    }
-  }, [isPlaying, file]);
-
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
-      {/* Preview header */}
       <PreviewHeader
         title="Program Monitor"
         colorSpace="REC.709-A"
@@ -77,49 +56,50 @@ export default function PreviewMonitor({
         zoomLabel="Fit to Window (48%)"
       />
 
-      {/* Video canvas */}
       <VideoCanvas>
-        {!file && (
+        {!previewFile && (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
             Select an uploaded file to preview
           </div>
         )}
 
-        {file?.type === "image" && (
+        {previewFile?.type === "image" && (
           <img
-            src={file.url}
-            alt={file.name}
+            src={previewFile.url}
+            alt={previewFile.name}
             className="h-full w-full object-contain"
           />
         )}
 
-        {file?.type === "video" && (
+        {previewFile?.type === "video" && (
           <video
             ref={videoRef}
-            key={file.id}
-            src={file.url}
+            key={previewFile.id}
+            src={previewFile.url}
             muted={isMuted}
             playsInline
+            onLoadedMetadata={handleVideoLoadedMetadata}
             className="h-full w-full object-contain"
           />
         )}
 
-        {file?.type === "audio" && (
-          <div className="flex h-full flex-col items-center justify-center gap-4">
-            <p className="text-sm text-white">{file.name}</p>
-
-            <audio key={file.id} src={file.url} controls muted={isMuted} />
-          </div>
-        )}
-
-        {file && (
+        {previewFile && (
           <span className="absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 text-xs">
-            {file.name}
+            {previewFile.name}
           </span>
         )}
       </VideoCanvas>
 
-      {/* Playback controls */}
+      {activeSoundItems.map((item) => (
+        <TimelineSound
+          key={item.id}
+          item={item}
+          playheadSeconds={playheadSeconds}
+          isPlaying={isPlaying}
+          isMuted={isMuted}
+        />
+      ))}
+
       <PlaybackControls
         isPlaying={isPlaying}
         isMuted={isMuted}
@@ -131,5 +111,34 @@ export default function PreviewMonitor({
         onMuteToggle={handleMuteToggle}
       />
     </section>
+  );
+}
+
+type TimelineSoundProps = {
+  item: TimelineItem;
+  playheadSeconds: number;
+  isPlaying: boolean;
+  isMuted: boolean;
+};
+
+function TimelineSound({
+  item,
+  playheadSeconds,
+  isPlaying,
+  isMuted,
+}: TimelineSoundProps) {
+  const { audioRef } = useTimelineSound({
+    item,
+    playheadSeconds,
+    isPlaying,
+  });
+
+  return (
+    <audio
+      ref={audioRef}
+      src={item.file.url}
+      muted={isMuted}
+      preload="auto"
+    />
   );
 }

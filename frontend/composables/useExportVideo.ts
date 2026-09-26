@@ -1,17 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
+import axios from "axios";
+
 import { exportService } from "@/services/exportService";
 import {
   exportReducer,
   initialExportState,
 } from "@/reducers/exportReducer";
 
+function getExportError(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message;
+
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function useExportVideo() {
-  const [state, dispatch] = useReducer(
-    exportReducer,
-    initialExportState,
-  );
+  const [state, dispatch] = useReducer(exportReducer, initialExportState);
   const startingRef = useRef(false);
 
   const startExport = useCallback(async (projectId: string) => {
@@ -30,10 +41,7 @@ export function useExportVideo() {
     } catch (error) {
       dispatch({
         type: "EXPORT_ERROR",
-        payload:
-          error instanceof Error
-            ? error.message
-            : "Could not start video export.",
+        payload: getExportError(error, "Could not start video export."),
       });
     } finally {
       startingRef.current = false;
@@ -67,10 +75,10 @@ export function useExportVideo() {
 
         dispatch({
           type: "EXPORT_ERROR",
-          payload:
-            error instanceof Error
-              ? error.message
-              : "Could not check export status.",
+          payload: getExportError(
+            error,
+            "Could not check export status.",
+          ),
         });
       }
     }

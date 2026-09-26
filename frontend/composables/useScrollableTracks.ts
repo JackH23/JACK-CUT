@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  useMemo,
   useRef,
   useState,
+  useEffect,
   type Dispatch,
   type DragEvent,
   type MouseEvent,
@@ -16,6 +18,8 @@ import type { TimelineItem, TimelineTrack } from "@/types/timeline";
 
 type UseScrollableTracksOptions = {
   items: TimelineItem[];
+  timelineDuration: number;
+  playheadPosition: number;
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onPlayheadPositionChange: (position: number) => void;
@@ -27,20 +31,45 @@ type ResizeState = {
   itemId: string;
   edge: ResizeEdge;
   startClientX: number;
-  startPosition: number;
-  startWidth: number;
+  startTime: number;
+  duration: number;
+  sourceStart: number;
+  trackItems: {
+    id: string;
+    startTime: number;
+    duration: number;
+    trackId: string;
+  }[];
+  snapEdges: number[];
 };
 
 const SNAP_THRESHOLD = 1.5;
+const PIXELS_PER_SECOND = 20;
+const SNAP_THRESHOLD_SECONDS = 10 / PIXELS_PER_SECOND;
+const MINIMUM_CLIP_SECONDS = 0.5;
 const MINIMUM_CLIP_WIDTH = 2;
-const TIMELINE_DURATION = 210;
 
 export function useScrollableTracks({
-  items,
+  items: rawItems,
+  timelineDuration,
+  playheadPosition,
   onItemsChange,
   onRemoveItem,
   onPlayheadPositionChange,
 }: UseScrollableTracksOptions) {
+  const [dragExtension, setDragExtension] = useState(0);
+  const displayDuration = Math.max(1, timelineDuration + dragExtension);
+
+  const items = useMemo(
+    () =>
+      rawItems.map((item) => ({
+        ...item,
+        startPosition: (item.startTime / displayDuration) * 100,
+        width: (item.duration / displayDuration) * 100,
+      })),
+    [rawItems, displayDuration],
+  );
+
   const {
     timelineRef,
     isDraggingPlayhead,
@@ -50,6 +79,24 @@ export function useScrollableTracks({
   } = useTimelinePlayhead({
     onPositionChange: onPlayheadPositionChange,
   });
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const timeline = timelineRef.current;
+    if (!container || !timeline) return;
+
+    const playheadX = (playheadPosition / 100) * timeline.clientWidth;
+    const leftEdge = container.scrollLeft;
+    const visibleWidth = container.clientWidth;
+
+    if (playheadX > leftEdge + visibleWidth * 0.7) {
+      container.scrollLeft = playheadX - visibleWidth * 0.7;
+    } else if (playheadX < leftEdge + visibleWidth * 0.3) {
+      container.scrollLeft = Math.max(0, playheadX - visibleWidth * 0.3);
+    }
+  }, [playheadPosition, displayDuration]);
 
   const dragStateRef = useRef<{
     itemId: string;
@@ -70,12 +117,8 @@ export function useScrollableTracks({
 
     if (!timeline) return;
 
-    const timelineBounds = timeline.getBoundingClientRect();
-
     const clipBounds = event.currentTarget.getBoundingClientRect();
-
-    const grabOffset =
-      ((event.clientX - clipBounds.left) / timelineBounds.width) * 100;
+    const grabOffset = event.clientX - clipBounds.left;
 
     dragStateRef.current = {
       itemId,
@@ -91,58 +134,69 @@ export function useScrollableTracks({
 
   const calculateSnapPosition = (
     event: DragEvent<HTMLDivElement>,
-    targetTrack: TimelineTrack,
     draggedItem: TimelineItem,
   ) => {
-    const targetBounds = event.currentTarget.getBoundingClientRect();
+    const timeline = timelineRef.current;
+    if (!timeline) {
+      return {
+        startPosition: draggedItem.startPosition,
+        snapLine: null as number | null,
+      };
+    }
 
-    const pointerPosition =
-      ((event.clientX - targetBounds.left) / targetBounds.width) * 100;
-
+    const timelineBounds = timeline.getBoundingClientRect();
     const grabOffset = dragStateRef.current?.grabOffset ?? 0;
+    const maxStart = Math.max(0, 100 - draggedItem.width);
 
     const rawStartPosition = Math.min(
-      100 - draggedItem.width,
-      Math.max(0, pointerPosition - grabOffset),
+      maxStart,
+      Math.max(
+        0,
+        ((event.clientX - timelineBounds.left - grabOffset) /
+          timelineBounds.width) *
+          100,
+      ),
     );
 
-    const rawEndPosition = rawStartPosition + draggedItem.width;
-
     let snappedStartPosition = rawStartPosition;
-
-    let nextSnapLine: number | null = null;
+    let snapLine: number | null = null;
     let closestDistance = SNAP_THRESHOLD;
 
-    items.forEach((item) => {
-      if (item.id === draggedItem.id) return;
-      if (item.trackId !== targetTrack.id) return;
+    for (const item of items) {
+      if (item.id === draggedItem.id) continue;
 
-      const itemStart = item.startPosition;
-      const itemEnd = item.startPosition + item.width;
+      const edges = [item.startPosition, item.startPosition + item.width];
 
-      const leftEdgeDistance = Math.abs(rawStartPosition - itemEnd);
+      for (const edge of edges) {
+        // Dragged clip's left edge aligns with this edge.
+        const leftDistance = Math.abs(rawStartPosition - edge);
+        if (leftDistance <= closestDistance && edge <= maxStart) {
+          closestDistance = leftDistance;
+          snappedStartPosition = edge;
+          snapLine = edge;
+        }
 
-      if (leftEdgeDistance <= closestDistance) {
-        closestDistance = leftEdgeDistance;
-        snappedStartPosition = itemEnd;
-        nextSnapLine = itemEnd;
+        // Dragged clip's right edge aligns with this edge.
+        const proposedStart = edge - draggedItem.width;
+        const rightDistance = Math.abs(
+          rawStartPosition + draggedItem.width - edge,
+        );
+
+        if (
+          rightDistance <= closestDistance &&
+          proposedStart >= 0 &&
+          proposedStart <= maxStart
+        ) {
+          closestDistance = rightDistance;
+          snappedStartPosition = proposedStart;
+          snapLine = edge;
+        }
       }
-
-      const rightEdgeDistance = Math.abs(rawEndPosition - itemStart);
-
-      if (rightEdgeDistance <= closestDistance) {
-        closestDistance = rightEdgeDistance;
-        snappedStartPosition = itemStart - draggedItem.width;
-        nextSnapLine = itemStart;
-      }
-    });
+    }
 
     return {
-      startPosition: Math.min(
-        100 - draggedItem.width,
-        Math.max(0, snappedStartPosition),
-      ),
-      snapLine: nextSnapLine,
+      startPosition: snappedStartPosition,
+      snapLine,
     };
   };
 
@@ -167,7 +221,7 @@ export function useScrollableTracks({
       return;
     }
 
-    const { snapLine } = calculateSnapPosition(event, targetTrack, draggedItem);
+    const { snapLine } = calculateSnapPosition(event, draggedItem);
 
     setSnapLinePosition(snapLine);
   };
@@ -186,11 +240,7 @@ export function useScrollableTracks({
 
     if (!draggedItem) return;
 
-    const { startPosition } = calculateSnapPosition(
-      event,
-      targetTrack,
-      draggedItem,
-    );
+    const { startPosition } = calculateSnapPosition(event, draggedItem);
 
     const endPosition = startPosition + draggedItem.width;
 
@@ -206,7 +256,7 @@ export function useScrollableTracks({
 
     if (hasOverlap) return;
 
-    const startTime = (startPosition / 100) * TIMELINE_DURATION;
+    const startTime = (startPosition / 100) * displayDuration;
 
     try {
       // Save the existing item's new layer and position.
@@ -234,6 +284,18 @@ export function useScrollableTracks({
     setSnapLinePosition(null);
   };
 
+  const startClipDrag = (event: DragEvent<HTMLDivElement>, itemId: string) => {
+    const item = items.find((candidate) => candidate.id === itemId);
+
+    handleDragStart(event, itemId);
+    setDragExtension(Math.max(10, item?.duration ?? 0));
+  };
+
+  const endClipDrag = () => {
+    handleClipDragEnd();
+    setDragExtension(0);
+  };
+
   const handleResizeStart = (
     event: PointerEvent<HTMLButtonElement>,
     item: TimelineItem,
@@ -248,8 +310,25 @@ export function useScrollableTracks({
       itemId: item.id,
       edge,
       startClientX: event.clientX,
-      startPosition: item.startPosition,
-      startWidth: item.width,
+      startTime: item.startTime,
+      duration: item.duration,
+      sourceStart: item.sourceStart ?? 0,
+      trackItems: items
+        .filter(
+          (other) => other.id !== item.id && other.trackId === item.trackId,
+        )
+        .map((other) => ({
+          id: other.id,
+          startTime: other.startTime,
+          duration: other.duration,
+          trackId: other.trackId,
+        })),
+      snapEdges: items
+        .filter((other) => other.id !== item.id)
+        .flatMap((other) => [
+          other.startTime,
+          other.startTime + other.duration,
+        ]),
     };
 
     setSnapLinePosition(null);
@@ -257,187 +336,156 @@ export function useScrollableTracks({
   };
 
   const handleResizeMove = (event: PointerEvent<HTMLButtonElement>) => {
-    const resizeState = resizeStateRef.current;
-    const timeline = timelineRef.current;
-
-    if (!resizeState || !timeline) return;
+    const state = resizeStateRef.current;
+    if (!state) return;
 
     event.preventDefault();
     event.stopPropagation();
 
-    const timelineWidth = timeline.getBoundingClientRect().width;
-
-    if (timelineWidth <= 0) return;
-
-    const resizedItem = items.find((item) => item.id === resizeState.itemId);
-
+    const resizedItem = items.find((item) => item.id === state.itemId);
     if (!resizedItem) return;
 
-    const movement =
-      ((event.clientX - resizeState.startClientX) / timelineWidth) * 100;
+    const movementSeconds =
+      (event.clientX - state.startClientX) / PIXELS_PER_SECOND;
 
-    const otherTrackItems = items.filter(
-      (item) =>
-        item.id !== resizedItem.id && item.trackId === resizedItem.trackId,
-    );
+    const originalStart = state.startTime;
+    const originalEnd = state.startTime + state.duration;
 
-    const originalStart = resizeState.startPosition;
-    const originalEnd = resizeState.startPosition + resizeState.startWidth;
-    const shiftedPositions = new Map<string, number>();
+    const nearestSnapEdge = (time: number): number | null => {
+      let nearest: number | null = null;
+      let shortestDistance = SNAP_THRESHOLD_SECONDS;
+
+      for (const edge of state.snapEdges) {
+        const distance = Math.abs(time - edge);
+        if (distance <= shortestDistance) {
+          nearest = edge;
+          shortestDistance = distance;
+        }
+      }
+
+      return nearest;
+    };
 
     let nextStart = originalStart;
-    let nextWidth = resizeState.startWidth;
-    let nextSnapLine: number | null = null;
+    let nextEnd = originalEnd;
+    let guideTime: number | null = null;
+    const shiftedStarts = new Map<string, number>();
 
-    if (resizeState.edge === "right") {
-      const requestedEnd = Math.min(
-        100,
-        Math.max(originalStart + MINIMUM_CLIP_WIDTH, originalEnd + movement),
+    if (state.edge === "right") {
+      const sourceDuration = resizedItem.file.durationSeconds;
+
+      const maximumEnd =
+        resizedItem.file.type === "image"
+          ? Number.POSITIVE_INFINITY
+          : sourceDuration != null && Number.isFinite(sourceDuration)
+            ? originalStart + Math.max(0, sourceDuration - state.sourceStart)
+            : originalEnd;
+
+      nextEnd = Math.min(
+        maximumEnd,
+        Math.max(
+          originalStart + MINIMUM_CLIP_SECONDS,
+          originalEnd + movementSeconds,
+        ),
       );
 
-      const followingItems = otherTrackItems
-        .filter((item) => item.startPosition >= originalStart)
-        .sort(
-          (firstItem, secondItem) =>
-            firstItem.startPosition - secondItem.startPosition,
-        );
-
-      const calculateRipplePositions = (resizedEnd: number) => {
-        const positions = new Map<string, number>();
-        let occupiedUntil = resizedEnd;
-        let finalEnd = resizedEnd;
-
-        followingItems.forEach((item) => {
-          const nextItemStart = Math.max(item.startPosition, occupiedUntil);
-
-          positions.set(item.id, nextItemStart);
-
-          occupiedUntil = nextItemStart + item.width;
-          finalEnd = occupiedUntil;
-        });
-
-        return {
-          positions,
-          finalEnd,
-        };
-      };
-
-      let nextEnd = requestedEnd;
-      let rippleResult = calculateRipplePositions(nextEnd);
-
-      // Keep all pushed clips inside the timeline.
-      if (rippleResult.finalEnd > 100) {
-        nextEnd = Math.max(
-          originalStart + MINIMUM_CLIP_WIDTH,
-          nextEnd - (rippleResult.finalEnd - 100),
-        );
-
-        rippleResult = calculateRipplePositions(nextEnd);
-      }
-
-      rippleResult.positions.forEach((position, itemId) => {
-        shiftedPositions.set(itemId, position);
-      });
-
-      const closestOriginalStart = followingItems[0]?.startPosition;
-
+      const snap = nearestSnapEdge(nextEnd);
       if (
-        closestOriginalStart !== undefined &&
-        Math.abs(nextEnd - closestOriginalStart) <= SNAP_THRESHOLD
+        snap !== null &&
+        snap >= originalStart + MINIMUM_CLIP_SECONDS &&
+        snap <= maximumEnd
       ) {
-        nextSnapLine = closestOriginalStart;
+        nextEnd = snap;
+        guideTime = snap;
       }
 
-      nextWidth = nextEnd - originalStart;
-    } else {
-      const requestedStart = originalStart + movement;
+      // Ripple only clips on this layer. Use their positions from
+      // resize start so moving the handle back also moves them back.
+      let occupiedUntil = nextEnd;
 
-      const previousClipEnd = otherTrackItems
-        .filter((item) => item.startPosition + item.width <= originalStart)
+      for (const other of [...state.trackItems]
+        .filter((item) => item.startTime >= originalStart)
+        .sort((a, b) => a.startTime - b.startTime)) {
+        const shiftedStart = Math.max(other.startTime, occupiedUntil);
+        shiftedStarts.set(other.id, shiftedStart);
+        occupiedUntil = shiftedStart + other.duration;
+      }
+    } else {
+      const earliestSourceStart =
+        resizedItem.file.type === "image"
+          ? 0
+          : originalStart - state.sourceStart;
+
+      const previousClipEnd = state.trackItems
+        .filter((item) => item.startTime + item.duration <= originalStart)
         .reduce(
-          (closest, item) => Math.max(closest, item.startPosition + item.width),
+          (latest, item) => Math.max(latest, item.startTime + item.duration),
           0,
         );
 
+      const minimumStart = Math.max(0, earliestSourceStart, previousClipEnd);
+      const maximumStart = originalEnd - MINIMUM_CLIP_SECONDS;
+
       nextStart = Math.max(
-        previousClipEnd,
-        0,
-        Math.min(originalEnd - MINIMUM_CLIP_WIDTH, requestedStart),
+        minimumStart,
+        Math.min(maximumStart, originalStart + movementSeconds),
       );
 
-      if (
-        previousClipEnd > 0 &&
-        Math.abs(nextStart - previousClipEnd) <= SNAP_THRESHOLD
-      ) {
-        nextStart = previousClipEnd;
-        nextSnapLine = previousClipEnd;
+      const snap = nearestSnapEdge(nextStart);
+      if (snap !== null && snap >= minimumStart && snap <= maximumStart) {
+        nextStart = snap;
+        guideTime = snap;
       }
-
-      nextWidth = originalEnd - nextStart;
     }
 
-    // These updates now run directly in the pointer event handler.
-    setSnapLinePosition(nextSnapLine);
+    const nextDuration = nextEnd - nextStart;
+    const nextSourceStart =
+      state.edge === "left"
+        ? Math.max(0, state.sourceStart + nextStart - originalStart)
+        : state.sourceStart;
+
+    setSnapLinePosition(
+      guideTime === null ? null : (guideTime / displayDuration) * 100,
+    );
 
     const updates = new Map<
       string,
       { startTime: number; duration: number; trackId: string }
     >();
 
-    updates.set(resizedItem.id, {
-      startTime: (nextStart / 100) * TIMELINE_DURATION,
-      duration: (nextWidth / 100) * TIMELINE_DURATION,
+    updates.set(state.itemId, {
+      startTime: nextStart,
+      duration: nextDuration,
       trackId: resizedItem.trackId,
     });
 
-    for (const item of otherTrackItems) {
-      const shiftedPosition = shiftedPositions.get(item.id);
-
-      if (
-        shiftedPosition !== undefined &&
-        shiftedPosition !== item.startPosition
-      ) {
-        updates.set(item.id, {
-          startTime: (shiftedPosition / 100) * TIMELINE_DURATION,
-          duration: item.duration,
-          trackId: item.trackId,
-        });
-      }
+    for (const other of state.trackItems) {
+      updates.set(other.id, {
+        startTime: shiftedStarts.get(other.id) ?? other.startTime,
+        duration: other.duration,
+        trackId: other.trackId,
+      });
     }
 
     resizeUpdatesRef.current = updates;
 
     onItemsChange((currentItems) =>
       currentItems.map((item) => {
-        // Update the clip being resized.
-        if (item.id === resizeState.itemId) {
-          const newStartTime = (nextStart / 100) * TIMELINE_DURATION;
-
-          const newDuration = (nextWidth / 100) * TIMELINE_DURATION;
-
-          const trimmedFromStart = newStartTime - item.startTime;
-
+        if (item.id === state.itemId) {
           return {
             ...item,
-            startPosition: nextStart,
-            width: nextWidth,
-            startTime: newStartTime,
-            duration: newDuration,
-            sourceStart:
-              resizeState.edge === "left"
-                ? Math.max(0, item.sourceStart + trimmedFromStart)
-                : item.sourceStart,
+            startTime: nextStart,
+            duration: nextDuration,
+            sourceStart: nextSourceStart,
           };
         }
 
-        // Push the following clips forward during ripple resizing.
-        const shiftedPosition = shiftedPositions.get(item.id);
+        const original = state.trackItems.find((other) => other.id === item.id);
 
-        if (shiftedPosition !== undefined) {
+        if (original) {
           return {
             ...item,
-            startPosition: shiftedPosition,
-            startTime: (shiftedPosition / 100) * TIMELINE_DURATION,
+            startTime: shiftedStarts.get(item.id) ?? original.startTime,
           };
         }
 
@@ -497,9 +545,14 @@ export function useScrollableTracks({
   };
 
   return {
+    scrollContainerRef,
     timelineRef,
+    displayDuration,
+    positionedItems: items,
     snapLinePosition,
     isDraggingPlayhead,
+    startClipDrag,
+    endClipDrag,
     handleDragStart,
     handleTrackDragOver,
     handleDrop,

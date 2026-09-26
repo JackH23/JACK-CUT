@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import { timelineService } from "@/services/timelineService";
+import {
+  initialTimelineTracksState,
+  timelineTracksReducer,
+} from "@/reducers/timelineTracksReducer";
+import type { TimelineItem } from "@/types/timeline";
 
 export type TimelineTrack = {
   id: string;
@@ -10,41 +15,46 @@ export type TimelineTrack = {
   type: "video" | "audio";
 };
 
-const timelineTimes = [
-  "00:00:00",
-  "00:00:30",
-  "00:01:00",
-  "00:01:30",
-  "00:02:00",
-  "00:02:30",
-  "00:03:00",
-];
+const RULER_INTERVAL = 30;
 
-export function useTimeline() {
-  const [tracks, setTracks] = useState<TimelineTrack[]>([]);
-  const [tracksError, setTracksError] = useState<string | null>(null);
+function formatTime(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  return [hours, minutes, remainingSeconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+}
+
+export function useTimeline(items: TimelineItem[] = []) {
+  const [state, dispatch] = useReducer(
+    timelineTracksReducer,
+    initialTimelineTracksState,
+  );
 
   useEffect(() => {
     let active = true;
 
+    dispatch({ type: "TRACKS_LOAD_START" });
+
     timelineService
       .getTracks()
       .then((response) => {
-        if (!active) return;
-
-        setTracks(
-          [...response.tracks]
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map(({ id, name, color, type }) => ({
-              id,
-              name,
-              color,
-              type,
-            })),
-        );
+        if (active) {
+          dispatch({
+            type: "TRACKS_LOAD_SUCCESS",
+            payload: response.tracks,
+          });
+        }
       })
       .catch(() => {
-        if (active) setTracksError("Could not load timeline tracks.");
+        if (active) {
+          dispatch({
+            type: "TRACKS_LOAD_ERROR",
+            payload: "Could not load timeline tracks.",
+          });
+        }
       });
 
     return () => {
@@ -52,5 +62,36 @@ export function useTimeline() {
     };
   }, []);
 
-  return { tracks, timelineTimes, tracksError };
+  const tracks = useMemo<TimelineTrack[]>(
+    () =>
+      [...state.tracks]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map(({ id, name, color, type }) => ({
+          id,
+          name,
+          color,
+          type,
+        })),
+    [state.tracks],
+  );
+
+  const lastClipEnd = Math.max(
+    0,
+    ...items.map((item) => item.startTime + item.duration),
+  );
+
+  const timelineDuration = Math.max(1, lastClipEnd);
+
+  const timelineTimes = Array.from(
+    { length: Math.floor(timelineDuration / RULER_INTERVAL) + 1 },
+    (_, index) => formatTime(index * RULER_INTERVAL),
+  );
+
+  return {
+    tracks,
+    timelineTimes,
+    timelineDuration,
+    tracksError: state.error,
+    tracksLoading: state.loading,
+  };
 }

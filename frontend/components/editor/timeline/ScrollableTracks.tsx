@@ -9,6 +9,7 @@ type ScrollableTracksProps = {
   items: TimelineItem[];
   tracks: TimelineTrack[];
   timelineTimes: string[];
+  timelineDuration: number;
   playheadPosition: number;
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
@@ -19,6 +20,7 @@ export default function ScrollableTracks({
   items,
   tracks,
   timelineTimes,
+  timelineDuration,
   playheadPosition,
   onItemsChange,
   onRemoveItem,
@@ -26,12 +28,15 @@ export default function ScrollableTracks({
 }: ScrollableTracksProps) {
   const {
     timelineRef,
+    scrollContainerRef,
+    displayDuration,
+    positionedItems,
     snapLinePosition,
     isDraggingPlayhead,
-    handleDragStart,
+    startClipDrag,
+    endClipDrag,
     handleTrackDragOver,
     handleDrop,
-    handleClipDragEnd,
     handleResizeStart,
     handleResizeMove,
     handleResizeEnd,
@@ -43,20 +48,30 @@ export default function ScrollableTracks({
     handlePlayheadPointerUp,
   } = useScrollableTracks({
     items,
+    timelineDuration,
+    playheadPosition,
     onItemsChange,
     onRemoveItem,
     onPlayheadPositionChange,
   });
 
   return (
-    <div className="min-w-0 flex-1 self-stretch overflow-x-auto">
-      <div ref={timelineRef} className="relative min-h-full w-[4200px]">
+    <div
+      ref={scrollContainerRef}
+      className="min-w-0 flex-1 self-stretch overflow-x-auto"
+    >
+      <div
+        ref={timelineRef}
+        style={{ width: `${displayDuration * 20}px` }}
+        className="relative min-h-full"
+      >
         {/* Time ruler */}
-        <div className="sticky top-0 z-20 flex h-7 border-b border-white/10 bg-[#15171e] font-mono text-[10px] text-zinc-400">
-          {timelineTimes.map((time) => (
+        <div className="sticky top-0 z-20 h-7 border-b border-white/10 bg-[#15171e] font-mono text-[10px] text-zinc-400">
+          {timelineTimes.map((time, index) => (
             <div
               key={time}
-              className="relative min-w-40 flex-1 border-l border-white/10 px-2 pt-1"
+              style={{ left: `${index * 30 * 20}px` }}
+              className="absolute top-0 h-7 border-l border-white/10 px-2 pt-1"
             >
               {time}
             </div>
@@ -65,12 +80,12 @@ export default function ScrollableTracks({
 
         {/* Default and user-created tracks */}
         <TimelineTracks
-          items={items}
+          items={positionedItems}
           tracks={tracks}
           onTrackDragOver={handleTrackDragOver}
           onTrackDrop={handleDrop}
-          onClipDragStart={handleDragStart}
-          onClipDragEnd={handleClipDragEnd}
+          onClipDragStart={startClipDrag}
+          onClipDragEnd={endClipDrag}
           onResizeStart={handleResizeStart}
           onResizeMove={handleResizeMove}
           onResizeEnd={handleResizeEnd}
@@ -82,9 +97,7 @@ export default function ScrollableTracks({
         {/* Clip snap line */}
         {snapLinePosition !== null && (
           <div
-            style={{
-              left: `${snapLinePosition}%`,
-            }}
+            style={{ left: `${snapLinePosition}%` }}
             className="pointer-events-none absolute bottom-0 top-7 z-40 w-0.5 -translate-x-1/2 bg-cyan-300 shadow-[0_0_10px_#67e8f9]"
           >
             <div className="absolute -left-1 top-0 h-2 w-2 rotate-45 bg-cyan-300" />
