@@ -11,6 +11,36 @@ const TEXT_STYLES = new Set([
   "caption",
 ]);
 
+const TEXT_STYLE_DEFAULTS = {
+  heading: {
+    fontSize: 48,
+    fontWeight: 700,
+    fontFamily: "Arial",
+    textColor: "#ffffff",
+  },
+
+  title: {
+    fontSize: 36,
+    fontWeight: 700,
+    fontFamily: "Arial",
+    textColor: "#ffffff",
+  },
+
+  subtitle: {
+    fontSize: 30,
+    fontWeight: 600,
+    fontFamily: "Arial",
+    textColor: "#ffffff",
+  },
+
+  caption: {
+    fontSize: 20,
+    fontWeight: 500,
+    fontFamily: "Arial",
+    textColor: "#ffffff",
+  },
+};
+
 function isUuid(value) {
   return (
     typeof value === "string" &&
@@ -198,6 +228,11 @@ async function addTimelineItem(req, res) {
       });
     }
 
+    const textDefaults =
+      TEXT_STYLE_DEFAULTS[
+      normalizedTextStyle
+      ];
+
     const item = await TimelineItem.create({
       project_id: project.id,
 
@@ -206,6 +241,23 @@ async function addTimelineItem(req, res) {
 
       text_content: normalizedText,
       text_style: normalizedTextStyle,
+
+      // Default text position
+      text_x: 50,
+      text_y: 50,
+
+      // Default text styling
+      font_size:
+        textDefaults.fontSize,
+
+      font_weight:
+        textDefaults.fontWeight,
+
+      font_family:
+        textDefaults.fontFamily,
+
+      text_color:
+        textDefaults.textColor,
 
       track_id: trackId.trim(),
       start_time: startTime,
@@ -319,6 +371,22 @@ async function getTimelineItems(req, res) {
             item.text_y == null
               ? 50
               : Number(item.text_y),
+
+          fontSize:
+            item.font_size == null
+              ? null
+              : Number(item.font_size),
+
+          fontWeight:
+            item.font_weight == null
+              ? null
+              : Number(item.font_weight),
+
+          fontFamily:
+            item.font_family ?? null,
+
+          textColor:
+            item.text_color ?? null,
 
           trackId: item.track_id,
           startTime: Number(
@@ -457,6 +525,12 @@ async function updateTimelineItem(
       textContent,
       textX,
       textY,
+
+      // Text styling
+      fontSize,
+      fontWeight,
+      fontFamily,
+      textColor,
     } = req.body;
 
     const isTextUpdate =
@@ -466,6 +540,12 @@ async function updateTimelineItem(
       textX !== undefined ||
       textY !== undefined;
 
+    const isTextStyleUpdate =
+      fontSize !== undefined ||
+      fontWeight !== undefined ||
+      fontFamily !== undefined ||
+      textColor !== undefined;
+
     const isPositionUpdate =
       startTime !== undefined ||
       duration !== undefined ||
@@ -474,6 +554,7 @@ async function updateTimelineItem(
     if (
       !isTextUpdate &&
       !isTextPositionUpdate &&
+      !isTextStyleUpdate &&
       !isPositionUpdate
     ) {
       return res.status(400).json({
@@ -593,6 +674,78 @@ async function updateTimelineItem(
 
       updates.text_x = textX;
       updates.text_y = textY;
+    }
+
+    if (isTextStyleUpdate) {
+      if (item.item_type !== "TEXT") {
+        return res.status(400).json({
+          message:
+            "Only text timeline items can update text styling.",
+        });
+      }
+
+      if (fontSize !== undefined) {
+        if (
+          typeof fontSize !== "number" ||
+          !Number.isFinite(fontSize) ||
+          fontSize < 8 ||
+          fontSize > 200
+        ) {
+          return res.status(400).json({
+            message:
+              "fontSize must be a number between 8 and 200.",
+          });
+        }
+
+        updates.font_size = fontSize;
+      }
+
+      if (fontWeight !== undefined) {
+        if (
+          typeof fontWeight !== "number" ||
+          !Number.isFinite(fontWeight) ||
+          fontWeight < 100 ||
+          fontWeight > 900
+        ) {
+          return res.status(400).json({
+            message:
+              "fontWeight must be a number between 100 and 900.",
+          });
+        }
+
+        updates.font_weight = fontWeight;
+      }
+
+      if (fontFamily !== undefined) {
+        if (
+          typeof fontFamily !== "string" ||
+          !fontFamily.trim()
+        ) {
+          return res.status(400).json({
+            message:
+              "fontFamily must be a non-empty string.",
+          });
+        }
+
+        updates.font_family =
+          fontFamily.trim();
+      }
+
+      if (textColor !== undefined) {
+        if (
+          typeof textColor !== "string" ||
+          !/^#[0-9A-Fa-f]{6}$/.test(
+            textColor,
+          )
+        ) {
+          return res.status(400).json({
+            message:
+              "textColor must be a valid hex color such as #ffffff.",
+          });
+        }
+
+        updates.text_color = textColor;
+      }
     }
 
     await item.update(updates);

@@ -66,6 +66,32 @@ const TimelineItem = sequelize.define(
       defaultValue: 50,
     },
 
+    // Text styling
+    font_size: {
+      type: DataTypes.DOUBLE,
+      allowNull: true,
+    },
+
+    font_weight: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    font_family: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+
+    text_color: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
+
+    track_id: {
+      type: DataTypes.STRING(100),
+      allowNull: false,
+    },
+
     track_id: {
       type: DataTypes.STRING(100),
       allowNull: false,

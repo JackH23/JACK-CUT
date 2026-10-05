@@ -19,6 +19,13 @@ export type AddTextTimelineItemInput = {
   itemType: "TEXT";
   textContent: string;
   textStyle: TextStyle;
+
+  // Text style
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  textColor?: string;
+
   trackId: string;
   startTime: number;
   duration: number;
@@ -38,8 +45,15 @@ export type TimelineItemUpdateInput = {
   trackId?: string;
   textContent?: string;
 
+  // Text position
   textX?: number;
   textY?: number;
+
+  // Text style
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  textColor?: string;
 };
 
 /* =========================================================
@@ -63,6 +77,12 @@ export type AddTimelineItemResponse = {
     // Text position
     text_x: number | null;
     text_y: number | null;
+
+    // Text style
+    font_size: number | null;
+    font_weight: number | null;
+    font_family: string | null;
+    text_color: string | null;
 
     track_id: string;
     start_time: number;
@@ -91,6 +111,12 @@ export type SavedTimelineItem = {
   // Text position
   textX: number | null;
   textY: number | null;
+
+  // Text style
+  fontSize: number | null;
+  fontWeight: number | null;
+  fontFamily: string | null;
+  textColor: string | null;
 
   trackId: string;
   startTime: number;

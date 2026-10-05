@@ -98,19 +98,40 @@ export function useEditorTimeline(projectId: string) {
                 {
                   id: item.id,
                   type: "text" as const,
+
                   text: item.textContent,
-                  textStyle: item.textStyle ?? "title",
+                  textStyle:
+                    item.textStyle ?? "title",
 
                   textX: item.textX ?? 50,
                   textY: item.textY ?? 50,
 
+                  fontSize:
+                    item.fontSize ?? undefined,
+
+                  fontWeight:
+                    item.fontWeight ?? undefined,
+
+                  fontFamily:
+                    item.fontFamily ?? undefined,
+
+                  textColor:
+                    item.textColor ?? undefined,
+
                   trackId: item.trackId,
                   startTime: item.startTime,
                   duration: item.duration,
+
                   startPosition:
-                    (item.startTime / TIMELINE_DURATION) * 100,
+                    (item.startTime /
+                      TIMELINE_DURATION) *
+                    100,
+
                   width:
-                    (item.duration / TIMELINE_DURATION) * 100,
+                    (item.duration /
+                      TIMELINE_DURATION) *
+                    100,
+
                   sourceStart: 0,
                 },
               ];
@@ -311,6 +332,19 @@ export function useEditorTimeline(projectId: string) {
           textY:
             savedItem.text_y ?? 50,
 
+          // Text styling
+          fontSize:
+            savedItem.font_size ?? undefined,
+
+          fontWeight:
+            savedItem.font_weight ?? undefined,
+
+          fontFamily:
+            savedItem.font_family ?? undefined,
+
+          textColor:
+            savedItem.text_color ?? undefined,
+
           trackId:
             savedItem.track_id,
 
@@ -449,6 +483,252 @@ export function useEditorTimeline(projectId: string) {
     [timelineItems, setTimelineItems],
   );
 
+  const handleUpdateTextFontSize = useCallback(
+    async (
+      itemId: string,
+      fontSize: number,
+    ) => {
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      const normalizedFontSize = Math.max(
+        8,
+        Math.min(200, fontSize),
+      );
+
+      const previousFontSize = item.fontSize;
+
+      // Update preview immediately while resizing.
+      setTimelineItems((currentItems) =>
+        currentItems.map((timelineItem) =>
+          timelineItem.id === itemId
+            ? {
+              ...timelineItem,
+              fontSize: normalizedFontSize,
+            }
+            : timelineItem,
+        ),
+      );
+
+      try {
+        await timelineService.updateItem(
+          itemId,
+          {
+            fontSize: normalizedFontSize,
+          },
+        );
+      } catch (error) {
+        console.error(
+          "Could not update text font size:",
+          error,
+        );
+
+        // Restore previous value if saving fails.
+        setTimelineItems((currentItems) =>
+          currentItems.map((timelineItem) =>
+            timelineItem.id === itemId
+              ? {
+                ...timelineItem,
+                fontSize: previousFontSize,
+              }
+              : timelineItem,
+          ),
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
+  const handleUpdateTextFontWeight = useCallback(
+    async (
+      itemId: string,
+      fontWeight: number,
+    ) => {
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      const normalizedFontWeight = Math.max(
+        100,
+        Math.min(900, fontWeight),
+      );
+
+      const previousFontWeight = item.fontWeight;
+
+      // Update preview immediately.
+      setTimelineItems((currentItems) =>
+        currentItems.map((timelineItem) =>
+          timelineItem.id === itemId
+            ? {
+              ...timelineItem,
+              fontWeight: normalizedFontWeight,
+            }
+            : timelineItem,
+        ),
+      );
+
+      try {
+        await timelineService.updateItem(
+          itemId,
+          {
+            fontWeight: normalizedFontWeight,
+          },
+        );
+      } catch (error) {
+        console.error(
+          "Could not update text font weight:",
+          error,
+        );
+
+        // Restore previous value if saving fails.
+        setTimelineItems((currentItems) =>
+          currentItems.map((timelineItem) =>
+            timelineItem.id === itemId
+              ? {
+                ...timelineItem,
+                fontWeight: previousFontWeight,
+              }
+              : timelineItem,
+          ),
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
+  const handleUpdateTextFontFamily = useCallback(
+    async (
+      itemId: string,
+      fontFamily: string,
+    ) => {
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      const normalizedFontFamily =
+        fontFamily.trim();
+
+      if (!normalizedFontFamily) return;
+
+      const previousFontFamily =
+        item.fontFamily;
+
+      // Update preview immediately.
+      setTimelineItems((currentItems) =>
+        currentItems.map((timelineItem) =>
+          timelineItem.id === itemId
+            ? {
+              ...timelineItem,
+              fontFamily: normalizedFontFamily,
+            }
+            : timelineItem,
+        ),
+      );
+
+      try {
+        await timelineService.updateItem(
+          itemId,
+          {
+            fontFamily: normalizedFontFamily,
+          },
+        );
+      } catch (error) {
+        console.error(
+          "Could not update text font family:",
+          error,
+        );
+
+        // Restore previous value if saving fails.
+        setTimelineItems((currentItems) =>
+          currentItems.map((timelineItem) =>
+            timelineItem.id === itemId
+              ? {
+                ...timelineItem,
+                fontFamily: previousFontFamily,
+              }
+              : timelineItem,
+          ),
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
+  const handleUpdateTextColor = useCallback(
+    async (
+      itemId: string,
+      textColor: string,
+    ) => {
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      const normalizedTextColor =
+        textColor.trim();
+
+      if (!normalizedTextColor) return;
+
+      const previousTextColor =
+        item.textColor;
+
+      // Update preview immediately.
+      setTimelineItems((currentItems) =>
+        currentItems.map((timelineItem) =>
+          timelineItem.id === itemId
+            ? {
+              ...timelineItem,
+              textColor: normalizedTextColor,
+            }
+            : timelineItem,
+        ),
+      );
+
+      try {
+        await timelineService.updateItem(
+          itemId,
+          {
+            textColor: normalizedTextColor,
+          },
+        );
+      } catch (error) {
+        console.error(
+          "Could not update text color:",
+          error,
+        );
+
+        // Restore previous value if saving fails.
+        setTimelineItems((currentItems) =>
+          currentItems.map((timelineItem) =>
+            timelineItem.id === itemId
+              ? {
+                ...timelineItem,
+                textColor: previousTextColor,
+              }
+              : timelineItem,
+          ),
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
   const handleRemoveMedia = useCallback((fileId: string) => {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
   }, []);
@@ -494,7 +774,8 @@ export function useEditorTimeline(projectId: string) {
             (item.file?.type === "image" ||
               item.file?.type === "video");
 
-          const endPosition = item.startPosition + item.width;
+          const endPosition =
+            item.startPosition + item.width;
 
           return (
             isVisualFile &&
@@ -504,13 +785,38 @@ export function useEditorTimeline(projectId: string) {
         })
         .sort(
           (firstItem, secondItem) =>
-            (trackPriority.get(firstItem.trackId) ?? Number.MAX_SAFE_INTEGER) -
-            (trackPriority.get(secondItem.trackId) ?? Number.MAX_SAFE_INTEGER),
+            (trackPriority.get(firstItem.trackId) ??
+              Number.MAX_SAFE_INTEGER) -
+            (trackPriority.get(secondItem.trackId) ??
+              Number.MAX_SAFE_INTEGER),
         )[0] ?? null
     );
   }, [playheadPosition, timelineItems, tracks]);
 
-  const activePreviewFile = activePreviewItem?.file ?? null;
+  // Active text item at the current playhead position.
+  const activeTextItem = useMemo(() => {
+    return (
+      timelineItems.find((item) => {
+        if (item.type !== "text") {
+          return false;
+        }
+
+        const endPosition =
+          item.startPosition + item.width;
+
+        return (
+          playheadPosition >= item.startPosition &&
+          playheadPosition < endPosition
+        );
+      }) ?? null
+    );
+  }, [
+    playheadPosition,
+    timelineItems,
+  ]);
+
+  const activePreviewFile =
+    activePreviewItem?.file ?? null;
 
   const selectedMediaIds = useMemo(
     () =>
@@ -532,12 +838,19 @@ export function useEditorTimeline(projectId: string) {
     setPlayheadPosition,
     selectedMediaIds,
     activePreviewItem,
+    activeTextItem,
     activePreviewFile,
 
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
     handleUpdateTextPosition,
+
+    handleUpdateTextFontSize,
+    handleUpdateTextFontWeight,
+    handleUpdateTextFontFamily,
+    handleUpdateTextColor,
+
     handleRemoveMedia,
 
     addingTimelineItem: state.adding,

@@ -58,12 +58,17 @@ function EditorWorkspace({ project }: { project: Project }) {
     setPlayheadPosition,
     activePreviewFile,
     activePreviewItem,
+    activeTextItem,
     selectedMediaIds,
 
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
     handleUpdateTextPosition,
+    handleUpdateTextFontSize,
+    handleUpdateTextFontWeight,
+    handleUpdateTextFontFamily,
+    handleUpdateTextColor,
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
@@ -158,10 +163,17 @@ function EditorWorkspace({ project }: { project: Project }) {
               onPlayingChange={setIsPlaying}
               onUpdateText={handleUpdateText}
               onUpdateTextPosition={handleUpdateTextPosition}
+              onUpdateTextFontSize={handleUpdateTextFontSize}
               duration={timelineDuration}
             />
 
-            <SettingsPanel />
+            <SettingsPanel
+              activeItem={activeTextItem ?? activePreviewItem}
+              onUpdateTextFontSize={handleUpdateTextFontSize}
+              onUpdateTextFontWeight={handleUpdateTextFontWeight}
+              onUpdateTextFontFamily={handleUpdateTextFontFamily}
+              onUpdateTextColor={handleUpdateTextColor}
+            />
           </main>
 
           {timelineError && (

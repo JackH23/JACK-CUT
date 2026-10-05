@@ -35,6 +35,11 @@ type PreviewMonitorProps = {
     x: number,
     y: number,
   ) => void;
+
+  onUpdateTextFontSize: (
+    itemId: string,
+    fontSize: number,
+  ) => void;
 };
 
 export default function PreviewMonitor({
@@ -47,6 +52,7 @@ export default function PreviewMonitor({
   onPlayingChange,
   onUpdateText,
   onUpdateTextPosition,
+  onUpdateTextFontSize,
 }: PreviewMonitorProps) {
   const {
     videoRef,
@@ -80,6 +86,14 @@ export default function PreviewMonitor({
     showHorizontalGuide,
     setShowHorizontalGuide,
   ] = useState(false);
+
+  const handleSnapGuideChange = (
+    vertical: boolean,
+    horizontal: boolean,
+  ) => {
+    setShowVerticalGuide(vertical);
+    setShowHorizontalGuide(horizontal);
+  };
 
   useEffect(() => {
     onPlayingChange(isPlaying);
@@ -140,13 +154,25 @@ export default function PreviewMonitor({
           return (
             <EditableTextOverlay
               key={item.id}
+
               text={item.text}
               textStyle={item.textStyle}
+
               x={item.textX ?? 50}
               y={item.textY ?? 50}
+
+              fontSize={item.fontSize}
+              fontWeight={item.fontWeight}
+              fontFamily={item.fontFamily}
+              textColor={item.textColor}
+
               onTextChange={(text) =>
-                onUpdateText(item.id, text)
+                onUpdateText(
+                  item.id,
+                  text,
+                )
               }
+
               onPositionChange={(x, y) =>
                 onUpdateTextPosition(
                   item.id,
@@ -154,13 +180,17 @@ export default function PreviewMonitor({
                   y,
                 )
               }
-              onSnapGuideChange={(
-                vertical,
-                horizontal,
-              ) => {
-                setShowVerticalGuide(vertical);
-                setShowHorizontalGuide(horizontal);
-              }}
+
+              onFontSizeChange={(fontSize) =>
+                onUpdateTextFontSize(
+                  item.id,
+                  fontSize,
+                )
+              }
+
+              onSnapGuideChange={
+                handleSnapGuideChange
+              }
             />
           );
         })}

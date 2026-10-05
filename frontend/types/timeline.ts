@@ -6,10 +6,9 @@ export type TextStyle =
   | "title"
   | "caption";
 
-export type TimelineItem = {
+type TimelineItemFields = {
   id: string;
 
-  type: "media" | "text";
 
   // Media items
   file?: MediaFile;
@@ -22,6 +21,11 @@ export type TimelineItem = {
   textX?: number;
   textY?: number;
 
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  textColor?: string;
+
   trackId: string;
 
   // Visual percentage values
@@ -33,6 +37,16 @@ export type TimelineItem = {
   duration: number;
   sourceStart: number;
 };
+
+export type TextTimelineItem = TimelineItemFields & {
+  type: "text";
+};
+
+export type MediaTimelineItem = TimelineItemFields & {
+  type: "media";
+};
+
+export type TimelineItem = TextTimelineItem | MediaTimelineItem;
 
 export type TimelineTrack = {
   id: string;

@@ -113,6 +113,17 @@ async function createExport(req, res) {
           itemType: "TEXT",
           text: item.text_content,
           textStyle: item.text_style,
+
+          textX:
+            item.text_x == null
+              ? 50
+              : Number(item.text_x),
+
+          textY:
+            item.text_y == null
+              ? 50
+              : Number(item.text_y),
+
           start: Number(item.start_time),
           duration: Number(item.duration),
         };
@@ -258,11 +269,37 @@ async function createExport(req, res) {
       const events = textClips
         .map((clip) => {
           const start = formatAssTime(clip.start);
-          const end = formatAssTime(clip.start + clip.duration);
-          const style = getAssStyle(clip.textStyle);
-          const text = escapeAssText(clip.text);
+          const end = formatAssTime(
+            clip.start + clip.duration,
+          );
 
-          return `Dialogue: 0,${start},${end},${style},,0,0,0,,${text}`;
+          const style = getAssStyle(
+            clip.textStyle,
+          );
+
+          const text = escapeAssText(
+            clip.text,
+          );
+
+          // Convert the editor's percentage coordinates
+          // into the 1920x1080 export coordinate system.
+          const x = Math.round(
+            (clip.textX / 100) * WIDTH,
+          );
+
+          const y = Math.round(
+            (clip.textY / 100) * HEIGHT,
+          );
+
+          // ASS \pos() positions the text using
+          // the style's alignment anchor.
+          const positionedText =
+            `{\\an5\\pos(${x},${y})}${text}`;
+
+          return (
+            `Dialogue: 0,${start},${end},` +
+            `${style},,0,0,0,,${positionedText}`
+          );
         })
         .join("\n");
 
@@ -274,10 +311,10 @@ async function createExport(req, res) {
 
     [V4+ Styles]
     Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-    Style: Heading,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,8,60,60,120,1
-    Style: Title,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
-    Style: Subtitle,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,80,80,180,1
-    Style: Caption,Arial,36,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,80,80,80,1
+    Style: Heading,Arial,144,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
+    Style: Title,Arial,108,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
+    Style: Subtitle,Arial,90,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,80,80,60,1
+    Style: Caption,Arial,60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,5,80,80,60,1
 
     [Events]
     Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

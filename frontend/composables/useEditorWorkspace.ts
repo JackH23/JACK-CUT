@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import { useEditorTimeline } from "@/composables/useEditorTimeline";
 import { useTimelineDuration } from "@/composables/useTimelineDuration";
 import { useExportVideo } from "@/composables/useExportVideo";
 
-export function useEditorWorkspace(projectId: string) {
+export function useEditorWorkspace(
+  projectId: string,
+) {
   const {
     timelineItems,
     setTimelineItems,
@@ -14,12 +20,20 @@ export function useEditorWorkspace(projectId: string) {
     setPlayheadPosition,
     activePreviewFile,
     activePreviewItem,
+    activeTextItem,
     selectedMediaIds,
 
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
     handleUpdateTextPosition,
+
+    // Text styling
+    handleUpdateTextFontSize,
+    handleUpdateTextFontWeight,
+    handleUpdateTextFontFamily,
+    handleUpdateTextColor,
+
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
@@ -37,8 +51,10 @@ export function useEditorWorkspace(projectId: string) {
     downloadUrl,
   } = useExportVideo();
 
-  const [showExportSuccess, setShowExportSuccess] =
-    useState(false);
+  const [
+    showExportSuccess,
+    setShowExportSuccess,
+  ] = useState(false);
 
   useEffect(() => {
     if (
@@ -47,15 +63,22 @@ export function useEditorWorkspace(projectId: string) {
     ) {
       setShowExportSuccess(true);
     }
-  }, [exportJob?.status, downloadUrl]);
+  }, [
+    exportJob?.status,
+    downloadUrl,
+  ]);
 
   const handleExport = useCallback(() => {
     void startExport(projectId);
-  }, [projectId, startExport]);
+  }, [
+    projectId,
+    startExport,
+  ]);
 
-  const closeExportSuccess = useCallback(() => {
-    setShowExportSuccess(false);
-  }, []);
+  const closeExportSuccess =
+    useCallback(() => {
+      setShowExportSuccess(false);
+    }, []);
 
   return {
     timelineItems,
@@ -64,12 +87,20 @@ export function useEditorWorkspace(projectId: string) {
     setPlayheadPosition,
     activePreviewFile,
     activePreviewItem,
+    activeTextItem,
     selectedMediaIds,
 
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
     handleUpdateTextPosition,
+
+    // Text styling
+    handleUpdateTextFontSize,
+    handleUpdateTextFontWeight,
+    handleUpdateTextFontFamily,
+    handleUpdateTextColor,
+
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
