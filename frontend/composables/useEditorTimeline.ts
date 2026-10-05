@@ -100,6 +100,10 @@ export function useEditorTimeline(projectId: string) {
                   type: "text" as const,
                   text: item.textContent,
                   textStyle: item.textStyle ?? "title",
+
+                  textX: item.textX ?? 50,
+                  textY: item.textY ?? 50,
+
                   trackId: item.trackId,
                   startTime: item.startTime,
                   duration: item.duration,
@@ -240,8 +244,33 @@ export function useEditorTimeline(projectId: string) {
 
       const duration = 5;
 
-      const startTime =
+      // Current playhead time.
+      const playheadTime =
         (playheadPosition / 100) * TIMELINE_DURATION;
+
+      // Find the latest ending text clip on the title track.
+      const lastTextEndTime = timelineItems
+        .filter(
+          (item) =>
+            item.type === "text" &&
+            item.trackId === titleTrack.id,
+        )
+        .reduce(
+          (latestEnd, item) =>
+            Math.max(
+              latestEnd,
+              item.startTime + item.duration,
+            ),
+          0,
+        );
+
+      // Never place a new text clip on top of an existing one.
+      // If the playhead is after all existing text, use the playhead.
+      // Otherwise, append after the last text clip.
+      const startTime = Math.max(
+        playheadTime,
+        lastTextEndTime,
+      );
 
       dispatch({
         type: "ADD_ITEM_START",
@@ -272,6 +301,9 @@ export function useEditorTimeline(projectId: string) {
             savedItem.text_style ??
             style,
 
+          textX: savedItem.text_x ?? 50,
+          textY: savedItem.text_y ?? 50,
+
           trackId: savedItem.track_id,
           startTime: savedItem.start_time,
           duration: savedItem.duration,
@@ -299,7 +331,12 @@ export function useEditorTimeline(projectId: string) {
         });
       }
     },
-    [projectId, playheadPosition, tracks],
+    [
+      projectId,
+      playheadPosition,
+      tracks,
+      timelineItems,
+    ],
   );
 
   const handleUpdateText = useCallback(
@@ -334,6 +371,62 @@ export function useEditorTimeline(projectId: string) {
       } catch (error) {
         console.error(
           "Could not update timeline text:",
+          error,
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
+  const handleUpdateTextPosition = useCallback(
+    async (
+      itemId: string,
+      x: number,
+      y: number,
+    ) => {
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      // Keep text inside the preview.
+      const normalizedX = Math.max(
+        0,
+        Math.min(100, x),
+      );
+
+      const normalizedY = Math.max(
+        0,
+        Math.min(100, y),
+      );
+
+      // Update UI immediately while dragging.
+      setTimelineItems((currentItems) =>
+        currentItems.map((timelineItem) =>
+          timelineItem.id === itemId
+            ? {
+              ...timelineItem,
+              textX: normalizedX,
+              textY: normalizedY,
+            }
+            : timelineItem,
+        ),
+      );
+
+      try {
+        await timelineService.updateItem(
+          itemId,
+          {
+            textX: normalizedX,
+            textY: normalizedY,
+          },
+        );
+      } catch (error) {
+        console.error(
+          "Could not update text position:",
           error,
         );
       }
@@ -429,6 +522,7 @@ export function useEditorTimeline(projectId: string) {
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
+    handleUpdateTextPosition,
     handleRemoveMedia,
 
     addingTimelineItem: state.adding,

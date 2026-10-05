@@ -3,12 +3,9 @@
 import { useEffect } from "react";
 import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
 import { useTimelineSound } from "@/composables/useTimelineSound";
-import type {
-  TextStyle,
-  TimelineItem,
-} from "@/types/timeline";
+import type { TimelineItem } from "@/types/timeline";
 import type { MediaFile } from "@/lib/media";
-
+import EditableTextOverlay from "./EditableTextOverlay";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
 import PlaybackControls from "./PlaybackControls";
@@ -19,8 +16,20 @@ type PreviewMonitorProps = {
   items: TimelineItem[];
   duration: number;
   playheadPosition: number;
+
   onPlayheadPositionChange: (position: number) => void;
   onPlayingChange: (playing: boolean) => void;
+
+  onUpdateText: (
+    itemId: string,
+    text: string,
+  ) => void;
+
+  onUpdateTextPosition: (
+    itemId: string,
+    x: number,
+    y: number,
+  ) => void;
 };
 
 export default function PreviewMonitor({
@@ -31,6 +40,8 @@ export default function PreviewMonitor({
   playheadPosition,
   onPlayheadPositionChange,
   onPlayingChange,
+  onUpdateText,
+  onUpdateTextPosition,
 }: PreviewMonitorProps) {
   const {
     videoRef,
@@ -94,13 +105,34 @@ export default function PreviewMonitor({
           />
         )}
 
-        {/* Text overlays */}
-        {activeTextItems.map((item) => (
-          <TextOverlay
-            key={item.id}
-            item={item}
-          />
-        ))}
+        {/* Editable text overlays */}
+        {activeTextItems.map((item) => {
+          if (
+            item.type !== "text" ||
+            !item.text
+          ) {
+            return null;
+          }
+
+          return (
+            <EditableTextOverlay
+              key={item.id}
+              text={item.text}
+              x={item.textX ?? 50}
+              y={item.textY ?? 50}
+              onTextChange={(text) =>
+                onUpdateText(item.id, text)
+              }
+              onPositionChange={(x, y) =>
+                onUpdateTextPosition(
+                  item.id,
+                  x,
+                  y,
+                )
+              }
+            />
+          );
+        })}
 
         {previewFile && (
           <span className="absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 text-xs">
@@ -131,78 +163,6 @@ export default function PreviewMonitor({
       />
     </section>
   );
-}
-
-type TextOverlayProps = {
-  item: TimelineItem;
-};
-
-function TextOverlay({
-  item,
-}: TextOverlayProps) {
-  if (
-    item.type !== "text" ||
-    !item.text
-  ) {
-    return null;
-  }
-
-  const style =
-    item.textStyle ?? "title";
-
-  return (
-    <div
-      className={`pointer-events-none absolute z-20 flex w-full justify-center px-8 ${getTextPosition(
-        style,
-      )}`}
-    >
-      <p
-        className={`max-w-[85%] text-center text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] ${getTextStyle(
-          style,
-        )}`}
-      >
-        {item.text}
-      </p>
-    </div>
-  );
-}
-
-function getTextPosition(
-  style: TextStyle,
-) {
-  switch (style) {
-    case "heading":
-      return "top-[12%]";
-
-    case "subtitle":
-      return "bottom-[15%]";
-
-    case "caption":
-      return "bottom-[8%]";
-
-    case "title":
-    default:
-      return "top-1/2 -translate-y-1/2";
-  }
-}
-
-function getTextStyle(
-  style: TextStyle,
-) {
-  switch (style) {
-    case "heading":
-      return "text-4xl font-bold";
-
-    case "subtitle":
-      return "text-2xl font-medium";
-
-    case "caption":
-      return "rounded bg-black/60 px-3 py-1 text-lg font-medium";
-
-    case "title":
-    default:
-      return "text-5xl font-bold";
-  }
 }
 
 type TimelineSoundProps = {

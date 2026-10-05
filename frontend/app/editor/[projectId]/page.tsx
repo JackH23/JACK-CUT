@@ -63,6 +63,7 @@ function EditorWorkspace({ project }: { project: Project }) {
     handleSelectMedia,
     handleAddText,
     handleUpdateText,
+    handleUpdateTextPosition,
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
@@ -155,6 +156,8 @@ function EditorWorkspace({ project }: { project: Project }) {
               playheadPosition={playheadPosition}
               onPlayheadPositionChange={setPlayheadPosition}
               onPlayingChange={setIsPlaying}
+              onUpdateText={handleUpdateText}
+              onUpdateTextPosition={handleUpdateTextPosition}
               duration={timelineDuration}
             />
 

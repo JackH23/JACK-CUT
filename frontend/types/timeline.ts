@@ -18,6 +18,10 @@ export type TimelineItem = {
   text?: string;
   textStyle?: TextStyle;
 
+  // Text position inside the preview (percentage)
+  textX?: number;
+  textY?: number;
+
   trackId: string;
 
   // Visual percentage values

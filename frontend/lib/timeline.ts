@@ -37,6 +37,9 @@ export type TimelineItemUpdateInput = {
   duration?: number;
   trackId?: string;
   textContent?: string;
+
+  textX?: number;
+  textY?: number;
 };
 
 /* =========================================================
@@ -56,6 +59,10 @@ export type AddTimelineItemResponse = {
 
     text_content: string | null;
     text_style: TextStyle | null;
+
+    // Text position
+    text_x: number | null;
+    text_y: number | null;
 
     track_id: string;
     start_time: number;
@@ -80,6 +87,10 @@ export type SavedTimelineItem = {
 
   textContent: string | null;
   textStyle: TextStyle | null;
+
+  // Text position
+  textX: number | null;
+  textY: number | null;
 
   trackId: string;
   startTime: number;
