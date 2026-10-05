@@ -1,11 +1,14 @@
 "use client";
 
 import { Type, X } from "lucide-react";
-import type {
-  DragEvent,
-  MouseEvent,
-  PointerEvent,
+import {
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type PointerEvent,
 } from "react";
+
+import EditTextModal from "../EditTextModal";
 
 import type {
   TimelineItem,
@@ -36,6 +39,11 @@ type TimelineTracksProps = {
   ) => void;
 
   onClipDragEnd: () => void;
+
+  onUpdateText: (
+    itemId: string,
+    text: string,
+  ) => void;
 
   onResizeStart: (
     event: PointerEvent<HTMLButtonElement>,
@@ -72,6 +80,7 @@ export default function TimelineTracks({
   onTrackDrop,
   onClipDragStart,
   onClipDragEnd,
+  onUpdateText,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
@@ -79,6 +88,9 @@ export default function TimelineTracks({
   onRemoveDragStart,
   onRemoveClick,
 }: TimelineTracksProps) {
+
+  const [editingItem, setEditingItem] =
+    useState<TimelineItem | null>(null);
   return (
     <>
       {tracks.map((track) => (
@@ -122,18 +134,27 @@ export default function TimelineTracks({
                       item.id,
                     )
                   }
+
+                  onClick={(event) => {
+                    if (!isText) return;
+
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    setEditingItem(item);
+                  }}
+
                   onDragEnd={onClipDragEnd}
                   style={{
                     left: `${item.startPosition}%`,
                     width: `${item.width}%`,
                   }}
-                  className={`group absolute inset-y-1 cursor-grab select-none overflow-hidden rounded border active:cursor-grabbing ${
-                    clipType === "audio"
-                      ? "border-cyan-600 bg-cyan-950"
-                      : clipType === "text"
-                        ? "border-amber-500 bg-amber-950"
-                        : "border-purple-500 bg-indigo-950"
-                  }`}
+                  className={`group absolute inset-y-1 cursor-grab select-none overflow-hidden rounded border active:cursor-grabbing ${clipType === "audio"
+                    ? "border-cyan-600 bg-cyan-950"
+                    : clipType === "text"
+                      ? "border-amber-500 bg-amber-950"
+                      : "border-purple-500 bg-indigo-950"
+                    }`}
                 >
                   {/* Left resize handle */}
                   <button
@@ -141,6 +162,10 @@ export default function TimelineTracks({
                     draggable={false}
                     aria-label={`Resize start of ${clipName}`}
                     title="Resize clip start"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
                     onPointerDown={(event) =>
                       onResizeStart(
                         event,
@@ -164,6 +189,10 @@ export default function TimelineTracks({
                     draggable={false}
                     aria-label={`Resize end of ${clipName}`}
                     title="Resize clip end"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
                     onPointerDown={(event) =>
                       onResizeStart(
                         event,
@@ -193,12 +222,15 @@ export default function TimelineTracks({
                     onDragStart={
                       onRemoveDragStart
                     }
-                    onClick={(event) =>
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+
                       onRemoveClick(
                         event,
                         item.id,
-                      )
-                    }
+                      );
+                    }}
                     className="absolute right-1 top-1 z-30 flex h-5 w-5 items-center justify-center rounded bg-black/75 text-white opacity-0 transition hover:bg-red-500 group-hover:opacity-100"
                   >
                     <X size={13} />
@@ -251,12 +283,11 @@ export default function TimelineTracks({
                             <span
                               key={barIndex}
                               style={{
-                                height: `${
-                                  25 +
+                                height: `${25 +
                                   ((barIndex *
                                     17) %
                                     75)
-                                }%`,
+                                  }%`,
                               }}
                               className="w-0.5 shrink-0 rounded-full bg-cyan-400"
                             />
@@ -278,6 +309,22 @@ export default function TimelineTracks({
             })}
         </TimelineRow>
       ))}
+
+      <EditTextModal
+        open={editingItem !== null}
+        initialText={editingItem?.text || ""}
+        onClose={() => setEditingItem(null)}
+        onSave={(text) => {
+          if (!editingItem) return;
+
+          onUpdateText(
+            editingItem.id,
+            text,
+          );
+
+          setEditingItem(null);
+        }}
+      />
     </>
   );
 }

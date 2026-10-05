@@ -33,9 +33,10 @@ export type AddTimelineItemInput =
 ========================================================= */
 
 export type TimelineItemUpdateInput = {
-  startTime: number;
-  duration: number;
-  trackId: string;
+  startTime?: number;
+  duration?: number;
+  trackId?: string;
+  textContent?: string;
 };
 
 /* =========================================================

@@ -18,6 +18,7 @@ export function useEditorWorkspace(projectId: string) {
 
     handleSelectMedia,
     handleAddText,
+    handleUpdateText,
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
@@ -66,6 +67,7 @@ export function useEditorWorkspace(projectId: string) {
 
     handleSelectMedia,
     handleAddText,
+    handleUpdateText,
     handleRemoveTimelineItem,
     handleRemoveMedia,
 

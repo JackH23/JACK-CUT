@@ -302,6 +302,45 @@ export function useEditorTimeline(projectId: string) {
     [projectId, playheadPosition, tracks],
   );
 
+  const handleUpdateText = useCallback(
+    async (itemId: string, text: string) => {
+      const normalizedText = text.trim();
+
+      if (!normalizedText) return;
+
+      const item = timelineItems.find(
+        (timelineItem) =>
+          timelineItem.id === itemId &&
+          timelineItem.type === "text",
+      );
+
+      if (!item) return;
+
+      try {
+        await timelineService.updateItem(itemId, {
+          textContent: normalizedText,
+        });
+
+        setTimelineItems((currentItems) =>
+          currentItems.map((timelineItem) =>
+            timelineItem.id === itemId
+              ? {
+                ...timelineItem,
+                text: normalizedText,
+              }
+              : timelineItem,
+          ),
+        );
+      } catch (error) {
+        console.error(
+          "Could not update timeline text:",
+          error,
+        );
+      }
+    },
+    [timelineItems, setTimelineItems],
+  );
+
   const handleRemoveMedia = useCallback((fileId: string) => {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
   }, []);
@@ -389,6 +428,7 @@ export function useEditorTimeline(projectId: string) {
 
     handleSelectMedia,
     handleAddText,
+    handleUpdateText,
     handleRemoveMedia,
 
     addingTimelineItem: state.adding,

@@ -444,9 +444,25 @@ async function updateTimelineItem(
       startTime,
       duration,
       trackId,
+      textContent,
     } = req.body;
 
+    const isTextUpdate =
+      textContent !== undefined;
+
+    const isPositionUpdate =
+      startTime !== undefined ||
+      duration !== undefined ||
+      trackId !== undefined;
+
+    if (!isTextUpdate && !isPositionUpdate) {
+      return res.status(400).json({
+        message: "No timeline item changes were provided.",
+      });
+    }
+
     if (
+      isPositionUpdate &&
       !validateTimelinePosition({
         trackId,
         startTime,
@@ -455,7 +471,7 @@ async function updateTimelineItem(
     ) {
       return res.status(400).json({
         message:
-          "Valid startTime, duration, and trackId are required.",
+          "Valid startTime, duration, and trackId are required when updating clip position.",
       });
     }
 
@@ -475,7 +491,7 @@ async function updateTimelineItem(
      *
      * TEXT items have no media_id.
      */
-    if (item.item_type === "MEDIA") {
+    if (item.item_type === "MEDIA" && isPositionUpdate) {
       const media =
         await Media.findByPk(
           item.media_id,
@@ -501,11 +517,36 @@ async function updateTimelineItem(
       }
     }
 
-    await item.update({
-      start_time: startTime,
-      duration,
-      track_id: trackId.trim(),
-    });
+    const updates = {};
+
+    if (isPositionUpdate) {
+      updates.start_time = startTime;
+      updates.duration = duration;
+      updates.track_id = trackId.trim();
+    }
+
+    if (isTextUpdate) {
+      if (item.item_type !== "TEXT") {
+        return res.status(400).json({
+          message: "Only text timeline items can update text content.",
+        });
+      }
+
+      const normalizedText =
+        typeof textContent === "string"
+          ? textContent.trim()
+          : "";
+
+      if (!normalizedText) {
+        return res.status(400).json({
+          message: "Text content cannot be empty.",
+        });
+      }
+
+      updates.text_content = normalizedText;
+    }
+
+    await item.update(updates);
 
     return res.status(200).json({
       message:

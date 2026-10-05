@@ -14,6 +14,7 @@ type ScrollableTracksProps = {
   isPlaying: boolean; // add
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
+  onUpdateText: (itemId: string, text: string) => void;
   onPlayheadPositionChange: (position: number) => void;
 };
 
@@ -26,6 +27,7 @@ export default function ScrollableTracks({
   isPlaying,
   onItemsChange,
   onRemoveItem,
+  onUpdateText,
   onPlayheadPositionChange,
 }: ScrollableTracksProps) {
   
@@ -86,6 +88,7 @@ export default function ScrollableTracks({
         <TimelineTracks
           items={positionedItems}
           tracks={tracks}
+          onUpdateText={onUpdateText}
           onTrackDragOver={handleTrackDragOver}
           onTrackDrop={handleDrop}
           onClipDragStart={startClipDrag}
