@@ -141,6 +141,7 @@ export default function PreviewMonitor({
             <EditableTextOverlay
               key={item.id}
               text={item.text}
+              textStyle={item.textStyle}
               x={item.textX ?? 50}
               y={item.textY ?? 50}
               onTextChange={(text) =>
@@ -157,13 +158,8 @@ export default function PreviewMonitor({
                 vertical,
                 horizontal,
               ) => {
-                setShowVerticalGuide(
-                  vertical,
-                );
-
-                setShowHorizontalGuide(
-                  horizontal,
-                );
+                setShowVerticalGuide(vertical);
+                setShowHorizontalGuide(horizontal);
               }}
             />
           );

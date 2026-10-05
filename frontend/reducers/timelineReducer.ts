@@ -96,7 +96,11 @@ export function timelineReducer(
     case "REMOVE_MEDIA":
       return {
         ...state,
-        items: state.items.filter((item) => item.file.id !== action.payload),
+        items: state.items.filter(
+          (item) =>
+            item.type !== "media" ||
+            item.file?.id !== action.payload,
+        ),
       };
 
     case "REMOVE_ITEM":

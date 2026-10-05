@@ -6,8 +6,11 @@ import {
     type PointerEvent,
 } from "react";
 
+import type { TextStyle } from "@/types/timeline";
+
 type EditableTextOverlayProps = {
     text: string;
+    textStyle?: TextStyle;
     x: number;
     y: number;
 
@@ -26,14 +29,40 @@ type EditableTextOverlayProps = {
 
 const SNAP_THRESHOLD = 2;
 
+const getTextStyleClass = (
+    textStyle: TextStyle,
+) => {
+    switch (textStyle) {
+        case "heading":
+            return "text-5xl font-bold";
+
+        case "title":
+            return "text-4xl font-bold";
+
+        case "subtitle":
+            return "text-3xl font-semibold";
+
+        case "caption":
+            return "text-xl font-medium";
+
+        default:
+            return "text-3xl font-semibold";
+    }
+};
+
 export default function EditableTextOverlay({
     text,
+    textStyle = "subtitle",
     x,
     y,
     onTextChange,
     onPositionChange,
     onSnapGuideChange,
 }: EditableTextOverlayProps) {
+
+    const textClass =
+        getTextStyleClass(textStyle);
+
     const [selected, setSelected] =
         useState(false);
 
@@ -198,8 +227,8 @@ export default function EditableTextOverlay({
                     "translate(-50%, -50%)",
             }}
             className={`absolute z-40 touch-none cursor-move select-none ${selected
-                    ? "outline outline-2 outline-purple-400"
-                    : ""
+                ? "outline outline-2 outline-purple-400"
+                : ""
                 }`}
             onPointerDown={
                 handlePointerDown
@@ -230,52 +259,42 @@ export default function EditableTextOverlay({
                     autoFocus
                     value={text}
                     onChange={(event) =>
-                        onTextChange(
-                            event.target.value,
-                        )
+                        onTextChange(event.target.value)
                     }
-                    onBlur={() =>
-                        setEditing(false)
-                    }
+                    onBlur={() => setEditing(false)}
                     onKeyDown={(event) => {
-                        if (
-                            event.key === "Enter"
-                        ) {
-                            setEditing(false);
+                        if (event.key === "Enter") {
+                        setEditing(false);
                         }
 
-                        if (
-                            event.key === "Escape"
-                        ) {
-                            setEditing(false);
+                        if (event.key === "Escape") {
+                        setEditing(false);
                         }
                     }}
-                    className="
-            min-w-32
-            bg-black/60
-            px-2
-            py-1
-            text-center
-            text-3xl
-            font-semibold
-            text-white
-            outline-none
-          "
+                    className={`
+                        min-w-32
+                        bg-black/60
+                        px-2
+                        py-1
+                        text-center
+                        text-white
+                        outline-none
+                        ${textClass}
+                    `}
                     onPointerDown={(event) =>
                         event.stopPropagation()
                     }
                 />
             ) : (
                 <div
-                    className="
-            whitespace-nowrap
-            px-2
-            py-1
-            text-3xl
-            font-semibold
-            text-white
-            drop-shadow-lg
-          "
+                    className={`
+                        whitespace-nowrap
+                        px-2
+                        py-1
+                        text-white
+                        drop-shadow-lg
+                        ${textClass}
+                    `}
                 >
                     {text}
                 </div>
