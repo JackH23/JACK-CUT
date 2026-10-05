@@ -231,11 +231,16 @@ export function useEditorTimeline(projectId: string) {
       );
 
       if (!titleTrack) {
-        console.error("V3 Titles track was not found.");
+        console.error(
+          "V3 Titles track was not found.",
+        );
         return;
       }
 
-      const defaultText: Record<TextStyle, string> = {
+      const defaultText: Record<
+        TextStyle,
+        string
+      > = {
         heading: "Heading",
         subtitle: "Subtitle",
         title: "Title",
@@ -244,50 +249,49 @@ export function useEditorTimeline(projectId: string) {
 
       const duration = 5;
 
-      // Current playhead time.
-      const playheadTime =
-        (playheadPosition / 100) * TIMELINE_DURATION;
+      // Find the end of the last text clip
+      // on the V3 Titles track.
+      const lastTextEndTime =
+        timelineItems
+          .filter(
+            (item) =>
+              item.type === "text" &&
+              item.trackId === titleTrack.id,
+          )
+          .reduce(
+            (latestEnd, item) =>
+              Math.max(
+                latestEnd,
+                item.startTime +
+                item.duration,
+              ),
+            0,
+          );
 
-      // Find the latest ending text clip on the title track.
-      const lastTextEndTime = timelineItems
-        .filter(
-          (item) =>
-            item.type === "text" &&
-            item.trackId === titleTrack.id,
-        )
-        .reduce(
-          (latestEnd, item) =>
-            Math.max(
-              latestEnd,
-              item.startTime + item.duration,
-            ),
-          0,
-        );
-
-      // Never place a new text clip on top of an existing one.
-      // If the playhead is after all existing text, use the playhead.
-      // Otherwise, append after the last text clip.
-      const startTime = Math.max(
-        playheadTime,
-        lastTextEndTime,
-      );
+      // Always append the new text directly
+      // after the previous text clip.
+      const startTime =
+        lastTextEndTime;
 
       dispatch({
         type: "ADD_ITEM_START",
       });
 
       try {
-        const response = await timelineService.addItem({
-          projectId,
-          itemType: "TEXT",
-          textContent: defaultText[style],
-          textStyle: style,
-          trackId: titleTrack.id,
-          startTime,
-          duration,
-        });
+        const response =
+          await timelineService.addItem({
+            projectId,
+            itemType: "TEXT",
+            textContent:
+              defaultText[style],
+            textStyle: style,
+            trackId: titleTrack.id,
+            startTime,
+            duration,
+          });
 
-        const savedItem = response.item;
+        const savedItem =
+          response.item;
 
         const newItem: TimelineItem = {
           id: savedItem.id,
@@ -301,18 +305,30 @@ export function useEditorTimeline(projectId: string) {
             savedItem.text_style ??
             style,
 
-          textX: savedItem.text_x ?? 50,
-          textY: savedItem.text_y ?? 50,
+          textX:
+            savedItem.text_x ?? 50,
 
-          trackId: savedItem.track_id,
-          startTime: savedItem.start_time,
-          duration: savedItem.duration,
+          textY:
+            savedItem.text_y ?? 50,
+
+          trackId:
+            savedItem.track_id,
+
+          startTime:
+            savedItem.start_time,
+
+          duration:
+            savedItem.duration,
 
           startPosition:
-            (savedItem.start_time / TIMELINE_DURATION) * 100,
+            (savedItem.start_time /
+              TIMELINE_DURATION) *
+            100,
 
           width:
-            (savedItem.duration / TIMELINE_DURATION) * 100,
+            (savedItem.duration /
+              TIMELINE_DURATION) *
+            100,
 
           sourceStart: 0,
         };
@@ -333,7 +349,6 @@ export function useEditorTimeline(projectId: string) {
     },
     [
       projectId,
-      playheadPosition,
       tracks,
       timelineItems,
     ],

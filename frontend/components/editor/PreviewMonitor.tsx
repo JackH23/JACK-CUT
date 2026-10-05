@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
 import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
 import type { MediaFile } from "@/lib/media";
+
 import EditableTextOverlay from "./EditableTextOverlay";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
@@ -65,6 +70,17 @@ export default function PreviewMonitor({
     onPlayheadPositionChange,
   });
 
+  // Snap guide state
+  const [
+    showVerticalGuide,
+    setShowVerticalGuide,
+  ] = useState(false);
+
+  const [
+    showHorizontalGuide,
+    setShowHorizontalGuide,
+  ] = useState(false);
+
   useEffect(() => {
     onPlayingChange(isPlaying);
   }, [isPlaying, onPlayingChange]);
@@ -78,7 +94,12 @@ export default function PreviewMonitor({
         zoomLabel="Fit to Window (48%)"
       />
 
-      <VideoCanvas>
+      <VideoCanvas
+        showVerticalGuide={showVerticalGuide}
+        showHorizontalGuide={
+          showHorizontalGuide
+        }
+      >
         {!previewFile && (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
             Select an uploaded file to preview
@@ -100,7 +121,9 @@ export default function PreviewMonitor({
             src={previewFile.url}
             muted={isMuted}
             playsInline
-            onLoadedMetadata={handleVideoLoadedMetadata}
+            onLoadedMetadata={
+              handleVideoLoadedMetadata
+            }
             className="h-full w-full object-contain"
           />
         )}
@@ -130,6 +153,18 @@ export default function PreviewMonitor({
                   y,
                 )
               }
+              onSnapGuideChange={(
+                vertical,
+                horizontal,
+              ) => {
+                setShowVerticalGuide(
+                  vertical,
+                );
+
+                setShowHorizontalGuide(
+                  horizontal,
+                );
+              }}
             />
           );
         })}
@@ -145,7 +180,9 @@ export default function PreviewMonitor({
         <TimelineSound
           key={item.id}
           item={item}
-          playheadSeconds={playheadSeconds}
+          playheadSeconds={
+            playheadSeconds
+          }
           isPlaying={isPlaying}
           isMuted={isMuted}
         />
@@ -178,11 +215,12 @@ function TimelineSound({
   isPlaying,
   isMuted,
 }: TimelineSoundProps) {
-  const { audioRef } = useTimelineSound({
-    item,
-    playheadSeconds,
-    isPlaying,
-  });
+  const { audioRef } =
+    useTimelineSound({
+      item,
+      playheadSeconds,
+      isPlaying,
+    });
 
   if (
     item.type !== "media" ||
