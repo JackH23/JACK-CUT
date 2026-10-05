@@ -54,6 +54,18 @@ const TimelineItem = sequelize.define(
       },
     },
 
+    text_x: {
+      type: DataTypes.DOUBLE,
+      allowNull: true,
+      defaultValue: 50,
+    },
+
+    text_y: {
+      type: DataTypes.DOUBLE,
+      allowNull: true,
+      defaultValue: 50,
+    },
+
     track_id: {
       type: DataTypes.STRING(100),
       allowNull: false,

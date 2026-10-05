@@ -310,6 +310,16 @@ async function getTimelineItems(req, res) {
           textStyle:
             item.text_style ?? null,
 
+          textX:
+            item.text_x == null
+              ? 50
+              : Number(item.text_x),
+
+          textY:
+            item.text_y == null
+              ? 50
+              : Number(item.text_y),
+
           trackId: item.track_id,
           startTime: Number(
             item.start_time,
@@ -445,19 +455,30 @@ async function updateTimelineItem(
       duration,
       trackId,
       textContent,
+      textX,
+      textY,
     } = req.body;
 
     const isTextUpdate =
       textContent !== undefined;
+
+    const isTextPositionUpdate =
+      textX !== undefined ||
+      textY !== undefined;
 
     const isPositionUpdate =
       startTime !== undefined ||
       duration !== undefined ||
       trackId !== undefined;
 
-    if (!isTextUpdate && !isPositionUpdate) {
+    if (
+      !isTextUpdate &&
+      !isTextPositionUpdate &&
+      !isPositionUpdate
+    ) {
       return res.status(400).json({
-        message: "No timeline item changes were provided.",
+        message:
+          "No timeline item changes were provided.",
       });
     }
 
@@ -544,6 +565,34 @@ async function updateTimelineItem(
       }
 
       updates.text_content = normalizedText;
+    }
+
+    if (isTextPositionUpdate) {
+      if (item.item_type !== "TEXT") {
+        return res.status(400).json({
+          message:
+            "Only text timeline items can update text position.",
+        });
+      }
+
+      if (
+        typeof textX !== "number" ||
+        !Number.isFinite(textX) ||
+        textX < 0 ||
+        textX > 100 ||
+        typeof textY !== "number" ||
+        !Number.isFinite(textY) ||
+        textY < 0 ||
+        textY > 100
+      ) {
+        return res.status(400).json({
+          message:
+            "textX and textY must be numbers between 0 and 100.",
+        });
+      }
+
+      updates.text_x = textX;
+      updates.text_y = textY;
     }
 
     await item.update(updates);
