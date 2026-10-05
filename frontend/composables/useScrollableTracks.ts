@@ -156,7 +156,7 @@ export function useScrollableTracks({
         0,
         ((event.clientX - timelineBounds.left - grabOffset) /
           timelineBounds.width) *
-          100,
+        100,
       ),
     );
 
@@ -337,28 +337,39 @@ export function useScrollableTracks({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handleResizeMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const handleResizeMove = (
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
     const state = resizeStateRef.current;
     if (!state) return;
 
     event.preventDefault();
     event.stopPropagation();
 
-    const resizedItem = items.find((item) => item.id === state.itemId);
+    const resizedItem = items.find(
+      (item) => item.id === state.itemId,
+    );
+
     if (!resizedItem) return;
 
     const movementSeconds =
-      (event.clientX - state.startClientX) / PIXELS_PER_SECOND;
+      (event.clientX - state.startClientX) /
+      PIXELS_PER_SECOND;
 
     const originalStart = state.startTime;
-    const originalEnd = state.startTime + state.duration;
+    const originalEnd =
+      state.startTime + state.duration;
 
-    const nearestSnapEdge = (time: number): number | null => {
+    const nearestSnapEdge = (
+      time: number,
+    ): number | null => {
       let nearest: number | null = null;
-      let shortestDistance = SNAP_THRESHOLD_SECONDS;
+      let shortestDistance =
+        SNAP_THRESHOLD_SECONDS;
 
       for (const edge of state.snapEdges) {
         const distance = Math.abs(time - edge);
+
         if (distance <= shortestDistance) {
           nearest = edge;
           shortestDistance = distance;
@@ -371,88 +382,199 @@ export function useScrollableTracks({
     let nextStart = originalStart;
     let nextEnd = originalEnd;
     let guideTime: number | null = null;
-    const shiftedStarts = new Map<string, number>();
+
+    const shiftedStarts =
+      new Map<string, number>();
 
     if (state.edge === "right") {
-      const sourceDuration = resizedItem.file.durationSeconds;
+      /*
+       * Media clips may be limited by their
+       * original source duration.
+       *
+       * Text clips have no source file, so
+       * they can be extended freely.
+       */
+      let maximumEnd =
+        Number.POSITIVE_INFINITY;
 
-      const maximumEnd =
-        resizedItem.file.type === "image"
-          ? Number.POSITIVE_INFINITY
-          : sourceDuration != null && Number.isFinite(sourceDuration)
-            ? originalStart + Math.max(0, sourceDuration - state.sourceStart)
-            : originalEnd;
+      if (
+        resizedItem.type === "media" &&
+        resizedItem.file
+      ) {
+        const sourceDuration =
+          resizedItem.file.durationSeconds;
+
+        maximumEnd =
+          resizedItem.file.type === "image"
+            ? Number.POSITIVE_INFINITY
+            : sourceDuration != null &&
+              Number.isFinite(sourceDuration)
+              ? originalStart +
+              Math.max(
+                0,
+                sourceDuration -
+                state.sourceStart,
+              )
+              : originalEnd;
+      }
 
       nextEnd = Math.min(
         maximumEnd,
         Math.max(
-          originalStart + MINIMUM_CLIP_SECONDS,
+          originalStart +
+          MINIMUM_CLIP_SECONDS,
           originalEnd + movementSeconds,
         ),
       );
 
       const snap = nearestSnapEdge(nextEnd);
+
       if (
         snap !== null &&
-        snap >= originalStart + MINIMUM_CLIP_SECONDS &&
+        snap >=
+        originalStart +
+        MINIMUM_CLIP_SECONDS &&
         snap <= maximumEnd
       ) {
         nextEnd = snap;
         guideTime = snap;
       }
 
-      // Ripple only clips on this layer. Use their positions from
-      // resize start so moving the handle back also moves them back.
+      /*
+       * Ripple clips on the same layer.
+       */
       let occupiedUntil = nextEnd;
 
-      for (const other of [...state.trackItems]
-        .filter((item) => item.startTime >= originalStart)
-        .sort((a, b) => a.startTime - b.startTime)) {
-        const shiftedStart = Math.max(other.startTime, occupiedUntil);
-        shiftedStarts.set(other.id, shiftedStart);
-        occupiedUntil = shiftedStart + other.duration;
-      }
-    } else {
-      const earliestSourceStart =
-        resizedItem.file.type === "image"
-          ? 0
-          : originalStart - state.sourceStart;
-
-      const previousClipEnd = state.trackItems
-        .filter((item) => item.startTime + item.duration <= originalStart)
-        .reduce(
-          (latest, item) => Math.max(latest, item.startTime + item.duration),
-          0,
+      for (const other of [
+        ...state.trackItems,
+      ]
+        .filter(
+          (item) =>
+            item.startTime >= originalStart,
+        )
+        .sort(
+          (a, b) =>
+            a.startTime - b.startTime,
+        )) {
+        const shiftedStart = Math.max(
+          other.startTime,
+          occupiedUntil,
         );
 
-      const minimumStart = Math.max(0, earliestSourceStart, previousClipEnd);
-      const maximumStart = originalEnd - MINIMUM_CLIP_SECONDS;
+        shiftedStarts.set(
+          other.id,
+          shiftedStart,
+        );
+
+        occupiedUntil =
+          shiftedStart + other.duration;
+      }
+    } else {
+      /*
+       * Media clips cannot resize farther
+       * left than their available source.
+       *
+       * Text clips have no source media,
+       * so their earliest possible start
+       * is simply 0.
+       */
+      let earliestSourceStart = 0;
+
+      if (
+        resizedItem.type === "media" &&
+        resizedItem.file
+      ) {
+        earliestSourceStart =
+          resizedItem.file.type === "image"
+            ? 0
+            : originalStart -
+            state.sourceStart;
+      }
+
+      const previousClipEnd =
+        state.trackItems
+          .filter(
+            (item) =>
+              item.startTime +
+              item.duration <=
+              originalStart,
+          )
+          .reduce(
+            (latest, item) =>
+              Math.max(
+                latest,
+                item.startTime +
+                item.duration,
+              ),
+            0,
+          );
+
+      const minimumStart = Math.max(
+        0,
+        earliestSourceStart,
+        previousClipEnd,
+      );
+
+      const maximumStart =
+        originalEnd -
+        MINIMUM_CLIP_SECONDS;
 
       nextStart = Math.max(
         minimumStart,
-        Math.min(maximumStart, originalStart + movementSeconds),
+        Math.min(
+          maximumStart,
+          originalStart +
+          movementSeconds,
+        ),
       );
 
-      const snap = nearestSnapEdge(nextStart);
-      if (snap !== null && snap >= minimumStart && snap <= maximumStart) {
+      const snap =
+        nearestSnapEdge(nextStart);
+
+      if (
+        snap !== null &&
+        snap >= minimumStart &&
+        snap <= maximumStart
+      ) {
         nextStart = snap;
         guideTime = snap;
       }
     }
 
-    const nextDuration = nextEnd - nextStart;
+    const nextDuration =
+      nextEnd - nextStart;
+
+    /*
+     * Only media needs sourceStart
+     * adjustment.
+     *
+     * Text always keeps sourceStart at 0.
+     */
     const nextSourceStart =
-      state.edge === "left"
-        ? Math.max(0, state.sourceStart + nextStart - originalStart)
+      resizedItem.type === "media" &&
+        state.edge === "left"
+        ? Math.max(
+          0,
+          state.sourceStart +
+          nextStart -
+          originalStart,
+        )
         : state.sourceStart;
 
     setSnapLinePosition(
-      guideTime === null ? null : (guideTime / displayDuration) * 100,
+      guideTime === null
+        ? null
+        : (guideTime / displayDuration) *
+        100,
     );
 
     const updates = new Map<
       string,
-      { startTime: number; duration: number; trackId: string }
+      {
+        startTime: number;
+        duration: number;
+        trackId: string;
+      }
     >();
 
     updates.set(state.itemId, {
@@ -463,7 +585,9 @@ export function useScrollableTracks({
 
     for (const other of state.trackItems) {
       updates.set(other.id, {
-        startTime: shiftedStarts.get(other.id) ?? other.startTime,
+        startTime:
+          shiftedStarts.get(other.id) ??
+          other.startTime,
         duration: other.duration,
         trackId: other.trackId,
       });
@@ -482,12 +606,18 @@ export function useScrollableTracks({
           };
         }
 
-        const original = state.trackItems.find((other) => other.id === item.id);
+        const original =
+          state.trackItems.find(
+            (other) =>
+              other.id === item.id,
+          );
 
         if (original) {
           return {
             ...item,
-            startTime: shiftedStarts.get(item.id) ?? original.startTime,
+            startTime:
+              shiftedStarts.get(item.id) ??
+              original.startTime,
           };
         }
 
@@ -509,7 +639,12 @@ export function useScrollableTracks({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    const updates = [...resizeUpdatesRef.current.entries()];
+    const updates =
+      [...resizeUpdatesRef.current.entries()]
+        .filter(
+          ([id]) =>
+            !id.startsWith("local-"),
+        );
     resizeUpdatesRef.current.clear();
 
     void Promise.all(

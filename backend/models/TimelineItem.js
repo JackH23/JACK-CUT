@@ -10,12 +10,6 @@ const TimelineItem = sequelize.define(
       primaryKey: true,
     },
 
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-    },
-
     project_id: {
       type: DataTypes.UUID,
       allowNull: false,
@@ -25,21 +19,38 @@ const TimelineItem = sequelize.define(
       },
     },
 
+    /*
+     * MEDIA items have a media_id.
+     * TEXT items do not.
+     */
     media_id: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: "media_files",
         key: "id",
       },
     },
 
-    media_id: {
-      type: DataTypes.UUID,
+    item_type: {
+      type: DataTypes.STRING(20),
       allowNull: false,
-      references: {
-        model: "media_files",
-        key: "id",
+      defaultValue: "MEDIA",
+      validate: {
+        isIn: [["MEDIA", "TEXT"]],
+      },
+    },
+
+    text_content: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+
+    text_style: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+      validate: {
+        isIn: [["heading", "subtitle", "title", "caption"]],
       },
     },
 
@@ -63,6 +74,41 @@ const TimelineItem = sequelize.define(
     tableName: "timeline_items",
     timestamps: true,
     underscored: true,
+
+    validate: {
+      validTimelineItem() {
+        if (this.item_type === "MEDIA") {
+          if (!this.media_id) {
+            throw new Error(
+              "MEDIA timeline items require media_id.",
+            );
+          }
+
+          if (this.text_content != null) {
+            throw new Error(
+              "MEDIA timeline items cannot contain text_content.",
+            );
+          }
+        }
+
+        if (this.item_type === "TEXT") {
+          if (this.media_id != null) {
+            throw new Error(
+              "TEXT timeline items cannot contain media_id.",
+            );
+          }
+
+          if (
+            typeof this.text_content !== "string" ||
+            !this.text_content.trim()
+          ) {
+            throw new Error(
+              "TEXT timeline items require text_content.",
+            );
+          }
+        }
+      },
+    },
   },
 );
 

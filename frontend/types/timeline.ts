@@ -1,11 +1,26 @@
 import type { MediaFile } from "@/lib/media";
 
+export type TextStyle =
+  | "heading"
+  | "subtitle"
+  | "title"
+  | "caption";
+
 export type TimelineItem = {
   id: string;
-  file: MediaFile;
+
+  type: "media" | "text";
+
+  // Media items
+  file?: MediaFile;
+
+  // Text items
+  text?: string;
+  textStyle?: TextStyle;
+
   trackId: string;
 
-  // Visual percentage values used by the timeline UI
+  // Visual percentage values
   startPosition: number;
   width: number;
 
@@ -19,5 +34,5 @@ export type TimelineTrack = {
   id: string;
   name: string;
   color: string;
-  type: "video" | "audio";
+  type: "video" | "audio" | "text";
 };

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
+
 import { usePreviewPlayback } from "@/composables/usePreviewPlayback";
 import type { MediaFile } from "@/lib/media";
 import type { TimelineItem } from "@/types/timeline";
@@ -28,46 +34,120 @@ export function usePreviewMonitor({
     onPlayheadPositionChange,
   });
 
-  const playheadSeconds = (playheadPosition / 100) * duration;
+  const playheadSeconds =
+    (playheadPosition / 100) * duration;
 
+  /*
+   * Find the image/video currently underneath
+   * the playhead.
+   *
+   * Text items don't have item.file, so only
+   * media items are checked here.
+   */
   const previewItem = useMemo(
     () =>
-      items.find(
-        (item) =>
-          (item.file.type === "video" || item.file.type === "image") &&
+      items.find((item) => {
+        if (
+          item.type !== "media" ||
+          !item.file
+        ) {
+          return false;
+        }
+
+        const isVisualMedia =
+          item.file.type === "video" ||
+          item.file.type === "image";
+
+        const isActive =
           playheadSeconds >= item.startTime &&
-          playheadSeconds < item.startTime + item.duration,
-      ) ?? null,
+          playheadSeconds <
+            item.startTime + item.duration;
+
+        return isVisualMedia && isActive;
+      }) ?? null,
     [items, playheadSeconds],
   );
 
-  const previewFile = previewItem?.file ?? null;
+  const previewFile =
+    previewItem?.type === "media"
+      ? previewItem.file ?? null
+      : null;
 
-  // The <video> element plays its own audio. These are separate audio clips.
+  /*
+   * Find separate audio clips currently
+   * underneath the playhead.
+   */
   const activeSoundItems = useMemo(
     () =>
-      items.filter(
-        (item) =>
+      items.filter((item) => {
+        if (
+          item.type !== "media" ||
+          !item.file
+        ) {
+          return false;
+        }
+
+        return (
           item.file.type === "audio" &&
           playheadSeconds >= item.startTime &&
-          playheadSeconds < item.startTime + item.duration,
-      ),
+          playheadSeconds <
+            item.startTime + item.duration
+        );
+      }),
+    [items, playheadSeconds],
+  );
+
+  /*
+   * Find text clips currently underneath
+   * the playhead.
+   */
+  const activeTextItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (item.type !== "text") {
+          return false;
+        }
+
+        return (
+          playheadSeconds >= item.startTime &&
+          playheadSeconds <
+            item.startTime + item.duration
+        );
+      }),
     [items, playheadSeconds],
   );
 
   const syncVideoTime = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !previewItem || previewFile?.type !== "video") return;
+
+    if (
+      !video ||
+      !previewItem ||
+      previewItem.type !== "media" ||
+      previewFile?.type !== "video"
+    ) {
+      return;
+    }
 
     const sourceTime = Math.max(
       0,
-      playheadSeconds - previewItem.startTime + previewItem.sourceStart,
+      playheadSeconds -
+        previewItem.startTime +
+        previewItem.sourceStart,
     );
 
-    if (Math.abs(video.currentTime - sourceTime) > 0.35) {
+    if (
+      Math.abs(
+        video.currentTime - sourceTime,
+      ) > 0.35
+    ) {
       video.currentTime = sourceTime;
     }
-  }, [previewItem, previewFile, playheadSeconds]);
+  }, [
+    previewItem,
+    previewFile,
+    playheadSeconds,
+  ]);
 
   useEffect(() => {
     syncVideoTime();
@@ -75,6 +155,7 @@ export function usePreviewMonitor({
 
   useEffect(() => {
     const video = videoRef.current;
+
     if (!video) return;
 
     if (playback.isPlaying) {
@@ -82,14 +163,24 @@ export function usePreviewMonitor({
     } else {
       video.pause();
     }
-  }, [playback.isPlaying, previewFile]);
+  }, [
+    playback.isPlaying,
+    previewFile,
+  ]);
 
   return {
     ...playback,
+
     videoRef,
     previewFile,
+    previewItem,
+
     playheadSeconds,
+
     activeSoundItems,
-    handleVideoLoadedMetadata: syncVideoTime,
+    activeTextItems,
+
+    handleVideoLoadedMetadata:
+      syncVideoTime,
   };
 }

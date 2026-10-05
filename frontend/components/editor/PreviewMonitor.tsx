@@ -3,7 +3,10 @@
 import { useEffect } from "react";
 import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
 import { useTimelineSound } from "@/composables/useTimelineSound";
-import type { TimelineItem } from "@/types/timeline";
+import type {
+  TextStyle,
+  TimelineItem,
+} from "@/types/timeline";
 import type { MediaFile } from "@/lib/media";
 
 import PreviewHeader from "./PreviewHeader";
@@ -38,6 +41,7 @@ export default function PreviewMonitor({
     totalTime,
     playheadSeconds,
     activeSoundItems,
+    activeTextItems,
     handleVideoLoadedMetadata,
     handlePlayPause,
     handleMuteToggle,
@@ -90,6 +94,14 @@ export default function PreviewMonitor({
           />
         )}
 
+        {/* Text overlays */}
+        {activeTextItems.map((item) => (
+          <TextOverlay
+            key={item.id}
+            item={item}
+          />
+        ))}
+
         {previewFile && (
           <span className="absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 text-xs">
             {previewFile.name}
@@ -121,6 +133,78 @@ export default function PreviewMonitor({
   );
 }
 
+type TextOverlayProps = {
+  item: TimelineItem;
+};
+
+function TextOverlay({
+  item,
+}: TextOverlayProps) {
+  if (
+    item.type !== "text" ||
+    !item.text
+  ) {
+    return null;
+  }
+
+  const style =
+    item.textStyle ?? "title";
+
+  return (
+    <div
+      className={`pointer-events-none absolute z-20 flex w-full justify-center px-8 ${getTextPosition(
+        style,
+      )}`}
+    >
+      <p
+        className={`max-w-[85%] text-center text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] ${getTextStyle(
+          style,
+        )}`}
+      >
+        {item.text}
+      </p>
+    </div>
+  );
+}
+
+function getTextPosition(
+  style: TextStyle,
+) {
+  switch (style) {
+    case "heading":
+      return "top-[12%]";
+
+    case "subtitle":
+      return "bottom-[15%]";
+
+    case "caption":
+      return "bottom-[8%]";
+
+    case "title":
+    default:
+      return "top-1/2 -translate-y-1/2";
+  }
+}
+
+function getTextStyle(
+  style: TextStyle,
+) {
+  switch (style) {
+    case "heading":
+      return "text-4xl font-bold";
+
+    case "subtitle":
+      return "text-2xl font-medium";
+
+    case "caption":
+      return "rounded bg-black/60 px-3 py-1 text-lg font-medium";
+
+    case "title":
+    default:
+      return "text-5xl font-bold";
+  }
+}
+
 type TimelineSoundProps = {
   item: TimelineItem;
   playheadSeconds: number;
@@ -140,7 +224,20 @@ function TimelineSound({
     isPlaying,
   });
 
+  if (
+    item.type !== "media" ||
+    !item.file ||
+    item.file.type !== "audio"
+  ) {
+    return null;
+  }
+
   return (
-    <audio ref={audioRef} src={item.file.url} muted={isMuted} preload="auto" />
+    <audio
+      ref={audioRef}
+      src={item.file.url}
+      muted={isMuted}
+      preload="auto"
+    />
   );
 }

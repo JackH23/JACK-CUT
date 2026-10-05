@@ -59,9 +59,12 @@ function EditorWorkspace({ project }: { project: Project }) {
     activePreviewFile,
     activePreviewItem,
     selectedMediaIds,
+
     handleSelectMedia,
+    handleAddText,
     handleRemoveTimelineItem,
     handleRemoveMedia,
+
     timelineError,
     timelineDuration,
     exportJob,
@@ -139,6 +142,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             <MediaSidebar
               projectId={project.id}
               onSelectMedia={handleSelectMedia}
+              onAddText={handleAddText}
               onRemoveMedia={handleRemoveMedia}
               selectedMediaIds={selectedMediaIds}
             />

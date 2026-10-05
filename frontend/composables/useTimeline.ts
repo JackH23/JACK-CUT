@@ -6,14 +6,10 @@ import {
   initialTimelineTracksState,
   timelineTracksReducer,
 } from "@/reducers/timelineTracksReducer";
-import type { TimelineItem } from "@/types/timeline";
-
-export type TimelineTrack = {
-  id: string;
-  name: string;
-  color: string;
-  type: "video" | "audio";
-};
+import type {
+  TimelineItem,
+  TimelineTrack,
+} from "@/types/timeline";
 
 const RULER_INTERVAL = 30;
 

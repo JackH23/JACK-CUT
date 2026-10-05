@@ -8,6 +8,7 @@ const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
 
 const jobs = new Map();
+const ASS_DIR = path.resolve(process.cwd(), "exports", "subtitles");
 const OUTPUT_DIR = path.resolve(process.cwd(), "exports");
 const WIDTH = 1920;
 const HEIGHT = 1080;
@@ -27,6 +28,39 @@ function getLocalMediaPath(fileUrl) {
   }
 
   return filePath;
+}
+
+function formatAssTime(seconds) {
+  const total = Math.max(0, Number(seconds));
+
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = Math.floor(total % 60);
+  const centiseconds = Math.floor((total % 1) * 100);
+
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
+
+function escapeAssText(text) {
+  return String(text ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\N")
+    .replace(/{/g, "\\{")
+    .replace(/}/g, "\\}");
+}
+
+function getAssStyle(textStyle) {
+  switch (textStyle) {
+    case "heading":
+      return "Heading";
+    case "subtitle":
+      return "Subtitle";
+    case "caption":
+      return "Caption";
+    case "title":
+    default:
+      return "Title";
+  }
 }
 
 async function createExport(req, res) {
@@ -51,17 +85,49 @@ async function createExport(req, res) {
       return res.status(400).json({ message: "The timeline is empty." });
     }
 
-    const mediaIds = [...new Set(items.map((item) => item.media_id))];
-    const mediaFiles = await Media.findAll({
-      where: { id: { [Op.in]: mediaIds } },
-    });
+    const mediaIds = [
+      ...new Set(
+        items
+          .filter(
+            (item) =>
+              item.item_type === "MEDIA" &&
+              item.media_id,
+          )
+          .map((item) => item.media_id),
+      ),
+    ];
+    const mediaFiles = mediaIds.length
+      ? await Media.findAll({
+        where: {
+          id: {
+            [Op.in]: mediaIds,
+          },
+        },
+      })
+      : [];
     const mediaById = new Map(mediaFiles.map((media) => [media.id, media]));
 
     const clips = items.map((item) => {
+      if (item.item_type === "TEXT") {
+        return {
+          itemType: "TEXT",
+          text: item.text_content,
+          textStyle: item.text_style,
+          start: Number(item.start_time),
+          duration: Number(item.duration),
+        };
+      }
+
       const media = mediaById.get(item.media_id);
-      if (!media) throw new Error(`Media ${item.media_id} was not found.`);
+
+      if (!media) {
+        throw new Error(
+          `Media ${item.media_id} was not found.`,
+        );
+      }
 
       return {
+        itemType: "MEDIA",
         type: media.media_type,
         filePath: getLocalMediaPath(media.file_url),
         start: Number(item.start_time),
@@ -70,8 +136,13 @@ async function createExport(req, res) {
     });
 
     for (const clip of clips) {
-      if (!fs.existsSync(clip.filePath)) {
-        throw new Error(`Media file is missing: ${clip.filePath}`);
+      if (
+        clip.itemType === "MEDIA" &&
+        !fs.existsSync(clip.filePath)
+      ) {
+        throw new Error(
+          `Media file is missing: ${clip.filePath}`,
+        );
       }
     }
 
@@ -84,6 +155,7 @@ async function createExport(req, res) {
     }
 
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    fs.mkdirSync(ASS_DIR, { recursive: true });
 
     const id = randomUUID();
     const outputPath = path.join(OUTPUT_DIR, `${id}.mp4`);
@@ -103,11 +175,23 @@ async function createExport(req, res) {
     ];
 
     // Inputs 0 and 1 are the black background and silent audio.
-    clips.forEach((clip) => {
+    const mediaClips = clips.filter(
+      (clip) => clip.itemType === "MEDIA",
+    );
+
+    mediaClips.forEach((clip) => {
       if (clip.type === "image") {
-        args.push("-loop", "1", "-t", String(clip.duration));
+        args.push(
+          "-loop",
+          "1",
+          "-t",
+          String(clip.duration),
+        );
       } else {
-        args.push("-t", String(clip.duration));
+        args.push(
+          "-t",
+          String(clip.duration),
+        );
       }
 
       args.push("-i", clip.filePath);
@@ -117,7 +201,11 @@ async function createExport(req, res) {
     let currentVideo = "0:v";
     const audioLabels = ["1:a"];
 
-    clips.forEach((clip, index) => {
+    // Process MEDIA inputs.
+    // FFmpeg input 0 = black background
+    // FFmpeg input 1 = silent audio
+    // Media inputs therefore begin at index 2.
+    mediaClips.forEach((clip, index) => {
       const inputIndex = index + 2;
 
       if (clip.type === "image" || clip.type === "video") {
@@ -126,16 +214,17 @@ async function createExport(req, res) {
 
         filters.push(
           `[${inputIndex}:v]` +
-            `setpts=PTS-STARTPTS+${clip.start}/TB,` +
-            `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,` +
-            `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2,` +
-            `setsar=1[${prepared}]`,
+          `setpts=PTS-STARTPTS+${clip.start}/TB,` +
+          `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,` +
+          `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2,` +
+          `setsar=1[${prepared}]`,
         );
 
         filters.push(
           `[${currentVideo}][${prepared}]` +
-            `overlay=eof_action=pass:shortest=0:enable='between(t,${clip.start},${clip.start + clip.duration})'` +
-            `[${composed}]`,
+          `overlay=eof_action=pass:shortest=0:` +
+          `enable='between(t,${clip.start},${clip.start + clip.duration})'` +
+          `[${composed}]`,
         );
 
         currentVideo = composed;
@@ -147,18 +236,77 @@ async function createExport(req, res) {
 
         filters.push(
           `[${inputIndex}:a]` +
-            `atrim=duration=${clip.duration},asetpts=PTS-STARTPTS,` +
-            `adelay=${delayMs}|${delayMs}[${audioLabel}]`,
+          `atrim=duration=${clip.duration},` +
+          `asetpts=PTS-STARTPTS,` +
+          `adelay=${delayMs}|${delayMs}` +
+          `[${audioLabel}]`,
         );
 
         audioLabels.push(audioLabel);
       }
     });
 
+    const textClips = clips.filter(
+      (clip) => clip.itemType === "TEXT",
+    );
+
+    let assPath = null;
+
+    if (textClips.length > 0) {
+      assPath = path.join(ASS_DIR, `${id}.ass`);
+
+      const events = textClips
+        .map((clip) => {
+          const start = formatAssTime(clip.start);
+          const end = formatAssTime(clip.start + clip.duration);
+          const style = getAssStyle(clip.textStyle);
+          const text = escapeAssText(clip.text);
+
+          return `Dialogue: 0,${start},${end},${style},,0,0,0,,${text}`;
+        })
+        .join("\n");
+
+      const assContent = `[Script Info]
+    ScriptType: v4.00+
+    PlayResX: ${WIDTH}
+    PlayResY: ${HEIGHT}
+    WrapStyle: 0
+
+    [V4+ Styles]
+    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+    Style: Heading,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,8,60,60,120,1
+    Style: Title,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
+    Style: Subtitle,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,80,80,180,1
+    Style: Caption,Arial,36,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,80,80,80,1
+
+    [Events]
+    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+    ${events}
+    `;
+
+      fs.writeFileSync(assPath, assContent, "utf8");
+    }
+
+    if (assPath) {
+      const escapedAssPath = assPath
+        .replace(/\\/g, "/")
+        .replace(/:/g, "\\:");
+
+      const textVideo = "textOverlay";
+
+      filters.push(
+        `[${currentVideo}]` +
+          `ass='${escapedAssPath}'` +
+          `[${textVideo}]`,
+      );
+
+      currentVideo = textVideo;
+    }
+
     filters.push(
       `${audioLabels.map((label) => `[${label}]`).join("")}` +
-        `amix=inputs=${audioLabels.length}:duration=longest:normalize=0,` +
-        `atrim=duration=${totalDuration}[outa]`,
+      `amix=inputs=${audioLabels.length}:duration=longest:normalize=0,` +
+      `atrim=duration=${totalDuration}[outa]`,
     );
 
     args.push(
@@ -185,10 +333,7 @@ async function createExport(req, res) {
       outputPath,
     );
 
-    const process = spawn(
-      "D:\\ffmpeg\\ffmpeg-9.0.2-full_build\\bin\\ffmpeg.exe",
-      args,
-    );
+    const process = spawn("ffmpeg", args);
     let stderr = "";
 
     process.stderr.on("data", (chunk) => {

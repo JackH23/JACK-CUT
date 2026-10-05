@@ -15,13 +15,17 @@ export function useEditorWorkspace(projectId: string) {
     activePreviewFile,
     activePreviewItem,
     selectedMediaIds,
+
     handleSelectMedia,
+    handleAddText,
     handleRemoveTimelineItem,
     handleRemoveMedia,
+
     timelineError,
   } = useEditorTimeline(projectId);
 
-  const timelineDuration = useTimelineDuration(timelineItems);
+  const timelineDuration =
+    useTimelineDuration(timelineItems);
 
   const {
     startExport,
@@ -31,10 +35,14 @@ export function useEditorWorkspace(projectId: string) {
     downloadUrl,
   } = useExportVideo();
 
-  const [showExportSuccess, setShowExportSuccess] = useState(false);
+  const [showExportSuccess, setShowExportSuccess] =
+    useState(false);
 
   useEffect(() => {
-    if (exportJob?.status === "completed" && downloadUrl) {
+    if (
+      exportJob?.status === "completed" &&
+      downloadUrl
+    ) {
       setShowExportSuccess(true);
     }
   }, [exportJob?.status, downloadUrl]);
@@ -55,11 +63,15 @@ export function useEditorWorkspace(projectId: string) {
     activePreviewFile,
     activePreviewItem,
     selectedMediaIds,
+
     handleSelectMedia,
+    handleAddText,
     handleRemoveTimelineItem,
     handleRemoveMedia,
+
     timelineError,
     timelineDuration,
+
     exportJob,
     exporting,
     exportError,

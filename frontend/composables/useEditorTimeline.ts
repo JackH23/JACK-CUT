@@ -12,7 +12,10 @@ import {
 } from "react";
 
 import type { MediaFile } from "@/lib/media";
-import type { TimelineItem } from "@/types/timeline";
+import type {
+  TextStyle,
+  TimelineItem,
+} from "@/types/timeline";
 import { useTimeline } from "@/composables/useTimeline";
 import { timelineService } from "@/services/timelineService";
 import {
@@ -64,22 +67,53 @@ export function useEditorTimeline(projectId: string) {
       .then((response) => {
         if (!active) return;
 
-        const loadedItems: TimelineItem[] = response.items.flatMap((item) => {
-          if (!item.media) return [];
+        const loadedItems: TimelineItem[] =
+          response.items.flatMap<TimelineItem>((item) => {
+            if (
+              item.itemType === "MEDIA" &&
+              item.media
+            ) {
+              return [
+                {
+                  id: item.id,
+                  type: "media" as const,
+                  file: item.media,
+                  trackId: item.trackId,
+                  startTime: item.startTime,
+                  duration: item.duration,
+                  startPosition:
+                    (item.startTime / TIMELINE_DURATION) * 100,
+                  width:
+                    (item.duration / TIMELINE_DURATION) * 100,
+                  sourceStart: 0,
+                },
+              ];
+            }
 
-          return [
-            {
-              id: item.id,
-              file: item.media,
-              trackId: item.trackId,
-              startTime: item.startTime,
-              duration: item.duration,
-              startPosition: (item.startTime / TIMELINE_DURATION) * 100,
-              width: (item.duration / TIMELINE_DURATION) * 100,
-              sourceStart: 0,
-            },
-          ];
-        });
+            if (
+              item.itemType === "TEXT" &&
+              item.textContent
+            ) {
+              return [
+                {
+                  id: item.id,
+                  type: "text" as const,
+                  text: item.textContent,
+                  textStyle: item.textStyle ?? "title",
+                  trackId: item.trackId,
+                  startTime: item.startTime,
+                  duration: item.duration,
+                  startPosition:
+                    (item.startTime / TIMELINE_DURATION) * 100,
+                  width:
+                    (item.duration / TIMELINE_DURATION) * 100,
+                  sourceStart: 0,
+                },
+              ];
+            }
+
+            return [];
+          });
 
         dispatch({
           type: "LOAD_ITEMS_SUCCESS",
@@ -113,7 +147,11 @@ export function useEditorTimeline(projectId: string) {
     async (file: MediaFile) => {
       if (
         pendingMediaIds.current.has(file.id) ||
-        timelineItems.some((item) => item.file.id === file.id)
+        timelineItems.some(
+          (item) =>
+            item.type === "media" &&
+            item.file?.id === file.id,
+        )
       ) {
         return;
       }
@@ -140,6 +178,7 @@ export function useEditorTimeline(projectId: string) {
 
         const response = await timelineService.addItem({
           projectId,
+          itemType: "MEDIA",
           mediaId: file.id,
           trackId: targetTrackId,
           startTime,
@@ -149,13 +188,16 @@ export function useEditorTimeline(projectId: string) {
         const savedItem = response.item;
 
         const newItem: TimelineItem = {
-          id: savedItem.id, // Use the database ID.
+          id: savedItem.id,
+          type: "media",
           file,
           trackId: savedItem.track_id,
           startTime: savedItem.start_time,
           duration: savedItem.duration,
-          startPosition: (savedItem.start_time / TIMELINE_DURATION) * 100,
-          width: (savedItem.duration / TIMELINE_DURATION) * 100,
+          startPosition:
+            (savedItem.start_time / TIMELINE_DURATION) * 100,
+          width:
+            (savedItem.duration / TIMELINE_DURATION) * 100,
           sourceStart: 0,
         };
 
@@ -178,28 +220,119 @@ export function useEditorTimeline(projectId: string) {
     [projectId, timelineItems],
   );
 
+  const handleAddText = useCallback(
+    async (style: TextStyle) => {
+      const titleTrack = tracks.find(
+        (track) => track.name === "V3 Titles",
+      );
+
+      if (!titleTrack) {
+        console.error("V3 Titles track was not found.");
+        return;
+      }
+
+      const defaultText: Record<TextStyle, string> = {
+        heading: "Heading",
+        subtitle: "Subtitle",
+        title: "Title",
+        caption: "Caption",
+      };
+
+      const duration = 5;
+
+      const startTime =
+        (playheadPosition / 100) * TIMELINE_DURATION;
+
+      dispatch({
+        type: "ADD_ITEM_START",
+      });
+
+      try {
+        const response = await timelineService.addItem({
+          projectId,
+          itemType: "TEXT",
+          textContent: defaultText[style],
+          textStyle: style,
+          trackId: titleTrack.id,
+          startTime,
+          duration,
+        });
+
+        const savedItem = response.item;
+
+        const newItem: TimelineItem = {
+          id: savedItem.id,
+          type: "text",
+
+          text:
+            savedItem.text_content ??
+            defaultText[style],
+
+          textStyle:
+            savedItem.text_style ??
+            style,
+
+          trackId: savedItem.track_id,
+          startTime: savedItem.start_time,
+          duration: savedItem.duration,
+
+          startPosition:
+            (savedItem.start_time / TIMELINE_DURATION) * 100,
+
+          width:
+            (savedItem.duration / TIMELINE_DURATION) * 100,
+
+          sourceStart: 0,
+        };
+
+        dispatch({
+          type: "ADD_ITEM_SUCCESS",
+          payload: newItem,
+        });
+      } catch (error) {
+        dispatch({
+          type: "ADD_ITEM_ERROR",
+          payload:
+            error instanceof Error
+              ? error.message
+              : "Could not add text to the timeline.",
+        });
+      }
+    },
+    [projectId, playheadPosition, tracks],
+  );
+
   const handleRemoveMedia = useCallback((fileId: string) => {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
   }, []);
 
-  const handleRemoveTimelineItem = useCallback(async (itemId: string) => {
-    try {
-      await timelineService.removeItem(itemId);
+  const handleRemoveTimelineItem = useCallback(
+    async (itemId: string) => {
+      const item = timelineItems.find(
+        (timelineItem) => timelineItem.id === itemId,
+      );
 
-      dispatch({
-        type: "REMOVE_ITEM",
-        payload: itemId,
-      });
-    } catch (error) {
-      dispatch({
-        type: "REMOVE_ITEM_ERROR",
-        payload:
-          error instanceof Error
-            ? error.message
-            : "Could not remove timeline item.",
-      });
-    }
-  }, []);
+      if (!item) return;
+
+      try {
+        await timelineService.removeItem(itemId);
+
+        dispatch({
+          type: "REMOVE_ITEM",
+          payload: itemId,
+        });
+      } catch (error) {
+        dispatch({
+          type: "REMOVE_ITEM_ERROR",
+          payload:
+            error instanceof Error
+              ? error.message
+              : "Could not remove timeline item.",
+        });
+      }
+    },
+    [timelineItems],
+  );
 
   const activePreviewItem = useMemo(() => {
     const trackPriority = new Map(
@@ -210,7 +343,9 @@ export function useEditorTimeline(projectId: string) {
       timelineItems
         .filter((item) => {
           const isVisualFile =
-            item.file.type === "image" || item.file.type === "video";
+            item.type === "media" &&
+            (item.file?.type === "image" ||
+              item.file?.type === "video");
 
           const endPosition = item.startPosition + item.width;
 
@@ -231,7 +366,15 @@ export function useEditorTimeline(projectId: string) {
   const activePreviewFile = activePreviewItem?.file ?? null;
 
   const selectedMediaIds = useMemo(
-    () => new Set(timelineItems.map((item) => item.file.id)),
+    () =>
+      new Set(
+        timelineItems
+          .filter(
+            (item) =>
+              item.type === "media" && item.file,
+          )
+          .map((item) => item.file!.id),
+      ),
     [timelineItems],
   );
 
@@ -243,8 +386,11 @@ export function useEditorTimeline(projectId: string) {
     selectedMediaIds,
     activePreviewItem,
     activePreviewFile,
+
     handleSelectMedia,
+    handleAddText,
     handleRemoveMedia,
+
     addingTimelineItem: state.adding,
     timelineError: state.error,
     handleRemoveTimelineItem,
