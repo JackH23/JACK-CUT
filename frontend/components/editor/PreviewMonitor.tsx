@@ -20,9 +20,9 @@ type PreviewMonitorProps = {
   activeItem: TimelineItem | null;
   items: TimelineItem[];
   duration: number;
-  playheadPosition: number;
+  playheadTime: number;
 
-  onPlayheadPositionChange: (position: number) => void;
+  onPlayheadTimeChange: (position: number) => void;
   onPlayingChange: (playing: boolean) => void;
 
   onUpdateText: (
@@ -47,8 +47,8 @@ export default function PreviewMonitor({
   activeItem,
   items,
   duration,
-  playheadPosition,
-  onPlayheadPositionChange,
+  playheadTime,
+  onPlayheadTimeChange,
   onPlayingChange,
   onUpdateText,
   onUpdateTextPosition,
@@ -72,8 +72,8 @@ export default function PreviewMonitor({
     activeItem,
     items,
     duration,
-    playheadPosition,
-    onPlayheadPositionChange,
+    playheadTime,
+    onPlayheadTimeChange,
   });
 
   // Snap guide state

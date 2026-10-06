@@ -54,8 +54,8 @@ function EditorWorkspace({ project }: { project: Project }) {
   const {
     timelineItems,
     setTimelineItems,
-    playheadPosition,
-    setPlayheadPosition,
+    playheadTime,
+    setPlayheadTime,
     activePreviewFile,
     activePreviewItem,
     activeTextItem,
@@ -158,8 +158,8 @@ function EditorWorkspace({ project }: { project: Project }) {
               file={activePreviewFile}
               activeItem={activePreviewItem}
               items={timelineItems}
-              playheadPosition={playheadPosition}
-              onPlayheadPositionChange={setPlayheadPosition}
+              playheadTime={playheadTime}
+              onPlayheadTimeChange={setPlayheadTime}
               onPlayingChange={setIsPlaying}
               onUpdateText={handleUpdateText}
               onUpdateTextPosition={handleUpdateTextPosition}
@@ -168,7 +168,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <SettingsPanel
-              activeItem={activeTextItem ?? activePreviewItem}
+              activeItem={activeTextItem}
               onUpdateTextFontSize={handleUpdateTextFontSize}
               onUpdateTextFontWeight={handleUpdateTextFontWeight}
               onUpdateTextFontFamily={handleUpdateTextFontFamily}
@@ -190,9 +190,9 @@ function EditorWorkspace({ project }: { project: Project }) {
             onItemsChange={setTimelineItems}
             onRemoveItem={handleRemoveTimelineItem}
             onUpdateText={handleUpdateText}
-            playheadPosition={playheadPosition}
+            playheadTime={playheadTime}
             isPlaying={isPlaying}
-            onPlayheadPositionChange={setPlayheadPosition}
+            onPlayheadTimeChange={setPlayheadTime}
           />
         </div>
       </div>

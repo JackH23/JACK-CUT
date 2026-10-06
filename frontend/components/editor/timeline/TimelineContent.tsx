@@ -13,9 +13,9 @@ type TimelineContentProps = {
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onUpdateText: (itemId: string, text: string) => void;
-  playheadPosition: number;
+  playheadTime: number;
   isPlaying: boolean;
-  onPlayheadPositionChange: (position: number) => void;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 export default function TimelineContent({
@@ -23,9 +23,9 @@ export default function TimelineContent({
   onItemsChange,
   onRemoveItem,
   onUpdateText,
-  playheadPosition,
+  playheadTime,
   isPlaying,
-  onPlayheadPositionChange,
+  onPlayheadTimeChange,
 }: TimelineContentProps) {
   const { tracks, timelineTimes, timelineDuration } = useTimeline(items);
 
@@ -67,11 +67,11 @@ export default function TimelineContent({
           tracks={tracks}
           timelineTimes={timelineTimes}
           timelineDuration={timelineDuration}
-          playheadPosition={playheadPosition}
+          playheadTime={playheadTime}
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}
           onUpdateText={onUpdateText}
-          onPlayheadPositionChange={onPlayheadPositionChange}
+          onPlayheadTimeChange={onPlayheadTimeChange}
         />
       </div>
     </div>

@@ -11,9 +11,9 @@ type TimelineProps = {
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onUpdateText: (itemId: string, text: string) => void;
-  playheadPosition: number;
+  playheadTime: number;
   isPlaying: boolean;
-  onPlayheadPositionChange: (position: number) => void;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 export default function Timeline({
@@ -21,9 +21,9 @@ export default function Timeline({
   onItemsChange,
   onRemoveItem,
   onUpdateText,
-  playheadPosition,
+  playheadTime,
   isPlaying,
-  onPlayheadPositionChange,
+  onPlayheadTimeChange,
 }: TimelineProps) {
   return (
     <section className="flex h-[320px] shrink-0 flex-col border-t border-white/10 bg-[#0c0d12] text-white">
@@ -33,9 +33,9 @@ export default function Timeline({
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}
           onUpdateText={onUpdateText}
-          playheadPosition={playheadPosition}
+          playheadTime={playheadTime}
           isPlaying={isPlaying}
-          onPlayheadPositionChange={onPlayheadPositionChange}
+          onPlayheadTimeChange={onPlayheadTimeChange}
         />
     </section>
   );

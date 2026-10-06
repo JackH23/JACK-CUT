@@ -51,7 +51,8 @@ function getMediaDuration(file: MediaFile): Promise<number> {
 
 export function useEditorTimeline(projectId: string) {
   const [state, dispatch] = useReducer(timelineReducer, initialTimelineState);
-  const [playheadPosition, setPlayheadPosition] = useState(0);
+  // Timeline seconds are the shared source of truth; percentages are visual only.
+  const [playheadTime, setPlayheadTime] = useState(0);
   const pendingMediaIds = useRef(new Set<string>());
   const { tracks } = useTimeline();
 
@@ -774,13 +775,12 @@ export function useEditorTimeline(projectId: string) {
             (item.file?.type === "image" ||
               item.file?.type === "video");
 
-          const endPosition =
-            item.startPosition + item.width;
+          const endTime = item.startTime + item.duration;
 
           return (
             isVisualFile &&
-            playheadPosition >= item.startPosition &&
-            playheadPosition < endPosition
+            playheadTime >= item.startTime &&
+            playheadTime < endTime
           );
         })
         .sort(
@@ -791,7 +791,7 @@ export function useEditorTimeline(projectId: string) {
               Number.MAX_SAFE_INTEGER),
         )[0] ?? null
     );
-  }, [playheadPosition, timelineItems, tracks]);
+  }, [playheadTime, timelineItems, tracks]);
 
   // Active text item at the current playhead position.
   const activeTextItem = useMemo(() => {
@@ -801,17 +801,16 @@ export function useEditorTimeline(projectId: string) {
           return false;
         }
 
-        const endPosition =
-          item.startPosition + item.width;
+        const endTime = item.startTime + item.duration;
 
         return (
-          playheadPosition >= item.startPosition &&
-          playheadPosition < endPosition
+          playheadTime >= item.startTime &&
+          playheadTime < endTime
         );
       }) ?? null
     );
   }, [
-    playheadPosition,
+    playheadTime,
     timelineItems,
   ]);
 
@@ -834,8 +833,8 @@ export function useEditorTimeline(projectId: string) {
   return {
     timelineItems,
     setTimelineItems,
-    playheadPosition,
-    setPlayheadPosition,
+    playheadTime,
+    setPlayheadTime,
     selectedMediaIds,
     activePreviewItem,
     activeTextItem,

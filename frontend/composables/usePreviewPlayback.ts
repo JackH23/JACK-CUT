@@ -6,8 +6,8 @@ const FRAME_RATE = 30;
 
 type UsePreviewPlaybackOptions = {
   duration: number;
-  playheadPosition: number;
-  onPlayheadPositionChange: (position: number) => void;
+  playheadTime: number;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 function formatTime(value: number) {
@@ -25,23 +25,21 @@ function formatTime(value: number) {
 
 export function usePreviewPlayback({
   duration,
-  playheadPosition,
-  onPlayheadPositionChange,
+  playheadTime,
+  onPlayheadTimeChange,
 }: UsePreviewPlaybackOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const playheadRef = useRef(playheadPosition);
-  const onPositionChangeRef = useRef(onPlayheadPositionChange);
+  const playheadRef = useRef(playheadTime);
+  const onPositionChangeRef = useRef(onPlayheadTimeChange);
 
   useEffect(() => {
-    onPositionChangeRef.current = onPlayheadPositionChange;
-  }, [onPlayheadPositionChange]);
+    onPositionChangeRef.current = onPlayheadTimeChange;
+  }, [onPlayheadTimeChange]);
 
   useEffect(() => {
-    if (!isPlaying) {
-      playheadRef.current = playheadPosition;
-    }
-  }, [isPlaying, playheadPosition]);
+    playheadRef.current = playheadTime;
+  }, [isPlaying, playheadTime]);
 
   useEffect(() => {
     if (!isPlaying || duration <= 0) return;
@@ -54,13 +52,13 @@ export function usePreviewPlayback({
         const elapsedSeconds = (time - previousTime) / 1000;
 
         playheadRef.current = Math.min(
-          100,
-          playheadRef.current + (elapsedSeconds / duration) * 100,
+          duration,
+          playheadRef.current + elapsedSeconds,
         );
 
         onPositionChangeRef.current(playheadRef.current);
 
-        if (playheadRef.current >= 100) {
+        if (playheadRef.current >= duration) {
           setIsPlaying(false);
           return;
         }
@@ -78,26 +76,26 @@ export function usePreviewPlayback({
   const handlePlayPause = useCallback(() => {
     if (duration <= 0) return;
 
-    if (!isPlaying && playheadPosition >= 100) {
+    if (!isPlaying && playheadTime >= duration) {
       playheadRef.current = 0;
-      onPlayheadPositionChange(0);
+      onPlayheadTimeChange(0);
     } else {
-      playheadRef.current = playheadPosition;
+      playheadRef.current = playheadTime;
     }
 
     setIsPlaying((current) => !current);
-  }, [duration, isPlaying, onPlayheadPositionChange, playheadPosition]);
+  }, [duration, isPlaying, onPlayheadTimeChange, playheadTime]);
 
   const handleMuteToggle = useCallback(() => {
     setIsMuted((current) => !current);
   }, []);
 
-  const elapsed = (playheadPosition / 100) * duration;
+  const elapsed = playheadTime;
 
   return {
     isPlaying,
     isMuted,
-    currentTime: formatTime(Math.min(elapsed, duration)),
+    currentTime: formatTime(elapsed),
     totalTime: formatTime(duration),
     handlePlayPause,
     handleMuteToggle,

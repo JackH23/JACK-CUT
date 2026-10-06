@@ -16,57 +16,27 @@ type Options = {
   activeItem: TimelineItem | null;
   items: TimelineItem[];
   duration: number;
-  playheadPosition: number;
-  onPlayheadPositionChange: (position: number) => void;
+  playheadTime: number;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 export function usePreviewMonitor({
+  activeItem,
   items,
   duration,
-  playheadPosition,
-  onPlayheadPositionChange,
+  playheadTime,
+  onPlayheadTimeChange,
 }: Options) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const playback = usePreviewPlayback({
     duration,
-    playheadPosition,
-    onPlayheadPositionChange,
+    playheadTime,
+    onPlayheadTimeChange,
   });
 
-  const playheadSeconds =
-    (playheadPosition / 100) * duration;
-
-  /*
-   * Find the image/video currently underneath
-   * the playhead.
-   *
-   * Text items don't have item.file, so only
-   * media items are checked here.
-   */
-  const previewItem = useMemo(
-    () =>
-      items.find((item) => {
-        if (
-          item.type !== "media" ||
-          !item.file
-        ) {
-          return false;
-        }
-
-        const isVisualMedia =
-          item.file.type === "video" ||
-          item.file.type === "image";
-
-        const isActive =
-          playheadSeconds >= item.startTime &&
-          playheadSeconds <
-            item.startTime + item.duration;
-
-        return isVisualMedia && isActive;
-      }) ?? null,
-    [items, playheadSeconds],
-  );
+  const playheadSeconds = playheadTime;
+  const previewItem = activeItem;
 
   const previewFile =
     previewItem?.type === "media"

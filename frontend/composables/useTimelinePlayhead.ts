@@ -4,21 +4,24 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 type UseTimelinePlayheadOptions = {
-  onPositionChange: (position: number) => void;
+  duration: number;
+  onTimeChange: (time: number) => void;
 };
 
 export function useTimelinePlayhead({
-  onPositionChange,
+  duration,
+  onTimeChange,
 }: UseTimelinePlayheadOptions) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [isDraggingPlayhead, setIsDraggingPlayhead] =
     useState(false);
 
-  const updatePlayheadPosition = (
-    event: ReactPointerEvent<HTMLDivElement>,
+  const updatePlayheadTime = (
+    event: ReactMouseEvent<HTMLDivElement>,
   ) => {
     const timeline = timelineRef.current;
 
@@ -27,22 +30,31 @@ export function useTimelinePlayhead({
     const bounds = timeline.getBoundingClientRect();
     const pointerX = event.clientX - bounds.left;
 
-    const position = Math.min(
-      100,
-      Math.max(0, (pointerX / bounds.width) * 100),
+    if (bounds.width <= 0) return;
+
+    const time = Math.min(
+      duration,
+      Math.max(0, (pointerX / bounds.width) * duration),
     );
 
-    onPositionChange(position);
+    onTimeChange(time);
+  };
+
+  const handleTimelineClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    // Keep clip editing, dragging and controls separate from background seeking.
+    if ((event.target as HTMLElement).closest("[draggable], button")) return;
+    updatePlayheadTime(event);
   };
 
   const handlePlayheadPointerDown = (
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
+    event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
 
     setIsDraggingPlayhead(true);
-    updatePlayheadPosition(event);
+    updatePlayheadTime(event);
   };
 
   const handlePlayheadPointerMove = (
@@ -50,7 +62,7 @@ export function useTimelinePlayhead({
   ) => {
     if (!isDraggingPlayhead) return;
 
-    updatePlayheadPosition(event);
+    updatePlayheadTime(event);
   };
 
   const handlePlayheadPointerUp = (
@@ -65,6 +77,7 @@ export function useTimelinePlayhead({
 
   return {
     timelineRef,
+    handleTimelineClick,
     isDraggingPlayhead,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,

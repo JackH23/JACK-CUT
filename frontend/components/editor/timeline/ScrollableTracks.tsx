@@ -10,12 +10,12 @@ type ScrollableTracksProps = {
   tracks: TimelineTrack[];
   timelineTimes: string[];
   timelineDuration: number;
-  playheadPosition: number;
+  playheadTime: number;
   isPlaying: boolean; // add
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onUpdateText: (itemId: string, text: string) => void;
-  onPlayheadPositionChange: (position: number) => void;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 export default function ScrollableTracks({
@@ -23,18 +23,19 @@ export default function ScrollableTracks({
   tracks,
   timelineTimes,
   timelineDuration,
-  playheadPosition,
+  playheadTime,
   isPlaying,
   onItemsChange,
   onRemoveItem,
   onUpdateText,
-  onPlayheadPositionChange,
+  onPlayheadTimeChange,
 }: ScrollableTracksProps) {
   
   const {
     timelineRef,
     scrollContainerRef,
     displayDuration,
+    displayPlayheadPosition,
     positionedItems,
     snapLinePosition,
     isDraggingPlayhead,
@@ -48,17 +49,18 @@ export default function ScrollableTracks({
     handleRemovePointerDown,
     handleRemoveDragStart,
     handleRemoveClick,
+    handleTimelineClick,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,
     handlePlayheadPointerUp,
   } = useScrollableTracks({
     items,
     timelineDuration,
-    playheadPosition,
+    playheadTime,
     isPlaying,
     onItemsChange,
     onRemoveItem,
-    onPlayheadPositionChange,
+    onPlayheadTimeChange,
   });
 
   return (
@@ -68,6 +70,7 @@ export default function ScrollableTracks({
     >
       <div
         ref={timelineRef}
+        onClick={handleTimelineClick}
         style={{ width: `${displayDuration * 20}px` }}
         className="relative min-h-full"
       >
@@ -113,7 +116,7 @@ export default function ScrollableTracks({
 
         {/* Draggable playhead */}
         <div
-          style={{ left: `${playheadPosition}%` }}
+          style={{ left: `${displayPlayheadPosition}%` }}
           onPointerDown={handlePlayheadPointerDown}
           onPointerMove={handlePlayheadPointerMove}
           onPointerUp={handlePlayheadPointerUp}

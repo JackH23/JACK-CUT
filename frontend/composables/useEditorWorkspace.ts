@@ -16,8 +16,8 @@ export function useEditorWorkspace(
   const {
     timelineItems,
     setTimelineItems,
-    playheadPosition,
-    setPlayheadPosition,
+    playheadTime,
+    setPlayheadTime,
     activePreviewFile,
     activePreviewItem,
     activeTextItem,
@@ -83,8 +83,8 @@ export function useEditorWorkspace(
   return {
     timelineItems,
     setTimelineItems,
-    playheadPosition,
-    setPlayheadPosition,
+    playheadTime,
+    setPlayheadTime,
     activePreviewFile,
     activePreviewItem,
     activeTextItem,

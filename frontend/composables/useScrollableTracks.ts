@@ -19,11 +19,11 @@ import type { TimelineItem, TimelineTrack } from "@/types/timeline";
 type UseScrollableTracksOptions = {
   items: TimelineItem[];
   timelineDuration: number;
-  playheadPosition: number;
+  playheadTime: number;
   isPlaying: boolean;
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
-  onPlayheadPositionChange: (position: number) => void;
+  onPlayheadTimeChange: (position: number) => void;
 };
 
 type ResizeEdge = "left" | "right";
@@ -53,11 +53,11 @@ const MINIMUM_CLIP_WIDTH = 2;
 export function useScrollableTracks({
   items: rawItems,
   timelineDuration,
-  playheadPosition,
+  playheadTime,
   isPlaying,
   onItemsChange,
   onRemoveItem,
-  onPlayheadPositionChange,
+  onPlayheadTimeChange,
 }: UseScrollableTracksOptions) {
   const [dragExtension, setDragExtension] = useState(0);
   const displayDuration = Math.max(1, timelineDuration + dragExtension);
@@ -75,11 +75,13 @@ export function useScrollableTracks({
   const {
     timelineRef,
     isDraggingPlayhead,
+    handleTimelineClick,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,
     handlePlayheadPointerUp,
   } = useTimelinePlayhead({
-    onPositionChange: onPlayheadPositionChange,
+    duration: displayDuration,
+    onTimeChange: onPlayheadTimeChange,
   });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -91,14 +93,14 @@ export function useScrollableTracks({
     const timeline = timelineRef.current;
     if (!container || !timeline) return;
 
-    const playheadX = (playheadPosition / 100) * timeline.clientWidth;
+    const playheadX = (playheadTime / displayDuration) * timeline.clientWidth;
     const viewportCenter = container.clientWidth / 2;
     const playheadInViewport = playheadX - container.scrollLeft;
 
     if (playheadInViewport >= viewportCenter) {
       container.scrollLeft = playheadX - viewportCenter;
     }
-  }, [isPlaying, playheadPosition]);
+  }, [isPlaying, playheadTime, displayDuration, timelineRef]);
 
   const dragStateRef = useRef<{
     itemId: string;
@@ -685,6 +687,7 @@ export function useScrollableTracks({
     scrollContainerRef,
     timelineRef,
     displayDuration,
+    displayPlayheadPosition: (playheadTime / displayDuration) * 100,
     positionedItems: items,
     snapLinePosition,
     isDraggingPlayhead,
@@ -700,6 +703,7 @@ export function useScrollableTracks({
     handleRemovePointerDown,
     handleRemoveDragStart,
     handleRemoveClick,
+    handleTimelineClick,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,
     handlePlayheadPointerUp,
