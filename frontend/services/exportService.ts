@@ -12,6 +12,7 @@ export const exportService = {
   async get(id: string): Promise<ExportJob> {
     const { data } = await axios.get<ExportJob>(
       `${EXPORT_URL}/${encodeURIComponent(id)}`,
+      { timeout: 10000 },
     );
 
     return data;

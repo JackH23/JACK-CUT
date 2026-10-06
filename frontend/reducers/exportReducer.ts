@@ -1,4 +1,4 @@
-import type { ExportJob } from "@/services/exportService";
+import type { ExportJob } from "@/lib/export";
 
 export type ExportState = {
   job: ExportJob | null;

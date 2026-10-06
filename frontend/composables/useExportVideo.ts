@@ -55,12 +55,15 @@ export function useExportVideo() {
     if (!jobId || jobStatus !== "processing") return;
 
     let active = true;
+    let consecutiveFailures = 0;
     let timer: ReturnType<typeof setTimeout>;
 
     async function checkStatus() {
       try {
         const job = await exportService.get(jobId!);
         if (!active) return;
+
+        consecutiveFailures = 0;
 
         dispatch({
           type: "EXPORT_STATUS_UPDATED",
@@ -72,6 +75,14 @@ export function useExportVideo() {
         }
       } catch (error) {
         if (!active) return;
+        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+        const transient = axios.isAxiosError(error) &&
+          (status === undefined || status === 408 || status === 429 || status >= 500);
+        if (transient && consecutiveFailures < 5) {
+          consecutiveFailures += 1;
+          timer = setTimeout(checkStatus, Math.min(2000 * consecutiveFailures, 10000));
+          return;
+        }
 
         dispatch({
           type: "EXPORT_ERROR",
