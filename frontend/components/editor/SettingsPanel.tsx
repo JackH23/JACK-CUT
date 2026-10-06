@@ -20,6 +20,7 @@ import {
 
 export default function SettingsPanel({
   activeItem,
+  onUpdateMediaTransform,
   onDuplicate,
   canDuplicate = false,
 
@@ -55,6 +56,7 @@ export default function SettingsPanel({
     handleAnimationChange,
   } = useSettingsPanel({
     activeItem,
+    onUpdateMediaTransform,
 
     onUpdateTextFontSize,
     onUpdateTextFontWeight,

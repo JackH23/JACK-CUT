@@ -21,6 +21,7 @@ export type SettingsTab =
   (typeof SETTINGS_TABS)[number];
 
 type UseSettingsPanelProps = {
+  onUpdateMediaTransform: (id: string, values: { mediaScale: number; mediaX: number; mediaY: number }, persist?: boolean) => void;
   activeItem: TimelineItem | null;
 
   onUpdateTextFontSize: (
@@ -48,6 +49,7 @@ type UseSettingsPanelProps = {
 
 export function useSettingsPanel({
   activeItem,
+  onUpdateMediaTransform,
   onUpdateTextFontSize,
   onUpdateTextFontWeight,
   onUpdateTextFontFamily,
@@ -57,8 +59,12 @@ export function useSettingsPanel({
   const [activeTab, setActiveTab] =
     useState<SettingsTab>("Basic");
 
-  const [scale, setScale] =
-    useState(105);
+  const [textScale, setTextScale] = useState(105);
+  const scale = activeItem?.type === "media" ? Math.round((activeItem.mediaScale ?? 1) * 10000) / 100 : textScale;
+  const setScale = (value: number) => {
+    if (activeItem?.type === "media" && activeItem.file?.type !== "audio") onUpdateMediaTransform(activeItem.id, { mediaScale: value / 100, mediaX: activeItem.mediaX ?? 0, mediaY: activeItem.mediaY ?? 0 });
+    else setTextScale(value);
+  };
 
   const [opacity, setOpacity] =
     useState(100);

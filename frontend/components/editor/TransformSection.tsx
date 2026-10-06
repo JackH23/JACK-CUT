@@ -68,6 +68,8 @@ export default function TransformSection({
 
         <input
           type="range"
+          aria-label="Media scale"
+          step={0.01}
           min={10}
           max={200}
           value={scale}

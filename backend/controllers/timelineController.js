@@ -415,6 +415,9 @@ async function getTimelineItems(req, res) {
           textColor:
             item.text_color ?? null,
 
+          mediaScale: Number(item.media_scale ?? 1),
+          mediaX: Number(item.media_x ?? 0),
+          mediaY: Number(item.media_y ?? 0),
           animationInPreset: item.animation_in_preset ?? null,
           animationInDuration: item.animation_in_duration ?? null,
           animationInAmount: item.animation_in_amount ?? null,
@@ -581,6 +584,7 @@ async function updateTimelineItem(
       animationAmount,
     } = req.body;
 
+    const isMediaTransformUpdate = ["mediaScale", "mediaX", "mediaY"].some(key => req.body[key] !== undefined);
     const isAnimationUpdate =
       animationPreset !== undefined ||
       animationAmount !== undefined || animationFields.some(key => req.body[key] !== undefined);
@@ -609,6 +613,7 @@ async function updateTimelineItem(
       !isTextStyleUpdate &&
       !isPositionUpdate &&
       !isAnimationUpdate &&
+      !isMediaTransformUpdate &&
       sourceStart === undefined
     ) {
       return res.status(400).json({
@@ -675,6 +680,16 @@ async function updateTimelineItem(
     }
 
     const updates = {};
+    if (isMediaTransformUpdate) {
+      const media = item.item_type === "MEDIA" ? await Media.findByPk(item.media_id) : null;
+      if (!media || !["image", "video"].includes(media.media_type)) return res.status(400).json({ message: "Only image/video items can update media transforms." });
+      for (const [key, column] of [["mediaScale", "media_scale"], ["mediaX", "media_x"], ["mediaY", "media_y"]]) {
+        const value = req.body[key];
+        if (value === undefined) continue;
+        if (typeof value !== "number" || !Number.isFinite(value) || (key === "mediaScale" ? value < 0.1 || value > 2 : Math.abs(value) > 10000)) return res.status(400).json({ message: "Invalid media transform." });
+        updates[column] = value;
+      }
+    }
     if (sourceStart !== undefined) {
       if (typeof sourceStart !== "number" || !Number.isFinite(sourceStart) || sourceStart < 0) {
         return res.status(400).json({ message: "sourceStart must be a non-negative number." });

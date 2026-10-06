@@ -60,6 +60,10 @@ export type TimelineItemUpdateInput = {
   fontFamily?: string;
   textColor?: string;
 
+  mediaScale?: number;
+  mediaX?: number;
+  mediaY?: number;
+
   // Animation
   animationPreset?: string;
   animationAmount?: number;
@@ -104,7 +108,11 @@ export type AddTimelineItemResponse = {
     duration: number;
     source_start?: number;
 
-    // Animation
+    media_scale?: number;
+    media_x?: number;
+    media_y?: number;
+
+  // Animation
     animation_preset: string;
     animation_amount: number;
     animation_in_preset?: string | null;
@@ -141,6 +149,10 @@ export type SavedTimelineItem = {
   fontWeight: number | null;
   fontFamily: string | null;
   textColor: string | null;
+
+  mediaScale?: number;
+  mediaX?: number;
+  mediaY?: number;
 
   // Animation
   animationPreset: string;

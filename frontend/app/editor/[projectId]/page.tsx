@@ -76,6 +76,7 @@ function EditorWorkspace({ project }: { project: Project }) {
     handleUpdateTextColor,
 
     handleUpdateAnimation,
+    handleUpdateMediaTransform,
 
     handleRemoveTimelineItem,
     handleRemoveMedia,
@@ -163,6 +164,9 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <PreviewMonitor
+              selectedItemId={selectedItemId}
+              onSelectItem={handleSelectTimelineItem}
+              onUpdateMediaTransform={handleUpdateMediaTransform}
               file={activePreviewFile}
               activeItem={activePreviewItem}
               items={timelineItems}
@@ -176,6 +180,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <SettingsPanel
+              onUpdateMediaTransform={handleUpdateMediaTransform}
               activeItem={
                 selectedTimelineItem ??
                 activeTextItem

@@ -17,6 +17,7 @@ export type SpeedMode =
   | "curve";
 
 export type SettingsPanelProps = {
+  onUpdateMediaTransform: (id: string, values: { mediaScale: number; mediaX: number; mediaY: number }, persist?: boolean) => void;
   activeItem: TimelineItem | null;
   onDuplicate?: () => void;
   canDuplicate?: boolean;

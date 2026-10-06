@@ -4,6 +4,7 @@ import {
   useCallback,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -84,6 +85,16 @@ export function useEditorTimeline(projectId: string) {
     timelineItems,
     setTimelineItems,
   });
+
+  const transformSaves = useRef(new Map<string, Promise<unknown>>());
+  const handleUpdateMediaTransform = useCallback((id: string, values: { mediaScale: number; mediaX: number; mediaY: number }, persist = true) => {
+    setTimelineItems(items => items.map(item => item.id === id ? { ...item, ...values } : item));
+    if (!persist) return;
+    const previous = transformSaves.current.get(id) ?? Promise.resolve();
+    const save = previous.catch(() => {}).then(() => timelineService.updateItem(id, values));
+    transformSaves.current.set(id, save);
+    void save.catch(error => { console.error("Could not save media transform", error); window.alert("Could not save media size. Reload to restore saved values."); }).finally(() => { if (transformSaves.current.get(id) === save) transformSaves.current.delete(id); });
+  }, [setTimelineItems]);
 
   const handleRemoveMedia = useCallback((fileId: string) => {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
@@ -211,6 +222,7 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextColor,
 
     handleUpdateAnimation,
+    handleUpdateMediaTransform,
 
     handleRemoveMedia,
 

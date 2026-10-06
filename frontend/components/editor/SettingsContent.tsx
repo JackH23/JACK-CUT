@@ -79,6 +79,8 @@ export default function SettingsContent({
       {/* BASIC */}
       {activeTab === "Basic" && (
         <BasicTab
+          positionX={activeItem?.type === "media" ? activeItem.mediaX ?? 0 : 0}
+          positionY={activeItem?.type === "media" ? activeItem.mediaY ?? 0 : 0}
           scale={scale}
           opacity={opacity}
           speedMode={speedMode}

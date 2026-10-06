@@ -10,6 +10,7 @@ import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
 import type { MediaFile } from "@/lib/media";
 
+import EditableMediaOverlay from "./EditableMediaOverlay";
 import EditableTextOverlay from "./EditableTextOverlay";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
@@ -19,6 +20,9 @@ import {
 } from "@/lib/clipAnimation";
 
 type PreviewMonitorProps = {
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
+  onUpdateMediaTransform: (id: string, values: { mediaScale: number; mediaX: number; mediaY: number }, persist?: boolean) => void;
   file: MediaFile | null;
   activeItem: TimelineItem | null;
   items: TimelineItem[];
@@ -47,6 +51,9 @@ type PreviewMonitorProps = {
 
 export default function PreviewMonitor({
   file,
+  selectedItemId,
+  onSelectItem,
+  onUpdateMediaTransform,
   activeItem,
   items,
   duration,
@@ -131,7 +138,7 @@ export default function PreviewMonitor({
       <PreviewHeader
         title="Program Monitor"
         colorSpace="REC.709-A"
-        resolution="3840 × 2160 (16:9)"
+        resolution="3840 Ã— 2160 (16:9)"
         zoomLabel="Fit to Window (48%)"
       />
 
@@ -147,6 +154,8 @@ export default function PreviewMonitor({
           </div>
         )}
 
+        {previewItem && previewFile && ["image", "video"].includes(previewFile.type) && (
+          <EditableMediaOverlay key={previewItem.id} item={previewItem} selected={selectedItemId === previewItem.id} time={playheadSeconds} onSelect={() => onSelectItem(previewItem.id)} onTransform={onUpdateMediaTransform}>
         {previewFile?.type === "image" && (
           <img
             src={previewFile.url}
@@ -169,6 +178,9 @@ export default function PreviewMonitor({
             style={mediaAnimationStyle}
             className="h-full w-full object-contain"
           />
+        )}
+
+          </EditableMediaOverlay>
         )}
 
         {/* Editable text overlays */}
@@ -225,7 +237,7 @@ export default function PreviewMonitor({
         })}
 
         {previewFile && (
-          <span className="absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 text-xs">
+          <span className="pointer-events-none absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 text-xs">
             {previewFile.name}
           </span>
         )}

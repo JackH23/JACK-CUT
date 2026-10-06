@@ -6,6 +6,8 @@ import SettingGroup from "../SettingGroup";
 import RangeControl from "../RangeControl";
 
 type BasicTabProps = {
+  positionX?: number;
+  positionY?: number;
   scale: number;
   opacity: number;
   speedMode: "normal" | "curve";
@@ -15,6 +17,8 @@ type BasicTabProps = {
 };
 
 export default function BasicTab({
+  positionX = 0,
+  positionY = 0,
   scale,
   opacity,
   speedMode,
@@ -26,8 +30,8 @@ export default function BasicTab({
     <>
       <TransformSection
         scale={scale}
-        positionX={0}
-        positionY={0}
+        positionX={positionX}
+        positionY={positionY}
         rotation={0}
         onScaleChange={onScaleChange}
         onFlipHorizontal={() => console.log("Flip horizontal")}

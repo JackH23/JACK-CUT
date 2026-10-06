@@ -26,6 +26,10 @@ type TimelineItemFields = {
   fontFamily?: string;
   textColor?: string;
   
+  mediaScale?: number;
+  mediaX?: number;
+  mediaY?: number;
+
   // Animation
   animationPreset?: string;
   animationAmount?: number;

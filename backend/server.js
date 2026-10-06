@@ -106,6 +106,11 @@ async function startServer() {
         allowNull: true,
       }); } catch(error) { if(error.original?.code !== '42701') throw error; }
     }
+    for (const [name, defaultValue] of [["media_scale", 1], ["media_x", 0], ["media_y", 0]]) {
+      if (!columns[name]) try {
+        await queryInterface.addColumn("timeline_items", name, { type: require("sequelize").DataTypes.DOUBLE, allowNull: false, defaultValue });
+      } catch (error) { if (error.original?.code !== "42701") throw error; }
+    }
     // NULL means legacy mode: no destructive rewrite of existing animation trajectories.
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}`);

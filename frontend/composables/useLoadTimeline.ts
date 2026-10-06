@@ -56,6 +56,9 @@ export function useLoadTimeline({
                     type: "media" as const,
                     file: item.media,
 
+                    mediaScale: item.mediaScale ?? 1,
+                    mediaX: item.mediaX ?? 0,
+                    mediaY: item.mediaY ?? 0,
                     animationInPreset: item.animationInPreset,
                     animationInDuration: item.animationInDuration,
                     animationInAmount: item.animationInAmount,
