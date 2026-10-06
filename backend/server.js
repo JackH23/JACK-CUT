@@ -37,6 +37,8 @@ const exportRoutes = require("./routes/exportRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const fontOptionRoutes =
   require("./routes/fontOptionRoutes");
+const animationOptionRoutes =
+  require("./routes/animationOptionRoutes");
 
 const app = express();
 
@@ -54,6 +56,10 @@ app.use("/api/exports", exportRoutes);
 app.use(
   "/api/font-options",
   fontOptionRoutes,
+);
+app.use(
+  "/api/animation-options",
+  animationOptionRoutes,
 );
 
 app.get("/", (req, res) => {

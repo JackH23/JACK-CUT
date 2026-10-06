@@ -2,60 +2,24 @@
 
 import { useState } from "react";
 import {
-  Ban,
   Gauge,
   Layers3,
-  MoveLeft,
-  MoveRight,
-  Search,
-  SearchX,
   Sparkles,
 } from "lucide-react";
 
 import RangeControl from "../RangeControl";
 import SettingGroup from "../SettingGroup";
+
+import {
+  animationIcons,
+} from "@/lib/animationIcons";
+
+import LoadingState from "@/components/shared/LoadingState";
 import SelectableCard from "@/components/shared/SelectableCard";
 
-const animationPresets = [
-  {
-    value: "none",
-    label: "None",
-    icon: Ban,
-  },
-  {
-    value: "fade-in",
-    label: "Fade In",
-    icon: Sparkles,
-  },
-  {
-    value: "fade-out",
-    label: "Fade Out",
-    icon: Sparkles,
-  },
-  {
-    value: "zoom-in",
-    label: "Zoom In",
-    icon: Search,
-  },
-  {
-    value: "zoom-out",
-    label: "Zoom Out",
-    icon: SearchX,
-  },
-  {
-    value: "slide-left",
-    label: "Slide Left",
-    icon: MoveLeft,
-  },
-  {
-    value: "slide-right",
-    label: "Slide Right",
-    icon: MoveRight,
-  },
-] as const;
-
-type AnimationPreset =
-  (typeof animationPresets)[number]["value"];
+import {
+  useAnimationOptions,
+} from "@/composables/useAnimationOptions";
 
 type AnimationTabProps = {
   animationAmount: number;
@@ -67,7 +31,13 @@ export default function AnimationTab({
   onAnimationAmountChange,
 }: AnimationTabProps) {
   const [selectedPreset, setSelectedPreset] =
-    useState<AnimationPreset>("none");
+    useState<string>("none");
+
+  const {
+    animationOptions,
+    loading,
+    error,
+  } = useAnimationOptions();
 
   return (
     <>
@@ -79,37 +49,53 @@ export default function AnimationTab({
           Animation Preset
         </p>
 
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {animationPresets.map((preset) => {
-            const Icon = preset.icon;
+        {loading ? (
+          <LoadingState
+            message="Loading animations..."
+          />
+        ) : error ? (
+          <p className="mt-2 text-xs text-red-400">
+            {error}
+          </p>
+        ) : (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {animationOptions.map((preset) => {
+              const Icon =
+                animationIcons[
+                  preset.icon as keyof typeof animationIcons
+                ] ?? Sparkles;
 
-            return (
-              <SelectableCard
-                key={preset.value}
-                isSelected={
-                  selectedPreset === preset.value
-                }
-                onClick={() =>
-                  setSelectedPreset(preset.value)
-                }
-                ariaLabel={`Select ${preset.label} animation`}
-              >
-                <Icon
-                  size={20}
-                  className={
-                    selectedPreset === preset.value
-                      ? "text-purple-300"
-                      : "text-zinc-300"
+              const isSelected =
+                selectedPreset === preset.value;
+
+              return (
+                <SelectableCard
+                  key={preset.id}
+                  isSelected={isSelected}
+                  onClick={() =>
+                    setSelectedPreset(
+                      preset.value,
+                    )
                   }
-                />
+                  ariaLabel={`Select ${preset.name} animation`}
+                >
+                  <Icon
+                    size={20}
+                    className={
+                      isSelected
+                        ? "text-purple-300"
+                        : "text-zinc-300"
+                    }
+                  />
 
-                <span className="mt-2 text-xs">
-                  {preset.label}
-                </span>
-              </SelectableCard>
-            );
-          })}
-        </div>
+                  <span className="mt-2 text-xs">
+                    {preset.name}
+                  </span>
+                </SelectableCard>
+              );
+            })}
+          </div>
+        )}
 
         <RangeControl
           label="Animation Amount"
