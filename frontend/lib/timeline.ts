@@ -59,6 +59,10 @@ export type TimelineItemUpdateInput = {
   fontWeight?: number;
   fontFamily?: string;
   textColor?: string;
+
+  // Animation
+  animationPreset?: string;
+  animationAmount?: number;
 };
 
 /* =========================================================
@@ -94,6 +98,10 @@ export type AddTimelineItemResponse = {
     duration: number;
     source_start?: number;
 
+    // Animation
+    animation_preset: string;
+    animation_amount: number;
+
     created_at?: string;
     updated_at?: string;
   };
@@ -114,15 +122,17 @@ export type SavedTimelineItem = {
   textContent: string | null;
   textStyle: TextStyle | null;
 
-  // Text position
   textX: number | null;
   textY: number | null;
 
-  // Text style
   fontSize: number | null;
   fontWeight: number | null;
   fontFamily: string | null;
   textColor: string | null;
+
+  // Animation
+  animationPreset: string;
+  animationAmount: number;
 
   trackId: string;
   startTime: number;

@@ -74,6 +74,10 @@ function EditorWorkspace({ project }: { project: Project }) {
     handleUpdateTextFontWeight,
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
+
+    handleUpdateAnimationPreset,
+    handleUpdateAnimationAmount,
+
     handleRemoveTimelineItem,
     handleRemoveMedia,
 
@@ -173,13 +177,33 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <SettingsPanel
-              activeItem={selectedTimelineItem ?? activeTextItem}
+              activeItem={
+                selectedTimelineItem ??
+                activeTextItem
+              }
               onDuplicate={handleDuplicate}
-              canDuplicate={selectedTimelineItem !== null && !isDuplicating}
-              onUpdateTextFontSize={handleUpdateTextFontSize}
-              onUpdateTextFontWeight={handleUpdateTextFontWeight}
-              onUpdateTextFontFamily={handleUpdateTextFontFamily}
-              onUpdateTextColor={handleUpdateTextColor}
+              canDuplicate={
+                selectedTimelineItem !== null &&
+                !isDuplicating
+              }
+              onUpdateTextFontSize={
+                handleUpdateTextFontSize
+              }
+              onUpdateTextFontWeight={
+                handleUpdateTextFontWeight
+              }
+              onUpdateTextFontFamily={
+                handleUpdateTextFontFamily
+              }
+              onUpdateTextColor={
+                handleUpdateTextColor
+              }
+              onUpdateAnimationPreset={
+                handleUpdateAnimationPreset
+              }
+              onUpdateAnimationAmount={
+                handleUpdateAnimationAmount
+              }
             />
           </main>
 

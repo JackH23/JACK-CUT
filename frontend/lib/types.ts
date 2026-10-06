@@ -39,6 +39,17 @@ export type SettingsPanelProps = {
     itemId: string,
     textColor: string,
   ) => void;
+
+  // Animation
+  onUpdateAnimationPreset: (
+    itemId: string,
+    preset: string,
+  ) => void;
+
+  onUpdateAnimationAmount: (
+    itemId: string,
+    amount: number,
+  ) => void;
 };
 
 export type SettingsContentProps = {

@@ -17,7 +17,9 @@ import { useTimelineClipboard } from "@/composables/useTimelineClipboard";
 import { useAddMedia } from "@/composables/useAddMedia";
 import { useTextEditor } from "@/composables/useTextEditor";
 import { useLoadTimeline } from "@/composables/useLoadTimeline";
-
+import {
+  useAnimationEditor,
+} from "@/composables/useAnimationEditor";
 import { timelineService } from "@/services/timelineService";
 
 import {
@@ -71,6 +73,14 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
   } = useTextEditor({
+    timelineItems,
+    setTimelineItems,
+  });
+
+  const {
+    handleUpdateAnimationPreset,
+    handleUpdateAnimationAmount,
+  } = useAnimationEditor({
     timelineItems,
     setTimelineItems,
   });
@@ -199,6 +209,9 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextFontWeight,
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
+
+    handleUpdateAnimationPreset,
+    handleUpdateAnimationAmount,
 
     handleRemoveMedia,
 

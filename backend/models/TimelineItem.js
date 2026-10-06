@@ -87,9 +87,17 @@ const TimelineItem = sequelize.define(
       allowNull: true,
     },
 
-    track_id: {
+    // Animation
+    animation_preset: {
       type: DataTypes.STRING(100),
       allowNull: false,
+      defaultValue: "none",
+    },
+
+    animation_amount: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 50,
     },
 
     track_id: {

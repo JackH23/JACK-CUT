@@ -14,20 +14,26 @@ import {
   type SettingsPanelProps,
 } from "@/lib/types";
 
-import { useSettingsPanel } from "@/composables/useSettingsPanel";
+import {
+  useSettingsPanel,
+} from "@/composables/useSettingsPanel";
 
 export default function SettingsPanel({
   activeItem,
   onDuplicate,
   canDuplicate = false,
+
   onUpdateTextFontSize,
   onUpdateTextFontWeight,
   onUpdateTextFontFamily,
   onUpdateTextColor,
+
+  // Animation
+  onUpdateAnimationPreset,
+  onUpdateAnimationAmount,
 }: SettingsPanelProps) {
   const {
     activeTab,
-    animationAmount,
     scale,
     opacity,
     speedMode,
@@ -37,7 +43,6 @@ export default function SettingsPanel({
 
     handleTabChange,
 
-    setAnimationAmount,
     setScale,
     setOpacity,
     setSpeedMode,
@@ -46,12 +51,21 @@ export default function SettingsPanel({
     handleFontWeightChange,
     handleFontFamilyChange,
     handleTextColorChange,
+
+    // Animation
+    handleAnimationPresetChange,
+    handleAnimationAmountChange,
   } = useSettingsPanel({
     activeItem,
+
     onUpdateTextFontSize,
     onUpdateTextFontWeight,
     onUpdateTextFontFamily,
     onUpdateTextColor,
+
+    // Animation
+    onUpdateAnimationPreset,
+    onUpdateAnimationAmount,
   });
 
   return (
@@ -120,20 +134,24 @@ export default function SettingsPanel({
       <SettingsContent
         activeItem={activeItem}
         activeTab={activeTab}
+
         scale={scale}
         opacity={opacity}
         speedMode={speedMode}
-        animationAmount={
-          animationAmount
-        }
+
         onScaleChange={setScale}
         onOpacityChange={setOpacity}
         onSpeedModeChange={
           setSpeedMode
         }
-        onAnimationAmountChange={
-          setAnimationAmount
+
+        onAnimationPresetChange={
+          handleAnimationPresetChange
         }
+        onAnimationAmountChange={
+          handleAnimationAmountChange
+        }
+
         onFontSizeChange={
           handleFontSizeChange
         }

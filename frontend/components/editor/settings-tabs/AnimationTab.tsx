@@ -1,43 +1,57 @@
 "use client";
 
-import { useState } from "react";
 import {
   Gauge,
   Layers3,
   Sparkles,
 } from "lucide-react";
 
-import RangeControl from "../RangeControl";
-import SettingGroup from "../SettingGroup";
+import type {
+  TimelineItem,
+} from "@/types/timeline";
 
 import {
   animationIcons,
 } from "@/lib/animationIcons";
 
-import LoadingState from "@/components/shared/LoadingState";
-import SelectableCard from "@/components/shared/SelectableCard";
-
 import {
   useAnimationOptions,
 } from "@/composables/useAnimationOptions";
 
+import LoadingState from "@/components/shared/LoadingState";
+import SelectableCard from "@/components/shared/SelectableCard";
+
+import RangeControl from "../RangeControl";
+import SettingGroup from "../SettingGroup";
+
 type AnimationTabProps = {
-  animationAmount: number;
-  onAnimationAmountChange: (value: number) => void;
+  item: TimelineItem;
+
+  onAnimationPresetChange: (
+    value: string,
+  ) => void;
+
+  onAnimationAmountChange: (
+    value: number,
+  ) => void;
 };
 
 export default function AnimationTab({
-  animationAmount,
+  item,
+  onAnimationPresetChange,
   onAnimationAmountChange,
 }: AnimationTabProps) {
-  const [selectedPreset, setSelectedPreset] =
-    useState<string>("none");
-
   const {
     animationOptions,
     loading,
     error,
   } = useAnimationOptions();
+
+  const selectedPreset =
+    item.animationPreset ?? "none";
+
+  const animationAmount =
+    item.animationAmount ?? 50;
 
   return (
     <>
@@ -66,14 +80,15 @@ export default function AnimationTab({
                 ] ?? Sparkles;
 
               const isSelected =
-                selectedPreset === preset.value;
+                selectedPreset ===
+                preset.value;
 
               return (
                 <SelectableCard
                   key={preset.id}
                   isSelected={isSelected}
                   onClick={() =>
-                    setSelectedPreset(
+                    onAnimationPresetChange(
                       preset.value,
                     )
                   }
@@ -103,7 +118,9 @@ export default function AnimationTab({
           min={0}
           max={100}
           currentValue={animationAmount}
-          onChange={onAnimationAmountChange}
+          onChange={
+            onAnimationAmountChange
+          }
         />
       </SettingGroup>
 

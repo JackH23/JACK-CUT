@@ -1,6 +1,8 @@
 "use client";
 
-import type { TimelineItem } from "@/types/timeline";
+import type {
+  TimelineItem,
+} from "@/types/timeline";
 
 import BasicTab from "./settings-tabs/BasicTab";
 import AnimationTab from "./settings-tabs/AnimationTab";
@@ -18,7 +20,6 @@ export type SettingsContentProps = {
   scale: number;
   opacity: number;
   speedMode: "normal" | "curve";
-  animationAmount: number;
 
   onScaleChange: (
     scale: number,
@@ -32,10 +33,16 @@ export type SettingsContentProps = {
     speedMode: "normal" | "curve",
   ) => void;
 
-  onAnimationAmountChange: (
-    amount: number,
+  // Animation
+  onAnimationPresetChange: (
+    value: string,
   ) => void;
 
+  onAnimationAmountChange: (
+    value: number,
+  ) => void;
+
+  // Text
   onFontSizeChange: (
     fontSize: number,
   ) => void;
@@ -60,11 +67,12 @@ export default function SettingsContent({
   scale,
   opacity,
   speedMode,
-  animationAmount,
 
   onScaleChange,
   onOpacityChange,
   onSpeedModeChange,
+
+  onAnimationPresetChange,
   onAnimationAmountChange,
 
   onFontSizeChange,
@@ -94,14 +102,24 @@ export default function SettingsContent({
 
       {/* ANIMATION */}
       {activeTab === "Animation" && (
-        <AnimationTab
-          animationAmount={
-            animationAmount
-          }
-          onAnimationAmountChange={
-            onAnimationAmountChange
-          }
-        />
+        <>
+          {activeItem ? (
+            <AnimationTab
+              item={activeItem}
+              onAnimationPresetChange={
+                onAnimationPresetChange
+              }
+              onAnimationAmountChange={
+                onAnimationAmountChange
+              }
+            />
+          ) : (
+            <div className="p-4 text-sm text-zinc-500">
+              Select a clip to edit its
+              animation.
+            </div>
+          )}
+        </>
       )}
 
       {/* STYLE */}

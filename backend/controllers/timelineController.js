@@ -3,6 +3,8 @@ const { Op } = require("sequelize");
 const Media = require("../models/Media");
 const TimelineItem = require("../models/TimelineItem");
 const Project = require("../models/Project");
+const AnimationOption =
+  require("../models/AnimationOption");
 
 const TEXT_STYLES = new Set([
   "heading",
@@ -412,6 +414,14 @@ async function getTimelineItems(req, res) {
           textColor:
             item.text_color ?? null,
 
+          animationPreset:
+            item.animation_preset ?? "none",
+
+          animationAmount:
+            item.animation_amount == null
+              ? 50
+              : Number(item.animation_amount),
+
           trackId: item.track_id,
           startTime: Number(
             item.start_time,
@@ -558,7 +568,15 @@ async function updateTimelineItem(
       fontWeight,
       fontFamily,
       textColor,
+
+      // Animation
+      animationPreset,
+      animationAmount,
     } = req.body;
+
+    const isAnimationUpdate =
+      animationPreset !== undefined ||
+      animationAmount !== undefined;
 
     const isTextUpdate =
       textContent !== undefined;
@@ -583,6 +601,7 @@ async function updateTimelineItem(
       !isTextPositionUpdate &&
       !isTextStyleUpdate &&
       !isPositionUpdate &&
+      !isAnimationUpdate &&
       sourceStart === undefined
     ) {
       return res.status(400).json({
@@ -780,6 +799,55 @@ async function updateTimelineItem(
         }
 
         updates.text_color = textColor;
+      }
+    }
+
+    if (isAnimationUpdate) {
+      if (animationPreset !== undefined) {
+        if (
+          typeof animationPreset !== "string" ||
+          !animationPreset.trim()
+        ) {
+          return res.status(400).json({
+            message:
+              "animationPreset must be a non-empty string.",
+          });
+        }
+
+        const animationOption =
+          await AnimationOption.findOne({
+            where: {
+              value: animationPreset.trim(),
+              is_active: true,
+            },
+          });
+
+        if (!animationOption) {
+          return res.status(400).json({
+            message:
+              "Invalid animation preset.",
+          });
+        }
+
+        updates.animation_preset =
+          animationPreset.trim();
+      }
+
+      if (animationAmount !== undefined) {
+        if (
+          typeof animationAmount !== "number" ||
+          !Number.isFinite(animationAmount) ||
+          animationAmount < 0 ||
+          animationAmount > 100
+        ) {
+          return res.status(400).json({
+            message:
+              "animationAmount must be a number between 0 and 100.",
+          });
+        }
+
+        updates.animation_amount =
+          Math.round(animationAmount);
       }
     }
 

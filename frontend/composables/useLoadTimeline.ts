@@ -45,6 +45,7 @@ export function useLoadTimeline({
         const loadedItems: TimelineItem[] =
           response.items.flatMap<TimelineItem>(
             (item) => {
+              // MEDIA
               if (
                 item.itemType === "MEDIA" &&
                 item.media
@@ -54,6 +55,16 @@ export function useLoadTimeline({
                     id: item.id,
                     type: "media" as const,
                     file: item.media,
+
+                    // Animation
+                    animationPreset:
+                      item.animationPreset ??
+                      "none",
+
+                    animationAmount:
+                      item.animationAmount ??
+                      50,
+
                     trackId: item.trackId,
                     startTime: item.startTime,
                     duration: item.duration,
@@ -68,11 +79,13 @@ export function useLoadTimeline({
                         TIMELINE_DURATION) *
                       100,
 
-                    sourceStart: item.sourceStart ?? 0,
+                    sourceStart:
+                      item.sourceStart ?? 0,
                   },
                 ];
               }
 
+              // TEXT
               if (
                 item.itemType === "TEXT" &&
                 item.textContent
@@ -85,7 +98,8 @@ export function useLoadTimeline({
                     text: item.textContent,
 
                     textStyle:
-                      item.textStyle ?? "title",
+                      item.textStyle ??
+                      "title",
 
                     textX:
                       item.textX ?? 50,
@@ -109,6 +123,15 @@ export function useLoadTimeline({
                       item.textColor ??
                       undefined,
 
+                    // Animation
+                    animationPreset:
+                      item.animationPreset ??
+                      "none",
+
+                    animationAmount:
+                      item.animationAmount ??
+                      50,
+
                     trackId:
                       item.trackId,
 
@@ -128,7 +151,8 @@ export function useLoadTimeline({
                         TIMELINE_DURATION) *
                       100,
 
-                    sourceStart: item.sourceStart ?? 0,
+                    sourceStart:
+                      item.sourceStart ?? 0,
                   },
                 ];
               }

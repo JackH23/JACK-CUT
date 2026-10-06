@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
-import type { TimelineItem } from "@/types/timeline";
+import type {
+  TimelineItem,
+} from "@/types/timeline";
 
 export const SETTINGS_TABS = [
   "Basic",
@@ -35,6 +41,16 @@ type UseSettingsPanelProps = {
     itemId: string,
     textColor: string,
   ) => void;
+
+  onUpdateAnimationPreset: (
+    itemId: string,
+    preset: string,
+  ) => void;
+
+  onUpdateAnimationAmount: (
+    itemId: string,
+    amount: number,
+  ) => void;
 };
 
 export function useSettingsPanel({
@@ -43,14 +59,11 @@ export function useSettingsPanel({
   onUpdateTextFontWeight,
   onUpdateTextFontFamily,
   onUpdateTextColor,
+  onUpdateAnimationPreset,
+  onUpdateAnimationAmount,
 }: UseSettingsPanelProps) {
   const [activeTab, setActiveTab] =
     useState<SettingsTab>("Basic");
-
-  const [
-    animationAmount,
-    setAnimationAmount,
-  ] = useState(50);
 
   const [scale, setScale] =
     useState(105);
@@ -190,9 +203,44 @@ export function useSettingsPanel({
       ],
     );
 
+  const handleAnimationPresetChange =
+    useCallback(
+      (preset: string) => {
+        if (!activeItem) {
+          return;
+        }
+
+        onUpdateAnimationPreset(
+          activeItem.id,
+          preset,
+        );
+      },
+      [
+        activeItem,
+        onUpdateAnimationPreset,
+      ],
+    );
+
+  const handleAnimationAmountChange =
+    useCallback(
+      (amount: number) => {
+        if (!activeItem) {
+          return;
+        }
+
+        onUpdateAnimationAmount(
+          activeItem.id,
+          amount,
+        );
+      },
+      [
+        activeItem,
+        onUpdateAnimationAmount,
+      ],
+    );
+
   return {
     activeTab,
-    animationAmount,
     scale,
     opacity,
     speedMode,
@@ -203,7 +251,6 @@ export function useSettingsPanel({
 
     handleTabChange,
 
-    setAnimationAmount,
     setScale,
     setOpacity,
     setSpeedMode,
@@ -212,5 +259,8 @@ export function useSettingsPanel({
     handleFontWeightChange,
     handleFontFamilyChange,
     handleTextColorChange,
+
+    handleAnimationPresetChange,
+    handleAnimationAmountChange,
   };
 }

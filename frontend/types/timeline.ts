@@ -25,6 +25,10 @@ type TimelineItemFields = {
   fontWeight?: number;
   fontFamily?: string;
   textColor?: string;
+  
+  // Animation
+  animationPreset?: string;
+  animationAmount?: number;
 
   trackId: string;
 
