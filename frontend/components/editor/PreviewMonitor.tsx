@@ -110,6 +110,7 @@ export default function PreviewMonitor({
   const mediaAnimationStyle =
     previewItem?.type === "media"
       ? getClipAnimationStyle({
+        ...previewItem,
         preset:
           previewItem.animationPreset ??
           "none",

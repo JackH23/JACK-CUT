@@ -1,3 +1,4 @@
+import type {MediaAnimationSettings} from "@/lib/mediaAnimation";
 import type { DragEvent, MouseEvent, PointerEvent } from "react";
 import type { TimelineTrack } from "@/types/timeline";
 import type { TimelineItem } from "@/types/timeline";
@@ -41,15 +42,7 @@ export type SettingsPanelProps = {
   ) => void;
 
   // Animation
-  onUpdateAnimationPreset: (
-    itemId: string,
-    preset: string,
-  ) => void;
-
-  onUpdateAnimationAmount: (
-    itemId: string,
-    amount: number,
-  ) => void;
+  onUpdateAnimation: (itemId: string, settings: MediaAnimationSettings) => void;
 };
 
 export type SettingsContentProps = {

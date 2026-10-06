@@ -29,6 +29,12 @@ type TimelineItemFields = {
   // Animation
   animationPreset?: string;
   animationAmount?: number;
+  animationInPreset?: string | null;
+  animationInDuration?: number | null;
+  animationInAmount?: number | null;
+  animationOutPreset?: string | null;
+  animationOutDuration?: number | null;
+  animationOutAmount?: number | null;
 
   trackId: string;
 

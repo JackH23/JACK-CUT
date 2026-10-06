@@ -25,10 +25,10 @@ export function useTimelineSound({
       playheadSeconds - item.startTime + item.sourceStart,
     );
 
-    if (Math.abs(audio.currentTime - sourceTime) > 0.5) {
+    if (Math.abs(audio.currentTime - sourceTime) > (isPlaying ? 0.5 : 0.001)) {
       audio.currentTime = sourceTime;
     }
-  }, [item, playheadSeconds]);
+  }, [item, playheadSeconds, isPlaying]);
 
   useEffect(() => {
     const audio = audioRef.current;

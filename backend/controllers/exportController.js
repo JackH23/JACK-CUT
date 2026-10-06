@@ -198,6 +198,12 @@ async function createExport(req, res) {
         sourceStart:
           Number(item.source_start ?? 0),
 
+        animationInPreset: item.animation_in_preset ?? null,
+        animationInDuration: item.animation_in_duration ?? null,
+        animationInAmount: item.animation_in_amount ?? null,
+        animationOutPreset: item.animation_out_preset ?? null,
+        animationOutDuration: item.animation_out_duration ?? null,
+        animationOutAmount: item.animation_out_amount ?? null,
         animationPreset:
           item.animation_preset ?? "none",
 
@@ -434,18 +440,23 @@ async function createExport(req, res) {
       "[outa]",
       "-t",
       String(totalDuration),
+
       "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
+      "h264_amf",
+      "-quality",
+      "balanced",
       "-pix_fmt",
       "yuv420p",
+
       "-r",
       String(FPS),
+
       "-c:a",
       "aac",
+
       "-movflags",
       "+faststart",
+
       outputPath,
     );
 

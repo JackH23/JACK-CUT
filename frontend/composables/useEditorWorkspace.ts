@@ -28,8 +28,7 @@ export function useEditorWorkspace(
     activeTextItem,
     selectedMediaIds,
 
-    handleUpdateAnimationPreset,
-    handleUpdateAnimationAmount,
+    handleUpdateAnimation,
 
     handleSelectMedia,
     handleAddText,
@@ -108,8 +107,7 @@ export function useEditorWorkspace(
     handleUpdateText,
     handleUpdateTextPosition,
 
-    handleUpdateAnimationPreset,
-    handleUpdateAnimationAmount,
+    handleUpdateAnimation,
 
     // Text styling
     handleUpdateTextFontSize,

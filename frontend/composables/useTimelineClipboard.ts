@@ -64,6 +64,7 @@ export function useTimelineClipboard({ projectId, items, selectedItem, playheadT
         payload = { ...position, itemType: "MEDIA", mediaId: source.file.id };
       }
       const { item: saved } = await timelineService.addItem(payload);
+      if(source.type==='media') await timelineService.updateItem(saved.id, {animationPreset: source.animationPreset ?? 'none', animationAmount: source.animationAmount ?? 50, animationInPreset:source.animationInPreset??undefined,animationInDuration:source.animationInDuration??undefined,animationInAmount:source.animationInAmount??undefined,animationOutPreset:source.animationOutPreset??undefined,animationOutDuration:source.animationOutDuration??undefined,animationOutAmount:source.animationOutAmount??undefined});
       if (!saved.id || saved.id === source.id) throw new Error("The API did not return a new clip ID.");
       const newItem: TimelineItem = {
         ...source, id: saved.id, trackId: saved.track_id,

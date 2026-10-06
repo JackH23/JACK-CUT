@@ -1,3 +1,4 @@
+const {animationFields,getMediaAnimationSettings}=require('../../frontend/lib/mediaAnimation');
 const { Op } = require("sequelize");
 
 const Media = require("../models/Media");
@@ -414,6 +415,12 @@ async function getTimelineItems(req, res) {
           textColor:
             item.text_color ?? null,
 
+          animationInPreset: item.animation_in_preset ?? null,
+          animationInDuration: item.animation_in_duration ?? null,
+          animationInAmount: item.animation_in_amount ?? null,
+          animationOutPreset: item.animation_out_preset ?? null,
+          animationOutDuration: item.animation_out_duration ?? null,
+          animationOutAmount: item.animation_out_amount ?? null,
           animationPreset:
             item.animation_preset ?? "none",
 
@@ -576,7 +583,7 @@ async function updateTimelineItem(
 
     const isAnimationUpdate =
       animationPreset !== undefined ||
-      animationAmount !== undefined;
+      animationAmount !== undefined || animationFields.some(key => req.body[key] !== undefined);
 
     const isTextUpdate =
       textContent !== undefined;
@@ -851,6 +858,31 @@ async function updateTimelineItem(
       }
     }
 
+    const phaseUpdate=animationFields.some(key=>req.body[key]!==undefined);
+    if(phaseUpdate) {
+      if(item.item_type!=='MEDIA') return res.status(400).json({message:'Animation In/Out is only supported for MEDIA items.'});
+      const base=getMediaAnimationSettings({duration:Number(item.duration),animationPreset:item.animation_preset,animationAmount:item.animation_amount,animationInPreset:item.animation_in_preset,animationInDuration:item.animation_in_duration,animationInAmount:item.animation_in_amount,animationOutPreset:item.animation_out_preset,animationOutDuration:item.animation_out_duration,animationOutAmount:item.animation_out_amount});
+      for(const phase of ['In','Out']) {
+        const key='animation'+phase+'Preset';
+        if(req.body[key]!==undefined) {
+          const allowed=phase==='In'?['none','fade-in','zoom-in','slide-left','slide-right']:['none','fade-out','zoom-out','slide-left','slide-right'];
+          if(!allowed.includes(req.body[key]) || !await AnimationOption.findOne({where:{value:req.body[key],is_active:true}})) return res.status(400).json({message:'Invalid '+key+'.'});
+        }
+        for(const part of ['Duration','Amount']) {
+          const field='animation'+phase+part, value=req.body[field];
+          if(value!==undefined && (typeof value!=='number'||!Number.isFinite(value)||value<0||(part==='Amount'&&value>100))) return res.status(400).json({message:field+' must be a finite non-negative number'+(part==='Amount'?' between 0 and 100.':'.')});
+        }
+      }
+      for(const key of animationFields) {
+        const value=req.body[key]??base[key];
+        const column=key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase());
+        updates[column]=key.endsWith('Duration')?Math.min(value,duration??Number(item.duration)):key.endsWith('Amount')?Math.round(value):value;
+      }
+    }
+    // Resizing also clamps saved phase durations; preview clamps immediately while dragging.
+    if(isPositionUpdate) for(const name of ['animation_in_duration','animation_out_duration']) {
+      if(item[name]!=null && updates[name]===undefined) updates[name]=Math.min(Number(item[name]),duration);
+    }
     await item.update(updates);
 
     return res.status(200).json({

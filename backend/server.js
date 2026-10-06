@@ -100,6 +100,13 @@ async function startServer() {
       });
     }
 
+    for (const name of ["animation_in_preset","animation_in_duration","animation_in_amount","animation_out_preset","animation_out_duration","animation_out_amount"]) {
+      if (!columns[name]) try { await queryInterface.addColumn('timeline_items', name, {
+        type: name.endsWith('preset') ? require('sequelize').DataTypes.STRING(100) : name.endsWith('amount') ? require('sequelize').DataTypes.INTEGER : require('sequelize').DataTypes.DOUBLE,
+        allowNull: true,
+      }); } catch(error) { if(error.original?.code !== '42701') throw error; }
+    }
+    // NULL means legacy mode: no destructive rewrite of existing animation trajectories.
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}`);
     });

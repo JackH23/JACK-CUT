@@ -100,6 +100,13 @@ const TimelineItem = sequelize.define(
       defaultValue: 50,
     },
 
+    animation_in_preset: { type: DataTypes.STRING(100), allowNull: true },
+    animation_in_duration: { type: DataTypes.DOUBLE, allowNull: true },
+    animation_in_amount: { type: DataTypes.INTEGER, allowNull: true },
+    animation_out_preset: { type: DataTypes.STRING(100), allowNull: true },
+    animation_out_duration: { type: DataTypes.DOUBLE, allowNull: true },
+    animation_out_amount: { type: DataTypes.INTEGER, allowNull: true },
+
     track_id: {
       type: DataTypes.STRING(100),
       allowNull: false,

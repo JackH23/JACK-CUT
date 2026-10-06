@@ -78,8 +78,8 @@ export function useEditorTimeline(projectId: string) {
   });
 
   const {
-    handleUpdateAnimationPreset,
-    handleUpdateAnimationAmount,
+    handleUpdateAnimation,
+    animationError,
   } = useAnimationEditor({
     timelineItems,
     setTimelineItems,
@@ -210,13 +210,12 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
 
-    handleUpdateAnimationPreset,
-    handleUpdateAnimationAmount,
+    handleUpdateAnimation,
 
     handleRemoveMedia,
 
     addingTimelineItem: state.adding,
-    timelineError: state.error,
+    timelineError: animationError ?? state.error,
     handleRemoveTimelineItem,
   };
 }

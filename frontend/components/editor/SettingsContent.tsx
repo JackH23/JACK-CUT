@@ -1,5 +1,6 @@
 "use client";
 
+import type {MediaAnimationSettings} from "@/lib/mediaAnimation";
 import type {
   TimelineItem,
 } from "@/types/timeline";
@@ -34,13 +35,7 @@ export type SettingsContentProps = {
   ) => void;
 
   // Animation
-  onAnimationPresetChange: (
-    value: string,
-  ) => void;
-
-  onAnimationAmountChange: (
-    value: number,
-  ) => void;
+  onAnimationChange: (settings:MediaAnimationSettings) => void;
 
   // Text
   onFontSizeChange: (
@@ -72,8 +67,7 @@ export default function SettingsContent({
   onOpacityChange,
   onSpeedModeChange,
 
-  onAnimationPresetChange,
-  onAnimationAmountChange,
+  onAnimationChange,
 
   onFontSizeChange,
   onFontWeightChange,
@@ -103,15 +97,10 @@ export default function SettingsContent({
       {/* ANIMATION */}
       {activeTab === "Animation" && (
         <>
-          {activeItem ? (
+          {activeItem?.type === "media" ? (
             <AnimationTab
               item={activeItem}
-              onAnimationPresetChange={
-                onAnimationPresetChange
-              }
-              onAnimationAmountChange={
-                onAnimationAmountChange
-              }
+              onAnimationChange={onAnimationChange}
             />
           ) : (
             <div className="p-4 text-sm text-zinc-500">

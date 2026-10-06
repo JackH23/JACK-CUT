@@ -63,6 +63,12 @@ export type TimelineItemUpdateInput = {
   // Animation
   animationPreset?: string;
   animationAmount?: number;
+  animationInPreset?: string | null;
+  animationInDuration?: number | null;
+  animationInAmount?: number | null;
+  animationOutPreset?: string | null;
+  animationOutDuration?: number | null;
+  animationOutAmount?: number | null;
 };
 
 /* =========================================================
@@ -101,6 +107,12 @@ export type AddTimelineItemResponse = {
     // Animation
     animation_preset: string;
     animation_amount: number;
+    animation_in_preset?: string | null;
+    animation_in_duration?: number | null;
+    animation_in_amount?: number | null;
+    animation_out_preset?: string | null;
+    animation_out_duration?: number | null;
+    animation_out_amount?: number | null;
 
     created_at?: string;
     updated_at?: string;
@@ -133,6 +145,12 @@ export type SavedTimelineItem = {
   // Animation
   animationPreset: string;
   animationAmount: number;
+  animationInPreset?: string | null;
+  animationInDuration?: number | null;
+  animationInAmount?: number | null;
+  animationOutPreset?: string | null;
+  animationOutDuration?: number | null;
+  animationOutAmount?: number | null;
 
   trackId: string;
   startTime: number;

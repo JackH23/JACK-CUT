@@ -75,8 +75,7 @@ function EditorWorkspace({ project }: { project: Project }) {
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
 
-    handleUpdateAnimationPreset,
-    handleUpdateAnimationAmount,
+    handleUpdateAnimation,
 
     handleRemoveTimelineItem,
     handleRemoveMedia,
@@ -198,12 +197,7 @@ function EditorWorkspace({ project }: { project: Project }) {
               onUpdateTextColor={
                 handleUpdateTextColor
               }
-              onUpdateAnimationPreset={
-                handleUpdateAnimationPreset
-              }
-              onUpdateAnimationAmount={
-                handleUpdateAnimationAmount
-              }
+              onUpdateAnimation={handleUpdateAnimation}
             />
           </main>
 

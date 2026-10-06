@@ -1,110 +1,62 @@
-const TRANSITION_DURATION = 1;
+const {
+  getMediaAnimationSettings,
+  getMediaAnimationExpressions,
+} = require('../../frontend/lib/mediaAnimation');
 
-/**
- * Keep a number inside the given range.
- */
-function clamp(
-  value,
-  min = 0,
-  max = 1,
-) {
-  return Math.min(
-    Math.max(value, min),
-    max,
-  );
+function getClipAnimationConfig(clip) {
+  return getMediaAnimationSettings(clip);
 }
 
-/**
- * Convert the saved animation settings
- * into values that FFmpeg can use.
- *
- * animationAmount:
- *   0   -> strength 0
- *   50  -> strength 0.5
- *   100 -> strength 1
- */
-function getClipAnimationConfig(
-  clip,
-) {
-  const preset =
-    clip.animationPreset ?? "none";
-
-  const amount = Number(
-    clip.animationAmount ?? 50,
-  );
-
-  const strength = clamp(
-    amount / 100,
-  );
-
-  const duration = Math.max(
-    0,
-    Number(clip.duration ?? 0),
-  );
-
-  const transitionDuration =
-    Math.min(
-      TRANSITION_DURATION,
-      duration,
-    );
-
-  return {
-    preset,
-    amount,
-    strength,
-    transitionDuration,
-  };
-}
-
-/** Fades, centered zoom and slides evaluated at clip-local time (geq's T).
- * Preserve color and source alpha; amount controls strength, not duration.
- */
 function getClipAnimationFilters(clip) {
-  const { preset, strength, transitionDuration } = getClipAnimationConfig(clip);
-  if (!transitionDuration || strength === 0 ||
-      !["fade-in", "fade-out", "zoom-in", "zoom-out", "slide-left", "slide-right"].includes(preset)) return [];
-  const duration = Number(clip.duration);
-  const localTime = 'clip(T,0,' + duration + ')';
-  if (preset === "slide-left" || preset === "slide-right") {
-    const progress = 'clip(' + localTime + '/' + transitionDuration + ',0,1)';
-    const direction = preset === "slide-left" ? 1 : -1;
-    // CSS translateX percentages refer to the full canvas-sized media element.
-    // Inverse sampling moves the media, leaving uncovered pixels transparent.
-    const offset = 'W*' + (direction * strength) + '*(1-' + progress + ')';
-    const x = 'X-(' + offset + ')';
-    return [
-      "format=yuva444p",
-      "geq=lum='lum(" + x + ",Y)':cb='cb(" + x + ",Y)':cr='cr(" + x + ",Y)':a='if(between(" + x + ",-0.5,W-0.5),alpha(" + x + ",Y),0)':enable='lt(t," + transitionDuration + ")'",
-    ];
+  const settings = getMediaAnimationSettings(clip);
+  const presets = ['In', 'Out'].map(phase => settings['animation' + phase + 'Preset']);
+  const disjoint = settings.animationInDuration + settings.animationOutDuration <= Number(clip.duration);
+  const separateFade = presets.filter(preset => preset.startsWith('fade-')).length === 1 &&
+    presets.some(preset => preset.startsWith('zoom-') || preset.startsWith('slide-'));
+
+  // A fade-only window needs no spatial sampling. Keep overlapping and legacy
+  // effects in one inverse map, so their composition and old trajectories stay exact.
+  if (!settings.legacy && disjoint && separateFade) {
+    const first = getClipAnimationFilters({ ...clip, animationOutPreset: 'none' });
+    const last = getClipAnimationFilters({ ...clip, animationInPreset: 'none' });
+    return [...first, ...(first.length ? last.filter(filter => filter !== 'format=yuva444p') : last)];
   }
-  if (preset === "zoom-in" || preset === "zoom-out") {
-    const progress = 'clip(' + localTime + '/' + transitionDuration + ',0,1)';
-    const direction = preset === "zoom-in" ? '-' : '+';
-    const scale = '(1' + direction + (0.25 * strength) + '*(1-' + progress + '))';
-    // Inverse-map each output pixel about the canvas center. Pixel-center
-    // coordinates preserve the fixed dimensions and CSS transform origin.
-    // 4:4:4 keeps luma, chroma and alpha on the same coordinate grid.
-    const x = '(X-(W-1)/2)/' + scale + '+(W-1)/2';
-    const y = '(Y-(H-1)/2)/' + scale + '+(H-1)/2';
-    const inside = 'between(' + x + ',-0.5,W-0.5)*between(' + y + ',-0.5,H-0.5)';
-    // Once the transition finishes, scale is exactly 1: pass frames through
-    // instead of resampling every pixel for the rest of a long clip.
-    return [
-      "format=yuva444p",
-      "geq=lum='lum(" + x + "," + y + ")':cb='cb(" + x + "," + y + ")':cr='cr(" + x + "," + y + ")':a='if(" + inside + ",alpha(" + x + "," + y + "),0)':enable='lt(t," + transitionDuration + ")'",
-    ];
+
+  const { opacity, scale, offset } = getMediaAnimationExpressions(clip);
+  if (opacity === 1 && scale === 1 && offset === 0) return [];
+  const spatial = scale !== 1 || offset !== 0;
+  const zoom = scale !== 1;
+
+  // GEQ owns independent expression registers for each plane and slice thread.
+  // At X=0, refresh time-only values once per frame and Y once per row. Register
+  // 9 distinguishes an uninitialized cache from the legitimate first frame T=0.
+  // Keep the original arithmetic order and bilinear sampler; do not approximate
+  // a fractional slide position or round changing zoom dimensions.
+  const frameCache = 'if(eq(ld(0),T)*ld(9),0,' +
+    'st(0,T);st(1,' + scale + ');st(2,W*(' + offset + ')/100);' +
+    'st(3,' + opacity + ');st(6,(W-1)/2);st(7,(H-1)/2);st(9,1))';
+  const rowCache = 'if(eq(X,0),' + frameCache +
+    (zoom ? ';st(5,(Y-ld(7))/ld(1)+ld(7))' : '') + ',0);';
+  const sx = spatial ? '(X-ld(6)-ld(2))' + (zoom ? '/ld(1)' : '') + '+ld(6)' : 'X';
+  const sy = zoom ? 'ld(5)' : 'Y';
+  const color = plane => spatial ? rowCache + plane + '(' + sx + ',' + sy + ')' : plane + '(X,Y)';
+  const alpha = 'alpha(' + (spatial ? 'ld(4)' : 'X') + ',' + sy + ')' +
+    (opacity !== 1 ? '*ld(3)' : '');
+  const alphaExpression = rowCache + (spatial ?
+    'st(4,' + sx + ');if(between(ld(4),-0.5,W-0.5)' +
+    (zoom ? '*between(ld(5),-0.5,H-0.5)' : '') + ',' + alpha + ',0)' : alpha);
+
+  const windows = [];
+  for (const phase of ['In', 'Out']) {
+    const preset = settings['animation' + phase + 'Preset'];
+    const duration = settings['animation' + phase + 'Duration'];
+    if (preset === 'none' || !duration || !settings['animation' + phase + 'Amount']) continue;
+    windows.push(phase === 'In' || (settings.legacy && preset === 'zoom-out') ?
+      'lt(t,' + duration + ')' : 'gte(t,' + (Number(clip.duration) - duration) + ')');
   }
-  const progress = preset === "fade-in"
-    ? 'clip(' + localTime + '/' + transitionDuration + ',0,1)'
-    : 'clip((' + duration + '-' + localTime + ')/' + transitionDuration + ',0,1)';
-  const opacity = '1-' + strength + '*(1-' + progress + ')';
-  return [
-    "format=yuva444p",
-    "geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*(" + opacity + ")'",
-  ];
+  return ['format=yuva444p',
+    "geq=lum='" + color('lum') + "':cb='" + color('cb') + "':cr='" + color('cr') +
+    "':a='" + alphaExpression + "':enable='" + windows.join('+') + "'"];
 }
 
-module.exports = {
-  getClipAnimationConfig,
-  getClipAnimationFilters,
-};
+module.exports = { getClipAnimationConfig, getClipAnimationFilters };

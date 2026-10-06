@@ -29,8 +29,7 @@ export default function SettingsPanel({
   onUpdateTextColor,
 
   // Animation
-  onUpdateAnimationPreset,
-  onUpdateAnimationAmount,
+  onUpdateAnimation,
 }: SettingsPanelProps) {
   const {
     activeTab,
@@ -53,8 +52,7 @@ export default function SettingsPanel({
     handleTextColorChange,
 
     // Animation
-    handleAnimationPresetChange,
-    handleAnimationAmountChange,
+    handleAnimationChange,
   } = useSettingsPanel({
     activeItem,
 
@@ -64,8 +62,7 @@ export default function SettingsPanel({
     onUpdateTextColor,
 
     // Animation
-    onUpdateAnimationPreset,
-    onUpdateAnimationAmount,
+    onUpdateAnimation,
   });
 
   return (
@@ -145,12 +142,7 @@ export default function SettingsPanel({
           setSpeedMode
         }
 
-        onAnimationPresetChange={
-          handleAnimationPresetChange
-        }
-        onAnimationAmountChange={
-          handleAnimationAmountChange
-        }
+        onAnimationChange={handleAnimationChange}
 
         onFontSizeChange={
           handleFontSizeChange

@@ -1,4 +1,5 @@
 "use client";
+import type {MediaAnimationSettings} from "@/lib/mediaAnimation";
 
 import {
   useCallback,
@@ -42,15 +43,7 @@ type UseSettingsPanelProps = {
     textColor: string,
   ) => void;
 
-  onUpdateAnimationPreset: (
-    itemId: string,
-    preset: string,
-  ) => void;
-
-  onUpdateAnimationAmount: (
-    itemId: string,
-    amount: number,
-  ) => void;
+  onUpdateAnimation: (itemId: string, settings: MediaAnimationSettings) => void;
 };
 
 export function useSettingsPanel({
@@ -59,8 +52,7 @@ export function useSettingsPanel({
   onUpdateTextFontWeight,
   onUpdateTextFontFamily,
   onUpdateTextColor,
-  onUpdateAnimationPreset,
-  onUpdateAnimationAmount,
+  onUpdateAnimation,
 }: UseSettingsPanelProps) {
   const [activeTab, setActiveTab] =
     useState<SettingsTab>("Basic");
@@ -203,41 +195,9 @@ export function useSettingsPanel({
       ],
     );
 
-  const handleAnimationPresetChange =
-    useCallback(
-      (preset: string) => {
-        if (!activeItem) {
-          return;
-        }
-
-        onUpdateAnimationPreset(
-          activeItem.id,
-          preset,
-        );
-      },
-      [
-        activeItem,
-        onUpdateAnimationPreset,
-      ],
-    );
-
-  const handleAnimationAmountChange =
-    useCallback(
-      (amount: number) => {
-        if (!activeItem) {
-          return;
-        }
-
-        onUpdateAnimationAmount(
-          activeItem.id,
-          amount,
-        );
-      },
-      [
-        activeItem,
-        onUpdateAnimationAmount,
-      ],
-    );
+  const handleAnimationChange=useCallback((settings:MediaAnimationSettings)=>{
+    if(activeItem?.type==='media')onUpdateAnimation(activeItem.id,settings);
+  },[activeItem,onUpdateAnimation]);
 
   return {
     activeTab,
@@ -260,7 +220,6 @@ export function useSettingsPanel({
     handleFontFamilyChange,
     handleTextColorChange,
 
-    handleAnimationPresetChange,
-    handleAnimationAmountChange,
+    handleAnimationChange,
   };
 }

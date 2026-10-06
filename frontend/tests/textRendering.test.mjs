@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { EventEmitter } from "node:events";
 import ts from "typescript";
+import {createRequire} from "node:module";
+const require=createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const layout = JSON.parse(fs.readFileSync(path.join(root, "frontend/lib/textLayout.json"), "utf8"));
 
@@ -37,7 +39,8 @@ function preview(props) {
 async function exportText(items) {
   let ass, args;
   const controller = load("backend/controllers/exportController.js", {
-    "node:fs": { mkdirSync() {}, writeFileSync(_file, value) { ass = value; } },
+    "node:fs": { mkdirSync() {}, renameSync() {}, writeFileSync(file, value) { if(file.endsWith(".ass")) ass = value; } },
+    "../utils/clipAnimationFilter": require("../../backend/utils/clipAnimationFilter"),
     "node:path": path, "node:crypto": { randomUUID: () => "test-export" },
     "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); return child; } },
     sequelize: { Op: { in: Symbol("in") } },

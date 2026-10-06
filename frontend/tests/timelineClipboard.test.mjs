@@ -5,6 +5,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import {createRequire} from "node:module";
+const require=createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "../..");
 
@@ -27,16 +29,19 @@ function fixture() {
   const actions = [];
   const media = { id: mediaId, media_type: "video", duration_seconds: 60, original_name: "clip", file_url: "/clip.mp4", file_size: 100 };
   const controller = load("backend/controllers/timelineController.js", {
+    "../../frontend/lib/mediaAnimation": require("../lib/mediaAnimation"),
+    "../models/AnimationOption": {findOne: async () => ({is_active:true})},
     sequelize: { Op: { in: Symbol("in") } },
     "../models/Project": { findByPk: async id => ({ id }) },
     "../models/Media": { findByPk: async () => media, findAll: async () => [media] },
     "../models/TimelineItem": {
       create: async values => {
         assert.equal(values.id, undefined, "client must not supply an ID");
-        const row = { ...values, id: randomUUID() };
+        const row = { animation_preset:"none", animation_amount:50, ...values, id: randomUUID(), async update(values) {Object.assign(this,values);return this;} };
         rows.push(row); return row;
       },
       findAll: async () => rows,
+      findByPk: async id => rows.find(row=>row.id===id),
     },
   }, false);
   const call = async (fn, req) => {
@@ -49,7 +54,7 @@ function fixture() {
   const axios = { post: async (url, body) => {
     requests.push({ url, body });
     return call(controller.addTimelineItem, { body });
-  } };
+  }, patch: async (url,body) => call(controller.updateTimelineItem,{body,params:{id:url.split("/").at(-1)}}) };
   const { timelineService } = load("frontend/services/timelineService.ts", { axios });
   const cells = []; const cleanups = []; const effects = []; let index = 0; const listeners = new Set();
   const react = {
@@ -170,4 +175,12 @@ test("placement allows touching clips, fills a sufficient gap and ignores other 
     assert.equal(f.clipboardModule.findPasteStart([other(0, 5), other(10, 5), other(5, 100, "audio")], f.source, 5), 5);
     assert.equal(f.clipboardModule.findPasteStart([other(4, 3), other(9, 3)], f.source, 5), 12);
   } finally { f.dispose(); }
+});
+
+test('duplicate persists independent media phases through API reload',async()=>{
+ const f=fixture();try {
+  f.media.media_type='image';const source={...f.source,type:'media',file:{id:f.mediaId,type:'image',name:'clip'},animationInPreset:'zoom-in',animationInDuration:1,animationInAmount:50,animationOutPreset:'fade-out',animationOutDuration:1.5,animationOutAmount:100};
+  f.setItems([source]);f.render({selectedItem:source}).handleDuplicate();await f.settle();
+  const {data}=await f.reload();for(const key of ['animationInPreset','animationInDuration','animationInAmount','animationOutPreset','animationOutDuration','animationOutAmount'])assert.equal(data.items[0][key],source[key]);
+ }finally{f.dispose();}
 });

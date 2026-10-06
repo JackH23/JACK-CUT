@@ -109,7 +109,7 @@ export function usePreviewMonitor({
     if (
       Math.abs(
         video.currentTime - sourceTime,
-      ) > 0.35
+      ) > (playback.isPlaying ? 0.35 : 0.001)
     ) {
       video.currentTime = sourceTime;
     }
@@ -117,6 +117,7 @@ export function usePreviewMonitor({
     previewItem,
     previewFile,
     playheadSeconds,
+    playback.isPlaying,
   ]);
 
   useEffect(() => {

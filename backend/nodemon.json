@@ -1,6 +1,7 @@
 {
   "watch": [
-    "."
+    ".",
+    "../frontend/lib/mediaAnimation.js"
   ],
   "ext": "js,mjs,cjs,json",
   "ignore": [
