@@ -8,6 +8,7 @@ const textLayout = require("../../frontend/lib/textLayout.json");
 
 const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
+const { getClipAnimationFilters } = require("../utils/clipAnimationFilter");
 
 const jobs = new Map();
 const ASS_DIR = path.resolve(process.cwd(), "exports", "subtitles");
@@ -15,6 +16,42 @@ const OUTPUT_DIR = path.resolve(process.cwd(), "exports");
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
+
+// Persist only job metadata. A partial MP4 never implies completion.
+function saveExportJob(job) {
+  const filename = path.join(OUTPUT_DIR, job.id + ".job.json");
+  try {
+    fs.writeFileSync(filename + ".tmp", JSON.stringify({
+      id: job.id, status: job.status, error: job.error,
+    }));
+    fs.renameSync(filename + ".tmp", filename);
+  } catch (error) {
+    console.error("Could not persist export job:", job.id, error);
+  }
+}
+
+function findExportJob(id) {
+  if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  if (jobs.has(id)) return jobs.get(id);
+  try {
+    const saved = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, id + ".job.json"), "utf8"));
+    if (saved.id !== id || !["processing", "completed", "failed"].includes(saved.status)) return null;
+    const job = { id, status: saved.status, error: saved.error ?? null, outputPath: path.join(OUTPUT_DIR, id + ".mp4") };
+    if (job.status === "processing") {
+      job.status = "failed";
+      job.error = "Export interrupted by a backend restart. Please export again.";
+      saveExportJob(job);
+    } else if (job.status === "completed" && !fs.existsSync(job.outputPath)) {
+      job.status = "failed";
+      job.error = "The exported video file is missing. Please export again.";
+    }
+    jobs.set(id, job);
+    return job;
+  } catch (error) {
+    if (error.code !== "ENOENT") console.error("Could not read export job:", id, error);
+    return null;
+  }
+}
 
 function getLocalMediaPath(fileUrl) {
   if (typeof fileUrl !== "string" || !fileUrl.startsWith("/uploads/media/")) {
@@ -110,6 +147,11 @@ async function createExport(req, res) {
     const mediaById = new Map(mediaFiles.map((media) => [media.id, media]));
 
     const clips = items.map((item) => {
+      console.log("EXPORT TIMELINE ITEM", {
+        id: item.id, itemType: item.item_type,
+        animationPreset: item.animation_preset,
+        animationAmount: item.animation_amount, sourceStart: item.source_start,
+      });
       if (item.item_type === "TEXT") {
         return {
           itemType: "TEXT",
@@ -143,7 +185,7 @@ async function createExport(req, res) {
         );
       }
 
-      return {
+      const clip = {
         itemType: "MEDIA",
         type: media.media_type,
         filePath: getLocalMediaPath(
@@ -153,6 +195,9 @@ async function createExport(req, res) {
         start: Number(item.start_time),
         duration: Number(item.duration),
 
+        sourceStart:
+          Number(item.source_start ?? 0),
+
         animationPreset:
           item.animation_preset ?? "none",
 
@@ -161,6 +206,8 @@ async function createExport(req, res) {
             ? 50
             : Number(item.animation_amount),
       };
+      console.log("EXPORT CLIP", { id: item.id, ...clip });
+      return clip;
     });
 
     for (const clip of clips) {
@@ -189,6 +236,7 @@ async function createExport(req, res) {
     const outputPath = path.join(OUTPUT_DIR, `${id}.mp4`);
     const job = { id, status: "processing", outputPath, error: null };
     jobs.set(id, job);
+    saveExportJob(job);
 
     const args = [
       "-y",
@@ -216,9 +264,10 @@ async function createExport(req, res) {
           String(clip.duration),
         );
       } else {
+        // Decode through the source offset, then trim both streams below.
         args.push(
           "-t",
-          String(clip.duration),
+          String(clip.sourceStart + clip.duration),
         );
       }
 
@@ -240,12 +289,23 @@ async function createExport(req, res) {
         const prepared = `visual${index}`;
         const composed = `composed${index}`;
 
+        const sourceStart = clip.type === "video" ? clip.sourceStart : 0;
+        const animationFilters = getClipAnimationFilters(clip);
+        console.log("EXPORT ANIMATION FILTERS", { index, preset: clip.animationPreset, amount: clip.animationAmount, filters: animationFilters });
+        const visualFilters = [
+          `trim=start=${sourceStart}:duration=${clip.duration}`,
+          "setpts=PTS-STARTPTS",
+          // Evaluate animation at the output cadence, including looped images.
+          `fps=${FPS}`,
+          `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`,
+          `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2`,
+          "setsar=1",
+          ...animationFilters,
+          // Animate locally before shifting onto the timeline.
+          `setpts=PTS+${clip.start}/TB`,
+        ];
         filters.push(
-          `[${inputIndex}:v]` +
-          `setpts=PTS-STARTPTS+${clip.start}/TB,` +
-          `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,` +
-          `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2,` +
-          `setsar=1[${prepared}]`,
+          `[${inputIndex}:v]${visualFilters.join(",")}[${prepared}]`,
         );
 
         filters.push(
@@ -264,7 +324,7 @@ async function createExport(req, res) {
 
         filters.push(
           `[${inputIndex}:a]` +
-          `atrim=duration=${clip.duration},` +
+          `atrim=start=${clip.sourceStart}:duration=${clip.duration},` +
           `asetpts=PTS-STARTPTS,` +
           `adelay=${delayMs}|${delayMs}` +
           `[${audioLabel}]`,
@@ -361,9 +421,13 @@ async function createExport(req, res) {
       `atrim=duration=${totalDuration}[outa]`,
     );
 
+    const filterGraph = filters.join(";");
+    console.log("FFMPEG FILTER GRAPH:", filterGraph);
+    console.log("FFMPEG OUTPUT:", { id, outputPath });
+
     args.push(
       "-filter_complex",
-      filters.join(";"),
+      filterGraph,
       "-map",
       `[${currentVideo}]`,
       "-map",
@@ -395,9 +459,11 @@ async function createExport(req, res) {
     process.on("error", (error) => {
       job.status = "failed";
       job.error = error.message;
+      saveExportJob(job);
     });
 
     process.on("close", (code) => {
+      console.log("FFMPEG RESULT:", { id, code, outputPath, stderr });
       if (job.status === "failed") return;
 
       if (code === 0) {
@@ -406,6 +472,7 @@ async function createExport(req, res) {
         job.status = "failed";
         job.error = stderr || `FFmpeg exited with code ${code}.`;
       }
+      saveExportJob(job);
     });
 
     return res.status(202).json({
@@ -420,7 +487,7 @@ async function createExport(req, res) {
 }
 
 function getExport(req, res) {
-  const job = jobs.get(req.params.id);
+  const job = findExportJob(req.params.id);
   if (!job) return res.status(404).json({ message: "Export not found." });
 
   return res.json({
@@ -433,7 +500,7 @@ function getExport(req, res) {
 }
 
 function downloadExport(req, res) {
-  const job = jobs.get(req.params.id);
+  const job = findExportJob(req.params.id);
 
   if (!job) return res.status(404).json({ message: "Export not found." });
   if (job.status !== "completed") {

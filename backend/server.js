@@ -52,7 +52,14 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/timeline/tracks", timelineTrackRoutes);
 app.use("/api/timeline", timelineRoutes);
-app.use("/api/exports", exportRoutes);
+app.use("/api/exports", (req, res, next) => {
+  const started = Date.now();
+  res.on("finish", () => console.log("EXPORT HTTP:", {
+    method: req.method, path: req.originalUrl, status: res.statusCode,
+    elapsedMs: Date.now() - started,
+  }));
+  next();
+}, exportRoutes);
 app.use(
   "/api/font-options",
   fontOptionRoutes,
