@@ -14,6 +14,11 @@ export function useEditorWorkspace(
   projectId: string,
 ) {
   const {
+    selectedItemId,
+    selectedTimelineItem,
+    handleSelectTimelineItem,
+    handleDuplicate,
+    isDuplicating,
     timelineItems,
     setTimelineItems,
     playheadTime,
@@ -81,6 +86,11 @@ export function useEditorWorkspace(
     }, []);
 
   return {
+    selectedItemId,
+    selectedTimelineItem,
+    handleSelectTimelineItem,
+    handleDuplicate,
+    isDuplicating,
     timelineItems,
     setTimelineItems,
     playheadTime,

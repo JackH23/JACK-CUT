@@ -7,6 +7,8 @@ import TimelineContent from "./timeline/TimelineContent";
 import TimelineToolbar from "./timeline/TimelineToolbar";
 
 type TimelineProps = {
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
   items: TimelineItem[];
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
@@ -17,6 +19,8 @@ type TimelineProps = {
 };
 
 export default function Timeline({
+  selectedItemId,
+  onSelectItem,
   items,
   onItemsChange,
   onRemoveItem,
@@ -29,6 +33,8 @@ export default function Timeline({
     <section className="flex h-[320px] shrink-0 flex-col border-t border-white/10 bg-[#0c0d12] text-white">
       <TimelineToolbar />
         <TimelineContent
+          selectedItemId={selectedItemId}
+          onSelectItem={onSelectItem}
           items={items}
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}

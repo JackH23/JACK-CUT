@@ -1,0 +1,24 @@
+{
+  "referenceWidth": 640,
+  "referenceHeight": 360,
+  "fontFamily": "Arial",
+  "textColor": "#ffffff",
+  "presets": {
+    "heading": {
+      "fontSize": 48,
+      "fontWeight": 700
+    },
+    "title": {
+      "fontSize": 36,
+      "fontWeight": 700
+    },
+    "subtitle": {
+      "fontSize": 30,
+      "fontWeight": 600
+    },
+    "caption": {
+      "fontSize": 20,
+      "fontWeight": 500
+    }
+  }
+}

@@ -103,6 +103,12 @@ const TimelineItem = sequelize.define(
       defaultValue: 0,
     },
 
+    source_start: {
+      type: DataTypes.DOUBLE,
+      allowNull: false,
+      defaultValue: 0,
+    },
+
     duration: {
       type: DataTypes.DOUBLE,
       allowNull: false,

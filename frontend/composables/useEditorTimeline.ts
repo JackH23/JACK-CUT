@@ -13,6 +13,7 @@ import type { TimelineItem } from "@/types/timeline";
 
 import { useTimeline } from "@/composables/useTimeline";
 import { useAddText } from "@/composables/useAddText";
+import { useTimelineClipboard } from "@/composables/useTimelineClipboard";
 import { useAddMedia } from "@/composables/useAddMedia";
 import { useTextEditor } from "@/composables/useTextEditor";
 import { useLoadTimeline } from "@/composables/useLoadTimeline";
@@ -31,6 +32,12 @@ export function useEditorTimeline(projectId: string) {
   const { tracks } = useTimeline();
 
   const timelineItems = state.items;
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const selectedTimelineItem = timelineItems.find(item => item.id === selectedItemId) ?? null;
+  const { handleDuplicate, isDuplicating } = useTimelineClipboard({
+    projectId, items: timelineItems, selectedItem: selectedTimelineItem,
+    playheadTime, onSelectItem: setSelectedItemId, dispatch,
+  });
 
   useLoadTimeline({
     projectId,
@@ -169,6 +176,11 @@ export function useEditorTimeline(projectId: string) {
   );
 
   return {
+    selectedItemId,
+    selectedTimelineItem,
+    handleSelectTimelineItem: setSelectedItemId,
+    handleDuplicate,
+    isDuplicating,
     timelineItems,
     setTimelineItems,
     playheadTime,

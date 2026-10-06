@@ -53,6 +53,7 @@ export function useTimelineResize({
                 startTime: number;
                 duration: number;
                 trackId: string;
+                sourceStart?: number;
             }
         >(),
     );
@@ -232,6 +233,7 @@ export function useTimelineResize({
                 startTime: number;
                 duration: number;
                 trackId: string;
+                sourceStart?: number;
             }
         >();
 
@@ -239,6 +241,7 @@ export function useTimelineResize({
             startTime: nextStart,
             duration: nextDuration,
             trackId: resizedItem.trackId,
+            sourceStart: nextSourceStart,
         });
 
         for (const other of state.trackItems) {

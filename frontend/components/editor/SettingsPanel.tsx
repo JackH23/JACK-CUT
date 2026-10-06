@@ -18,6 +18,8 @@ import { useSettingsPanel } from "@/composables/useSettingsPanel";
 
 export default function SettingsPanel({
   activeItem,
+  onDuplicate,
+  canDuplicate = false,
   onUpdateTextFontSize,
   onUpdateTextFontWeight,
   onUpdateTextFontFamily,
@@ -151,7 +153,9 @@ export default function SettingsPanel({
         <footer className="grid grid-cols-[1fr_84px] gap-1 border-t border-white/10 p-2">
           <button
             type="button"
-            className="flex items-center justify-center gap-2 rounded bg-[#24262e] py-2 text-xs font-semibold hover:bg-[#30323c]"
+            onClick={onDuplicate}
+            disabled={!canDuplicate}
+            className="flex items-center justify-center gap-2 rounded bg-[#24262e] py-2 text-xs font-semibold hover:bg-[#30323c] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Copy size={15} />
             Duplicate

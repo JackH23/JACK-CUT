@@ -8,6 +8,8 @@ import TimelineClip from "./TimelineClip";
 import type { TimelineTracksProps } from "@/lib/types";
 
 export default function TimelineTracks({
+  selectedItemId,
+  onSelectItem,
   items,
   tracks,
   onTrackDragOver,
@@ -45,6 +47,8 @@ export default function TimelineTracks({
               <TimelineClip
                 key={item.id}
                 item={item}
+                selected={selectedItemId === item.id}
+                onSelectItem={onSelectItem}
                 onEditText={setEditingItem}
                 onClipDragStart={onClipDragStart}
                 onClipDragEnd={onClipDragEnd}

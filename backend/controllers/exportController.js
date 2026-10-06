@@ -3,6 +3,8 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const { Op } = require("sequelize");
+// Shared design units with the responsive editor; no preview pixels are persisted.
+const textLayout = require("../../frontend/lib/textLayout.json");
 
 const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
@@ -49,18 +51,18 @@ function escapeAssText(text) {
     .replace(/}/g, "\\}");
 }
 
-function getAssStyle(textStyle) {
-  switch (textStyle) {
-    case "heading":
-      return "Heading";
-    case "subtitle":
-      return "Subtitle";
-    case "caption":
-      return "Caption";
-    case "title":
-    default:
-      return "Title";
-  }
+function getAssColor(color) {
+  const hex = /^#[0-9a-f]{6}$/i.test(color) ? color.slice(1) : textLayout.textColor.slice(1);
+  return `&H00${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`.toUpperCase();
+}
+
+function getTextStyle(clip, index) {
+  const defaults = textLayout.presets[clip.textStyle] ?? textLayout.presets.subtitle;
+  const fontSize = (clip.fontSize ?? defaults.fontSize) * WIDTH / textLayout.referenceWidth;
+  const fontWeight = clip.fontWeight ?? defaults.fontWeight;
+  const fontFamily = String(clip.fontFamily ?? textLayout.fontFamily).split(",")[0].replace(/[\r\n]/g, " ").trim() || textLayout.fontFamily;
+  // Each clip uses its saved font settings. No export-only preset size or outline.
+  return `Style: Text${index},${fontFamily},${fontSize},${getAssColor(clip.textColor)},&H000000FF,&H00000000,&H80000000,${fontWeight >= 600 ? -1 : 0},0,0,0,100,100,0,0,1,0,1,5,0,0,0,1`;
 }
 
 async function createExport(req, res) {
@@ -113,6 +115,10 @@ async function createExport(req, res) {
           itemType: "TEXT",
           text: item.text_content,
           textStyle: item.text_style,
+          fontSize: item.font_size == null ? null : Number(item.font_size),
+          fontWeight: item.font_weight == null ? null : Number(item.font_weight),
+          fontFamily: item.font_family,
+          textColor: item.text_color,
 
           textX:
             item.text_x == null
@@ -266,16 +272,16 @@ async function createExport(req, res) {
     if (textClips.length > 0) {
       assPath = path.join(ASS_DIR, `${id}.ass`);
 
+      const styles = textClips.map(getTextStyle).join("\n");
       const events = textClips
-        .map((clip) => {
+        .map((clip, index) => {
           const start = formatAssTime(clip.start);
           const end = formatAssTime(
             clip.start + clip.duration,
           );
 
-          const style = getAssStyle(
-            clip.textStyle,
-          );
+          const style = `Text${index}`;
+          const fontWeight = clip.fontWeight ?? (textLayout.presets[clip.textStyle] ?? textLayout.presets.subtitle).fontWeight;
 
           const text = escapeAssText(
             clip.text,
@@ -294,7 +300,7 @@ async function createExport(req, res) {
           // ASS \pos() positions the text using
           // the style's alignment anchor.
           const positionedText =
-            `{\\an5\\pos(${x},${y})}${text}`;
+            `{\\an5\\q2\\b${fontWeight}\\pos(${x},${y})}${text}`;
 
           return (
             `Dialogue: 0,${start},${end},` +
@@ -307,14 +313,12 @@ async function createExport(req, res) {
     ScriptType: v4.00+
     PlayResX: ${WIDTH}
     PlayResY: ${HEIGHT}
-    WrapStyle: 0
+    WrapStyle: 2
+    ScaledBorderAndShadow: yes
 
     [V4+ Styles]
     Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-    Style: Heading,Arial,144,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
-    Style: Title,Arial,108,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,60,60,60,1
-    Style: Subtitle,Arial,90,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,80,80,60,1
-    Style: Caption,Arial,60,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,5,80,80,60,1
+    ${styles}
 
     [Events]
     Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

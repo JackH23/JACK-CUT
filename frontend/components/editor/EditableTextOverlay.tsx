@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import textLayout from "@/lib/textLayout.json";
 import type { TextStyle } from "@/types/timeline";
 import { useEditableTextDrag } from "@/composables/useEditableTextDrag";
 import { useEditableTextResize } from "@/composables/useEditableTextResize";
@@ -34,46 +35,6 @@ type EditableTextOverlayProps = {
   ) => void;
 };
 
-const getDefaultFontSize = (
-  textStyle: TextStyle,
-) => {
-  switch (textStyle) {
-    case "heading":
-      return 48;
-
-    case "title":
-      return 36;
-
-    case "subtitle":
-      return 30;
-
-    case "caption":
-      return 20;
-
-    default:
-      return 30;
-  }
-};
-
-const getDefaultFontWeight = (
-  textStyle: TextStyle,
-) => {
-  switch (textStyle) {
-    case "heading":
-    case "title":
-      return 700;
-
-    case "subtitle":
-      return 600;
-
-    case "caption":
-      return 500;
-
-    default:
-      return 600;
-  }
-};
-
 export default function EditableTextOverlay({
   text,
   textStyle = "subtitle",
@@ -83,8 +44,8 @@ export default function EditableTextOverlay({
 
   fontSize,
   fontWeight,
-  fontFamily = "Arial",
-  textColor = "#ffffff",
+  fontFamily = textLayout.fontFamily,
+  textColor = textLayout.textColor,
 
   onTextChange,
   onPositionChange,
@@ -94,8 +55,22 @@ export default function EditableTextOverlay({
   const [selected, setSelected] =
     useState(false);
 
+  const [draftText, setDraftText] = useState(text);
+  const editingSessionRef = useRef(false);
+
   const [editing, setEditing] =
     useState(false);
+
+  const finishEditing = (finalDraft: string) => {
+    if (!editingSessionRef.current) return;
+
+    // Enter/Escape and blur can finish the same edit; commit it only once.
+    editingSessionRef.current = false;
+    if (finalDraft !== text) {
+      onTextChange(finalDraft);
+    }
+    setEditing(false);
+  };
 
   /*
    * Use the saved font size when available.
@@ -103,11 +78,15 @@ export default function EditableTextOverlay({
    */
   const actualFontSize =
     fontSize ??
-    getDefaultFontSize(textStyle);
+    textLayout.presets[textStyle].fontSize;
 
   const actualFontWeight =
     fontWeight ??
-    getDefaultFontWeight(textStyle);
+    textLayout.presets[textStyle].fontWeight;
+
+  // The @container in VideoCanvas is the reference for cqw units.
+  // Saved font sizes are reference-canvas units, never screen pixels.
+  const previewFontSize = `${actualFontSize / textLayout.referenceWidth * 100}cqw`;
 
   /*
    * Moving text
@@ -172,6 +151,8 @@ export default function EditableTextOverlay({
       onDoubleClick={(event) => {
         event.stopPropagation();
 
+        editingSessionRef.current = true;
+        setDraftText(text);
         setEditing(true);
         setSelected(true);
 
@@ -184,9 +165,9 @@ export default function EditableTextOverlay({
       {editing ? (
         <input
           autoFocus
-          value={text}
+          value={draftText}
           style={{
-            fontSize: `${actualFontSize}px`,
+            fontSize: previewFontSize,
             fontWeight:
               actualFontWeight,
             fontFamily,
@@ -194,26 +175,21 @@ export default function EditableTextOverlay({
             lineHeight: 1.1,
           }}
           onChange={(event) =>
-            onTextChange(
-              event.target.value,
-            )
+            setDraftText(event.target.value)
           }
-          onBlur={() =>
-            setEditing(false)
-          }
+          onBlur={(event) => finishEditing(event.currentTarget.value)}
           onKeyDown={(event) => {
-            if (
-              event.key === "Enter"
-            ) {
-              setEditing(false);
-            }
+            event.stopPropagation();
 
             if (
-              event.key === "Escape"
+              !event.nativeEvent.isComposing &&
+              (event.key === "Enter" || event.key === "Escape")
             ) {
-              setEditing(false);
+              event.preventDefault();
+              finishEditing(event.currentTarget.value);
             }
           }}
+          onKeyUp={(event) => event.stopPropagation()}
           className="
             min-w-32
             bg-black/60
@@ -229,7 +205,7 @@ export default function EditableTextOverlay({
       ) : (
         <div
           style={{
-            fontSize: `${actualFontSize}px`,
+            fontSize: previewFontSize,
             fontWeight:
               actualFontWeight,
             fontFamily,

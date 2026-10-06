@@ -12,6 +12,7 @@ export type AddMediaTimelineItemInput = {
   trackId: string;
   startTime: number;
   duration: number;
+  sourceStart?: number;
 };
 
 export type AddTextTimelineItemInput = {
@@ -19,6 +20,8 @@ export type AddTextTimelineItemInput = {
   itemType: "TEXT";
   textContent: string;
   textStyle: TextStyle;
+  textX?: number;
+  textY?: number;
 
   // Text style
   fontSize?: number;
@@ -29,6 +32,7 @@ export type AddTextTimelineItemInput = {
   trackId: string;
   startTime: number;
   duration: number;
+  sourceStart?: number;
 };
 
 export type AddTimelineItemInput =
@@ -42,6 +46,7 @@ export type AddTimelineItemInput =
 export type TimelineItemUpdateInput = {
   startTime?: number;
   duration?: number;
+  sourceStart?: number;
   trackId?: string;
   textContent?: string;
 
@@ -87,6 +92,7 @@ export type AddTimelineItemResponse = {
     track_id: string;
     start_time: number;
     duration: number;
+    source_start?: number;
 
     created_at?: string;
     updated_at?: string;
@@ -121,6 +127,7 @@ export type SavedTimelineItem = {
   trackId: string;
   startTime: number;
   duration: number;
+  sourceStart?: number;
 
   media: MediaFile | null;
 };
@@ -168,4 +175,5 @@ export type RemoveTimelineItemResponse = {
 
 export type GetTimelineDurationResponse = {
   duration: number;
+  sourceStart?: number;
 };

@@ -1,3 +1,5 @@
+import type { DragEvent, MouseEvent, PointerEvent } from "react";
+import type { TimelineTrack } from "@/types/timeline";
 import type { TimelineItem } from "@/types/timeline";
 
 export const SETTINGS_TABS = [
@@ -15,6 +17,8 @@ export type SpeedMode =
 
 export type SettingsPanelProps = {
   activeItem: TimelineItem | null;
+  onDuplicate?: () => void;
+  canDuplicate?: boolean;
 
   onUpdateTextFontSize: (
     itemId: string,
@@ -81,3 +85,22 @@ export type SettingsContentProps = {
 
 export type UseSettingsPanelProps =
   SettingsPanelProps;
+export type ResizeEdge = "left" | "right";
+
+export type TimelineTracksProps = {
+  items: TimelineItem[];
+  tracks: TimelineTrack[];
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
+  onUpdateText: (id: string, text: string) => void;
+  onTrackDragOver: (event: DragEvent<HTMLDivElement>, track: TimelineTrack) => void;
+  onTrackDrop: (event: DragEvent<HTMLDivElement>, track: TimelineTrack) => void;
+  onClipDragStart: (event: DragEvent<HTMLDivElement>, id: string) => void;
+  onClipDragEnd: () => void;
+  onResizeStart: (event: PointerEvent<HTMLButtonElement>, item: TimelineItem, edge: ResizeEdge) => void;
+  onResizeMove: (event: PointerEvent<HTMLButtonElement>) => void;
+  onResizeEnd: (event: PointerEvent<HTMLButtonElement>) => void;
+  onRemovePointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
+  onRemoveDragStart: (event: DragEvent<HTMLButtonElement>) => void;
+  onRemoveClick: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+};

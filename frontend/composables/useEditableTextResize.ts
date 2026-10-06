@@ -7,6 +7,8 @@ import {
   type SetStateAction,
 } from "react";
 
+import textLayout from "@/lib/textLayout.json";
+
 type UseEditableTextResizeOptions = {
   fontSize: number;
 
@@ -28,6 +30,7 @@ export function useEditableTextResize({
     startX: number;
     startY: number;
     startFontSize: number;
+    previewScale: number;
   } | null>(null);
 
   const handleResizePointerDown = (
@@ -46,6 +49,11 @@ export function useEditableTextResize({
       startX: event.clientX,
       startY: event.clientY,
       startFontSize: fontSize,
+      previewScale: Math.max(
+        1,
+        event.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width
+          ?? textLayout.referenceWidth,
+      ) / textLayout.referenceWidth,
     };
   };
 
@@ -76,7 +84,7 @@ export function useEditableTextResize({
         200,
         resizeRef.current
           .startFontSize +
-          delta * 0.25,
+          delta / resizeRef.current.previewScale * 0.25,
       ),
     );
 

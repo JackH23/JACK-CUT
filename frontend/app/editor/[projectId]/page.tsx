@@ -52,6 +52,11 @@ export default function EditorPage({ params }: EditorPageProps) {
 
 function EditorWorkspace({ project }: { project: Project }) {
   const {
+    selectedItemId,
+    selectedTimelineItem,
+    handleSelectTimelineItem,
+    handleDuplicate,
+    isDuplicating,
     timelineItems,
     setTimelineItems,
     playheadTime,
@@ -168,7 +173,9 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <SettingsPanel
-              activeItem={activeTextItem}
+              activeItem={selectedTimelineItem ?? activeTextItem}
+              onDuplicate={handleDuplicate}
+              canDuplicate={selectedTimelineItem !== null && !isDuplicating}
               onUpdateTextFontSize={handleUpdateTextFontSize}
               onUpdateTextFontWeight={handleUpdateTextFontWeight}
               onUpdateTextFontFamily={handleUpdateTextFontFamily}
@@ -186,6 +193,8 @@ function EditorWorkspace({ project }: { project: Project }) {
           )}
 
           <Timeline
+            selectedItemId={selectedItemId}
+            onSelectItem={handleSelectTimelineItem}
             items={timelineItems}
             onItemsChange={setTimelineItems}
             onRemoveItem={handleRemoveTimelineItem}

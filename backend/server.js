@@ -70,6 +70,16 @@ async function startServer() {
   try {
     await sequelize.authenticate();
     await sequelize.sync();
+    // Additive migration for existing databases; never alter or reset other columns.
+    const queryInterface = sequelize.getQueryInterface();
+    const columns = await queryInterface.describeTable("timeline_items");
+    if (!columns.source_start) {
+      await queryInterface.addColumn("timeline_items", "source_start", {
+        type: require("sequelize").DataTypes.DOUBLE,
+        allowNull: false,
+        defaultValue: 0,
+      });
+    }
 
     app.listen(PORT, () => {
       console.log(`Server is running on http://localhost:${PORT}`);

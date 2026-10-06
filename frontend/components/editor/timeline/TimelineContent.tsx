@@ -9,6 +9,8 @@ import TrackHeader from "./track/TrackHeader";
 import { useTimeline } from "@/composables/useTimeline";
 
 type TimelineContentProps = {
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
   items: TimelineItem[];
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
@@ -19,6 +21,8 @@ type TimelineContentProps = {
 };
 
 export default function TimelineContent({
+  selectedItemId,
+  onSelectItem,
   items,
   onItemsChange,
   onRemoveItem,
@@ -62,6 +66,8 @@ export default function TimelineContent({
 
         {/* Scrollable tracks */}
         <ScrollableTracks
+          selectedItemId={selectedItemId}
+          onSelectItem={onSelectItem}
           isPlaying={isPlaying}
           items={items}
           tracks={tracks}

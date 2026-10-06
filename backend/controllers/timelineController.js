@@ -50,7 +50,7 @@ function isUuid(value) {
   );
 }
 
-function checkMediaDuration(media, duration) {
+function checkMediaDuration(media, duration, sourceStart = 0) {
   if (media.media_type === "image") {
     return null;
   }
@@ -72,7 +72,7 @@ function checkMediaDuration(media, duration) {
     };
   }
 
-  if (duration > maximumDuration + 0.01) {
+  if (sourceStart + duration > maximumDuration + 0.01) {
     return {
       status: 400,
       body: {
@@ -112,6 +112,14 @@ async function addTimelineItem(req, res) {
       startTime,
       duration,
 
+      sourceStart = 0,
+      textX = 50,
+      textY = 50,
+      fontSize,
+      fontWeight,
+      fontFamily,
+      textColor,
+
       // New text fields
       itemType = "MEDIA",
       textContent,
@@ -138,6 +146,10 @@ async function addTimelineItem(req, res) {
         message:
           "Valid projectId, itemType, trackId, startTime, and duration are required.",
       });
+    }
+
+    if (typeof sourceStart !== "number" || !Number.isFinite(sourceStart) || sourceStart < 0) {
+      return res.status(400).json({ message: "sourceStart must be a non-negative number." });
     }
 
     const project = await Project.findByPk(
@@ -172,7 +184,7 @@ async function addTimelineItem(req, res) {
       }
 
       const durationError =
-        checkMediaDuration(media, duration);
+        checkMediaDuration(media, duration, sourceStart);
 
       if (durationError) {
         return res
@@ -190,6 +202,7 @@ async function addTimelineItem(req, res) {
 
         track_id: trackId.trim(),
         start_time: startTime,
+        source_start: sourceStart,
         duration,
       });
 
@@ -233,6 +246,16 @@ async function addTimelineItem(req, res) {
       normalizedTextStyle
       ];
 
+    if (
+      ![textX, textY].every(value => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100) ||
+      (fontSize !== undefined && (typeof fontSize !== "number" || !Number.isFinite(fontSize) || fontSize < 8 || fontSize > 200)) ||
+      (fontWeight !== undefined && (typeof fontWeight !== "number" || !Number.isInteger(fontWeight) || fontWeight < 100 || fontWeight > 900)) ||
+      (fontFamily !== undefined && (typeof fontFamily !== "string" || !fontFamily.trim() || fontFamily.length > 100)) ||
+      (textColor !== undefined && (typeof textColor !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(textColor)))
+    ) {
+      return res.status(400).json({ message: "Invalid text position or font styling." });
+    }
+
     const item = await TimelineItem.create({
       project_id: project.id,
 
@@ -243,24 +266,25 @@ async function addTimelineItem(req, res) {
       text_style: normalizedTextStyle,
 
       // Default text position
-      text_x: 50,
-      text_y: 50,
+      text_x: textX,
+      text_y: textY,
 
       // Default text styling
       font_size:
-        textDefaults.fontSize,
+        fontSize ?? textDefaults.fontSize,
 
       font_weight:
-        textDefaults.fontWeight,
+        fontWeight ?? textDefaults.fontWeight,
 
       font_family:
-        textDefaults.fontFamily,
+        fontFamily?.trim() ?? textDefaults.fontFamily,
 
       text_color:
-        textDefaults.textColor,
+        textColor ?? textDefaults.textColor,
 
       track_id: trackId.trim(),
       start_time: startTime,
+      source_start: sourceStart,
       duration,
     });
 
@@ -395,6 +419,7 @@ async function getTimelineItems(req, res) {
           duration: Number(
             item.duration,
           ),
+          sourceStart: Number(item.source_start ?? 0),
 
           media: media
             ? {
@@ -526,6 +551,8 @@ async function updateTimelineItem(
       textX,
       textY,
 
+      sourceStart,
+
       // Text styling
       fontSize,
       fontWeight,
@@ -555,7 +582,8 @@ async function updateTimelineItem(
       !isTextUpdate &&
       !isTextPositionUpdate &&
       !isTextStyleUpdate &&
-      !isPositionUpdate
+      !isPositionUpdate &&
+      sourceStart === undefined
     ) {
       return res.status(400).json({
         message:
@@ -593,7 +621,7 @@ async function updateTimelineItem(
      *
      * TEXT items have no media_id.
      */
-    if (item.item_type === "MEDIA" && isPositionUpdate) {
+    if (item.item_type === "MEDIA" && (isPositionUpdate || sourceStart !== undefined)) {
       const media =
         await Media.findByPk(
           item.media_id,
@@ -609,7 +637,8 @@ async function updateTimelineItem(
       const durationError =
         checkMediaDuration(
           media,
-          duration,
+          duration ?? Number(item.duration),
+          sourceStart ?? Number(item.source_start ?? 0),
         );
 
       if (durationError) {
@@ -620,6 +649,12 @@ async function updateTimelineItem(
     }
 
     const updates = {};
+    if (sourceStart !== undefined) {
+      if (typeof sourceStart !== "number" || !Number.isFinite(sourceStart) || sourceStart < 0) {
+        return res.status(400).json({ message: "sourceStart must be a non-negative number." });
+      }
+      updates.source_start = sourceStart;
+    }
 
     if (isPositionUpdate) {
       updates.start_time = startTime;

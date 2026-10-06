@@ -6,6 +6,8 @@ import { useScrollableTracks } from "@/composables/useScrollableTracks";
 import type { TimelineItem, TimelineTrack } from "@/types/timeline";
 
 type ScrollableTracksProps = {
+  selectedItemId: string | null;
+  onSelectItem: (id: string) => void;
   items: TimelineItem[];
   tracks: TimelineTrack[];
   timelineTimes: string[];
@@ -19,6 +21,8 @@ type ScrollableTracksProps = {
 };
 
 export default function ScrollableTracks({
+  selectedItemId,
+  onSelectItem,
   items,
   tracks,
   timelineTimes,
@@ -89,6 +93,8 @@ export default function ScrollableTracks({
 
         {/* Default and user-created tracks */}
         <TimelineTracks
+          selectedItemId={selectedItemId}
+          onSelectItem={onSelectItem}
           items={positionedItems}
           tracks={tracks}
           onUpdateText={onUpdateText}

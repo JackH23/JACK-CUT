@@ -16,11 +16,15 @@ type TimelineClipProps = Pick<
   | "onRemoveClick"
 > & {
   item: TimelineItem;
+  selected: boolean;
+  onSelectItem: (id: string) => void;
   onEditText: (item: TimelineItem) => void;
 };
 
 export default function TimelineClip({
   item,
+  selected,
+  onSelectItem,
   onEditText,
   onClipDragStart,
   onClipDragEnd,
@@ -50,6 +54,10 @@ export default function TimelineClip({
   return (
     <div
       draggable
+      tabIndex={0}
+      aria-label={clipName}
+      onFocus={() => onSelectItem(item.id)}
+      onPointerDown={() => onSelectItem(item.id)}
       onDragStart={(event) =>
         onClipDragStart(
           event,
@@ -58,11 +66,12 @@ export default function TimelineClip({
       }
 
       onClick={(event) => {
-        if (!isText) return;
-
-        event.preventDefault();
         event.stopPropagation();
-
+        onSelectItem(item.id);
+      }}
+      onDoubleClick={(event) => {
+        if (!isText) return;
+        event.stopPropagation();
         onEditText(item);
       }}
 
@@ -71,7 +80,7 @@ export default function TimelineClip({
         left: `${item.startPosition}%`,
         width: `${item.width}%`,
       }}
-      className={`group absolute inset-y-1 cursor-grab select-none overflow-hidden rounded border active:cursor-grabbing ${clipType === "audio"
+      className={`${selected ? "ring-2 ring-white ring-inset" : ""} group absolute inset-y-1 cursor-grab select-none overflow-hidden rounded border active:cursor-grabbing ${clipType === "audio"
         ? "border-cyan-600 bg-cyan-950"
         : clipType === "text"
           ? "border-amber-500 bg-amber-950"

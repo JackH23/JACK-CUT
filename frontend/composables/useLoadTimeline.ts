@@ -68,7 +68,7 @@ export function useLoadTimeline({
                         TIMELINE_DURATION) *
                       100,
 
-                    sourceStart: 0,
+                    sourceStart: item.sourceStart ?? 0,
                   },
                 ];
               }
@@ -128,7 +128,7 @@ export function useLoadTimeline({
                         TIMELINE_DURATION) *
                       100,
 
-                    sourceStart: 0,
+                    sourceStart: item.sourceStart ?? 0,
                   },
                 ];
               }
