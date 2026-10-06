@@ -2,6 +2,7 @@
 
 import type { TextTimelineItem } from "@/types/timeline";
 import RangeControl from "../RangeControl";
+import SelectableCard from "@/components/shared/SelectableCard";
 
 const fontFamilies = [
   "Arial",
@@ -94,35 +95,15 @@ export default function TextSettings({
               selectedFontFamily === fontFamily;
 
             return (
-              <button
+              <SelectableCard
                 key={fontFamily}
-                type="button"
+                isSelected={isSelected}
                 onClick={() =>
                   onFontFamilyChange(fontFamily)
                 }
-                aria-pressed={isSelected}
-                className={`
-                  flex
-                  min-h-16
-                  flex-col
-                  items-center
-                  justify-center
-                  rounded-md
-                  border
-                  px-2
-                  py-3
-                  transition
-                  ${
-                    isSelected
-                      ? "border-purple-400 bg-purple-500/10 text-purple-300"
-                      : "border-white/10 bg-[#090a0f] text-zinc-300 hover:border-white/30 hover:bg-white/5"
-                  }
-                `}
               >
                 <span
-                  style={{
-                    fontFamily,
-                  }}
+                  style={{ fontFamily }}
                   className="text-lg text-white"
                 >
                   Aa
@@ -131,7 +112,7 @@ export default function TextSettings({
                 <span className="mt-1 text-[10px]">
                   {fontFamily}
                 </span>
-              </button>
+              </SelectableCard>
             );
           })}
         </div>

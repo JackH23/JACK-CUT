@@ -1,8 +1,61 @@
 "use client";
 
-import { Gauge, Layers3 } from "lucide-react";
-import SettingGroup from "../SettingGroup";
+import { useState } from "react";
+import {
+  Ban,
+  Gauge,
+  Layers3,
+  MoveLeft,
+  MoveRight,
+  Search,
+  SearchX,
+  Sparkles,
+} from "lucide-react";
+
 import RangeControl from "../RangeControl";
+import SettingGroup from "../SettingGroup";
+import SelectableCard from "@/components/shared/SelectableCard";
+
+const animationPresets = [
+  {
+    value: "none",
+    label: "None",
+    icon: Ban,
+  },
+  {
+    value: "fade-in",
+    label: "Fade In",
+    icon: Sparkles,
+  },
+  {
+    value: "fade-out",
+    label: "Fade Out",
+    icon: Sparkles,
+  },
+  {
+    value: "zoom-in",
+    label: "Zoom In",
+    icon: Search,
+  },
+  {
+    value: "zoom-out",
+    label: "Zoom Out",
+    icon: SearchX,
+  },
+  {
+    value: "slide-left",
+    label: "Slide Left",
+    icon: MoveLeft,
+  },
+  {
+    value: "slide-right",
+    label: "Slide Right",
+    icon: MoveRight,
+  },
+] as const;
+
+type AnimationPreset =
+  (typeof animationPresets)[number]["value"];
 
 type AnimationTabProps = {
   animationAmount: number;
@@ -13,25 +66,50 @@ export default function AnimationTab({
   animationAmount,
   onAnimationAmountChange,
 }: AnimationTabProps) {
+  const [selectedPreset, setSelectedPreset] =
+    useState<AnimationPreset>("none");
+
   return (
     <>
       <SettingGroup
         title="Clip Animation"
         icon={<Gauge size={16} />}
       >
-        <label className="text-xs text-zinc-300">
+        <p className="text-xs text-zinc-300">
           Animation Preset
-        </label>
+        </p>
 
-        <select className="mt-2 w-full rounded bg-[#090a0f] px-2 py-2 text-xs outline-none">
-          <option>None</option>
-          <option>Fade In</option>
-          <option>Fade Out</option>
-          <option>Zoom In</option>
-          <option>Zoom Out</option>
-          <option>Slide Left</option>
-          <option>Slide Right</option>
-        </select>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {animationPresets.map((preset) => {
+            const Icon = preset.icon;
+
+            return (
+              <SelectableCard
+                key={preset.value}
+                isSelected={
+                  selectedPreset === preset.value
+                }
+                onClick={() =>
+                  setSelectedPreset(preset.value)
+                }
+                ariaLabel={`Select ${preset.label} animation`}
+              >
+                <Icon
+                  size={20}
+                  className={
+                    selectedPreset === preset.value
+                      ? "text-purple-300"
+                      : "text-zinc-300"
+                  }
+                />
+
+                <span className="mt-2 text-xs">
+                  {preset.label}
+                </span>
+              </SelectableCard>
+            );
+          })}
+        </div>
 
         <RangeControl
           label="Animation Amount"
