@@ -1,12 +1,9 @@
 "use client";
 
-import {
-  useRef,
-  useState,
-  type PointerEvent,
-} from "react";
-
+import { useState } from "react";
 import type { TextStyle } from "@/types/timeline";
+import { useEditableTextDrag } from "@/composables/useEditableTextDrag";
+import { useEditableTextResize } from "@/composables/useEditableTextResize";
 
 type EditableTextOverlayProps = {
   text: string;
@@ -36,8 +33,6 @@ type EditableTextOverlayProps = {
     horizontal: boolean,
   ) => void;
 };
-
-const SNAP_THRESHOLD = 2;
 
 const getDefaultFontSize = (
   textStyle: TextStyle,
@@ -117,256 +112,31 @@ export default function EditableTextOverlay({
   /*
    * Moving text
    */
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    originalX: number;
-    originalY: number;
-  } | null>(null);
+  const {
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+  } = useEditableTextDrag({
+    x,
+    y,
+    editing,
+    setSelected,
+    onPositionChange,
+    onSnapGuideChange,
+  });
 
   /*
    * Resizing text
    */
-  const resizeRef = useRef<{
-    startX: number;
-    startY: number;
-    startFontSize: number;
-  } | null>(null);
-
-  /*
-   * Start moving
-   */
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    if (editing) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    setSelected(true);
-
-    event.currentTarget.setPointerCapture(
-      event.pointerId,
-    );
-
-    dragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      originalX: x,
-      originalY: y,
-    };
-  };
-
-  /*
-   * Move text
-   */
-  const handlePointerMove = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    if (!dragRef.current || editing) {
-      return;
-    }
-
-    const parent =
-      event.currentTarget.parentElement;
-
-    if (!parent) return;
-
-    const rect =
-      parent.getBoundingClientRect();
-
-    const deltaX =
-      ((event.clientX -
-        dragRef.current.startX) /
-        rect.width) *
-      100;
-
-    const deltaY =
-      ((event.clientY -
-        dragRef.current.startY) /
-        rect.height) *
-      100;
-
-    let nextX =
-      dragRef.current.originalX +
-      deltaX;
-
-    let nextY =
-      dragRef.current.originalY +
-      deltaY;
-
-    /*
-     * Measure the text box so the entire
-     * text stays inside the preview.
-     */
-    const overlayRect =
-      event.currentTarget.getBoundingClientRect();
-
-    const halfWidthPercent =
-      (overlayRect.width / 2 / rect.width) *
-      100;
-
-    const halfHeightPercent =
-      (overlayRect.height / 2 / rect.height) *
-      100;
-
-    const minX = halfWidthPercent;
-    const maxX =
-      100 - halfWidthPercent;
-
-    const minY = halfHeightPercent;
-    const maxY =
-      100 - halfHeightPercent;
-
-    nextX = Math.max(
-      minX,
-      Math.min(maxX, nextX),
-    );
-
-    nextY = Math.max(
-      minY,
-      Math.min(maxY, nextY),
-    );
-
-    /*
-     * Center snapping
-     */
-    const snapToCenterX =
-      Math.abs(nextX - 50) <=
-      SNAP_THRESHOLD;
-
-    const snapToCenterY =
-      Math.abs(nextY - 50) <=
-      SNAP_THRESHOLD;
-
-    if (snapToCenterX) {
-      nextX = 50;
-    }
-
-    if (snapToCenterY) {
-      nextY = 50;
-    }
-
-    onSnapGuideChange?.(
-      snapToCenterX,
-      snapToCenterY,
-    );
-
-    onPositionChange(
-      nextX,
-      nextY,
-    );
-  };
-
-  /*
-   * Finish moving
-   */
-  const handlePointerUp = (
-    event: PointerEvent<HTMLDivElement>,
-  ) => {
-    dragRef.current = null;
-
-    onSnapGuideChange?.(
-      false,
-      false,
-    );
-
-    if (
-      event.currentTarget.hasPointerCapture(
-        event.pointerId,
-      )
-    ) {
-      event.currentTarget.releasePointerCapture(
-        event.pointerId,
-      );
-    }
-  };
-
-  /*
-   * Start resizing
-   */
-  const handleResizePointerDown = (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    setSelected(true);
-
-    event.currentTarget.setPointerCapture(
-      event.pointerId,
-    );
-
-    resizeRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startFontSize: actualFontSize,
-    };
-  };
-
-  /*
-   * Resize text
-   */
-  const handleResizePointerMove = (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    if (!resizeRef.current) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const deltaX =
-      event.clientX -
-      resizeRef.current.startX;
-
-    const deltaY =
-      event.clientY -
-      resizeRef.current.startY;
-
-    /*
-     * Dragging right/down makes text larger.
-     * Dragging left/up makes text smaller.
-     */
-    const delta =
-      (deltaX + deltaY) / 2;
-
-    const nextFontSize =
-      Math.max(
-        8,
-        Math.min(
-          200,
-          resizeRef.current
-            .startFontSize +
-            delta * 0.25,
-        ),
-      );
-
-    onFontSizeChange(
-      Math.round(nextFontSize),
-    );
-  };
-
-  /*
-   * Finish resizing
-   */
-  const handleResizePointerUp = (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    resizeRef.current = null;
-
-    if (
-      event.currentTarget.hasPointerCapture(
-        event.pointerId,
-      )
-    ) {
-      event.currentTarget.releasePointerCapture(
-        event.pointerId,
-      );
-    }
-  };
+  const {
+    handleResizePointerDown,
+    handleResizePointerMove,
+    handleResizePointerUp,
+  } = useEditableTextResize({
+    fontSize: actualFontSize,
+    setSelected,
+    onFontSizeChange,
+  });
 
   return (
     <div
@@ -382,10 +152,9 @@ export default function EditableTextOverlay({
         touch-none
         cursor-move
         select-none
-        ${
-          selected
-            ? "outline outline-2 outline-purple-400"
-            : ""
+        ${selected
+          ? "outline outline-2 outline-purple-400"
+          : ""
         }
       `}
       onPointerDown={
