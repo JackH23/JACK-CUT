@@ -1,19 +1,13 @@
 "use client";
 
 import type { TextTimelineItem } from "@/types/timeline";
-import RangeControl from "../RangeControl";
+
+import { useTextSettings } from "@/composables/useTextSettings";
+import LoadingState from "@/components/shared/LoadingState";
+import Pagination from "@/components/shared/Pagination";
 import SelectableCard from "@/components/shared/SelectableCard";
 
-const fontFamilies = [
-  "Arial",
-  "Helvetica",
-  "Georgia",
-  "Times New Roman",
-  "Verdana",
-  "Trebuchet MS",
-  "Courier New",
-  "Impact",
-];
+import RangeControl from "../RangeControl";
 
 type TextSettingsProps = {
   item: TextTimelineItem;
@@ -30,30 +24,26 @@ export default function TextSettings({
   onFontFamilyChange,
   onTextColorChange,
 }: TextSettingsProps) {
-  const textStyle = item.textStyle ?? "subtitle";
+  const {
+    fontSize,
+    fontWeight,
+    textColor,
 
-  const defaultFontSize = {
-    heading: 48,
-    title: 36,
-    subtitle: 30,
-    caption: 20,
-  }[textStyle];
+    fonts,
+    page,
+    totalPages,
+    loading,
+    error,
 
-  const defaultFontWeight = {
-    heading: 700,
-    title: 700,
-    subtitle: 600,
-    caption: 500,
-  }[textStyle];
+    isFontSelected,
+    handleFontSelect,
 
-  const fontSize =
-    item.fontSize ?? defaultFontSize;
-
-  const fontWeight =
-    item.fontWeight ?? defaultFontWeight;
-
-  const selectedFontFamily =
-    item.fontFamily ?? "Arial";
+    nextPage,
+    previousPage,
+  } = useTextSettings({
+    item,
+    onFontFamilyChange,
+  });
 
   return (
     <section
@@ -89,33 +79,53 @@ export default function TextSettings({
           Font family
         </p>
 
-        <div className="grid grid-cols-2 gap-2">
-          {fontFamilies.map((fontFamily) => {
-            const isSelected =
-              selectedFontFamily === fontFamily;
-
-            return (
-              <SelectableCard
-                key={fontFamily}
-                isSelected={isSelected}
-                onClick={() =>
-                  onFontFamilyChange(fontFamily)
-                }
-              >
-                <span
-                  style={{ fontFamily }}
-                  className="text-lg text-white"
+        {loading ? (
+          <LoadingState message="Loading fonts..." />
+        ) : error ? (
+          <p className="text-xs text-red-400">
+            {error}
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {fonts.map((font) => (
+                <SelectableCard
+                  key={font.id}
+                  isSelected={isFontSelected(
+                    font.font_family,
+                  )}
+                  onClick={() =>
+                    handleFontSelect(
+                      font.font_family,
+                    )
+                  }
                 >
-                  Aa
-                </span>
+                  <span
+                    style={{
+                      fontFamily:
+                        font.font_family,
+                    }}
+                    className="text-lg text-white"
+                  >
+                    Aa
+                  </span>
 
-                <span className="mt-1 text-[10px]">
-                  {fontFamily}
-                </span>
-              </SelectableCard>
-            );
-          })}
-        </div>
+                  <span className="mt-1 text-[10px]">
+                    {font.name}
+                  </span>
+                </SelectableCard>
+              ))}
+            </div>
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              onPrevious={previousPage}
+              onNext={nextPage}
+              className="mt-3"
+            />
+          </>
+        )}
       </div>
 
       {/* Text color */}
@@ -124,9 +134,11 @@ export default function TextSettings({
 
         <input
           type="color"
-          value={item.textColor ?? "#ffffff"}
+          value={textColor}
           onChange={(event) =>
-            onTextColorChange(event.target.value)
+            onTextColorChange(
+              event.target.value,
+            )
           }
           className="
             h-8

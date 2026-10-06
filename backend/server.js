@@ -35,6 +35,8 @@ const timelineRoutes = require("./routes/timelineRoutes");
 const timelineTrackRoutes = require("./routes/timelineTrackRoutes");
 const exportRoutes = require("./routes/exportRoutes");
 const projectRoutes = require("./routes/projectRoutes");
+const fontOptionRoutes =
+  require("./routes/fontOptionRoutes");
 
 const app = express();
 
@@ -49,6 +51,10 @@ app.use("/api/media", mediaRoutes);
 app.use("/api/timeline/tracks", timelineTrackRoutes);
 app.use("/api/timeline", timelineRoutes);
 app.use("/api/exports", exportRoutes);
+app.use(
+  "/api/font-options",
+  fontOptionRoutes,
+);
 
 app.get("/", (req, res) => {
   res.json({ message: "JackCut backend is running" });
