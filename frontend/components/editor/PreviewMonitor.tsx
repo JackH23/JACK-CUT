@@ -14,6 +14,9 @@ import EditableTextOverlay from "./EditableTextOverlay";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
 import PlaybackControls from "./PlaybackControls";
+import {
+  getClipAnimationStyle,
+} from "@/lib/clipAnimation";
 
 type PreviewMonitorProps = {
   file: MediaFile | null;
@@ -54,16 +57,21 @@ export default function PreviewMonitor({
   onUpdateTextPosition,
   onUpdateTextFontSize,
 }: PreviewMonitorProps) {
+
   const {
     videoRef,
     previewFile,
+    previewItem,
+
     isPlaying,
     isMuted,
     currentTime,
     totalTime,
     playheadSeconds,
+
     activeSoundItems,
     activeTextItems,
+
     handleVideoLoadedMetadata,
     handlePlayPause,
     handleMuteToggle,
@@ -99,6 +107,24 @@ export default function PreviewMonitor({
     onPlayingChange(isPlaying);
   }, [isPlaying, onPlayingChange]);
 
+  const mediaAnimationStyle =
+    previewItem?.type === "media"
+      ? getClipAnimationStyle({
+        preset:
+          previewItem.animationPreset ??
+          "none",
+        amount:
+          previewItem.animationAmount ??
+          50,
+        playheadTime:
+          playheadSeconds,
+        startTime:
+          previewItem.startTime,
+        duration:
+          previewItem.duration,
+      })
+      : {};
+
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
       <PreviewHeader
@@ -124,6 +150,7 @@ export default function PreviewMonitor({
           <img
             src={previewFile.url}
             alt={previewFile.name}
+            style={mediaAnimationStyle}
             className="h-full w-full object-contain"
           />
         )}
@@ -138,6 +165,7 @@ export default function PreviewMonitor({
             onLoadedMetadata={
               handleVideoLoadedMetadata
             }
+            style={mediaAnimationStyle}
             className="h-full w-full object-contain"
           />
         )}

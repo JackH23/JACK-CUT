@@ -146,9 +146,20 @@ async function createExport(req, res) {
       return {
         itemType: "MEDIA",
         type: media.media_type,
-        filePath: getLocalMediaPath(media.file_url),
+        filePath: getLocalMediaPath(
+          media.file_url,
+        ),
+
         start: Number(item.start_time),
         duration: Number(item.duration),
+
+        animationPreset:
+          item.animation_preset ?? "none",
+
+        animationAmount:
+          item.animation_amount == null
+            ? 50
+            : Number(item.animation_amount),
       };
     });
 
