@@ -3,6 +3,7 @@ import type { TimelineItem } from "@/types/timeline";
 import type { TimelineTracksProps } from "@/lib/types";
 import ClipResizeHandle from "./ClipResizeHandle";
 import ClipMediaPreview from "./ClipMediaPreview";
+import TimelineAnimationRegions from "./TimelineAnimationRegions";
 
 type TimelineClipProps = Pick<
   TimelineTracksProps,
@@ -132,6 +133,7 @@ export default function TimelineClip({
       </button>
 
       <ClipMediaPreview item={item} />
+      <TimelineAnimationRegions item={item} />
 
       {/* Media filename */}
       {!isText && (
