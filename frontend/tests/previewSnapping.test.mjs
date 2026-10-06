@@ -18,7 +18,7 @@ for(const [name,b,vertical,horizontal,dx,dy] of [
  ["outside threshold",bounds(200,100),[],[],0,0],
  ["nearest edge wins",bounds(325,100,648),[0],[],-1,0],
  ["tie prefers center",bounds(324,100,656),[320],[],-4,0],
-]) test(name,()=>assert.deepEqual(snap(b,canvas,tolerance),{x:dx,y:dy,vertical,horizontal}));
+]) test(name,()=>assert.deepEqual(snap(b,canvas,tolerance),{x:dx,y:dy,bounds:{...b,centerX:b.centerX+dx,centerY:b.centerY+dy},vertical,horizontal}));
 test("8 displayed pixels at either viewport",()=>{
  for(const display of [{width:320,height:180},{width:960,height:540}]) {
   const t=threshold(canvas,display);
@@ -37,4 +37,11 @@ test("resize refuses zero and excessive scales",()=>{
  const result=resize(bounds(300,100,30,60),canvas,tolerance,.1,1,1,bounds(-1,0,0,60));
  assert.ok(result.scale>=.1 && result.scale<=2);
 });
-test("base bounds do not contain animated offset",()=>assert.deepEqual(snap(bounds(320,180),canvas,tolerance),{x:0,y:0,vertical:[320],horizontal:[180]}));
+test("base bounds do not contain animated offset",()=>assert.deepEqual(snap(bounds(320,180),canvas,tolerance),{x:0,y:0,bounds:bounds(320,180),vertical:[320],horizontal:[180]}));
+
+test("exactly threshold snaps and returns matching bounds/guide",()=>{
+ const result=snap(bounds(58,100),canvas,tolerance);assert.equal(result.bounds.centerX-result.bounds.width/2,0);assert.deepEqual(result.vertical,[0]);
+});
+test("side resize does not snap an inactive axis",()=>{
+ const result=resize(bounds(200,180,230,100),canvas,tolerance,1,1,0,bounds(115,0,230,100));assert.deepEqual(result.horizontal,[]);assert.deepEqual(result.vertical,[320]);assert.equal(result.bounds.centerX+result.bounds.width/2,320);
+});

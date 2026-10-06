@@ -38,7 +38,7 @@ export default function VideoCanvas({
 
         }}
       >
-        <div className="@container relative h-full w-full overflow-hidden bg-black shadow-2xl">
+        <div data-preview-video-canvas className="@container relative h-full w-full overflow-hidden bg-black shadow-2xl">
           {children}
         </div>
 

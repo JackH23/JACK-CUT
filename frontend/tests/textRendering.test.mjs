@@ -41,6 +41,7 @@ async function exportText(items) {
   const controller = load("backend/controllers/exportController.js", {
     "node:fs": { mkdirSync() {}, renameSync() {}, writeFileSync(file, value) { if(file.endsWith(".ass")) ass = value; } },
     "../utils/clipAnimationFilter": require("../../backend/utils/clipAnimationFilter"),
+    "../utils/mediaLayout": require("../../backend/utils/mediaLayout"),
     "node:path": path, "node:crypto": { randomUUID: () => "test-export" },
     "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); return child; } },
     sequelize: { Op: { in: Symbol("in") } },

@@ -19,7 +19,7 @@ export function getPreviewSnapResult(bounds: Bounds, canvas: Canvas, threshold: 
     { correction: -bounds.centerY+bounds.height/2, guide: 0 },
     { correction: canvas.height-bounds.centerY-bounds.height/2, guide: canvas.height },
   ], threshold.y);
-  return { x: x?.correction ?? 0, y: y?.correction ?? 0, vertical: x ? [x.guide] : [], horizontal: y ? [y.guide] : [] };
+  return { x: x?.correction ?? 0, y: y?.correction ?? 0, bounds: { ...bounds, centerX: bounds.centerX + (x?.correction ?? 0), centerY: bounds.centerY + (y?.correction ?? 0) }, vertical: x ? [x.guide] : [], horizontal: y ? [y.guide] : [] };
 }
 // Resize has one uniform scale degree of freedom. Snap the nearest moving edge,
 // then report only axes that actually align after that single scale correction.
@@ -29,8 +29,8 @@ export function getPreviewResizeSnapResult(bounds: Bounds, canvas: Canvas, thres
   const slopeX = derivatives.centerX + sx*derivatives.width/2;
   const slopeY = derivatives.centerY + sy*derivatives.height/2;
   const candidates: {scale:number;distance:number}[] = [];
-  for (const [edge,slope,size,tolerance] of [[edgeX,slopeX,canvas.width,threshold.x],[edgeY,slopeY,canvas.height,threshold.y]]) {
-    if (Math.abs(slope)<1e-9) continue;
+  for (const [edge,slope,size,tolerance,active] of [[edgeX,slopeX,canvas.width,threshold.x,sx],[edgeY,slopeY,canvas.height,threshold.y,sy]]) {
+    if (!active || Math.abs(slope)<1e-9) continue;
     for (const target of [size/2,0,size]) {
       const distance=Math.abs(target-edge);
       const nextScale=scale+(target-edge)/slope;
@@ -39,7 +39,7 @@ export function getPreviewResizeSnapResult(bounds: Bounds, canvas: Canvas, thres
   }
   const nextScale=candidates.sort((a,b)=>a.distance-b.distance)[0]?.scale ?? scale;
   const delta=nextScale-scale;
-  const vertical=[canvas.width/2,0,canvas.width].filter(t=>Math.abs(edgeX+slopeX*delta-t)<1e-6);
-  const horizontal=[canvas.height/2,0,canvas.height].filter(t=>Math.abs(edgeY+slopeY*delta-t)<1e-6);
-  return {scale:nextScale,vertical,horizontal};
+  const vertical=(sx ? [canvas.width/2,0,canvas.width] : []).filter(t=>Math.abs(edgeX+slopeX*delta-t)<1e-6);
+  const horizontal=(sy ? [canvas.height/2,0,canvas.height] : []).filter(t=>Math.abs(edgeY+slopeY*delta-t)<1e-6);
+  return {scale:nextScale,bounds:{centerX:bounds.centerX+derivatives.centerX*delta,centerY:bounds.centerY+derivatives.centerY*delta,width:bounds.width+derivatives.width*delta,height:bounds.height+derivatives.height*delta},vertical,horizontal};
 }

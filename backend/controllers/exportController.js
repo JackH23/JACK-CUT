@@ -8,7 +8,8 @@ const textLayout = require("../../frontend/lib/textLayout.json");
 
 const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
-const { getClipAnimationFilters } = require("../utils/clipAnimationFilter");
+const { getClipAnimationFilters, getClipAnimationWindow } = require("../utils/clipAnimationFilter");
+const { getMediaParentTransform } = require("../utils/mediaLayout");
 
 const jobs = new Map();
 const ASS_DIR = path.resolve(process.cwd(), "exports", "subtitles");
@@ -22,7 +23,7 @@ function saveExportJob(job) {
   const filename = path.join(OUTPUT_DIR, job.id + ".job.json");
   try {
     fs.writeFileSync(filename + ".tmp", JSON.stringify({
-      id: job.id, status: job.status, error: job.error,
+      id: job.id, status: job.status, error: job.error, metrics: job.metrics,
     }));
     fs.renameSync(filename + ".tmp", filename);
   } catch (error) {
@@ -36,7 +37,7 @@ function findExportJob(id) {
   try {
     const saved = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, id + ".job.json"), "utf8"));
     if (saved.id !== id || !["processing", "completed", "failed"].includes(saved.status)) return null;
-    const job = { id, status: saved.status, error: saved.error ?? null, outputPath: path.join(OUTPUT_DIR, id + ".mp4") };
+    const job = { id, status: saved.status, error: saved.error ?? null, metrics: saved.metrics ?? null, outputPath: path.join(OUTPUT_DIR, id + ".mp4") };
     if (job.status === "processing") {
       job.status = "failed";
       job.error = "Export interrupted by a backend restart. Please export again.";
@@ -198,6 +199,10 @@ async function createExport(req, res) {
         sourceStart:
           Number(item.source_start ?? 0),
 
+        mediaScale: Number(item.media_scale ?? 1),
+        mediaX: Number(item.media_x ?? 0),
+        mediaY: Number(item.media_y ?? 0),
+
         animationInPreset: item.animation_in_preset ?? null,
         animationInDuration: item.animation_in_duration ?? null,
         animationInAmount: item.animation_in_amount ?? null,
@@ -240,7 +245,7 @@ async function createExport(req, res) {
 
     const id = randomUUID();
     const outputPath = path.join(OUTPUT_DIR, `${id}.mp4`);
-    const job = { id, status: "processing", outputPath, error: null };
+    const job = { id, status: "processing", outputPath, error: null, createdAt: Date.now() };
     jobs.set(id, job);
     saveExportJob(job);
 
@@ -294,34 +299,40 @@ async function createExport(req, res) {
       if (clip.type === "image" || clip.type === "video") {
         const prepared = `visual${index}`;
         const composed = `composed${index}`;
-
         const sourceStart = clip.type === "video" ? clip.sourceStart : 0;
-        const animationFilters = getClipAnimationFilters(clip);
-        console.log("EXPORT ANIMATION FILTERS", { index, preset: clip.animationPreset, amount: clip.animationAmount, filters: animationFilters });
+        const base = getMediaParentTransform(clip, WIDTH, HEIGHT);
+        const animationFilters = getClipAnimationFilters(clip, { width: WIDTH, height: HEIGHT });
+        const localWindow = getClipAnimationWindow(clip);
+        const timelineWindow = localWindow.replace(/\bt\b/g, `(t-${clip.start})`);
+        const active = `between(t,${clip.start},${clip.start + clip.duration})`;
         const visualFilters = [
           `trim=start=${sourceStart}:duration=${clip.duration}`,
           "setpts=PTS-STARTPTS",
-          // Evaluate animation at the output cadence, including looped images.
           `fps=${FPS}`,
-          `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`,
-          `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2`,
-          "setsar=1",
-          ...animationFilters,
-          // Animate locally before shifting onto the timeline.
-          `setpts=PTS+${clip.start}/TB`,
         ];
-        filters.push(
-          `[${inputIndex}:v]${visualFilters.join(",")}[${prepared}]`,
-        );
-
-        filters.push(
-          `[${currentVideo}][${prepared}]` +
-          `overlay=eof_action=pass:shortest=0:` +
-          `enable='between(t,${clip.start},${clip.start + clip.duration})'` +
-          `[${composed}]`,
-        );
-
+        // Fast static branch outside animation windows. Animations sample the
+        // uncut source using the composed base+animation inverse map, so a
+        // small/moved parent cannot clip a slide or zoom before final composition.
+        const animatedInput = `animationInput${index}`;
+        const baseInput = `baseInput${index}`;
+        if (animationFilters.length) {
+          filters.push(`[${inputIndex}:v]${visualFilters.join(",")},split=2[${baseInput}][${animatedInput}]`);
+        } else {
+          filters.push(`[${inputIndex}:v]${visualFilters.join(",")}[${baseInput}]`);
+        }
+        const baseFilters = [`scale=${Math.round(base.width)}:${Math.round(base.height)}:force_original_aspect_ratio=decrease`, "format=yuva444p"];
+        baseFilters.push("setsar=1", `setpts=PTS+${clip.start}/TB`);
+        filters.push(`[${baseInput}]${baseFilters.join(",")}[${prepared}]`);
+        filters.push(`[${currentVideo}][${prepared}]overlay=x='${base.centerX}-overlay_w/2':y='${base.centerY}-overlay_h/2':format=auto:eof_action=pass:shortest=0:enable='${active}${animationFilters.length ? `*not(${timelineWindow})` : ""}'[${composed}]`);
         currentVideo = composed;
+        if (animationFilters.length) {
+          const animated = `animated${index}`, result = `animatedComposed${index}`;
+          const normalizedAnimation = [`scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`, "format=yuva444p", `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black@0`, "setsar=1", ...animationFilters];
+          filters.push(`[${animatedInput}]${normalizedAnimation.join(",")},setpts=PTS+${clip.start}/TB[${animated}]`);
+          filters.push(`[${currentVideo}][${animated}]overlay=format=auto:eof_action=pass:shortest=0:enable='${active}*(${timelineWindow})'[${result}]`);
+          currentVideo = result;
+        }
+        console.log("EXPORT MEDIA GEOMETRY", { index, base, animationFilters, localWindow });
       }
 
       if (clip.type === "audio" || clip.type === "video") {
@@ -460,6 +471,7 @@ async function createExport(req, res) {
       outputPath,
     );
 
+    const renderStarted = Date.now();
     const process = spawn("ffmpeg", args);
     let stderr = "";
 
@@ -474,7 +486,10 @@ async function createExport(req, res) {
     });
 
     process.on("close", (code) => {
-      console.log("FFMPEG RESULT:", { id, code, outputPath, stderr });
+      const renderSeconds = (Date.now() - renderStarted) / 1000;
+      const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
+      job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames ? Number(frames) / renderSeconds : null, speed: totalDuration / renderSeconds };
+      console.log("FFMPEG RESULT:", { id, code, outputPath, stderr, metrics: job.metrics });
       if (job.status === "failed") return;
 
       if (code === 0) {
@@ -505,6 +520,7 @@ function getExport(req, res) {
     id: job.id,
     status: job.status,
     error: job.error,
+    metrics: job.metrics ?? null,
     downloadUrl:
       job.status === "completed" ? `/api/exports/${job.id}/download` : null,
   });
