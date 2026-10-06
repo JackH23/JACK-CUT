@@ -1,59 +1,83 @@
-import type { DragEvent, MouseEvent, PointerEvent } from "react";
-import type { TimelineItem, TimelineTrack } from "@/types/timeline";
+import type { TimelineItem } from "@/types/timeline";
 
-export type ResizeEdge = "left" | "right";
+export const SETTINGS_TABS = [
+  "Basic",
+  "Animation",
+  "Style",
+] as const;
 
-export type TimelineTracksProps = {
-  items: TimelineItem[];
-  tracks: TimelineTrack[];
+export type SettingsTab =
+  (typeof SETTINGS_TABS)[number];
 
-  onTrackDragOver: (
-    event: DragEvent<HTMLDivElement>,
-    track: TimelineTrack,
-  ) => void;
+export type SpeedMode =
+  | "normal"
+  | "curve";
 
-  onTrackDrop: (
-    event: DragEvent<HTMLDivElement>,
-    track: TimelineTrack,
-  ) => void;
+export type SettingsPanelProps = {
+  activeItem: TimelineItem | null;
 
-  onClipDragStart: (
-    event: DragEvent<HTMLDivElement>,
+  onUpdateTextFontSize: (
     itemId: string,
+    fontSize: number,
   ) => void;
 
-  onClipDragEnd: () => void;
-
-  onUpdateText: (
+  onUpdateTextFontWeight: (
     itemId: string,
-    text: string,
+    fontWeight: number,
   ) => void;
 
-  onResizeStart: (
-    event: PointerEvent<HTMLButtonElement>,
-    item: TimelineItem,
-    edge: ResizeEdge,
-  ) => void;
-
-  onResizeMove: (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-
-  onResizeEnd: (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-
-  onRemovePointerDown: (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => void;
-
-  onRemoveDragStart: (
-    event: DragEvent<HTMLButtonElement>,
-  ) => void;
-
-  onRemoveClick: (
-    event: MouseEvent<HTMLButtonElement>,
+  onUpdateTextFontFamily: (
     itemId: string,
+    fontFamily: string,
+  ) => void;
+
+  onUpdateTextColor: (
+    itemId: string,
+    textColor: string,
   ) => void;
 };
 
+export type SettingsContentProps = {
+  activeItem: TimelineItem | null;
+  activeTab: SettingsTab;
+
+  scale: number;
+  opacity: number;
+  speedMode: SpeedMode;
+  animationAmount: number;
+
+  onScaleChange: (
+    value: number,
+  ) => void;
+
+  onOpacityChange: (
+    value: number,
+  ) => void;
+
+  onSpeedModeChange: (
+    value: SpeedMode,
+  ) => void;
+
+  onAnimationAmountChange: (
+    value: number,
+  ) => void;
+
+  onFontSizeChange: (
+    value: number,
+  ) => void;
+
+  onFontWeightChange: (
+    value: number,
+  ) => void;
+
+  onFontFamilyChange: (
+    value: string,
+  ) => void;
+
+  onTextColorChange: (
+    value: string,
+  ) => void;
+};
+
+export type UseSettingsPanelProps =
+  SettingsPanelProps;
