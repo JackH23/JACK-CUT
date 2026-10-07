@@ -132,6 +132,12 @@ export function useLoadTimeline({
                       item.textColor ??
                       undefined,
 
+                    animationInPreset: item.animationInPreset,
+                    animationInDuration: item.animationInDuration,
+                    animationInAmount: item.animationInAmount,
+                    animationOutPreset: item.animationOutPreset,
+                    animationOutDuration: item.animationOutDuration,
+                    animationOutAmount: item.animationOutAmount,
                     // Animation
                     animationPreset:
                       item.animationPreset ??

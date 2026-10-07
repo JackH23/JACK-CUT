@@ -12,6 +12,7 @@ import type { MediaFile } from "@/lib/media";
 
 import EditableMediaOverlay from "./EditableMediaOverlay";
 import EditableTextOverlay from "./EditableTextOverlay";
+import { getTextAnimationStyle } from "@/lib/textAnimation";
 import PreviewHeader from "./PreviewHeader";
 import VideoCanvas from "./VideoCanvas";
 import PlaybackControls from "./PlaybackControls";
@@ -196,6 +197,7 @@ export default function PreviewMonitor({
             <EditableTextOverlay
               key={item.id}
 
+              animationStyle={getTextAnimationStyle(item, playheadSeconds - item.startTime)}
               text={item.text}
               textStyle={item.textStyle}
 

@@ -42,6 +42,8 @@ async function exportText(items) {
     "node:fs": { mkdirSync() {}, renameSync() {}, writeFileSync(file, value) { if(file.endsWith(".ass")) ass = value; } },
     "../utils/clipAnimationFilter": require("../../backend/utils/clipAnimationFilter"),
     "../utils/mediaLayout": require("../../backend/utils/mediaLayout"),
+    "../utils/textAnimationAss": require("../../backend/utils/textAnimationAss"),
+    "../utils/textFontMetrics": require("../../backend/utils/textFontMetrics"),
     "node:path": path, "node:crypto": { randomUUID: () => "test-export" },
     "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); return child; } },
     sequelize: { Op: { in: Symbol("in") } },
@@ -74,7 +76,7 @@ for (const sample of cases) {
     assert.ok(ass.includes("\\an5\\q2\\b700\\pos(" + Math.round(sample.x / 100 * 1920) + "," + Math.round(sample.y / 100 * 1080) + ")"));
     const fields = ass.split("\n").find(line => line.trim().startsWith("Style: Text0,")).trim().split(",");
     assert.equal(fields[1], "Georgia"); assert.equal(fields[3], "&H00563412");
-    const exportSize = Number(fields[2]); assert.equal(exportSize, sample.size * 1920 / layout.referenceWidth);
+    const exportSize = Number(fields[2]) / require("../../backend/utils/textFontMetrics").getAssFontMetrics("Georgia", 700).ratio; assert.equal(exportSize, sample.size * 1920 / layout.referenceWidth);
     const render = preview({ x: sample.x, y: sample.y, textStyle: sample.style, fontSize: sample.defaultSize ? undefined : sample.size, fontFamily: "Georgia", fontWeight: 700, textColor: "#123456" });
     const overlay = render(); const text = overlay.props.children[0];
     assert.equal(overlay.props.style.left, sample.x + "%"); assert.equal(overlay.props.style.top, sample.y + "%");
@@ -98,9 +100,9 @@ test("each exported clip retains its own family, color, weight and size", async 
     { item_type: "TEXT", text_content: "second", text_style: "heading", font_size: 42, font_weight: 800, font_family: "Times New Roman", text_color: "#00ff00", start_time: 5, duration: 5 },
   ];
   const { ass } = await exportText(rows);
-  assert.match(ass, /Style: Text0,Arial,102,&H000000FF/);
-  assert.match(ass, /Style: Text1,Times New Roman,126,&H0000FF00/);
-  assert.ok(ass.includes("\\b400\\pos(960,540)")); assert.ok(ass.includes("\\b800\\pos(960,540)"));
+  assert.ok(ass.includes(`Style: Text0,Arial,${102 * require("../../backend/utils/textFontMetrics").getAssFontMetrics("Arial",400).ratio},&H000000FF`));
+  assert.ok(ass.includes(`Style: Text1,Times New Roman,${126 * require("../../backend/utils/textFontMetrics").getAssFontMetrics("Times New Roman",800).ratio},&H0000FF00`));
+  assert.ok(ass.includes("\\b400\\pos(960,540)")); assert.ok(ass.includes("\\b700\\pos(960,540)"));
 });
 
 test("resize screen movement converts back to the same saved size at different canvas widths", () => {
@@ -130,4 +132,8 @@ test("dragging keeps normalized coordinates across responsive previews", () => {
     hook.handlePointerMove({ ...event, clientX: width * 0.1, clientY: width * 9 / 16 * 0.2 });
     assert.deepEqual(saved, [60, 70]);
   }
+});
+
+test('text animation affects visual child while editing bounds and saved font size stay at base',()=>{
+ const render=preview({x:25,y:70,fontSize:44,animationStyle:{opacity:.35,transform:'translateX(50cqw) scale(.875)',transformOrigin:'center'}});const tree=render();assert.equal(tree.props.style.transform,'translate(-50%, -50%)');assert.equal(tree.props.style.left,'25%');assert.equal(tree.props.children[0].props.style.opacity,.35);assert.equal(tree.props.children[0].props.style.transform,'translateX(50cqw) scale(.875)');assert.equal(parseFloat(tree.props.children[0].props.style.fontSize),44/layout.referenceWidth*100);
 });

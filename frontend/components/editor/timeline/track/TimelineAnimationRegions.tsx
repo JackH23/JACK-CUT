@@ -7,7 +7,7 @@ function regionWidth(preset: string | null | undefined, duration: number | null 
 }
 
 export default function TimelineAnimationRegions({ item }: { item: TimelineItem }) {
-  if (item.type !== "media" || (item.file?.type !== "image" && item.file?.type !== "video")) return null;
+  if (item.type !== "text" && (item.file?.type !== "image" && item.file?.type !== "video")) return null;
 
   const regions = [
     { phase: "in", label: "IN", preset: item.animationInPreset, duration: item.animationInDuration, width: regionWidth(item.animationInPreset, item.animationInDuration, item.duration) },

@@ -202,7 +202,7 @@ export function useSettingsPanel({
     );
 
   const handleAnimationChange=useCallback((settings:MediaAnimationSettings)=>{
-    if(activeItem?.type==='media')onUpdateAnimation(activeItem.id,settings);
+    if(activeItem)onUpdateAnimation(activeItem.id,settings);
   },[activeItem,onUpdateAnimation]);
 
   return {

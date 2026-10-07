@@ -1,0 +1,6 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {readFontFaces,getAssFontMetrics}=require('../utils/textFontMetrics');
+test('ASS font conversion reads deterministic EM and ascender/descender metrics',()=>{
+ const b=Buffer.alloc(400);b.writeUInt16BE(4,4);const sections={head:100,hhea:130,'OS/2':150,name:250};Object.entries(sections).forEach(([name,offset],i)=>{b.write(name,12+i*16,'ascii');b.writeUInt32BE(offset,20+i*16)});b.writeUInt16BE(2048,118);b.writeInt16BE(1854,134);b.writeInt16BE(-434,136);b.writeUInt16BE(4,150);b.writeUInt16BE(700,154);b.writeUInt16BE(1,252);b.writeUInt16BE(18,254);b.writeUInt16BE(3,256);b.writeUInt16BE(1,262);const name=Buffer.from('Test Family','utf16le').swap16();b.writeUInt16BE(name.length,264);name.copy(b,268);const [face]=readFontFaces(b);assert.deepEqual(face.families,['test family']);assert.equal(face.weight,700);assert.equal(face.ratio,1.1171875);
+});
+test('CSS 600 selects installed bold weight and font metric cache is deterministic',()=>{const a=getAssFontMetrics('Arial',600),b=getAssFontMetrics('Arial',600);assert.equal(a.weight,700);assert.deepEqual(a,b);assert.ok(a.ratio>0);assert.equal(getAssFontMetrics('Arial',400).weight,400);});

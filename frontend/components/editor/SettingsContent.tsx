@@ -99,7 +99,7 @@ export default function SettingsContent({
       {/* ANIMATION */}
       {activeTab === "Animation" && (
         <>
-          {activeItem?.type === "media" ? (
+          {activeItem ? (
             <AnimationTab
               item={activeItem}
               onAnimationChange={onAnimationChange}

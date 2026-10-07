@@ -184,3 +184,7 @@ test('duplicate persists independent media phases through API reload',async()=>{
   const {data}=await f.reload();for(const key of ['animationInPreset','animationInDuration','animationInAmount','animationOutPreset','animationOutDuration','animationOutAmount'])assert.equal(data.items[0][key],source[key]);
  }finally{f.dispose();}
 });
+
+test('TEXT duplicate persists both animation phases through PATCH and reload',async()=>{
+ const f=fixture();try{const source={...f.source,animationInPreset:'zoom-in',animationInDuration:1.5,animationInAmount:100,animationOutPreset:'fade-out',animationOutDuration:2,animationOutAmount:50};f.render({selectedItem:source}).handleDuplicate();await f.settle();const {data}=await f.reload();for(const key of ['animationInPreset','animationInDuration','animationInAmount','animationOutPreset','animationOutDuration','animationOutAmount'])assert.equal(data.items[0][key],source[key]);for(const key of ['textX','textY','fontSize','fontWeight','fontFamily','textColor'])assert.equal(data.items[0][key],source[key]);}finally{f.dispose()}
+});

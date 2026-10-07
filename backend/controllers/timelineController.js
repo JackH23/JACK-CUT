@@ -875,7 +875,7 @@ async function updateTimelineItem(
 
     const phaseUpdate=animationFields.some(key=>req.body[key]!==undefined);
     if(phaseUpdate) {
-      if(item.item_type!=='MEDIA') return res.status(400).json({message:'Animation In/Out is only supported for MEDIA items.'});
+      if(!['MEDIA','TEXT'].includes(item.item_type)) return res.status(400).json({message:'Animation In/Out requires a MEDIA or TEXT item.'});
       const base=getMediaAnimationSettings({duration:Number(item.duration),animationPreset:item.animation_preset,animationAmount:item.animation_amount,animationInPreset:item.animation_in_preset,animationInDuration:item.animation_in_duration,animationInAmount:item.animation_in_amount,animationOutPreset:item.animation_out_preset,animationOutDuration:item.animation_out_duration,animationOutAmount:item.animation_out_amount});
       for(const phase of ['In','Out']) {
         const key='animation'+phase+'Preset';

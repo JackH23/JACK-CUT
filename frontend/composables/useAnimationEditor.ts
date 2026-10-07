@@ -15,7 +15,7 @@ export function useAnimationEditor({ timelineItems, setTimelineItems }: {
     const revisions = useRef(new Map<string, number>());
     const handleUpdateAnimation = useCallback((id: string, patch: MediaAnimationSettings) => {
         const item = items.current.find(x => x.id === id);
-        if (!item || item.type !== 'media')
+        if (!item)
             return;
         const { legacy, ...base } = getMediaAnimationSettings(item);
         void legacy;
@@ -43,9 +43,9 @@ export function useAnimationEditor({ timelineItems, setTimelineItems }: {
             catch (error) {
                 if (revisions.current.get(id) === revision) {
                     setTimelineItems(current => current.map(x => x.id === id ? { ...x, ...confirmed.current.get(id) } : x));
-                    setAnimationError(error instanceof Error ? error.message : 'Could not save media animation.');
+                    setAnimationError(error instanceof Error ? error.message : 'Could not save clip animation.');
                 }
-                console.error('Could not save media animation:', error);
+                console.error('Could not save clip animation:', error);
             }
         });
         queues.current.set(id, request);

@@ -10,6 +10,8 @@ const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
 const { getClipAnimationFilters, getClipAnimationWindow } = require("../utils/clipAnimationFilter");
 const { getMediaParentTransform } = require("../utils/mediaLayout");
+const { getTextAnimationSegments, getTextAnimationTags } = require("../utils/textAnimationAss");
+const { getAssFontMetrics } = require("../utils/textFontMetrics");
 
 const jobs = new Map();
 const ASS_DIR = path.resolve(process.cwd(), "exports", "subtitles");
@@ -96,9 +98,10 @@ function getAssColor(color) {
 
 function getTextStyle(clip, index) {
   const defaults = textLayout.presets[clip.textStyle] ?? textLayout.presets.subtitle;
-  const fontSize = (clip.fontSize ?? defaults.fontSize) * WIDTH / textLayout.referenceWidth;
+  const cssFontSize = (clip.fontSize ?? defaults.fontSize) * WIDTH / textLayout.referenceWidth;
   const fontWeight = clip.fontWeight ?? defaults.fontWeight;
   const fontFamily = String(clip.fontFamily ?? textLayout.fontFamily).split(",")[0].replace(/[\r\n]/g, " ").trim() || textLayout.fontFamily;
+  const fontSize = cssFontSize * getAssFontMetrics(fontFamily, fontWeight).ratio;
   // Each clip uses its saved font settings. No export-only preset size or outline.
   return `Style: Text${index},${fontFamily},${fontSize},${getAssColor(clip.textColor)},&H000000FF,&H00000000,&H80000000,${fontWeight >= 600 ? -1 : 0},0,0,0,100,100,0,0,1,0,1,5,0,0,0,1`;
 }
@@ -157,6 +160,14 @@ async function createExport(req, res) {
         return {
           itemType: "TEXT",
           text: item.text_content,
+          animationPreset: item.animation_preset ?? 'none',
+          animationAmount: item.animation_amount ?? 50,
+          animationInPreset: item.animation_in_preset,
+          animationInDuration: item.animation_in_duration,
+          animationInAmount: item.animation_in_amount,
+          animationOutPreset: item.animation_out_preset,
+          animationOutDuration: item.animation_out_duration,
+          animationOutAmount: item.animation_out_amount,
           textStyle: item.text_style,
           fontSize: item.font_size == null ? null : Number(item.font_size),
           fontWeight: item.font_weight == null ? null : Number(item.font_weight),
@@ -363,37 +374,20 @@ async function createExport(req, res) {
       const styles = textClips.map(getTextStyle).join("\n");
       const events = textClips
         .map((clip, index) => {
-          const start = formatAssTime(clip.start);
-          const end = formatAssTime(
-            clip.start + clip.duration,
-          );
-
           const style = `Text${index}`;
           const fontWeight = clip.fontWeight ?? (textLayout.presets[clip.textStyle] ?? textLayout.presets.subtitle).fontWeight;
-
-          const text = escapeAssText(
-            clip.text,
-          );
-
-          // Convert the editor's percentage coordinates
-          // into the 1920x1080 export coordinate system.
-          const x = Math.round(
-            (clip.textX / 100) * WIDTH,
-          );
-
-          const y = Math.round(
-            (clip.textY / 100) * HEIGHT,
-          );
-
-          // ASS \pos() positions the text using
-          // the style's alignment anchor.
-          const positionedText =
-            `{\\an5\\q2\\b${fontWeight}\\pos(${x},${y})}${text}`;
-
-          return (
-            `Dialogue: 0,${start},${end},` +
-            `${style},,0,0,0,,${positionedText}`
-          );
+          const text = escapeAssText(clip.text);
+          return getTextAnimationSegments(clip, FPS).map(segment => {
+            const position = segment.animated
+              ? getTextAnimationTags(clip, segment.state, WIDTH, HEIGHT)
+              : `\\pos(${Math.round(clip.textX / 100 * WIDTH)},${Math.round(clip.textY / 100 * HEIGHT)})`;
+            const positionedText = `{\\an5\\q2\\b${getAssFontMetrics(clip.fontFamily ?? textLayout.fontFamily, fontWeight).weight}${position}}${text}`;
+            // libass evaluates integer milliseconds. Put sampled-frame event
+            // boundaries in the preceding centisecond so rounding of an exact
+            // frame timestamp cannot retain the previous sample for one frame.
+            const tick = segment.animated ? 1e-6 : 0;
+            return `Dialogue: 0,${formatAssTime(segment.start - tick)},${formatAssTime(segment.end - tick)},${style},,0,0,0,,${positionedText}`;
+          }).join("\n");
         })
         .join("\n");
 

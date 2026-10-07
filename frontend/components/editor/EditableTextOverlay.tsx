@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import textLayout from "@/lib/textLayout.json";
 import type { TextStyle } from "@/types/timeline";
 import { useEditableTextDrag } from "@/composables/useEditableTextDrag";
 import { useEditableTextResize } from "@/composables/useEditableTextResize";
 
 type EditableTextOverlayProps = {
+  animationStyle?: CSSProperties;
   text: string;
   textStyle?: TextStyle;
 
@@ -37,6 +38,7 @@ type EditableTextOverlayProps = {
 
 export default function EditableTextOverlay({
   text,
+  animationStyle,
   textStyle = "subtitle",
 
   x,
@@ -211,6 +213,7 @@ export default function EditableTextOverlay({
             fontFamily,
             color: textColor,
             lineHeight: 1.1,
+            ...animationStyle,
           }}
           className="
             whitespace-nowrap
