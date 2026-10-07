@@ -5,7 +5,8 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const RefreshToken = require("../models/RefreshToken");
 
-const REFRESH_TOKEN_DAYS = 30;
+const REFRESH_TOKEN_DAYS =
+  Number(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS);
 
 function publicUser(user) {
   return {
@@ -19,7 +20,7 @@ function createToken(user) {
   return jwt.sign(
     { userId: user.id },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || "1d" },
+    { expiresIn: process.env.JWT_EXPIRES_IN },
   );
 }
 
