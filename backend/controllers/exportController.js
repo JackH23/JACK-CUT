@@ -8,69 +8,37 @@ const textLayout = require("../../frontend/lib/textLayout.json");
 
 const TimelineItem = require("../models/TimelineItem");
 const Media = require("../models/Media");
+const ExportJob = require("../models/ExportJob");
+const Project = require("../models/Project");
+const ProjectMedia = require("../models/ProjectMedia");
+const storage = require("../services/storage");
+const { fileUrl } = require("../services/fileAccess");
 const { getClipAnimationFilters, getClipAnimationWindow } = require("../utils/clipAnimationFilter");
 const { getMediaParentTransform } = require("../utils/mediaLayout");
 const { getTextAnimationSegments, getTextAnimationTags } = require("../utils/textAnimationAss");
 const { getAssFontMetrics } = require("../utils/textFontMetrics");
 
 const jobs = new Map();
-const ASS_DIR = path.resolve(process.cwd(), "exports", "subtitles");
-const OUTPUT_DIR = path.resolve(process.cwd(), "exports");
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
 const VIDEO_ENCODER = process.env.FFMPEG_VIDEO_ENCODER || "libx264";
-
-// Persist only job metadata. A partial MP4 never implies completion.
-function saveExportJob(job) {
-  const filename = path.join(OUTPUT_DIR, job.id + ".job.json");
-  try {
-    fs.writeFileSync(filename + ".tmp", JSON.stringify({
-      id: job.id, status: job.status, error: job.error, metrics: job.metrics,
-    }));
-    fs.renameSync(filename + ".tmp", filename);
-  } catch (error) {
-    console.error("Could not persist export job:", job.id, error);
-  }
+async function saveExportJob(job) {
+  await ExportJob.update({ status: job.status, output_path: job.outputReference || null,
+    error_message: job.error, metrics: job.metrics || null, completed_at: job.status === "processing" ? null : new Date() }, { where: { id: job.id } });
 }
-
-function findExportJob(id) {
+async function findExportJob(id, userId) {
   if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
-  if (jobs.has(id)) return jobs.get(id);
-  try {
-    const saved = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, id + ".job.json"), "utf8"));
-    if (saved.id !== id || !["processing", "completed", "failed"].includes(saved.status)) return null;
-    const job = { id, status: saved.status, error: saved.error ?? null, metrics: saved.metrics ?? null, outputPath: path.join(OUTPUT_DIR, id + ".mp4") };
-    if (job.status === "processing") {
-      job.status = "failed";
-      job.error = "Export interrupted by a backend restart. Please export again.";
-      saveExportJob(job);
-    } else if (job.status === "completed" && !fs.existsSync(job.outputPath)) {
-      job.status = "failed";
-      job.error = "The exported video file is missing. Please export again.";
-    }
-    jobs.set(id, job);
-    return job;
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error("Could not read export job:", id, error);
-    return null;
+  const row = await ExportJob.findByPk(id);
+  if (!row || !await Project.findOne({ where: { id: row.project_id, user_id: userId } })) return null;
+  if (row.status === "processing" && !jobs.has(id)) {
+    row.status = "failed";
+    row.error_message = "Export interrupted by a backend restart. Please export again.";
+    await ExportJob.update({ status: row.status, error_message: row.error_message, completed_at: new Date() }, { where: { id, status: "processing" } });
   }
-}
-
-function getLocalMediaPath(fileUrl) {
-  if (typeof fileUrl !== "string" || !fileUrl.startsWith("/uploads/media/")) {
-    throw new Error(`Invalid media path: ${fileUrl}`);
-  }
-
-  const uploadsDir = path.resolve(process.cwd(), "uploads", "media");
-  const filename = path.basename(fileUrl);
-  const filePath = path.resolve(uploadsDir, filename);
-
-  if (!filePath.startsWith(`${uploadsDir}${path.sep}`)) {
-    throw new Error("Invalid media path.");
-  }
-
-  return filePath;
+  // PostgreSQL owns durable status; the map contains only active renders.
+  return { id: row.id, status: row.status, outputReference: row.output_path, error: row.error_message,
+    metrics: row.metrics || null };
 }
 
 function formatAssTime(seconds) {
@@ -108,6 +76,9 @@ function getTextStyle(clip, index) {
 }
 
 async function createExport(req, res) {
+  let workDir;
+  let activeJob;
+  let handedOff = false;
   try {
     const { projectId } = req.body;
 
@@ -151,6 +122,12 @@ async function createExport(req, res) {
       : [];
     const mediaById = new Map(mediaFiles.map((media) => [media.id, media]));
 
+    workDir = await storage.workspace();
+    const paths = new Map();
+    for (const media of mediaFiles) {
+      if (!await ProjectMedia.findOne({ where: { project_id: projectId, media_id: media.id } })) throw new Error("Timeline media is not linked to this project.");
+      paths.set(media.id, await storage.materialize(media.file_path, workDir));
+    }
     const clips = items.map((item) => {
       console.log("EXPORT TIMELINE ITEM", {
         id: item.id, itemType: item.item_type,
@@ -201,9 +178,7 @@ async function createExport(req, res) {
       const clip = {
         itemType: "MEDIA",
         type: media.media_type,
-        filePath: getLocalMediaPath(
-          media.file_url,
-        ),
+        filePath: paths.get(media.id),
 
         start: Number(item.start_time),
         duration: Number(item.duration),
@@ -249,17 +224,19 @@ async function createExport(req, res) {
     );
 
     if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
+      await storage.cleanup(workDir);
       return res.status(400).json({ message: "Invalid timeline duration." });
     }
 
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    fs.mkdirSync(ASS_DIR, { recursive: true });
+    const OUTPUT_DIR = workDir;
+    const ASS_DIR = workDir;
 
     const id = randomUUID();
     const outputPath = path.join(OUTPUT_DIR, `${id}.mp4`);
     const job = { id, status: "processing", outputPath, error: null, createdAt: Date.now() };
+    activeJob = job;
+    await ExportJob.create({ id, project_id: projectId, status: "processing" });
     jobs.set(id, job);
-    saveExportJob(job);
 
     const args = [
       "-y",
@@ -470,34 +447,39 @@ async function createExport(req, res) {
     );
 
     const renderStarted = Date.now();
-    const process = spawn("ffmpeg", args);
+    const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args);
     let stderr = "";
 
-    process.stderr.on("data", (chunk) => {
+    child.stderr.on("data", (chunk) => {
       stderr = (stderr + chunk.toString()).slice(-4000);
     });
 
-    process.on("error", (error) => {
-      job.status = "failed";
-      job.error = error.message;
-      saveExportJob(job);
-    });
-
-    process.on("close", (code) => {
-      const renderSeconds = (Date.now() - renderStarted) / 1000;
-      const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
-      job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames ? Number(frames) / renderSeconds : null, speed: totalDuration / renderSeconds };
-      console.log("FFMPEG RESULT:", { id, code, outputPath, stderr, metrics: job.metrics });
-      if (job.status === "failed") return;
-
-      if (code === 0) {
+    let settled = false;
+    const finish = async (code, spawnError) => {
+      if (settled) return;
+      settled = true;
+      try {
+        const renderSeconds = (Date.now() - renderStarted) / 1000;
+        const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
+        job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames && renderSeconds > 0 ? Number(frames) / renderSeconds : null, speed: renderSeconds > 0 ? totalDuration / renderSeconds : null };
+        if (spawnError || code !== 0) throw new Error("FFmpeg rendering failed.");
+        job.outputReference = await storage.persist(outputPath, "exports/" + id + ".mp4", "video/mp4");
         job.status = "completed";
-      } else {
+        await saveExportJob(job);
+      } catch {
+        // Retain a completed object if saving metadata fails: a lost DB acknowledgement
+        // must never trigger deletion of an object that may already be referenced.
         job.status = "failed";
-        job.error = stderr || `FFmpeg exited with code ${code}.`;
+        job.error = "Could not complete export. Check FFmpeg, storage and database availability.";
+        try { await saveExportJob(job); } catch { console.error("Could not persist failed export status."); }
+      } finally {
+        jobs.delete(id);
+        await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
       }
-      saveExportJob(job);
-    });
+    };
+    child.once("error", error => { job.spawnError = error; });
+    child.once("close", code => { void finish(code, job.spawnError); });
+    handedOff = true;
 
     return res.status(202).json({
       id,
@@ -505,34 +487,29 @@ async function createExport(req, res) {
       statusUrl: `/api/exports/${id}`,
     });
   } catch (error) {
-    console.error("Create export error:", error);
-    return res.status(500).json({ message: error.message });
+    if (!handedOff) {
+      await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
+      if (activeJob) { activeJob.status = "failed"; activeJob.error = "Could not start export."; await saveExportJob(activeJob).catch(() => {}); jobs.delete(activeJob.id); }
+    }
+    console.error("Could not start export.");
+    return res.status(500).json({ message: "Could not start export." });
   }
 }
 
-function getExport(req, res) {
-  const job = findExportJob(req.params.id);
-  if (!job) return res.status(404).json({ message: "Export not found." });
-
-  return res.json({
-    id: job.id,
-    status: job.status,
-    error: job.error,
-    metrics: job.metrics ?? null,
-    downloadUrl:
-      job.status === "completed" ? `/api/exports/${job.id}/download` : null,
-  });
+async function getExport(req, res) {
+  try {
+    const job = await findExportJob(req.params.id, req.user.id);
+    if (!job) return res.status(404).json({ message: "Export not found." });
+    return res.json({ id: job.id, status: job.status, error: job.error, metrics: job.metrics,
+      downloadUrl: job.status === "completed" ? fileUrl(req, "export", job.id) : null });
+  } catch { return res.status(500).json({ message: "Could not load export." }); }
 }
-
-function downloadExport(req, res) {
-  const job = findExportJob(req.params.id);
-
-  if (!job) return res.status(404).json({ message: "Export not found." });
-  if (job.status !== "completed") {
-    return res.status(409).json({ message: "Export is not ready." });
-  }
-
-  return res.download(job.outputPath, `jackcut-${job.id}.mp4`);
+async function downloadExport(req, res) {
+  try {
+    const job = await findExportJob(req.params.id, req.user.id);
+    if (!job) return res.status(404).json({ message: "Export not found." });
+    if (job.status !== "completed") return res.status(409).json({ message: "Export is not ready." });
+    return await storage.serve(job.outputReference, req, res, { downloadName: "jackcut-" + job.id + ".mp4" });
+  } catch { if (!res.headersSent) return res.status(500).json({ message: "Could not download export." }); }
 }
-
 module.exports = { createExport, getExport, downloadExport };

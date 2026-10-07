@@ -2,13 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const crypto = require("crypto");
+const { TEMP_ROOT } = require("../services/storage");
 
-const uploadDirectory = path.join(
-  __dirname,
-  "..",
-  "uploads",
-  "media",
-);
+const uploadDirectory = path.join(TEMP_ROOT, "uploads");
 
 if (!fs.existsSync(uploadDirectory)) {
   fs.mkdirSync(uploadDirectory, {

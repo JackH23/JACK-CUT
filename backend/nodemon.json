@@ -6,6 +6,8 @@
   "ext": "js,mjs,cjs,json",
   "ignore": [
     "exports/**",
-    "uploads/**"
+    "uploads/**",
+    "tmp/**",
+    "temp/**"
   ]
 }

@@ -1,4 +1,4 @@
-import axios from "axios";
+import { api as axios } from "./api";
 import type { ExportJob } from "@/lib/export";
 
 const EXPORT_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/exports`;

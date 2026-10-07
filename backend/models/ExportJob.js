@@ -25,6 +25,10 @@ const ExportJob = sequelize.define(
         isIn: [["processing", "completed", "failed"]],
       },
     },
+    metrics: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
     output_path: {
       type: DataTypes.TEXT,
       allowNull: true,

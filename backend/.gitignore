@@ -2,3 +2,12 @@ node_modules/
 .env
 uploads/
 exports/
+
+# Temporary uploads, FFmpeg inputs, subtitles and partial renders
+tmp/
+temp/
+*.ass
+*.job.json
+*.job.json.tmp
+scratch/
+render-*/

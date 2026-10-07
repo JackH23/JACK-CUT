@@ -1,4 +1,4 @@
-import axios from "axios";
+import { api as axios } from "./api";
 import type { GetMediaResponse, UploadMediaResponse } from "@/lib/media";
 
 const MEDIA_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/media`;

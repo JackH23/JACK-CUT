@@ -1,4 +1,4 @@
-import axios from "axios";
+import { api as axios } from "./api";
 import type {
   AddTimelineItemInput,
   AddTimelineItemResponse,
@@ -50,9 +50,10 @@ export const timelineService = {
     return data;
   },
 
-  async getDuration(): Promise<number> {
+  async getDuration(projectId: string): Promise<number> {
     const { data } = await axios.get<GetTimelineDurationResponse>(
       `${API_URL}/api/timeline/duration`,
+      { params: { projectId } },
     );
 
     return data.duration;

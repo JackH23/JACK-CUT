@@ -9,6 +9,8 @@ const {
 } = require("../controllers/timelineController");
 
 const router = express.Router();
+router.use(require("../middleware/authMiddleware"));
+router.use(require("../middleware/projectAccess"));
 
 router.get("/items", getTimelineItems);
 router.post("/items", addTimelineItem);

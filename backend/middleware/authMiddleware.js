@@ -9,7 +9,8 @@ async function authMiddleware(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+    if (payload.aud || payload.kind) throw new Error("File tickets cannot authorize API requests.");
     const user = await User.findByPk(payload.userId);
 
     if (!user) {

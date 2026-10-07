@@ -2,7 +2,8 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 const fs = require("fs/promises");
-const path = require("path");
+const storage = require("../services/storage");
+const { mediaUrl } = require("../services/fileAccess");
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
 const Media = require("../models/Media");
@@ -49,7 +50,7 @@ function formatMedia(media, req) {
     id: media.id,
     name: media.original_name,
     type: media.media_type,
-    url: `${req.protocol}://${req.get("host")}${media.file_url}`,
+    url: mediaUrl(req, media),
     size: Number(media.file_size),
     mimeType: media.mime_type,
     durationSeconds:
@@ -75,8 +76,10 @@ async function uploadMedia(req, res) {
     });
   }
 
+  const stored = [];
+  let committed = false;
   try {
-    const project = await Project.findByPk(projectId);
+    const project = await Project.findOne({ where: { id: projectId, user_id: req.user.id } });
 
     if (!project) {
       await Promise.all(
@@ -85,20 +88,24 @@ async function uploadMedia(req, res) {
       return res.status(404).json({ message: "Project not found." });
     }
 
+    // Remote transfer and probing happen before opening a database transaction.
+    const prepared = [];
+    for (const file of files) {
+      const mediaType = getMediaType(file.mimetype);
+      const durationSeconds = mediaType === "image" ? null : await getDurationSeconds(file.path);
+      const reference = await storage.persist(file.path, `media/${file.filename}`, file.mimetype);
+      stored.push(reference);
+      prepared.push({ file, mediaType, durationSeconds, reference });
+    }
     const createdMedia = await sequelize.transaction(async (transaction) => {
       const media = [];
-
-      for (const file of files) {
-        const mediaType = getMediaType(file.mimetype);
-        const durationSeconds =
-          mediaType === "image" ? null : await getDurationSeconds(file.path);
-
+      for (const { file, mediaType, durationSeconds, reference } of prepared) {
         const item = await Media.create(
           {
             original_name: file.originalname,
             file_name: file.filename,
-            file_path: file.path,
-            file_url: `/uploads/media/${file.filename}`,
+            file_path: reference,
+            file_url: reference.startsWith("r2:/") ? reference : `/uploads/media/${file.filename}`,
             mime_type: file.mimetype,
             media_type: mediaType,
             file_size: file.size,
@@ -118,16 +125,17 @@ async function uploadMedia(req, res) {
       return media;
     });
 
+    committed = true;
     return res.status(201).json({
       message: "Media uploaded successfully.",
       media: createdMedia.map((item) => formatMedia(item, req)),
     });
   } catch (error) {
-    console.error("Upload media error:", error);
-    await Promise.all(
-      files.map((file) => fs.unlink(file.path).catch(() => {})),
-    );
+    console.error("Upload media failed.");
+    if (!committed) await Promise.all(stored.map(reference => storage.remove(reference).catch(() => console.error("Upload rollback cleanup failed."))));
     return res.status(500).json({ message: "Could not upload media." });
+  } finally {
+    await Promise.all(files.map(file => fs.unlink(file.path).catch(() => {})));
   }
 }
 
@@ -209,4 +217,16 @@ async function deleteMedia(req, res) {
   }
 }
 
-module.exports = { uploadMedia, getMedia, deleteMedia };
+async function mediaContent(req, res) {
+  try {
+    if (!isUuid(req.params.id)) return res.status(400).json({ message: "Valid media ID required." });
+    const links = await ProjectMedia.findAll({ where: { media_id: req.params.id } });
+    const projectIds = links.map(link => link.project_id);
+    const owned = projectIds.length && await Project.findOne({ where: { id: { [Op.in]: projectIds }, user_id: req.user.id } });
+    if (!owned) return res.status(404).json({ message: "Media not found." });
+    const media = await Media.findByPk(req.params.id);
+    if (!media) return res.status(404).json({ message: "Media not found." });
+    return await storage.serve(media.file_path, req, res, { contentType: media.mime_type });
+  } catch { if (!res.headersSent) res.status(500).json({ message: "Could not read media." }); }
+}
+module.exports = { uploadMedia, getMedia, deleteMedia, mediaContent };

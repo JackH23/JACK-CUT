@@ -1,8 +1,7 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
 
 const sequelize = require("./config/database");
 const User = require("./models/User");
@@ -45,7 +44,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Persistent files are served only by authorized content/download endpoints.
+if (process.env.TRUST_PROXY) app.set("trust proxy", process.env.TRUST_PROXY === "1" ? 1 : process.env.TRUST_PROXY);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
@@ -55,7 +55,7 @@ app.use("/api/timeline", timelineRoutes);
 app.use("/api/exports", (req, res, next) => {
   const started = Date.now();
   res.on("finish", () => console.log("EXPORT HTTP:", {
-    method: req.method, path: req.originalUrl, status: res.statusCode,
+    method: req.method, path: req.path, status: res.statusCode,
     elapsedMs: Date.now() - started,
   }));
   next();
@@ -87,8 +87,13 @@ const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
+    require("./services/storage").driver();
     await sequelize.authenticate();
     await sequelize.sync();
+    const exportColumns = await sequelize.getQueryInterface().describeTable("export_jobs");
+    if (!exportColumns.metrics) await sequelize.getQueryInterface().addColumn("export_jobs", "metrics", {
+      type: require("sequelize").DataTypes.JSONB, allowNull: true,
+    });
     // Additive migration for existing databases; never alter or reset other columns.
     const queryInterface = sequelize.getQueryInterface();
     const columns = await queryInterface.describeTable("timeline_items");
@@ -116,7 +121,8 @@ async function startServer() {
       console.log(`Server is running on http://localhost:${PORT}`);
     });
   } catch (error) {
-    console.error("Server startup failed:", error);
+    console.error("Server startup failed; verify storage configuration, database connectivity and schema permissions.");
+    process.exitCode = 1;
   }
 }
 

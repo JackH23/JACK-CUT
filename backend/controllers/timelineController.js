@@ -2,6 +2,7 @@ const {animationFields,getMediaAnimationSettings}=require('../../frontend/lib/me
 const { Op } = require("sequelize");
 
 const Media = require("../models/Media");
+const { mediaUrl } = require("../services/fileAccess");
 const TimelineItem = require("../models/TimelineItem");
 const Project = require("../models/Project");
 const AnimationOption =
@@ -448,7 +449,7 @@ async function getTimelineItems(req, res) {
                 media.original_name,
               type:
                 media.media_type,
-              url: `${req.protocol}://${req.get("host")}${media.file_url}`,
+              url: mediaUrl(req, media),
               size: Number(
                 media.file_size,
               ),
@@ -524,6 +525,7 @@ async function getTimelineDuration(
   try {
     const items =
       await TimelineItem.findAll({
+        where: { project_id: req.project.id },
         attributes: [
           "start_time",
           "duration",

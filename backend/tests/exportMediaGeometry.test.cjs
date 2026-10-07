@@ -9,6 +9,11 @@ async function create(extra={}){
  let args;const logs=[];const child=new EventEmitter();child.stderr=new EventEmitter();
  const mockFs={existsSync:()=>true,mkdirSync(){},writeFileSync(){},renameSync(){}};
  const load=n=>{
+  if(n==='../models/ExportJob')return {create:async()=>{},update:async()=>{}};
+  if(n==='../models/Project')return {};
+  if(n==='../models/ProjectMedia')return {findOne:async()=>({})};
+  if(n==='../services/fileAccess')return {};
+  if(n==='../services/storage')return {workspace:async()=>root+'/tmp/render-test',materialize:async()=>root+'/uploads/media/source.mp4',persist:async()=> 'r2:/exports/test.mp4',cleanup:async()=>{}};
   if(n==='../models/TimelineItem')return {findAll:async()=>[item]};
   if(n==='../models/Media')return {findAll:async()=>[{id:'source',media_type:'video',file_url:'/uploads/media/source.mp4'}]};
   if(n==='sequelize')return {Op:{in:Symbol('in')}};
@@ -17,7 +22,7 @@ async function create(extra={}){
   return n.startsWith('.')?require(path.resolve(root,'controllers',n)):require(n);
  };
  const m={exports:{}};
- vm.runInNewContext(fs.readFileSync(path.join(root,'controllers/exportController.js'),'utf8'),{require:load,module:m,exports:m.exports,process:{cwd:()=>root},console:{log:(...a)=>logs.push(a),error(){}},Date,Number,String,Map,Set,JSON});
+ vm.runInNewContext(fs.readFileSync(path.join(root,'controllers/exportController.js'),'utf8'),{require:load,module:m,exports:m.exports,process:{cwd:()=>root,env:{}},console:{log:(...a)=>logs.push(a),error(){}},Date,Number,String,Map,Set,JSON});
  let response;const res={status(code){assert.equal(code,202);return this;},json(v){response=v;}};
  await m.exports.createExport({body:{projectId:'66ec12e5-244b-43e2-b36e-57bec761ade8'}},res);
  child.stderr.emit('data',Buffer.from('frame= 180 fps= 30 speed=1x'));
