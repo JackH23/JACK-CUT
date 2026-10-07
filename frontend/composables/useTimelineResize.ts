@@ -8,6 +8,8 @@ import {
     type SetStateAction,
 } from "react";
 
+import { useParams } from "next/navigation";
+
 import { timelineService } from "@/services/timelineService";
 import type { TimelineItem } from "@/types/timeline";
 import {
@@ -43,6 +45,7 @@ export function useTimelineResize({
     displayDuration,
     onItemsChange,
 }: UseTimelineResizeOptions) {
+  const { projectId } = useParams<{ projectId: string }>();
     const resizeStateRef =
         useRef<ResizeState | null>(null);
 
@@ -309,7 +312,7 @@ export function useTimelineResize({
         resizeUpdatesRef.current.clear();
 
         void Promise.all(
-            updates.map(([id, values]) => timelineService.updateItem(id, values)),
+            updates.map(([id, values]) => timelineService.updateItem(id, values, projectId)),
         ).catch((error) => {
             console.error("Could not save timeline resize:", error);
             window.alert(

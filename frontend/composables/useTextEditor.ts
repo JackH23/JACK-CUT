@@ -10,6 +10,7 @@ import type { TimelineItem } from "@/types/timeline";
 import { timelineService } from "@/services/timelineService";
 
 type UseTextEditorProps = {
+  projectId: string;
   timelineItems: TimelineItem[];
   setTimelineItems: Dispatch<
     SetStateAction<TimelineItem[]>
@@ -17,6 +18,7 @@ type UseTextEditorProps = {
 };
 
 export function useTextEditor({
+  projectId,
   timelineItems,
   setTimelineItems,
 }: UseTextEditorProps) {
@@ -37,7 +39,7 @@ export function useTextEditor({
       try {
         await timelineService.updateItem(itemId, {
           textContent: normalizedText,
-        });
+        }, projectId);
 
         setTimelineItems((currentItems) =>
           currentItems.map((timelineItem) =>
@@ -56,7 +58,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [projectId, timelineItems, setTimelineItems],
   );
 
   const handleUpdateTextPosition = useCallback(
@@ -102,6 +104,7 @@ export function useTextEditor({
             textX: normalizedX,
             textY: normalizedY,
           },
+          projectId,
         );
       } catch (error) {
         console.error(
@@ -150,6 +153,7 @@ export function useTextEditor({
           {
             fontSize: normalizedFontSize,
           },
+          projectId,
         );
       } catch (error) {
         console.error(
@@ -211,6 +215,7 @@ export function useTextEditor({
             fontWeight:
               normalizedFontWeight,
           },
+          projectId,
         );
       } catch (error) {
         console.error(
@@ -274,6 +279,7 @@ export function useTextEditor({
             fontFamily:
               normalizedFontFamily,
           },
+          projectId,
         );
       } catch (error) {
         console.error(
@@ -337,6 +343,7 @@ export function useTextEditor({
             textColor:
               normalizedTextColor,
           },
+          projectId,
         );
       } catch (error) {
         console.error(

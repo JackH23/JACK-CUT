@@ -74,6 +74,7 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextFontFamily,
     handleUpdateTextColor,
   } = useTextEditor({
+    projectId,
     timelineItems,
     setTimelineItems,
   });
@@ -82,6 +83,7 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateAnimation,
     animationError,
   } = useAnimationEditor({
+    projectId,
     timelineItems,
     setTimelineItems,
   });
@@ -91,10 +93,10 @@ export function useEditorTimeline(projectId: string) {
     setTimelineItems(items => items.map(item => item.id === id ? { ...item, ...values } : item));
     if (!persist) return;
     const previous = transformSaves.current.get(id) ?? Promise.resolve();
-    const save = previous.catch(() => {}).then(() => timelineService.updateItem(id, values));
+    const save = previous.catch(() => {}).then(() => timelineService.updateItem(id, values, projectId));
     transformSaves.current.set(id, save);
     void save.catch(error => { console.error("Could not save media transform", error); window.alert("Could not save media size. Reload to restore saved values."); }).finally(() => { if (transformSaves.current.get(id) === save) transformSaves.current.delete(id); });
-  }, [setTimelineItems]);
+  }, [projectId, setTimelineItems]);
 
   const handleRemoveMedia = useCallback((fileId: string) => {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
@@ -109,7 +111,7 @@ export function useEditorTimeline(projectId: string) {
       if (!item) return;
 
       try {
-        await timelineService.removeItem(itemId);
+        await timelineService.removeItem(itemId, projectId);
 
         dispatch({
           type: "REMOVE_ITEM",
@@ -125,7 +127,7 @@ export function useEditorTimeline(projectId: string) {
         });
       }
     },
-    [timelineItems],
+    [projectId, timelineItems],
   );
 
   const activePreviewItem = useMemo(() => {

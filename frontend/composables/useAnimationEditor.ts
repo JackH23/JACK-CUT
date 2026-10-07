@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { TimelineItem } from '@/types/timeline';
 import { timelineService } from '@/services/timelineService';
 import { animationFields, getMediaAnimationSettings, type MediaAnimationSettings } from '@/lib/mediaAnimation';
-export function useAnimationEditor({ timelineItems, setTimelineItems }: {
+export function useAnimationEditor({ projectId, timelineItems, setTimelineItems }: {
+    projectId: string;
     timelineItems: TimelineItem[];
     setTimelineItems: Dispatch<SetStateAction<TimelineItem[]>>;
 }) {
@@ -33,7 +34,7 @@ export function useAnimationEditor({ timelineItems, setTimelineItems }: {
         setTimelineItems(current => current.map(x => x.id === id ? { ...x, ...next } : x));
         const request = (queues.current.get(id) ?? Promise.resolve()).then(async () => {
             try {
-                const { item: saved } = await timelineService.updateItem(id, next);
+                const { item: saved } = await timelineService.updateItem(id, next, projectId);
                 const canonical = Object.fromEntries(animationFields.map(key => [key, saved[key.replace(/[A-Z]/g, c => '_' + c.toLowerCase()) as keyof typeof saved]]));
                 confirmed.current.set(id, canonical);
                 if (revisions.current.get(id) === revision) {
@@ -49,6 +50,6 @@ export function useAnimationEditor({ timelineItems, setTimelineItems }: {
             }
         });
         queues.current.set(id, request);
-    }, [setTimelineItems]);
+    }, [projectId, setTimelineItems]);
     return { handleUpdateAnimation, animationError };
 }

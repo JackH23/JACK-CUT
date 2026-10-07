@@ -9,6 +9,8 @@ import {
   type SetStateAction,
 } from "react";
 
+import { useParams } from "next/navigation";
+
 import { timelineService } from "@/services/timelineService";
 
 import type {
@@ -40,6 +42,7 @@ export function useTimelineDrag({
   onItemsChange,
   onDragExtensionChange,
 }: UseTimelineDragOptions) {
+  const { projectId } = useParams<{ projectId: string }>();
   const dragStateRef = useRef<{
     itemId: string;
     grabOffset: number;
@@ -280,6 +283,7 @@ export function useTimelineDrag({
           startTime,
           duration: draggedItem.duration,
         },
+        projectId,
       );
 
       onItemsChange((currentItems) =>

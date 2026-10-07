@@ -10,12 +10,13 @@ const {
 
 const router = express.Router();
 router.use(require("../middleware/authMiddleware"));
-router.use(require("../middleware/projectAccess"));
+// Route-level placement exposes :id, so ownership is checked against the stored item.
+const projectAccess = require("../middleware/projectAccess");
 
-router.get("/items", getTimelineItems);
-router.post("/items", addTimelineItem);
-router.get("/duration", getTimelineDuration);
-router.delete("/items/:id", deleteTimelineItem);
-router.patch("/items/:id", updateTimelineItem);
+router.get("/items", projectAccess, getTimelineItems);
+router.post("/items", projectAccess, addTimelineItem);
+router.get("/duration", projectAccess, getTimelineDuration);
+router.delete("/items/:id", projectAccess, deleteTimelineItem);
+router.patch("/items/:id", projectAccess, updateTimelineItem);
 
 module.exports = router;

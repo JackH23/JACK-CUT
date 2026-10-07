@@ -30,9 +30,10 @@ export const timelineService = {
     return data;
   },
 
-  async removeItem(id: string): Promise<RemoveTimelineItemResponse> {
+  async removeItem(id: string, projectId: string): Promise<RemoveTimelineItemResponse> {
     const { data } = await axios.delete<RemoveTimelineItemResponse>(
       `${TIMELINE_URL}/${encodeURIComponent(id)}`,
+      { params: { projectId } },
     );
 
     return data;
@@ -41,10 +42,12 @@ export const timelineService = {
   async updateItem(
     id: string,
     input: TimelineItemUpdateInput,
+    projectId: string,
   ): Promise<AddTimelineItemResponse> {
     const { data } = await axios.patch<AddTimelineItemResponse>(
       `${TIMELINE_URL}/${encodeURIComponent(id)}`,
       input,
+      { params: { projectId } },
     );
 
     return data;
