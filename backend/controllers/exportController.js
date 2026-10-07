@@ -19,6 +19,7 @@ const OUTPUT_DIR = path.resolve(process.cwd(), "exports");
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
+const VIDEO_ENCODER = process.env.FFMPEG_VIDEO_ENCODER || "libx264";
 
 // Persist only job metadata. A partial MP4 never implies completion.
 function saveExportJob(job) {
@@ -447,9 +448,12 @@ async function createExport(req, res) {
       String(totalDuration),
 
       "-c:v",
-      "h264_amf",
-      "-quality",
-      "balanced",
+      VIDEO_ENCODER,
+      ...(VIDEO_ENCODER === "h264_amf"
+        ? ["-quality", "balanced"]
+        : VIDEO_ENCODER === "libx264"
+          ? ["-preset", "medium", "-crf", "23"]
+          : []),
       "-pix_fmt",
       "yuv420p",
 
