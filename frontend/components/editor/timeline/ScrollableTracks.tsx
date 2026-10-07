@@ -4,10 +4,17 @@ import type { Dispatch, SetStateAction } from "react";
 import TimelineTracks from "./track/TimelineTracks";
 import { useScrollableTracks } from "@/composables/useScrollableTracks";
 import type { TimelineItem, TimelineTrack } from "@/types/timeline";
+import type {
+  MediaAnimationSettings,
+} from "@/lib/mediaAnimation";
 
 type ScrollableTracksProps = {
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
+  onUpdateAnimation: (
+    itemId: string,
+    settings: MediaAnimationSettings,
+  ) => void;
   items: TimelineItem[];
   tracks: TimelineTrack[];
   timelineTimes: string[];
@@ -28,13 +35,14 @@ export default function ScrollableTracks({
   timelineTimes,
   timelineDuration,
   playheadTime,
+  onUpdateAnimation,
   isPlaying,
   onItemsChange,
   onRemoveItem,
   onUpdateText,
   onPlayheadTimeChange,
 }: ScrollableTracksProps) {
-  
+
   const {
     timelineRef,
     scrollContainerRef,
@@ -66,6 +74,37 @@ export default function ScrollableTracks({
     onRemoveItem,
     onPlayheadTimeChange,
   });
+
+  const handleAnimationDurationChange = (
+    itemId: string,
+    phase: "in" | "out",
+    duration: number,
+    persist: boolean,
+  ) => {
+    const key =
+      phase === "in"
+        ? "animationInDuration"
+        : "animationOutDuration";
+
+    if (!persist) {
+      onItemsChange((current) =>
+        current.map((item) =>
+          item.id === itemId
+            ? {
+              ...item,
+              [key]: duration,
+            }
+            : item,
+        ),
+      );
+
+      return;
+    }
+
+    onUpdateAnimation(itemId, {
+      [key]: duration,
+    });
+  };
 
   return (
     <div
@@ -105,6 +144,9 @@ export default function ScrollableTracks({
           onResizeStart={handleResizeStart}
           onResizeMove={handleResizeMove}
           onResizeEnd={handleResizeEnd}
+          onAnimationDurationChange={
+            handleAnimationDurationChange
+          }
           onRemovePointerDown={handleRemovePointerDown}
           onRemoveDragStart={handleRemoveDragStart}
           onRemoveClick={handleRemoveClick}
@@ -127,9 +169,8 @@ export default function ScrollableTracks({
           onPointerMove={handlePlayheadPointerMove}
           onPointerUp={handlePlayheadPointerUp}
           onPointerCancel={handlePlayheadPointerUp}
-          className={`absolute bottom-0 top-0 z-30 w-0.5 -translate-x-1/2 touch-none cursor-ew-resize bg-orange-300 shadow-[0_0_8px_#fdba74] ${
-            isDraggingPlayhead ? "shadow-[0_0_14px_#fdba74]" : ""
-          }`}
+          className={`absolute bottom-0 top-0 z-30 w-0.5 -translate-x-1/2 touch-none cursor-ew-resize bg-orange-300 shadow-[0_0_8px_#fdba74] ${isDraggingPlayhead ? "shadow-[0_0_14px_#fdba74]" : ""
+            }`}
         >
           <div className="absolute -left-2 top-0 rounded-b bg-orange-300 px-1 py-0.5 text-[10px] font-bold text-black">
             ▶

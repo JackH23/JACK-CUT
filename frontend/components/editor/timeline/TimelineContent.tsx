@@ -7,6 +7,9 @@ import { Plus } from "lucide-react";
 import ScrollableTracks from "./ScrollableTracks";
 import TrackHeader from "./track/TrackHeader";
 import { useTimeline } from "@/composables/useTimeline";
+import type {
+  MediaAnimationSettings,
+} from "@/lib/mediaAnimation";
 
 type TimelineContentProps = {
   selectedItemId: string | null;
@@ -14,7 +17,16 @@ type TimelineContentProps = {
   items: TimelineItem[];
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
-  onUpdateText: (itemId: string, text: string) => void;
+  onUpdateText: (
+    itemId: string,
+    text: string,
+  ) => void;
+
+  onUpdateAnimation: (
+    itemId: string,
+    settings: MediaAnimationSettings,
+  ) => void;
+
   playheadTime: number;
   isPlaying: boolean;
   onPlayheadTimeChange: (position: number) => void;
@@ -25,6 +37,7 @@ export default function TimelineContent({
   onSelectItem,
   items,
   onItemsChange,
+  onUpdateAnimation,
   onRemoveItem,
   onUpdateText,
   playheadTime,
@@ -77,6 +90,7 @@ export default function TimelineContent({
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}
           onUpdateText={onUpdateText}
+          onUpdateAnimation={onUpdateAnimation}
           onPlayheadTimeChange={onPlayheadTimeChange}
         />
       </div>

@@ -105,6 +105,14 @@ export type TimelineTracksProps = {
   onResizeStart: (event: PointerEvent<HTMLButtonElement>, item: TimelineItem, edge: ResizeEdge) => void;
   onResizeMove: (event: PointerEvent<HTMLButtonElement>) => void;
   onResizeEnd: (event: PointerEvent<HTMLButtonElement>) => void;
+
+  onAnimationDurationChange: (
+    itemId: string,
+    phase: "in" | "out",
+    duration: number,
+    persist: boolean,
+  ) => void;
+
   onRemovePointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
   onRemoveDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onRemoveClick: (event: MouseEvent<HTMLButtonElement>, id: string) => void;

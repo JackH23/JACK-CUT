@@ -5,6 +5,9 @@ import type { Dispatch, SetStateAction } from "react";
 import type { TimelineItem } from "@/types/timeline";
 import TimelineContent from "./timeline/TimelineContent";
 import TimelineToolbar from "./timeline/TimelineToolbar";
+import type {
+  MediaAnimationSettings,
+} from "@/lib/mediaAnimation";
 
 type TimelineProps = {
   selectedItemId: string | null;
@@ -13,6 +16,10 @@ type TimelineProps = {
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
   onRemoveItem: (itemId: string) => void;
   onUpdateText: (itemId: string, text: string) => void;
+  onUpdateAnimation: (
+    itemId: string,
+    settings: MediaAnimationSettings,
+  ) => void;
   playheadTime: number;
   isPlaying: boolean;
   onPlayheadTimeChange: (position: number) => void;
@@ -25,6 +32,7 @@ export default function Timeline({
   onItemsChange,
   onRemoveItem,
   onUpdateText,
+  onUpdateAnimation,
   playheadTime,
   isPlaying,
   onPlayheadTimeChange,
@@ -39,6 +47,7 @@ export default function Timeline({
           onItemsChange={onItemsChange}
           onRemoveItem={onRemoveItem}
           onUpdateText={onUpdateText}
+          onUpdateAnimation={onUpdateAnimation}
           playheadTime={playheadTime}
           isPlaying={isPlaying}
           onPlayheadTimeChange={onPlayheadTimeChange}

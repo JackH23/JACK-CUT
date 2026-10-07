@@ -222,6 +222,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             onItemsChange={setTimelineItems}
             onRemoveItem={handleRemoveTimelineItem}
             onUpdateText={handleUpdateText}
+            onUpdateAnimation={handleUpdateAnimation}
             playheadTime={playheadTime}
             isPlaying={isPlaying}
             onPlayheadTimeChange={setPlayheadTime}

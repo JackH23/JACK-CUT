@@ -20,6 +20,7 @@ export default function TimelineTracks({
   onResizeStart,
   onResizeMove,
   onResizeEnd,
+  onAnimationDurationChange,
   onRemovePointerDown,
   onRemoveDragStart,
   onRemoveClick,
@@ -55,6 +56,9 @@ export default function TimelineTracks({
                 onResizeStart={onResizeStart}
                 onResizeMove={onResizeMove}
                 onResizeEnd={onResizeEnd}
+                onAnimationDurationChange={
+                  onAnimationDurationChange
+                }
                 onRemovePointerDown={onRemovePointerDown}
                 onRemoveDragStart={onRemoveDragStart}
                 onRemoveClick={onRemoveClick}

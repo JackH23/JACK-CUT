@@ -15,6 +15,7 @@ type TimelineClipProps = Pick<
   | "onRemovePointerDown"
   | "onRemoveDragStart"
   | "onRemoveClick"
+  | "onAnimationDurationChange"
 > & {
   item: TimelineItem;
   selected: boolean;
@@ -35,6 +36,7 @@ export default function TimelineClip({
   onRemovePointerDown,
   onRemoveDragStart,
   onRemoveClick,
+  onAnimationDurationChange,
 }: TimelineClipProps) {
   const isText =
     item.type === "text";
@@ -54,6 +56,7 @@ export default function TimelineClip({
 
   return (
     <div
+      data-timeline-clip
       draggable
       tabIndex={0}
       aria-label={clipName}
@@ -133,7 +136,13 @@ export default function TimelineClip({
       </button>
 
       <ClipMediaPreview item={item} />
-      <TimelineAnimationRegions item={item} />
+
+      <TimelineAnimationRegions
+        item={item}
+        onDurationChange={
+          onAnimationDurationChange
+        }
+      />
 
       {/* Media filename */}
       {!isText && (
