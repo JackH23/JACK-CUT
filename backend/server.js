@@ -69,6 +69,10 @@ app.use(
   animationOptionRoutes,
 );
 
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.get("/", (req, res) => {
   res.json({ message: "JackCut backend is running" });
 });
@@ -83,7 +87,7 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 async function startServer() {
   try {
@@ -117,7 +121,7 @@ async function startServer() {
       } catch (error) { if (error.original?.code !== "42701") throw error; }
     }
     // NULL means legacy mode: no destructive rewrite of existing animation trajectories.
-    app.listen(PORT, () => {
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server is running on http://localhost:${PORT}`);
     });
   } catch (error) {

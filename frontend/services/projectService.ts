@@ -30,3 +30,4 @@ export const projectService = {
     return data.project;
   },
 };
+export type { Project } from "@/lib/project";

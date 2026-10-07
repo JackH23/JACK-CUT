@@ -1,7 +1,20 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 let catalog;
+const linuxFamilies = new Map();
+function fontconfigFamily(family, weight) {
+  if (process.platform !== 'linux') return family;
+  const key = family + ':' + weight;
+  if (!linuxFamilies.has(key)) {
+    try {
+      const matched = execFileSync('fc-match', ['-f', '%{family}', family + ':weight=' + (weight === 700 ? 'bold' : 'regular')], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+      linuxFamilies.set(key, matched.trim().split(',')[0].toLowerCase() || family);
+    } catch { linuxFamilies.set(key, family); }
+  }
+  return linuxFamilies.get(key);
+}
 
 // libass sizes a font's ascender+descender cell; CSS font-size sizes its EM.
 // Read those metrics from the same installed font instead of hardcoding an
@@ -60,7 +73,7 @@ function getAssFontMetrics(family, weight) {
   // numeric b600 instead selects their regular face on DirectWrite.
   const target = weight >= 600 ? 700 : 400;
   for (const name of families) {
-    const choices = installedFonts().filter(font => font.families.includes(aliases[name] || name));
+    const choices = installedFonts().filter(font => font.families.includes(fontconfigFamily(aliases[name] || name, target)));
     if (!choices.length) continue;
     const font = choices.reduce((a, b) => Math.abs(a.weight-target) <= Math.abs(b.weight-target) ? a : b);
     return { ratio: font.ratio, weight: target };

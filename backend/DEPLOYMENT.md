@@ -46,6 +46,88 @@ Only @aws-sdk/client-s3 and @aws-sdk/lib-storage were added. Configuration is co
 - Complete authenticated image upload → timeline edit → FFmpeg export → private download → byte-range request → backend restart → persistent completed status passed in R2 and Windows local storage modes.
 - Complete R2 video-and-audio upload (including FFprobe duration extraction), export and download passed with the configured encoder. Validation database rows, objects and local files were removed.
 - git diff --check passed; main remained selected; backend/.env is ignored and untracked. DATABASE_URL support was preserved.
-- Frontend tsc found existing missing type exports: User from services/authService.ts (used by NavbarRight.tsx and ProfileModal.tsx), and Project from services/projectService.ts (used by ProjectModal.tsx). Those files were outside this change; a full frontend production build remains blocked until corrected.
+- The previously reported frontend missing type exports were fixed separately; frontend TypeScript and production build now pass.
 
 Linux image execution and R2 dashboard public-access settings were not validated from this Windows session. Keep the bucket private and satisfy the deployment requirements above before launch.
+
+
+## Linux production container
+
+Build from the repository root (not backend) because three shared frontend/lib files are required:
+
+~~~powershell
+Set-Location 'D:\pull from git\JACK-CUT'
+docker build --pull -f backend/Dockerfile -t jackcut-backend:local .
+~~~
+
+Linux/macOS equivalent, from the repository root:
+
+~~~sh
+docker build --pull -f backend/Dockerfile -t jackcut-backend:local .
+~~~
+
+The two-stage image uses node:24-bookworm-slim, installs production npm dependencies from package-lock.json, and runs as the non-root node user. It defaults to NODE_ENV=production, STORAGE_DRIVER=r2, FFMPEG_VIDEO_ENCODER=libx264, FFMPEG_PATH=/usr/bin/ffmpeg, FFPROBE_PATH=/usr/bin/ffprobe and TEMP_STORAGE_DIR=/tmp/jackcut. These are non-secret runtime defaults, overridable by the platform. The application binds 0.0.0.0 and uses PORT or 5001. Existing Windows environment overrides and local storage behavior remain intact; only the requested no-PORT default changes from 5000 to 5001.
+
+The repository-root .dockerignore uses an allowlist. It excludes backend/.env and all other .env variants, node_modules, Git metadata, local uploads/exports, scratch files, frontend app/build output and private key files. There are no secret build arguments, secret ENV values or secret files in image layers. Do not use backend/.env as a Docker build/run input: it may contain Windows paths and local database settings. Set production secrets through the hosting platform; never paste or echo them into build commands/logs.
+
+Required production secret/configuration variable NAMES:
+
+- DATABASE_URL (Neon PostgreSQL connection URL; current TLS behavior is preserved)
+- JWT_SECRET
+- JWT_EXPIRES_IN
+- REFRESH_TOKEN_EXPIRES_IN_DAYS
+- R2_ACCOUNT_ID
+- R2_ACCESS_KEY_ID
+- R2_SECRET_ACCESS_KEY
+- R2_BUCKET_NAME
+- R2_ENDPOINT
+
+Runtime defaults/names supplied by the image: NODE_ENV, STORAGE_DRIVER, FFMPEG_VIDEO_ENCODER, FFMPEG_PATH, FFPROBE_PATH, TEMP_STORAGE_DIR. Optional host variables: PORT and TRUST_PROXY. Set TRUST_PROXY only for the actual trusted proxy topology. Do not inject DB_NAME/DB_USER/DB_PASSWORD/DB_HOST or Windows FFmpeg paths into production. NEXT_PUBLIC_API_URL belongs to the separate frontend build, not this backend image.
+
+For a local container validation, first populate the required named variables in the current shell using your private secret manager. The following command forwards existing environment variables by NAME without placing values in the command or mounting a secret file (PowerShell and POSIX shell both accept this single line):
+
+~~~sh
+docker run --rm --name jackcut-backend -p 5001:5001 -e PORT=5001 -e DATABASE_URL -e JWT_SECRET -e JWT_EXPIRES_IN -e REFRESH_TOKEN_EXPIRES_IN_DAYS -e R2_ACCOUNT_ID -e R2_ACCESS_KEY_ID -e R2_SECRET_ACCESS_KEY -e R2_BUCKET_NAME -e R2_ENDPOINT jackcut-backend:local
+~~~
+
+This intentionally creates no persistent volume for media, exports or scratch. R2 is persistent storage. /tmp/jackcut is ephemeral and owned by node; multer uploads and per-export directories use it and retain existing success/error cleanup. If enabling a read-only root filesystem, provide ephemeral writable tmpfs at /tmp with ownership for UID/GID 1000 and sufficient render capacity; it is not a persistent media volume. Abrupt termination can leave scratch until the container is discarded. Provide enough scratch for downloaded sources plus output, and sufficient CPU/memory/time limits.
+
+In another terminal, validate health:
+
+~~~sh
+curl --fail http://localhost:5001/health
+~~~
+
+PowerShell equivalent:
+
+~~~powershell
+Invoke-RestMethod http://localhost:5001/health
+~~~
+
+Expected response: {"status":"ok"}. It is unauthenticated and contains no configuration or credentials. The server starts listening only after database authentication and existing schema initialization succeed, so failed startup does not return a healthy response. The image HEALTHCHECK checks this endpoint using the runtime PORT. It is a liveness check; it does not continuously probe Neon or R2.
+
+### FFmpeg and fonts
+
+Debian's ffmpeg package provides both ffmpeg and ffprobe, including libx264 and libass. The image sets Linux executable paths explicitly, avoiding host Windows paths. Its build-time check verifies FFprobe, libass filter availability, a real short Arial ASS render with libx264, required shared module imports, font metric discovery and writable scratch, all as node. No database or R2 access/secrets are needed during the image build.
+
+Fonts: fontconfig, fonts-liberation2 (metric-compatible Arial/Times New Roman/Courier New substitutes), fonts-dejavu-core and fonts-noto-core (broad Unicode coverage, including Thai). The existing backend/assets/fonts/Inter-Regular.ttf is empty (zero bytes), so the image deliberately excludes that placeholder and installs Debian fonts-inter instead. fc-cache builds the system font index. Standard system Fontconfig handles requested saved font families; the exporter now uses fc-match on Linux to obtain metrics from the same installed substitute that libass uses. Windows font lookup is unchanged. Proprietary fonts such as Georgia/Verdana are substituted; exact Windows glyph fidelity requires legally supplied exact fonts. CJK or specialist scripts may require adding appropriate font packages. Do not point FONTCONFIG_FILE at the legacy backend/assets/fonts/fonts.conf: it omits normal system font directories.
+
+Only these three frontend files enter the image, at /app/frontend/lib:
+
+- textLayout.json: shared design units, default text styles, and media geometry reference dimensions.
+- mediaAnimation.js: shared media animation math used by timeline/export utilities and text animation.
+- textAnimation.js: shared text animation state used by the ASS subtitle generator; imports mediaAnimation.js.
+
+No Next.js app, frontend dependencies, TypeScript files or browser build is needed in the backend image.
+
+### Remaining deployment requirements
+
+Keep R2 public access disabled and provision bucket-scoped object read/write/delete permissions. Supply reachable Neon credentials with schema permissions for the existing startup initialization. Migrate legacy disk media before relying on ephemeral containers. Run one backend instance until durable worker leases/queueing are implemented. Configure HTTPS, uploads/request time limits and query-redacted proxy logs. Confirm actual Linux text rendering/encoder behavior by building and running this image before deployment; static validation on Windows cannot certify a Linux runtime.
+
+### Container preparation validation
+
+- All 120 backend tests passed, including Linux Fontconfig substitution/cache behavior and unchanged Windows font lookup.
+- A temporary backend process started successfully with a supplied PORT; GET /health returned {"status":"ok"} without authentication, and protected media remained unauthorized without authentication. The process was stopped afterward.
+- Static checks passed for Dockerfile JSON instructions, runtime COPY paths, the three-file shared dependency closure, and the restrictive context. backend/.env and secret variants are excluded without reading their contents.
+- Docker was not available in this Windows session, so no Linux image was built or run. The real image build and its embedded FFmpeg/libass/font/scratch smoke checks must be executed on a Docker-capable host before deployment.
+- Files changed for container preparation: .dockerignore (new), backend/Dockerfile (new), backend/server.js, backend/utils/textFontMetrics.js, backend/tests/textFontMetrics.test.cjs, backend/DEPLOYMENT.md. Existing frontend service changes were preserved without modification.
