@@ -59,7 +59,7 @@ test('project service uses shared authenticated API with encoded IDs',async()=>{
 });
 test('delete errors are visible inside the modal and controls are disabled without changing layout',()=>{
  const props={name:'',setName(){},projects:[{id:'one',name:'One'}],loading:false,creating:false,error:'Active export prevents deletion',handleCreate(){},projectToDelete:{id:'one',name:'One'},deleting:true,requestDelete(){},cancelDelete(){},confirmDelete(){}};
- const realComponent=load('app/projects/page.tsx',{react:React,'react/jsx-runtime':jsxRuntime,'next/link':()=>null,'lucide-react':{LoaderCircle:()=>null,Trash2:()=>null},'@/composables/useProjectsPage':{useProjectsPage:()=>props},'@/components/shared/LoadingSkeleton':()=>null}).default;
+ const realComponent=load('app/projects/page.tsx',{react:React,'react/jsx-runtime':jsxRuntime,'next/link':()=>null,'next/navigation':{useSearchParams:()=>new URLSearchParams()},'lucide-react':{ArrowLeft:()=>null,ArrowRight:()=>null,Clapperboard:()=>null,FolderOpen:()=>null,Plus:()=>null,Video:()=>null,LoaderCircle:()=>null,Trash2:()=>null},'@/composables/useProjectsPage':{useProjectsPage:()=>props},'@/components/shared/LoadingSkeleton':()=>null}).default;
  const html=renderToStaticMarkup(React.createElement(realComponent));
  assert.match(html,/inert=""/);assert.match(html,/role="alertdialog"/);assert.ok(html.indexOf('Active export prevents deletion')>html.indexOf('role="alertdialog"'));assert.match(html,/disabled=""/);assert.match(html,/bg-\[#191b25\]/);
 });
@@ -121,4 +121,45 @@ test('editor renders Export cancelled without error/success modal or download bu
  const html=renderToStaticMarkup(React.createElement(Page,{params:Promise.resolve({projectId:'project'})}));
  assert.match(html,/role="status"[^>]*>Export cancelled/);
  assert.doesNotMatch(html,/Something went wrong|Unexpected .* modal|Download MP4/);
+});
+for (const kind of ['Login', 'Register']) test(kind + ' authenticated success continues to home', async () => {
+  const runner = hooks(), routes = [], router = { replace: route => routes.push(route) };
+  const reducerName = kind.toLowerCase();
+  const serviceName = reducerName;
+  const hook = load('composables/use' + kind + '.ts', {
+    react: runner.react,
+    'next/navigation': { useRouter: () => router },
+    axios,
+    '@/services/authService': { authService: { [serviceName]: async () => ({ id: 'user' }) } },
+    ['@/reducers/' + reducerName + 'Reducer']: load('reducers/' + reducerName + 'Reducer.ts', {}),
+  })['use' + kind];
+  let view = runner.render(hook);
+  view.setEmail('test@example.com');
+  view.setPassword('verification-password');
+  if (kind === 'Register') {
+    view.setName('Test');
+    view.setConfirmPassword('verification-password');
+  }
+  view = runner.render(hook);
+  await view.handleSubmit({ preventDefault() {} });
+  view = runner.render(hook);
+  assert.equal(view.success, true);
+  view.continueToHome();
+  assert.deepEqual(routes, ['/home']);
+});
+
+test('editor unauthorized project redirects to login without exposing project data', async () => {
+  const runner = hooks(), routes = [], router = { replace: route => routes.push(route) };
+  const hook = load('composables/useEditorProject.ts', {
+    react: runner.react,
+    axios,
+    'next/navigation': { useRouter: () => router },
+    '@/services/projectService': { projectService: { getProjectById: async () => {
+      throw { axiosError: true, response: { status: 401 } };
+    } } },
+  }).useEditorProject;
+  runner.render(() => hook('one'));
+  await settle();
+  assert.equal(runner.render(() => hook('one')).project, null);
+  assert.deepEqual(routes, ['/login']);
 });

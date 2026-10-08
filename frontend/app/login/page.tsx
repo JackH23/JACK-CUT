@@ -18,7 +18,7 @@ export default function LoginPage() {
     success,
     handleSubmit,
     closeError,
-    continueToProjects,
+    continueToHome,
   } = useLogin();
 
   return (
@@ -42,7 +42,7 @@ export default function LoginPage() {
         <SuccessModal
           title="Login successful"
           message="Welcome to JackCut. Your projects are ready."
-          onClose={continueToProjects}
+          onClose={continueToHome}
         />
       )}
 

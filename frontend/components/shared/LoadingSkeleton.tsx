@@ -15,7 +15,8 @@ function SkeletonBlock({
 }) {
   return (
     <div
-      className={`animate-pulse rounded bg-white/10 ${className}`}
+      aria-hidden="true"
+      className={`motion-safe:animate-pulse rounded bg-white/10 ${className}`}
     />
   );
 }
@@ -127,24 +128,31 @@ function PageSkeleton({ count }: { count: number }) {
 
 function CardSkeleton({ count }: { count: number }) {
   return (
-    <div className="space-y-3">
-      {Array.from({ length: count }).map((_, index) => (
+    <div
+      aria-hidden="true"
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    >
+      {Array.from({ length: count }, (_, index) => (
         <div
           key={index}
-          className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#191b25] p-3"
+          className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#191b25]"
         >
-          <SkeletonBlock className="h-12 w-12 shrink-0" />
+          <SkeletonBlock className="aspect-video w-full rounded-none" />
 
-          <div className="flex-1 space-y-2">
+          <div className="p-4">
             <SkeletonBlock className="h-4 w-3/4" />
-            <SkeletonBlock className="h-3 w-1/2" />
+            <SkeletonBlock className="mt-3 h-3 w-1/2" />
+
+            <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
+              <SkeletonBlock className="h-4 w-24" />
+              <SkeletonBlock className="h-9 w-9" />
+            </div>
           </div>
         </div>
       ))}
     </div>
   );
 }
-
 
 export default function LoadingSkeleton({
   variant = "page",

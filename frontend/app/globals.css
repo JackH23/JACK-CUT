@@ -53,3 +53,18 @@ body {
 .media-scrollbar::-webkit-scrollbar-button {
   display: none;
 }
+/* Projects controls share a visible keyboard focus treatment. */
+.projects-page :is(button, a):focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projects-page *,
+  .projects-page *::before,
+  .projects-page *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

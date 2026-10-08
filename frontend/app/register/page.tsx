@@ -23,7 +23,7 @@ export default function RegisterPage() {
     success,
     handleSubmit,
     closeError,
-    continueToProjects,
+    continueToHome,
   } = useRegister();
 
   return (
@@ -50,7 +50,7 @@ export default function RegisterPage() {
         <SuccessModal
           title="Account created"
           message="Your JackCut account is ready."
-          onClose={continueToProjects}
+          onClose={continueToHome}
         />
       )}
 

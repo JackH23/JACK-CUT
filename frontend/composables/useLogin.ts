@@ -41,8 +41,8 @@ export function useLogin() {
     dispatch({ type: "CLEAR_ERROR" });
   }
 
-  function continueToProjects() {
-    router.replace("/projects");
+  function continueToHome() {
+    router.replace("/home");
   }
 
   return {
@@ -55,6 +55,6 @@ export function useLogin() {
     success: state.success,
     handleSubmit,
     closeError,
-    continueToProjects,
+    continueToHome,
   };
 }

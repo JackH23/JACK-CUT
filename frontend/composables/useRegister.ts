@@ -55,8 +55,8 @@ export function useRegister() {
     dispatch({ type: "CLEAR_ERROR" });
   }
 
-  function continueToProjects() {
-    router.replace("/projects");
+  function continueToHome() {
+    router.replace("/home");
   }
 
   return {
@@ -73,6 +73,6 @@ export function useRegister() {
     success: state.success,
     handleSubmit,
     closeError,
-    continueToProjects,
+    continueToHome,
   };
 }
