@@ -25,7 +25,7 @@ const ExportJob = sequelize.define(
       allowNull: false,
       defaultValue: "processing",
       validate: {
-        isIn: [["processing", "completed", "failed"]],
+        isIn: [["processing", "completed", "failed", "cancelled"]],
       },
     },
 

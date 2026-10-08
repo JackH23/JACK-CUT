@@ -1,18 +1,28 @@
 
 "use client";
 
-import { Film, LoaderCircle } from "lucide-react";
+import {
+  Film,
+  LoaderCircle,
+  X,
+} from "lucide-react";
 
 type ExportProgressProps = {
   progress?: number | null;
   message?: string;
   overlay?: boolean;
+
+  // Cancel export
+  cancelling?: boolean;
+  onCancel?: () => void;
 };
 
 export default function ExportProgress({
   progress = null,
   message = "Rendering video...",
   overlay = true,
+  cancelling = false,
+  onCancel,
 }: ExportProgressProps) {
   const hasProgress =
     typeof progress === "number" &&
@@ -38,11 +48,15 @@ export default function ExportProgress({
 
         <div className="flex-1">
           <h2 className="text-lg font-semibold">
-            Exporting video
+            {cancelling
+              ? "Cancelling export"
+              : "Exporting video"}
           </h2>
 
           <p className="text-xs text-zinc-400">
-            Please wait while we render your video.
+            {cancelling
+              ? "Waiting for the rendering process to stop."
+              : "Please wait while we render your video."}
           </p>
         </div>
 
@@ -52,7 +66,7 @@ export default function ExportProgress({
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <span className="text-sm text-zinc-400">
           {message}
         </span>
@@ -87,9 +101,33 @@ export default function ExportProgress({
       </div>
 
       <div className="mt-3 flex justify-between text-xs text-zinc-500">
-        <span>0%</span>
+        <span className="text-purple-400">
+          {hasProgress ? `${Math.round(percentage)}%` : "0%"}
+        </span>
         <span>100%</span>
       </div>
+
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={cancelling}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {cancelling ? (
+            <LoaderCircle
+              size={16}
+              className="animate-spin"
+            />
+          ) : (
+            <X size={16} />
+          )}
+
+          {cancelling
+            ? "Cancelling..."
+            : "Cancel Export"}
+        </button>
+      )}
     </div>
   );
 

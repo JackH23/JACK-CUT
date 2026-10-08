@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
@@ -23,12 +24,22 @@ function getExportError(error: unknown, fallback: string): string {
 
 export function useExportVideo() {
   const [state, dispatch] = useReducer(exportReducer, initialExportState);
+
   const startingRef = useRef(false);
+  const cancellingRef = useRef(false);
+  const currentJobRef = useRef(state.job);
+
+  currentJobRef.current = state.job;
 
   const startExport = useCallback(async (projectId: string) => {
     if (startingRef.current) return;
 
+    // Do not start another export while one is processing.
+    if (currentJobRef.current?.status === "processing") return;
+
     startingRef.current = true;
+    cancellingRef.current = false;
+
     dispatch({ type: "EXPORT_START" });
 
     try {
@@ -45,6 +56,35 @@ export function useExportVideo() {
       });
     } finally {
       startingRef.current = false;
+    }
+  }, []);
+
+  const cancelExport = useCallback(async () => {
+    const job = currentJobRef.current;
+
+    if (!job || job.status !== "processing") return;
+    if (cancellingRef.current) return;
+
+    cancellingRef.current = true;
+
+    dispatch({ type: "EXPORT_CANCEL_START" });
+
+    try {
+      await exportService.cancel(job.id);
+
+      // The backend acknowledges the request before FFmpeg fully stops.
+      // Continue polling until the status becomes "cancelled".
+      dispatch({ type: "EXPORT_CANCEL_REQUESTED" });
+    } catch (error) {
+      cancellingRef.current = false;
+
+      dispatch({
+        type: "EXPORT_CANCEL_ERROR",
+        payload: getExportError(
+          error,
+          "Could not cancel video export.",
+        ),
+      });
     }
   }, []);
 
@@ -65,6 +105,10 @@ export function useExportVideo() {
 
         consecutiveFailures = 0;
 
+        if (job.status !== "processing") {
+          cancellingRef.current = false;
+        }
+
         dispatch({
           type: "EXPORT_STATUS_UPDATED",
           payload: job,
@@ -75,14 +119,29 @@ export function useExportVideo() {
         }
       } catch (error) {
         if (!active) return;
-        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-        const transient = axios.isAxiosError(error) &&
-          (status === undefined || status === 408 || status === 429 || status >= 500);
+
+        const status = axios.isAxiosError(error)
+          ? error.response?.status
+          : undefined;
+
+        const transient =
+          axios.isAxiosError(error) &&
+          (status === undefined ||
+            status === 408 ||
+            status === 429 ||
+            status >= 500);
+
         if (transient && consecutiveFailures < 5) {
           consecutiveFailures += 1;
-          timer = setTimeout(checkStatus, Math.min(2000 * consecutiveFailures, 10000));
+
+          timer = setTimeout(
+            checkStatus,
+            Math.min(2000 * consecutiveFailures, 10000),
+          );
           return;
         }
+
+        cancellingRef.current = false;
 
         dispatch({
           type: "EXPORT_ERROR",
@@ -104,9 +163,13 @@ export function useExportVideo() {
 
   return {
     startExport,
+    cancelExport,
+
     exportJob: state.job,
     exporting: state.loading,
+    cancelling: state.cancelling,
     exportError: state.error,
+
     downloadUrl:
       state.job?.status === "completed"
         ? state.job.downloadUrl

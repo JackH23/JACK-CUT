@@ -4,12 +4,14 @@ import type { ExportJob } from "@/lib/export";
 export type ExportState = {
   job: ExportJob | null;
   loading: boolean;
+  cancelling: boolean;
   error: string | null;
 };
 
 export const initialExportState: ExportState = {
   job: null,
   loading: false,
+  cancelling: false,
   error: null,
 };
 
@@ -17,6 +19,9 @@ type ExportAction =
   | { type: "EXPORT_START" }
   | { type: "EXPORT_CREATED"; payload: ExportJob }
   | { type: "EXPORT_STATUS_UPDATED"; payload: ExportJob }
+  | { type: "EXPORT_CANCEL_START" }
+  | { type: "EXPORT_CANCEL_REQUESTED" }
+  | { type: "EXPORT_CANCEL_ERROR"; payload: string }
   | { type: "EXPORT_ERROR"; payload: string };
 
 function normalizeProgress(
@@ -53,6 +58,7 @@ export function exportReducer(
       return {
         job: null,
         loading: true,
+        cancelling: false,
         error: null,
       };
 
@@ -81,6 +87,9 @@ export function exportReducer(
               previousJob?.progress,
             );
 
+      const processing =
+        action.payload.status === "processing";
+
       return {
         ...state,
         job: {
@@ -88,7 +97,10 @@ export function exportReducer(
           ...action.payload,
           progress,
         },
-        loading: action.payload.status === "processing",
+        loading: processing,
+        cancelling: processing
+          ? state.cancelling
+          : false,
         error:
           action.payload.status === "failed"
             ? action.payload.error ??
@@ -97,10 +109,31 @@ export function exportReducer(
       };
     }
 
+    case "EXPORT_CANCEL_START":
+      return {
+        ...state,
+        cancelling: true,
+        error: null,
+      };
+
+    case "EXPORT_CANCEL_REQUESTED":
+      return {
+        ...state,
+        cancelling: true,
+      };
+
+    case "EXPORT_CANCEL_ERROR":
+      return {
+        ...state,
+        cancelling: false,
+        error: action.payload,
+      };
+
     case "EXPORT_ERROR":
       return {
         ...state,
         loading: false,
+        cancelling: false,
         error: action.payload,
       };
 

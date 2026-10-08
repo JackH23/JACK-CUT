@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -53,8 +54,10 @@ export function useEditorWorkspace(
 
   const {
     startExport,
+    cancelExport,
     exportJob,
     exporting,
+    cancelling,
     exportError,
     downloadUrl,
   } = useExportVideo();
@@ -77,11 +80,16 @@ export function useEditorWorkspace(
   ]);
 
   const handleExport = useCallback(() => {
+    setShowExportSuccess(false);
     void startExport(projectId);
   }, [
     projectId,
     startExport,
   ]);
+
+  const handleCancelExport = useCallback(() => {
+    void cancelExport();
+  }, [cancelExport]);
 
   const closeExportSuccess =
     useCallback(() => {
@@ -125,10 +133,13 @@ export function useEditorWorkspace(
 
     exportJob,
     exporting,
+    cancelling,
     exportError,
     downloadUrl,
     showExportSuccess,
+
     handleExport,
+    handleCancelExport,
     closeExportSuccess,
   };
 }

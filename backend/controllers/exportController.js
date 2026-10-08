@@ -497,6 +497,8 @@ async function createExport(req, res) {
     const renderStarted = Date.now();
     const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args);
 
+    job.child = child;
+    job.cancelRequested = false;
 
     let progressBuffer = "";
 
@@ -594,24 +596,40 @@ async function createExport(req, res) {
         const renderSeconds =
           (Date.now() - renderStarted) / 1000;
         const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
-        job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames && renderSeconds > 0 ? Number(frames) / renderSeconds : null, speed: renderSeconds > 0 ? totalDuration / renderSeconds : null };
-        if (spawnError || code !== 0) throw new Error("FFmpeg rendering failed.");
+        if (job.cancelRequested) {
+          job.status = "cancelled";
+          job.error = null;
+
+          await saveExportJob(job);
+          return;
+        }
+
+        if (spawnError || code !== 0) {
+          throw new Error("FFmpeg rendering failed.");
+        }
+
         job.outputReference = await storage.persist(
           outputPath,
-          "exports/" + id + ".mp4",
-          "video/mp4"
+          `exports/${id}.mp4`,
+          "video/mp4",
         );
 
         job.progress = 100;
         job.status = "completed";
 
         await saveExportJob(job);
-      } catch {
-        // Retain a completed object if saving metadata fails: a lost DB acknowledgement
-        // must never trigger deletion of an object that may already be referenced.
+      } catch (error) {
+        console.error("Export finish failed:", error);
+
         job.status = "failed";
-        job.error = "Could not complete export. Check FFmpeg, storage and database availability.";
-        try { await saveExportJob(job); } catch { console.error("Could not persist failed export status."); }
+        job.error =
+          "Could not complete export. Check FFmpeg, storage and database availability.";
+
+        try {
+          await saveExportJob(job);
+        } catch {
+          console.error("Could not persist failed export status.");
+        }
       } finally {
         jobs.delete(id);
         await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
@@ -693,6 +711,74 @@ async function getExport(req, res) {
   }
 }
 
+
+async function cancelExport(req, res) {
+  try {
+    const job = await findExportJob(
+      req.params.id,
+      req.user.id,
+    );
+
+    if (!job) {
+      return res.status(404).json({
+        message: "Export not found.",
+      });
+    }
+
+    if (job.status === "cancelled") {
+      return res.json({
+        id: job.id,
+        status: "cancelled",
+        message: "Export already cancelled.",
+      });
+    }
+
+    if (job.status !== "processing") {
+      return res.status(409).json({
+        message: "Only processing exports can be cancelled.",
+      });
+    }
+
+    const activeJob = jobs.get(job.id);
+
+    if (!activeJob?.child) {
+      return res.status(409).json({
+        message: "Active FFmpeg process not found.",
+      });
+    }
+
+    if (activeJob.cancelRequested) {
+      return res.status(202).json({
+        id: job.id,
+        status: "processing",
+        message: "Cancellation already requested.",
+      });
+    }
+
+    activeJob.cancelRequested = true;
+
+    if (!activeJob.child.kill("SIGTERM")) {
+      activeJob.cancelRequested = false;
+
+      return res.status(409).json({
+        message: "FFmpeg process already stopped.",
+      });
+    }
+
+    return res.status(202).json({
+      id: job.id,
+      status: "processing",
+      message: "Cancellation requested.",
+    });
+  } catch (error) {
+    console.error("Could not cancel export:", error);
+
+    return res.status(500).json({
+      message: "Could not cancel export.",
+    });
+  }
+}
+
 async function downloadExport(req, res) {
   try {
     const job = await findExportJob(req.params.id, req.user.id);
@@ -716,4 +802,10 @@ async function downloadExport(req, res) {
     });
   } catch { if (!res.headersSent) return res.status(500).json({ message: "Could not download export." }); }
 }
-module.exports = { createExport, getExport, downloadExport };
+
+module.exports = {
+  createExport,
+  getExport,
+  cancelExport,
+  downloadExport,
+};

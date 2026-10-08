@@ -1,6 +1,12 @@
+
 export type ExportJob = {
   id: string;
-  status: "processing" | "completed" | "failed";
+
+  status:
+    | "processing"
+    | "completed"
+    | "failed"
+    | "cancelled";
 
   // FFmpeg rendering progress (0–100)
   progress?: number | null;

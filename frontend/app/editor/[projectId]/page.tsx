@@ -88,10 +88,12 @@ function EditorWorkspace({ project }: { project: Project }) {
     timelineDuration,
     exportJob,
     exporting,
+    cancelling,
     exportError,
     downloadUrl,
     showExportSuccess,
     handleExport,
+    handleCancelExport,
     closeExportSuccess,
   } = useEditorWorkspace(project.id);
 
@@ -105,7 +107,13 @@ function EditorWorkspace({ project }: { project: Project }) {
       {exportJob?.status === "processing" && (
         <ExportProgress
           progress={exportJob.progress}
-          message="Rendering video..."
+          message={
+            cancelling
+              ? "Cancelling export..."
+              : "Rendering video..."
+          }
+          cancelling={cancelling}
+          onCancel={handleCancelExport}
           overlay
         />
       )}
