@@ -55,8 +55,16 @@ async function persist(filePath, key, contentType) {
   return target;
 }
 async function remove(reference) {
-  if (reference.startsWith("r2:/")) await getClient().send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: keyFrom(reference) }));
-  else await fsp.unlink(localPath(reference));
+  try {
+    if (reference.startsWith("r2:/")) {
+      const key = keyFrom(reference); // Validate before initializing the client.
+      await getClient().send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }));
+    } else await fsp.unlink(localPath(reference));
+  } catch (error) {
+    // S3 DeleteObject normally succeeds for missing keys. Never swallow bucket,
+    // authorization, transport or generic 404 errors as a successful deletion.
+    if (error.code !== 'ENOENT' && error.name !== 'NoSuchKey' && error.code !== 'NoSuchKey') throw error;
+  }
 }
 async function materialize(reference, workDir) {
   if (!reference.startsWith("r2:/")) return localPath(reference);

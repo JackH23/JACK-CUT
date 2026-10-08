@@ -98,6 +98,12 @@ async function startServer() {
     if (!exportColumns.metrics) await sequelize.getQueryInterface().addColumn("export_jobs", "metrics", {
       type: require("sequelize").DataTypes.JSONB, allowNull: true,
     });
+    if (!exportColumns.cleanup_reference) try {
+      await sequelize.getQueryInterface().addColumn('export_jobs', 'cleanup_reference', {
+        type: require('sequelize').DataTypes.TEXT, allowNull: true,
+      });
+    } catch (error) { if (error.original?.code !== '42701') throw error; }
+    await sequelize.query("CREATE INDEX IF NOT EXISTS export_jobs_cleanup_recovery ON export_jobs (completed_at) WHERE status = 'completed' AND cleanup_reference IS NOT NULL");
     // Additive migration for existing databases; never alter or reset other columns.
     const queryInterface = sequelize.getQueryInterface();
     const columns = await queryInterface.describeTable("timeline_items");
@@ -121,8 +127,12 @@ async function startServer() {
       } catch (error) { if (error.original?.code !== "42701") throw error; }
     }
     // NULL means legacy mode: no destructive rewrite of existing animation trajectories.
+    // Partial index keeps the recurring candidate lookup independent of retained history size.
+    await sequelize.query("CREATE INDEX IF NOT EXISTS export_jobs_cleanup_candidates ON export_jobs (completed_at) WHERE status = 'completed' AND output_path IS NOT NULL");
+    const exportCleanup = require("./services/exportCleanupService").getService();
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server is running on http://localhost:${PORT}`);
+      exportCleanup.start();
     });
   } catch (error) {
     console.error("Server startup failed; verify storage configuration, database connectivity and schema permissions.");

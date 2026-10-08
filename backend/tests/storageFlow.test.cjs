@@ -11,14 +11,15 @@ function load(relative, mocks = {}, env = {}) {
   vm.runInNewContext(fs.readFileSync(filename, "utf8"), { require: localRequire, module, exports: module.exports, __dirname: path.dirname(filename), __filename: filename, process: { env, cwd: () => backend }, console: { log() {}, error() {} }, Buffer, AbortController, setTimeout });
   return module.exports;
 }
-function response() { return { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } }; }
-function storageHarness(env = {}) {
+function response() { return Object.assign(new EventEmitter(), { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } }); }
+function storageHarness(env = {}, behavior = {}) {
   const calls = [], clients = [], uploads = [];
   class Command { constructor(input) { this.input = input; } }
-  class Client { constructor(options) { clients.push(options); } async send(command) { calls.push(command.input); return { Body: Readable.from([Buffer.from("data")]), ContentLength: 4, ContentType: "video/mp4", ContentRange: "bytes 0-3/10" }; } }
+  class DeleteCommand extends Command {}
+  class Client { constructor(options) { clients.push(options); } async send(command) { calls.push(command.input); if (behavior.send) return behavior.send(command, DeleteCommand); return { Body: Readable.from([Buffer.from("data")]), ContentLength: 4, ContentType: "video/mp4", ContentRange: "bytes 0-3/10" }; } }
   class Upload { constructor(options) { uploads.push(options); this.options = options; } async done() { for await (const chunk of this.options.params.Body) { assert.ok(chunk.length); } } }
   const values = { R2_ACCOUNT_ID: "dummy", R2_ACCESS_KEY_ID: "dummy", R2_SECRET_ACCESS_KEY: "dummy", R2_BUCKET_NAME: "test", R2_ENDPOINT: "https://example.invalid", ...env };
-  const storage = load("services/storage.js", { "@aws-sdk/client-s3": { S3Client: Client, GetObjectCommand: Command, DeleteObjectCommand: Command }, "@aws-sdk/lib-storage": { Upload } }, values);
+  const storage = load("services/storage.js", { "@aws-sdk/client-s3": { S3Client: Client, GetObjectCommand: Command, DeleteObjectCommand: DeleteCommand }, "@aws-sdk/lib-storage": { Upload } }, values);
   return { storage, calls, clients, uploads };
 }
 test("R2 transfers use streams and one shared client; temporary cleanup cannot delete persistent files", async () => {
@@ -88,8 +89,13 @@ test("timeline mutation authorization uses the stored project rather than forged
   const access = load("middleware/projectAccess.js", { "../models/Project": { findOne: async options => { assert.equal(options.where.id, projectId); assert.equal(options.where.user_id, "other-user"); return null; } }, "../models/TimelineItem": { findByPk: async () => ({ project_id: projectId }) }, "../models/ProjectMedia": {} });
   const res = response(); await access({ baseUrl: "/api/timeline", params: { id: projectId }, body: { projectId: "forged" }, query: {}, user: { id: "other-user" } }, res, () => assert.fail()); assert.equal(res.code, 404);
 });
-function exportHarness({ code = 0, downloadFails = false, uploadFails = false, dbFails = false, owned = true } = {}) {
-  const events = [], row = { id: projectId, project_id: projectId, status: "processing" }, child = new EventEmitter(); child.stderr = new EventEmitter();
+function exportHarness({ code = 0, downloadFails = false, uploadFails = false, dbFails = false, owned = true, serve } = {}) {
+  const events = [], row = { id: projectId, project_id: projectId, status: "processing" }, child = new EventEmitter(); child.stderr = new EventEmitter(); child.stdout = new EventEmitter();
+  const downloadTransactions = [];
+  const cleanup = require('../services/exportCleanupService').createExportCleanupService({
+    sequelize: { transaction: async callback => { downloadTransactions.push('begin'); try { return await callback({ LOCK: { SHARE: 'SHARE' } }); } finally { downloadTransactions.push('end'); } } },
+    ExportJob: { findByPk: async () => row }, storage: {}, Op: {},
+  });
   const controller = load("controllers/exportController.js", {
     "node:fs": { existsSync: () => true, writeFileSync() {} }, "node:child_process": { spawn: () => child }, "node:crypto": { randomUUID: () => projectId },
     "../models/TimelineItem": { findAll: async () => [{ item_type: "MEDIA", media_id: "source", start_time: 0, duration: 1, media_scale: 1 }] },
@@ -97,9 +103,10 @@ function exportHarness({ code = 0, downloadFails = false, uploadFails = false, d
     "../models/ProjectMedia": { findOne: async () => ({}) }, "../models/Project": { findOne: async () => owned ? {} : null },
     "../models/ExportJob": { create: async () => { events.push("job-created"); }, update: async data => { if (dbFails && data.status === "completed") throw new Error("db"); Object.assign(row, data); events.push(data.status); }, findByPk: async () => row },
     "../services/fileAccess": { fileUrl: () => "/protected/download" },
-    "../services/storage": { workspace: async () => "/scratch/render-one", materialize: async () => { if (downloadFails) throw new Error("download"); return "/scratch/render-one/source.png"; }, persist: async () => { assert.equal(row.status, "processing"); events.push("upload"); if (uploadFails) throw new Error("upload"); return "r2:/exports/" + projectId + ".mp4"; }, cleanup: async dir => { if (dir) events.push("cleanup"); }, serve: async () => { events.push("serve"); } },
+    "../services/exportCleanupService": { getService: () => cleanup },
+    "../services/storage": { workspace: async () => "/scratch/render-one", materialize: async () => { if (downloadFails) throw new Error("download"); return "/scratch/render-one/source.png"; }, persist: async () => { assert.equal(row.status, "processing"); events.push("upload"); if (uploadFails) throw new Error("upload"); return "r2:/exports/" + projectId + ".mp4"; }, cleanup: async dir => { if (dir) events.push("cleanup"); }, serve: async (_, req, res) => { events.push("serve"); if (serve) return serve(req, res); res.emit("finish"); } },
   });
-  return { controller, child, row, events, code };
+  return { controller, child, row, events, code, downloadTransactions };
 }
 test("exports publish only after R2 upload, clean scratch, and survive controller restart via DB metadata", async () => {
   const h = exportHarness(), res = response(); await h.controller.createExport({ body: { projectId }, user: { id: "owner" } }, res); assert.equal(res.code, 202);
@@ -118,4 +125,77 @@ for (const failure of ["render", "upload", "db", "download"]) test("export " + f
 test("export status and downloads deny non-owners", async () => {
   const h = exportHarness({ owned: false });
   for (const method of ["getExport", "downloadExport"]) { const res = response(); await h.controller[method]({ params: { id: projectId }, user: { id: "stranger" } }, res); assert.equal(res.code, 404); }
+});
+
+
+
+
+test('expired export status retains history and progress while download returns actionable 410', async () => {
+  const h = exportHarness();
+  Object.assign(h.row, { status: 'completed', progress: 100, completed_at: new Date(Date.now() - 25 * 3600000), output_path: 'r2:/exports/' + projectId + '.mp4' });
+  const req = { params: { id: projectId }, user: { id: 'owner' } };
+  const status = response(); await h.controller.getExport(req, status);
+  assert.equal(status.code, 200); assert.equal(status.body.status, 'completed'); assert.equal(status.body.progress, 100);
+  assert.equal(status.body.downloadAvailable, false); assert.equal(status.body.downloadUrl, null); assert.ok(status.body.expiresAt);
+  const download = response(); await h.controller.downloadExport(req, download);
+  assert.equal(download.code, 410); assert.equal(download.body.code, 'EXPORT_EXPIRED'); assert.match(download.body.message, /export.*again/i);
+  assert.equal(h.events.includes('serve'), false);
+});
+test('failed export status preserves stored partial progress', async () => {
+  const h = exportHarness(); Object.assign(h.row, { status: 'failed', progress: 47 });
+  const res = response(); await h.controller.getExport({ params: { id: projectId }, user: { id: 'owner' } }, res);
+  assert.equal(res.body.progress, 47); assert.equal(res.body.downloadAvailable, false);
+});
+
+
+for (const event of ['finish', 'close']) test('download transaction remains held until HTTP ' + event, async () => {
+  const h = exportHarness({ serve: async () => {} });
+  Object.assign(h.row, { status: 'completed', progress: 100, completed_at: new Date(), output_path: 'r2:/exports/' + projectId + '.mp4' });
+  const res = response();
+  const transfer = h.controller.downloadExport({ params: { id: projectId }, user: { id: 'owner' } }, res);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.downloadTransactions, ['begin']);
+  res.emit(event); await transfer;
+  assert.deepEqual(h.downloadTransactions, ['begin', 'end']);
+  assert.equal(res.listenerCount('finish'), 0); assert.equal(res.listenerCount('close'), 0);
+});
+test('download disconnected before lock acquisition does not open storage or hang', async () => {
+  const h = exportHarness(); Object.assign(h.row, { status: 'completed', completed_at: new Date(), output_path: 'r2:/exports/' + projectId + '.mp4' });
+  const res = response(); res.destroyed = true;
+  await h.controller.downloadExport({ params: { id: projectId }, user: { id: 'owner' } }, res);
+  assert.equal(h.events.includes('serve'), false); assert.deepEqual(h.downloadTransactions, ['begin', 'end']);
+});
+test('R2 removal uses DeleteObject with the exact bucket/key and propagates unsafe errors', async () => {
+  let deleted = 0;
+  const h = storageHarness({}, { send: async (command, DeleteCommand) => {
+    assert.ok(command instanceof DeleteCommand); assert.equal(command.input.Bucket, 'test'); assert.equal(command.input.Key, 'exports/job-one.mp4'); deleted++; return {};
+  } });
+  await h.storage.remove('r2:/exports/job-one.mp4'); assert.equal(deleted, 1);
+  await assert.rejects(h.storage.remove('r2:/exports/../../private'), /Invalid/); assert.equal(deleted, 1);
+  for (const error of [Object.assign(new Error('bucket absent'), { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } }), Object.assign(new Error('denied'), { $metadata: { httpStatusCode: 403 } }), new Error('transport')]) {
+    const failed = storageHarness({}, { send: async () => { throw error; } });
+    await assert.rejects(failed.storage.remove('r2:/exports/job-one.mp4'), failure => failure === error);
+  }
+  const missing = storageHarness({}, { send: async () => { throw Object.assign(new Error('absent'), { name: 'NoSuchKey' }); } });
+  await missing.storage.remove('r2:/exports/job-one.mp4');
+});
+test('missing local output deletion is idempotent without unlinking existing files', async () => {
+  let attempts = 0;
+  const storage = load('services/storage.js', { 'node:fs/promises': { unlink: async () => { attempts++; throw Object.assign(new Error('absent'), { code: 'ENOENT' }); } } });
+  await storage.remove(path.join(backend, 'exports', 'missing-test.mp4'));
+  await storage.remove(path.join(backend, 'exports', 'missing-test.mp4'));
+  assert.equal(attempts, 2);
+});
+test('R2 transfer aborts SDK request when the HTTP client disconnects', async () => {
+  let aborted = false;
+  const storage = load('services/storage.js', {
+    '@aws-sdk/client-s3': {
+      S3Client: class { async send(_, options) { return new Promise((resolve, reject) => { options.abortSignal.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); }, { once: true }); }); } },
+      GetObjectCommand: class {}, DeleteObjectCommand: class {},
+    },
+  }, { STORAGE_DRIVER: 'r2', R2_ACCOUNT_ID: 'test', R2_ACCESS_KEY_ID: 'test', R2_SECRET_ACCESS_KEY: 'test', R2_BUCKET_NAME: 'test', R2_ENDPOINT: 'https://example.invalid' });
+  const res = response(); res.setHeader = () => {}; res.destroy = () => {};
+  const transfer = storage.serve('r2:/exports/test.mp4', { headers: {} }, res);
+  await new Promise(resolve => setImmediate(resolve)); res.emit('close'); await transfer;
+  assert.equal(aborted, true); assert.equal(res.listenerCount('close'), 0);
 });

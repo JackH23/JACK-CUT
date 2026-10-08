@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "cleanup:dry-run": "node scripts/exportCleanup.js --dry-run"
   },
   "keywords": [],
   "author": "",

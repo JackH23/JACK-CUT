@@ -131,3 +131,48 @@ Keep R2 public access disabled and provision bucket-scoped object read/write/del
 - Static checks passed for Dockerfile JSON instructions, runtime COPY paths, the three-file shared dependency closure, and the restrictive context. backend/.env and secret variants are excluded without reading their contents.
 - Docker was not available in this Windows session, so no Linux image was built or run. The real image build and its embedded FFmpeg/libass/font/scratch smoke checks must be executed on a Docker-capable host before deployment.
 - Files changed for container preparation: .dockerignore (new), backend/Dockerfile (new), backend/server.js, backend/utils/textFontMetrics.js, backend/tests/textFontMetrics.test.cjs, backend/DEPLOYMENT.md. Existing frontend service changes were preserved without modification.
+
+## Export cleanup audit and operation
+
+Cleanup deletion is now **disabled by default**. `EXPORT_RETENTION_HOURS` remains a positive number of hours (default 24). Expired downloads are unavailable even while deletion is disabled: status preserves completed status/progress/metrics/history, supplies `downloadAvailable: false`, and download requests return HTTP 410 with `EXPORT_EXPIRED`. No rendering or subtitle timing changed: each FFmpeg workspace is cleaned after its process closes.
+
+### Read-only dry run
+
+From PowerShell:
+
+~~~powershell
+Set-Location 'D:\pull from git\JACK-CUT\backend'
+npm run cleanup:dry-run
+~~~
+
+The CLI loads the configured backend environment, reads export and media references in a PostgreSQL read-only repeatable-read transaction, and inspects only the local exports directory. It never starts the HTTP server, performs schema synchronization/migration, alters database rows, or calls storage deletion. It prints JSON to stdout; redirect to a report file if needed. Failure to read database references or inspect the directory aborts the report rather than treating references as absent. Old schemas without `cleanup_reference` can still report orphan candidates; reference-backed cleanup reporting states that the recovery migration is absent. The CLI supports only `--dry-run`, regardless of `EXPORT_CLEANUP_ENABLED`.
+
+An `orphan-candidate` is a regular MP4 older than retention with no matching basename in this configured database's export output/pending cleanup references or media references. Recent unreferenced files, referenced files and unsafe entries are distinguished. Matching legacy `.job.json` and `.ass` sidecars are listed without parsing or removing them. Age is only a reporting filter, never evidence that a render has completed. No current backend code reads `.job.json`, but legacy sidecars can still contain reconciliation evidence.
+
+**Orphan files cannot be deleted by this tool or by the scheduled worker.** Every report marks `deletionAllowed: false`. Before any separately authorized manual removal, inspect all relevant local/remote databases and legacy metadata, stop every backend/worker and verify no FFmpeg process or existing HTTP transfer/open file handle uses those files, then repeat the scan. Other database references, OS render processes and active download usage are explicitly marked unverified; an empty local-reference result from an R2-only database is insufficient. Never automate deletion from this report alone. Keep files when any verification is uncertain.
+
+### Enable reference-backed automatic cleanup
+
+Review the dry run and ensure the deployment uses the intended database/bucket and managed local exports directory. Install the additive schema migration through normal backend startup (nullable `export_jobs.cleanup_reference` plus a partial recovery index); the dry-run CLI does not install it. In the backend runtime environment set:
+
+~~~powershell
+$env:EXPORT_RETENTION_HOURS = '24'
+$env:EXPORT_CLEANUP_ENABLED = 'true'
+npm start
+~~~
+
+This enables deletion of **database-backed expired completed exports only**, including R2 objects. The scheduler runs every minute, up to 100 candidates per run, and never sweeps on startup. Stop/restart without `EXPORT_CLEANUP_ENABLED=true` to disable deletion. Pending recovery intents remain stored while disabled; downloads for those exports stay unavailable. No environment file is automatically edited. Existing deployment schema permissions must allow the additive migration/index creation.
+
+### Crash recovery and locking
+
+1. Under the shared worker advisory lock and update row locks with `SKIP LOCKED`, move each verified expired output reference into `cleanup_reference` and clear `output_path`. **Commit the deletion intent before calling storage.** A claim/database failure executes no deletion.
+2. In a separate per-export transaction, acquire an update row lock with `SKIP LOCKED`, reload the intent, and call the existing `storage.remove()` for the exact UUID export key/path. Duplicate recovery workers skip locked intents and recheck current state.
+3. Clear only `cleanup_reference` after successful/idempotent storage removal. If deletion, acknowledgement, transaction commit or the process fails, the already committed intent remains for a later run. Recovery does not depend on a new retention setting or file age. Individual failures do not abort deletion of other claimed exports. Error logs use generic messages without exception details or storage credentials.
+
+Export status, progress, metrics, completion dates, timestamps and PostgreSQL history remain intact (`silent: true` prevents timestamp rewriting). Both initial claiming and recovery skip download-locked rows. HTTP downloads retain a shared row lock/connection until transfer finish or disconnection; clients that disconnected before lock acquisition do not open storage. R2 disconnection aborts the SDK request. Size the database pool for long concurrent downloads. Existing render execution still requires one backend instance until durable rendering leases/queues exist; cleanup locking alone does not make the render/status architecture safe for multiple replicas.
+
+`storage.remove()` uses S3 `DeleteObject` with the configured bucket and validated exact key; missing keys are idempotent. Local ENOENT and explicit NoSuchKey are accepted. Bucket-not-found, generic 404, authorization and transport errors propagate and retain the durable intent. R2 deletion uses the existing SDK credentials/configuration; no new storage integration was added.
+
+### Audit validation scope
+
+Regression tests cover read-only/default-disabled behavior, claim-commit and acknowledgement failures, recovery after restart/retention change, per-file failures, worker/row locking, HTTP finish/disconnection, R2 abort and DeleteObject error semantics, orphan reference/sidecar checks and fail-closed inspection. Tests use mocks or newly created temporary fixtures. No live PostgreSQL migration, production mutation, real R2 deletion or existing MP4/ASS/JSON deletion is part of this audit's validation. Earlier validation entries above describe previous integration work, not this audit.

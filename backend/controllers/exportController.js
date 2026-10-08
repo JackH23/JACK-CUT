@@ -23,10 +23,41 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
 const VIDEO_ENCODER = process.env.FFMPEG_VIDEO_ENCODER || "libx264";
-async function saveExportJob(job) {
-  await ExportJob.update({ status: job.status, output_path: job.outputReference || null,
-    error_message: job.error, metrics: job.metrics || null, completed_at: job.status === "processing" ? null : new Date() }, { where: { id: job.id } });
+
+function parseFFmpegTime(value) {
+  if (!value) return null;
+
+  const match = String(value).trim().match(
+    /^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/
+  );
+
+  if (!match) return null;
+
+  return (
+    Number(match[1]) * 3600 +
+    Number(match[2]) * 60 +
+    Number(match[3])
+  );
 }
+
+
+async function saveExportJob(job) {
+  await ExportJob.update(
+    {
+      status: job.status,
+      progress: job.progress ?? 0,
+      output_path: job.outputReference || null,
+      error_message: job.error,
+      metrics: job.metrics || null,
+      completed_at:
+        job.status === "processing" ? null : new Date(),
+    },
+    {
+      where: { id: job.id },
+    }
+  );
+}
+
 async function findExportJob(id, userId) {
   if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
   const row = await ExportJob.findByPk(id);
@@ -37,8 +68,10 @@ async function findExportJob(id, userId) {
     await ExportJob.update({ status: row.status, error_message: row.error_message, completed_at: new Date() }, { where: { id, status: "processing" } });
   }
   // PostgreSQL owns durable status; the map contains only active renders.
-  return { id: row.id, status: row.status, outputReference: row.output_path, error: row.error_message,
-    metrics: row.metrics || null };
+  return {
+    id: row.id, status: row.status, outputReference: row.output_path, error: row.error_message,
+    cleanup_reference: row.cleanup_reference, progress: row.progress, completed_at: row.completed_at, metrics: row.metrics || null
+  };
 }
 
 function formatAssTime(seconds) {
@@ -233,13 +266,28 @@ async function createExport(req, res) {
 
     const id = randomUUID();
     const outputPath = path.join(OUTPUT_DIR, `${id}.mp4`);
-    const job = { id, status: "processing", outputPath, error: null, createdAt: Date.now() };
+    const job = {
+      id,
+      status: "processing",
+      progress: 0,
+      outputPath,
+      error: null,
+      createdAt: Date.now(),
+    };
     activeJob = job;
-    await ExportJob.create({ id, project_id: projectId, status: "processing" });
+    await ExportJob.create({
+      id,
+      project_id: projectId,
+      status: "processing",
+      progress: 0,
+    });
     jobs.set(id, job);
 
     const args = [
       "-y",
+      "-progress",
+      "pipe:1",
+      "-nostats",
       "-f",
       "lavfi",
       "-i",
@@ -397,8 +445,8 @@ async function createExport(req, res) {
 
       filters.push(
         `[${currentVideo}]` +
-          `ass='${escapedAssPath}'` +
-          `[${textVideo}]`,
+        `ass='${escapedAssPath}'` +
+        `[${textVideo}]`,
       );
 
       currentVideo = textVideo;
@@ -448,6 +496,86 @@ async function createExport(req, res) {
 
     const renderStarted = Date.now();
     const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args);
+
+
+    let progressBuffer = "";
+
+    // Track PostgreSQL progress updates
+    let lastSavedProgress = 0;
+    let lastSavedAt = Date.now();
+    let progressSaveQueue = Promise.resolve();
+
+
+    child.stdout.on("data", (chunk) => {
+      progressBuffer += chunk.toString();
+
+      const lines = progressBuffer.split(/\r?\n/);
+      progressBuffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const separator = line.indexOf("=");
+
+        if (separator === -1) continue;
+
+        const key = line.slice(0, separator);
+        const value = line.slice(separator + 1);
+
+        if (key !== "out_time") continue;
+
+        const seconds = parseFFmpegTime(value);
+
+        if (seconds === null || totalDuration <= 0) {
+          continue;
+        }
+
+        const percentage = Math.min(
+          99,
+          Math.max(
+            0,
+            Math.floor((seconds / totalDuration) * 100)
+          )
+        );
+
+        job.progress = Math.max(
+          job.progress,
+          percentage
+        );
+
+        // Save progress to PostgreSQL
+        if (
+          job.progress > lastSavedProgress &&
+          (
+            job.progress - lastSavedProgress >= 5 ||
+            Date.now() - lastSavedAt >= 1000
+          )
+        ) {
+          const progressToSave = job.progress;
+
+          lastSavedProgress = progressToSave;
+          lastSavedAt = Date.now();
+
+          progressSaveQueue = progressSaveQueue
+            .then(() =>
+              ExportJob.update(
+                { progress: progressToSave },
+                {
+                  where: {
+                    id,
+                    status: "processing",
+                  },
+                }
+              )
+            )
+            .catch((error) => {
+              console.error(
+                "Failed to save export progress:",
+                error
+              );
+            });
+        }
+      }
+    });
+
     let stderr = "";
 
     child.stderr.on("data", (chunk) => {
@@ -458,13 +586,25 @@ async function createExport(req, res) {
     const finish = async (code, spawnError) => {
       if (settled) return;
       settled = true;
+
       try {
-        const renderSeconds = (Date.now() - renderStarted) / 1000;
+        // Wait for pending PostgreSQL progress updates
+        await progressSaveQueue;
+
+        const renderSeconds =
+          (Date.now() - renderStarted) / 1000;
         const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
         job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames && renderSeconds > 0 ? Number(frames) / renderSeconds : null, speed: renderSeconds > 0 ? totalDuration / renderSeconds : null };
         if (spawnError || code !== 0) throw new Error("FFmpeg rendering failed.");
-        job.outputReference = await storage.persist(outputPath, "exports/" + id + ".mp4", "video/mp4");
+        job.outputReference = await storage.persist(
+          outputPath,
+          "exports/" + id + ".mp4",
+          "video/mp4"
+        );
+
+        job.progress = 100;
         job.status = "completed";
+
         await saveExportJob(job);
       } catch {
         // Retain a completed object if saving metadata fails: a lost DB acknowledgement
@@ -484,32 +624,96 @@ async function createExport(req, res) {
     return res.status(202).json({
       id,
       status: job.status,
+      progress: job.progress,
       statusUrl: `/api/exports/${id}`,
     });
   } catch (error) {
     if (!handedOff) {
       await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
-      if (activeJob) { activeJob.status = "failed"; activeJob.error = "Could not start export."; await saveExportJob(activeJob).catch(() => {}); jobs.delete(activeJob.id); }
+      if (activeJob) { activeJob.status = "failed"; activeJob.error = "Could not start export."; await saveExportJob(activeJob).catch(() => { }); jobs.delete(activeJob.id); }
     }
     console.error("Could not start export.");
     return res.status(500).json({ message: "Could not start export." });
   }
 }
 
+
 async function getExport(req, res) {
   try {
-    const job = await findExportJob(req.params.id, req.user.id);
-    if (!job) return res.status(404).json({ message: "Export not found." });
-    return res.json({ id: job.id, status: job.status, error: job.error, metrics: job.metrics,
-      downloadUrl: job.status === "completed" ? fileUrl(req, "export", job.id) : null });
-  } catch { return res.status(500).json({ message: "Could not load export." }); }
+    const job = await findExportJob(
+      req.params.id,
+      req.user.id,
+    );
+
+    if (!job) {
+      return res.status(404).json({
+        message: "Export not found.",
+      });
+    }
+
+    const activeJob = jobs.get(job.id);
+    const cleanup = require("../services/exportCleanupService")
+      .getService();
+
+    const progress =
+      job.status === "completed"
+        ? 100
+        : job.status === "processing"
+          ? Math.max(
+              Number(job.progress) || 0,
+              Number(activeJob?.progress) || 0,
+            )
+          : Number(job.progress) || 0;
+
+    const downloadAvailable = cleanup.available(job);
+
+    return res.json({
+      id: job.id,
+      status: job.status,
+      progress,
+      error: job.error,
+      metrics: job.metrics,
+      downloadAvailable,
+      expiresAt: job.completed_at
+        ? new Date(
+            new Date(job.completed_at).getTime() +
+              cleanup.retentionMs,
+          ).toISOString()
+        : null,
+      downloadUrl: downloadAvailable
+        ? fileUrl(req, "export", job.id)
+        : null,
+    });
+  } catch (error) {
+    console.error("Could not load export:", error);
+
+    return res.status(500).json({
+      message: "Could not load export.",
+    });
+  }
 }
+
 async function downloadExport(req, res) {
   try {
     const job = await findExportJob(req.params.id, req.user.id);
     if (!job) return res.status(404).json({ message: "Export not found." });
     if (job.status !== "completed") return res.status(409).json({ message: "Export is not ready." });
-    return await storage.serve(job.outputReference, req, res, { downloadName: "jackcut-" + job.id + ".mp4" });
+    const cleanup = require('../services/exportCleanupService').getService();
+    return await cleanup.withDownload(job.id, async row => {
+      if (res.destroyed || res.writableFinished) return;
+      if (!row || !cleanup.available(row)) return res.status(410).json({ code: 'EXPORT_EXPIRED', message: 'This export download has expired or is unavailable. Please export the project again.' });
+      let release;
+      const finished = new Promise(resolve => { release = resolve; });
+      res.once('finish', release);
+      res.once('close', release);
+      try {
+        await storage.serve(row.output_path, req, res, { downloadName: 'jackcut-' + job.id + '.mp4' });
+        await finished;
+      } finally {
+        res.off('finish', release);
+        res.off('close', release);
+      }
+    });
   } catch { if (!res.headersSent) return res.status(500).json({ message: "Could not download export." }); }
 }
 module.exports = { createExport, getExport, downloadExport };

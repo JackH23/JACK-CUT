@@ -6,7 +6,7 @@ async function create(extra={}){
  const item={id:'media-item',item_type:'MEDIA',media_id:'source',start_time:2,duration:4,source_start:1,
   media_scale:.55,media_x:-65,media_y:-40,animation_preset:'none',animation_amount:50,
   animation_in_preset:'none',animation_in_duration:1,animation_in_amount:50,animation_out_preset:'none',animation_out_duration:1,animation_out_amount:50,...extra};
- let args;const logs=[];const child=new EventEmitter();child.stderr=new EventEmitter();
+ let args;const logs=[];const child=new EventEmitter();child.stderr=new EventEmitter();child.stdout=new EventEmitter();
  const mockFs={existsSync:()=>true,mkdirSync(){},writeFileSync(){},renameSync(){}};
  const load=n=>{
   if(n==='../models/ExportJob')return {create:async()=>{},update:async()=>{}};

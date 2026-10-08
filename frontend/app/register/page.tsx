@@ -1,10 +1,13 @@
+
 "use client";
 
 import Link from "next/link";
 
 import { useRegister } from "@/composables/useRegister";
+
 import ErrorModal from "@/components/shared/ErrorModal";
 import SuccessModal from "@/components/shared/SuccessModal";
+import LoadingState from "@/components/shared/LoadingState";
 
 export default function RegisterPage() {
   const {
@@ -26,10 +29,24 @@ export default function RegisterPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0d0f15] p-4 text-white">
-      {error && (
-        <ErrorModal message={error} onClose={closeError} />
+      {/* Loading overlay */}
+      {loading && !success && (
+        <LoadingState
+          message="Creating account..."
+          size="lg"
+          overlay
+        />
       )}
 
+      {/* Error modal */}
+      {error && (
+        <ErrorModal
+          message={error}
+          onClose={closeError}
+        />
+      )}
+
+      {/* Success modal */}
       {success && (
         <SuccessModal
           title="Account created"
@@ -40,9 +57,12 @@ export default function RegisterPage() {
 
       <form
         onSubmit={handleSubmit}
+        aria-busy={loading}
         className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-white/10 bg-[#1c1f27] p-6"
       >
-        <h1 className="text-xl font-semibold">Create your JackCut account</h1>
+        <h1 className="text-xl font-semibold">
+          Create your JackCut account
+        </h1>
 
         <input
           type="text"
@@ -50,8 +70,9 @@ export default function RegisterPage() {
           autoComplete="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
+          disabled={loading || success}
           required
-          className="rounded border border-white/20 bg-[#111319] p-3"
+          className="rounded border border-white/20 bg-[#111319] p-3 disabled:opacity-60"
         />
 
         <input
@@ -60,8 +81,9 @@ export default function RegisterPage() {
           autoComplete="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          disabled={loading || success}
           required
-          className="rounded border border-white/20 bg-[#111319] p-3"
+          className="rounded border border-white/20 bg-[#111319] p-3 disabled:opacity-60"
         />
 
         <input
@@ -71,8 +93,9 @@ export default function RegisterPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           minLength={8}
+          disabled={loading || success}
           required
-          className="rounded border border-white/20 bg-[#111319] p-3"
+          className="rounded border border-white/20 bg-[#111319] p-3 disabled:opacity-60"
         />
 
         <input
@@ -80,20 +103,26 @@ export default function RegisterPage() {
           placeholder="Confirm password"
           autoComplete="new-password"
           value={confirmPassword}
-          onChange={(event) => setConfirmPassword(event.target.value)}
+          onChange={(event) =>
+            setConfirmPassword(event.target.value)
+          }
+          disabled={loading || success}
           required
-          className="rounded border border-white/20 bg-[#111319] p-3"
+          className="rounded border border-white/20 bg-[#111319] p-3 disabled:opacity-60"
         />
 
         <button
           type="submit"
           disabled={loading || success}
-          className="rounded bg-purple-700 p-3 font-medium disabled:opacity-50"
+          className="rounded bg-purple-700 p-3 font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? "Creating account..." : "Create account"}
+          Create account
         </button>
 
-        <Link href="/login" className="text-sm text-purple-300">
+        <Link
+          href="/login"
+          className="text-sm text-purple-300"
+        >
           Already have an account? Log in
         </Link>
       </form>

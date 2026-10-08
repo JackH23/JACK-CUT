@@ -14,6 +14,7 @@ import { useEditorProject } from "@/composables/useEditorProject";
 import { useEditorWorkspace } from "@/composables/useEditorWorkspace";
 import type { Project } from "@/lib/project";
 import LoadingSkeleton from "@/components/shared/LoadingSkeleton";
+import ExportProgress from "@/components/shared/ExportProgress";
 
 type EditorPageProps = {
   params: Promise<{ projectId: string }>;
@@ -100,6 +101,15 @@ function EditorWorkspace({ project }: { project: Project }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f15]">
+
+      {exportJob?.status === "processing" && (
+        <ExportProgress
+          progress={exportJob.progress}
+          message="Rendering video..."
+          overlay
+        />
+      )}
+
       {currentError && currentError !== dismissedError && (
         <ErrorModal
           message={currentError}
@@ -126,14 +136,9 @@ function EditorWorkspace({ project }: { project: Project }) {
         </Link>
       </div>
 
-      {(exportJob?.status === "processing" || downloadUrl || exportError) && (
-        <div className="flex items-center gap-3 bg-[#15171e] px-4 py-2 text-sm">
-          {exportJob?.status === "processing" && (
-            <span role="status" className="text-zinc-300">
-              Rendering video...
-            </span>
-          )}
 
+      {(downloadUrl || exportError) && (
+        <div className="flex items-center gap-3 bg-[#15171e] px-4 py-2 text-sm">
           {downloadUrl && (
             <a
               href={downloadUrl}
