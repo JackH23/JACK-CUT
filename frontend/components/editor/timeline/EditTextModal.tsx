@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 
 type EditTextModalProps = {
@@ -10,21 +10,17 @@ type EditTextModalProps = {
   onSave: (text: string) => void;
 };
 
-export default function EditTextModal({
-  open,
+export default function EditTextModal(props: EditTextModalProps) {
+  if (!props.open) return null;
+  return <EditTextForm key={props.initialText} {...props} />;
+}
+
+function EditTextForm({
   initialText,
   onClose,
   onSave,
 }: EditTextModalProps) {
   const [text, setText] = useState(initialText);
-
-  useEffect(() => {
-    if (open) {
-      setText(initialText);
-    }
-  }, [open, initialText]);
-
-  if (!open) return null;
 
   const handleSave = () => {
     const normalizedText = text.trim();

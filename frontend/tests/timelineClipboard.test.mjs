@@ -32,6 +32,7 @@ function fixture() {
     "../../frontend/lib/mediaAnimation": require("../lib/mediaAnimation"),
     "../models/AnimationOption": {findOne: async () => ({is_active:true})},
     sequelize: { Op: { in: Symbol("in") } },
+    "../services/fileAccess": { mediaUrl: value => value },
     "../models/Project": { findByPk: async id => ({ id }) },
     "../models/Media": { findByPk: async () => media, findAll: async () => [media] },
     "../models/TimelineItem": {
@@ -55,7 +56,7 @@ function fixture() {
     requests.push({ url, body });
     return call(controller.addTimelineItem, { body });
   }, patch: async (url,body) => call(controller.updateTimelineItem,{body,params:{id:url.split("/").at(-1)}}) };
-  const { timelineService } = load("frontend/services/timelineService.ts", { axios });
+  const { timelineService } = load("frontend/services/timelineService.ts", { "./api": { api: axios } });
   const cells = []; const cleanups = []; const effects = []; let index = 0; const listeners = new Set();
   const react = {
     useRef(value) { const i = index++; if (!(i in cells)) cells[i] = { current: value }; return cells[i]; },

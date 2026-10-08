@@ -161,7 +161,7 @@ $env:EXPORT_CLEANUP_ENABLED = 'true'
 npm start
 ~~~
 
-This enables deletion of **database-backed expired completed exports only**, including R2 objects. The scheduler runs every minute, up to 100 candidates per run, and never sweeps on startup. Stop/restart without `EXPORT_CLEANUP_ENABLED=true` to disable deletion. Pending recovery intents remain stored while disabled; downloads for those exports stay unavailable. No environment file is automatically edited. Existing deployment schema permissions must allow the additive migration/index creation.
+This enables deletion of **database-backed expired terminal exports (completed, failed or cancelled) only**, including R2 objects. The scheduler runs every minute, up to 100 candidates per run, and never sweeps on startup. Stop/restart without `EXPORT_CLEANUP_ENABLED=true` to disable deletion. Pending recovery intents remain stored while disabled; downloads for those exports stay unavailable. No environment file is automatically edited. Existing deployment schema permissions must allow the additive migration/index creation.
 
 ### Crash recovery and locking
 
@@ -176,3 +176,11 @@ Export status, progress, metrics, completion dates, timestamps and PostgreSQL hi
 ### Audit validation scope
 
 Regression tests cover read-only/default-disabled behavior, claim-commit and acknowledgement failures, recovery after restart/retention change, per-file failures, worker/row locking, HTTP finish/disconnection, R2 abort and DeleteObject error semantics, orphan reference/sidecar checks and fail-closed inspection. Tests use mocks or newly created temporary fixtures. No live PostgreSQL migration, production mutation, real R2 deletion or existing MP4/ASS/JSON deletion is part of this audit's validation. Earlier validation entries above describe previous integration work, not this audit.
+
+### Project deletion and retained export records
+
+Project deletion and export reservation lock the same owned project row. A processing database job or a local render still preparing, publishing or cleaning its workspace returns HTTP 409. Deletion sets terminal export project_id to null before removing project-scoped timeline/link records. Progress, metrics, dates and storage/recovery references remain intact; shared Media records/objects are retained. Detached history remains for cleanup/audit, but old project-authorized API/download links return 404.
+
+Opt-in cleanup also expires failed/cancelled outputs published before a later failure, requiring a terminal completed_at timestamp. Processing rows and missing timestamps fail closed. A missing process-map entry after restart cannot prove FFmpeg stopped; processing rows block deletion until an operator verifies termination and explicitly reconciles them.
+
+A crash between storage publication and database persistence can still leave an untracked object. Existing cleanup intents protect already tracked exports, not this publication gap. A durable publication journal/render lease requires separate review. Never enable orphan deletion as a workaround.

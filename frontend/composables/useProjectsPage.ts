@@ -1,6 +1,15 @@
+
 "use client";
 
-import { useEffect, useReducer, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+
 import { useRouter } from "next/navigation";
 import axios from "axios";
 
@@ -10,9 +19,18 @@ import {
   projectsReducer,
 } from "@/reducers/projectsReducer";
 
-function getErrorMessage(error: unknown, fallback: string): string {
+import type { Project } from "@/lib/project";
+
+function getErrorMessage(
+  error: unknown,
+  fallback: string,
+): string {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.message || fallback;
+    const message = error.response?.data?.message;
+
+    return typeof message === "string" && message.trim()
+      ? message
+      : fallback;
   }
 
   return error instanceof Error ? error.message : fallback;
@@ -20,8 +38,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export function useProjectsPage() {
   const router = useRouter();
+
   const [name, setName] = useState("");
-  const [state, dispatch] = useReducer(projectsReducer, initialProjectsState);
+
+  const [state, dispatch] = useReducer(
+    projectsReducer,
+    initialProjectsState,
+  );
+
+  // Delete project state
+  const [projectToDelete, setProjectToDelete] =
+    useState<Project | null>(null);
+
+  const [deleting, setDeleting] = useState(false);
+
+  const deletingRef = useRef(false);
+  const creatingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -32,20 +64,29 @@ export function useProjectsPage() {
       .getAll()
       .then((projects) => {
         if (active) {
-          dispatch({ type: "LOAD_SUCCESS", payload: projects });
+          dispatch({
+            type: "LOAD_SUCCESS",
+            payload: projects,
+          });
         }
       })
       .catch((cause: unknown) => {
         if (!active) return;
 
-        if (axios.isAxiosError(cause) && cause.response?.status === 401) {
+        if (
+          axios.isAxiosError(cause) &&
+          cause.response?.status === 401
+        ) {
           router.replace("/login");
           return;
         }
 
         dispatch({
           type: "LOAD_ERROR",
-          payload: getErrorMessage(cause, "Could not load projects."),
+          payload: getErrorMessage(
+            cause,
+            "Could not load projects.",
+          ),
         });
       });
 
@@ -54,21 +95,32 @@ export function useProjectsPage() {
     };
   }, [router]);
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+  async function handleCreate(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
 
     const trimmedName = name.trim();
-    if (!trimmedName || state.creating) return;
+
+    if (!trimmedName || creatingRef.current) return;
+
+    creatingRef.current = true;
 
     dispatch({ type: "CREATE_START" });
 
     try {
-      const project = await projectService.create(trimmedName);
+      const project = await projectService.create(
+        trimmedName,
+      );
 
       dispatch({ type: "CREATE_SUCCESS" });
+
       router.push(`/editor/${project.id}`);
     } catch (cause) {
-      if (axios.isAxiosError(cause) && cause.response?.status === 401) {
+      if (
+        axios.isAxiosError(cause) &&
+        cause.response?.status === 401
+      ) {
         dispatch({ type: "CREATE_SUCCESS" });
         router.replace("/login");
         return;
@@ -76,18 +128,92 @@ export function useProjectsPage() {
 
       dispatch({
         type: "CREATE_ERROR",
-        payload: getErrorMessage(cause, "Could not create project."),
+        payload: getErrorMessage(
+          cause,
+          "Could not create project.",
+        ),
       });
+    } finally {
+      creatingRef.current = false;
     }
   }
+
+  // Open the delete confirmation modal
+  const requestDelete = useCallback(
+    (project: Project) => {
+      if (deletingRef.current) return;
+
+      dispatch({ type: "DELETE_START" });
+      setProjectToDelete(project);
+    },
+    [],
+  );
+
+  // Close the modal without deleting anything
+  const cancelDelete = useCallback(() => {
+    if (deletingRef.current) return;
+
+    setProjectToDelete(null);
+  }, []);
+
+  // Delete the selected project after confirmation
+  const confirmDelete = useCallback(async () => {
+    if (!projectToDelete || deletingRef.current) return;
+
+    deletingRef.current = true;
+    setDeleting(true);
+    dispatch({ type: "DELETE_START" });
+
+    const projectId = projectToDelete.id;
+
+    try {
+      await projectService.delete(projectId);
+
+      // Remove the deleted project from the list
+      dispatch({
+        type: "DELETE_SUCCESS",
+        payload: projectId,
+      });
+
+      setProjectToDelete(null);
+    } catch (cause) {
+      if (
+        axios.isAxiosError(cause) &&
+        cause.response?.status === 401
+      ) {
+        router.replace("/login");
+        return;
+      }
+
+      dispatch({
+        type: "DELETE_ERROR",
+        payload: getErrorMessage(
+          cause,
+          "Could not delete project.",
+        ),
+      });
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
+    }
+  }, [projectToDelete, router]);
 
   return {
     name,
     setName,
+
     projects: state.projects,
     loading: state.loading,
     creating: state.creating,
     error: state.error,
+
     handleCreate,
+
+    // Delete project
+    projectToDelete,
+    deleting,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
   };
 }

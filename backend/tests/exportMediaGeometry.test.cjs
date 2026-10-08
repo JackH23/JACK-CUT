@@ -10,7 +10,7 @@ async function create(extra={}){
  const mockFs={existsSync:()=>true,mkdirSync(){},writeFileSync(){},renameSync(){}};
  const load=n=>{
   if(n==='../models/ExportJob')return {create:async()=>{},update:async()=>{}};
-  if(n==='../models/Project')return {};
+  if(n==='../models/Project')return {sequelize:{transaction:async callback=>callback({LOCK:{UPDATE:'UPDATE'}})},findOne:async()=>({})};
   if(n==='../models/ProjectMedia')return {findOne:async()=>({})};
   if(n==='../services/fileAccess')return {};
   if(n==='../services/storage')return {workspace:async()=>root+'/tmp/render-test',materialize:async()=>root+'/uploads/media/source.mp4',persist:async()=> 'r2:/exports/test.mp4',cleanup:async()=>{}};
@@ -24,7 +24,7 @@ async function create(extra={}){
  const m={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(root,'controllers/exportController.js'),'utf8'),{require:load,module:m,exports:m.exports,process:{cwd:()=>root,env:{}},console:{log:(...a)=>logs.push(a),error(){}},Date,Number,String,Map,Set,JSON});
  let response;const res={status(code){assert.equal(code,202);return this;},json(v){response=v;}};
- await m.exports.createExport({body:{projectId:'66ec12e5-244b-43e2-b36e-57bec761ade8'}},res);
+ await m.exports.createExport({body:{projectId:'66ec12e5-244b-43e2-b36e-57bec761ade8'},user:{id:'owner'}},res);
  child.stderr.emit('data',Buffer.from('frame= 180 fps= 30 speed=1x'));
  child.emit('close',0);
  return {graph:args[args.indexOf('-filter_complex')+1],clip:logs.find(e=>e[0]==='EXPORT CLIP')[1],response};

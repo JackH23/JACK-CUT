@@ -1,3 +1,4 @@
+
 import type { Project } from "@/lib/project";
 
 export type ProjectsState = {
@@ -20,7 +21,10 @@ type ProjectsAction =
   | { type: "LOAD_ERROR"; payload: string }
   | { type: "CREATE_START" }
   | { type: "CREATE_SUCCESS" }
-  | { type: "CREATE_ERROR"; payload: string };
+  | { type: "CREATE_ERROR"; payload: string }
+  | { type: "DELETE_START" }
+  | { type: "DELETE_SUCCESS"; payload: string }
+  | { type: "DELETE_ERROR"; payload: string };
 
 export function projectsReducer(
   state: ProjectsState,
@@ -28,13 +32,18 @@ export function projectsReducer(
 ): ProjectsState {
   switch (action.type) {
     case "LOAD_START":
-      return { ...state, loading: true, error: "" };
+      return {
+        ...state,
+        loading: true,
+        error: "",
+      };
 
     case "LOAD_SUCCESS":
       return {
         ...state,
         projects: action.payload,
         loading: false,
+        error: "",
       };
 
     case "LOAD_ERROR":
@@ -61,6 +70,24 @@ export function projectsReducer(
       return {
         ...state,
         creating: false,
+        error: action.payload,
+      };
+
+    case "DELETE_START":
+      return { ...state, error: "" };
+
+    case "DELETE_SUCCESS":
+      return {
+        ...state,
+        projects: state.projects.filter(
+          (project) => project.id !== action.payload,
+        ),
+        error: "",
+      };
+
+    case "DELETE_ERROR":
+      return {
+        ...state,
         error: action.payload,
       };
 

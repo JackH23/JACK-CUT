@@ -83,6 +83,9 @@ api.interceptors.response.use(
       ) {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
+        // Preserve the original 401 so callers redirect after session expiry,
+        // including refresh endpoints that reject with 400 or 403.
+        return Promise.reject(error);
       }
 
       return Promise.reject(refreshError);

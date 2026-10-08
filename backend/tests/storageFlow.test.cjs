@@ -58,7 +58,7 @@ function uploadHarness(fail = false, owned = true) {
     "fs/promises": { unlink: async file => unlinked.push(file) },
     "../services/storage": { persist: async (_, key) => "r2:/" + key, remove: async ref => removed.push(ref) },
     "../services/fileAccess": { mediaUrl: (_, media) => "/api/media/" + media.id + "/content" },
-    "../config/database": { transaction: async callback => callback({}) },
+    "../config/database": { transaction: async callback => callback({ LOCK: { SHARE: "SHARE" } }) },
     "../models/Media": { create: async data => { if (fail) throw new Error("database failed"); written.push(data); return { id: "new", ...data }; } },
     "../models/Project": { findOne: async options => { assert.equal(options.where.user_id, "owner"); return owned ? { id: projectId } : null; } },
     "../models/ProjectMedia": { create: async () => {} }, "../models/TimelineItem": {},
@@ -100,7 +100,7 @@ function exportHarness({ code = 0, downloadFails = false, uploadFails = false, d
     "node:fs": { existsSync: () => true, writeFileSync() {} }, "node:child_process": { spawn: () => child }, "node:crypto": { randomUUID: () => projectId },
     "../models/TimelineItem": { findAll: async () => [{ item_type: "MEDIA", media_id: "source", start_time: 0, duration: 1, media_scale: 1 }] },
     "../models/Media": { findAll: async () => [{ id: "source", file_path: "r2:/media/source.png", media_type: "image" }] },
-    "../models/ProjectMedia": { findOne: async () => ({}) }, "../models/Project": { findOne: async () => owned ? {} : null },
+    "../models/ProjectMedia": { findOne: async () => ({}) }, "../models/Project": { sequelize: { transaction: async callback => callback({ LOCK: { UPDATE: "UPDATE" } }) }, findOne: async () => owned ? {} : null },
     "../models/ExportJob": { create: async () => { events.push("job-created"); }, update: async data => { if (dbFails && data.status === "completed") throw new Error("db"); Object.assign(row, data); events.push(data.status); }, findByPk: async () => row },
     "../services/fileAccess": { fileUrl: () => "/protected/download" },
     "../services/exportCleanupService": { getService: () => cleanup },
@@ -116,7 +116,7 @@ test("exports publish only after R2 upload, clean scratch, and survive controlle
   await h.controller.downloadExport({ params: { id: projectId }, user: { id: "owner" } }, response()); assert.equal(h.events.at(-1), "serve");
 });
 for (const failure of ["render", "upload", "db", "download"]) test("export " + failure + " failure cleans scratch and never exposes an incomplete output", async () => {
-  const h = exportHarness({ uploadFails: failure === "upload", dbFails: failure === "db", downloadFails: failure === "download" }); const res = response(); await h.controller.createExport({ body: { projectId } }, res);
+  const h = exportHarness({ uploadFails: failure === "upload", dbFails: failure === "db", downloadFails: failure === "download" }); const res = response(); await h.controller.createExport({ body: { projectId }, user: { id: "owner" } }, res);
   if (failure !== "download") { assert.equal(res.code, 202); h.child.emit("close", failure === "render" ? 1 : 0); await new Promise(resolve => setImmediate(resolve)); assert.equal(h.row.status, "failed"); }
   else assert.equal(res.code, 500);
   assert.equal(h.events.at(-1), "cleanup");

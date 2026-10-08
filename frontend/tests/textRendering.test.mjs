@@ -45,15 +45,20 @@ async function exportText(items) {
     "../utils/textAnimationAss": require("../../backend/utils/textAnimationAss"),
     "../utils/textFontMetrics": require("../../backend/utils/textFontMetrics"),
     "node:path": path, "node:crypto": { randomUUID: () => "test-export" },
-    "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); return child; } },
+    "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); child.stdout = new EventEmitter(); return child; } },
     sequelize: { Op: { in: Symbol("in") } },
     "../../frontend/lib/textLayout.json": layout,
     "../models/TimelineItem": { findAll: async () => items },
     "../models/Media": {},
+    "../models/ExportJob": { create: async values => ({ ...values, save: async () => {} }), update: async () => {} },
+    "../models/Project": { sequelize: { transaction: async fn => fn({ LOCK: { UPDATE: "UPDATE" } }) }, findOne: async () => ({ id: "66ec12e5-244b-43e2-b36e-57bec761ade8" }) },
+    "../models/ProjectMedia": {},
+    "../services/fileAccess": {},
+    "../services/storage": { workspace: async () => "/mock/render-text", cleanup: async () => {} },
   }, false);
   let status;
   const response = { status(value) { status = value; return this; }, json() { return this; } };
-  await controller.createExport({ body: { projectId: "66ec12e5-244b-43e2-b36e-57bec761ade8" } }, response);
+  await controller.createExport({ user: { id: "owner" }, body: { projectId: "66ec12e5-244b-43e2-b36e-57bec761ade8" } }, response);
   assert.equal(status, 202);
   return { ass, args };
 }

@@ -29,7 +29,9 @@ export function useExportVideo() {
   const cancellingRef = useRef(false);
   const currentJobRef = useRef(state.job);
 
-  currentJobRef.current = state.job;
+  useEffect(() => {
+    currentJobRef.current = state.job;
+  }, [state.job]);
 
   const startExport = useCallback(async (projectId: string) => {
     if (startingRef.current) return;
@@ -44,6 +46,7 @@ export function useExportVideo() {
 
     try {
       const job = await exportService.create(projectId);
+      currentJobRef.current = job;
 
       dispatch({
         type: "EXPORT_CREATED",
@@ -171,7 +174,9 @@ export function useExportVideo() {
     exportError: state.error,
 
     downloadUrl:
-      state.job?.status === "completed"
+      state.job?.status === "completed" &&
+      state.job.downloadAvailable !== false &&
+      state.job.downloadUrl !== null
         ? state.job.downloadUrl
           ? new URL(
               state.job.downloadUrl,

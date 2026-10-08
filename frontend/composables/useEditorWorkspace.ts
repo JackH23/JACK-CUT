@@ -3,7 +3,6 @@
 
 import {
   useCallback,
-  useEffect,
   useState,
 } from "react";
 
@@ -62,29 +61,18 @@ export function useEditorWorkspace(
     downloadUrl,
   } = useExportVideo();
 
-  const [
-    showExportSuccess,
-    setShowExportSuccess,
-  ] = useState(false);
-
-  useEffect(() => {
-    if (
-      exportJob?.status === "completed" &&
-      downloadUrl
-    ) {
-      setShowExportSuccess(true);
-    }
-  }, [
-    exportJob?.status,
-    downloadUrl,
-  ]);
+  const [dismissedExportId, setDismissedExportId] = useState<string | null>(null);
+  const showExportSuccess = Boolean(
+    exportJob?.status === "completed" && downloadUrl && exportJob.id !== dismissedExportId,
+  );
 
   const handleExport = useCallback(() => {
-    setShowExportSuccess(false);
+    setDismissedExportId(exportJob?.id ?? null);
     void startExport(projectId);
   }, [
     projectId,
     startExport,
+    exportJob?.id,
   ]);
 
   const handleCancelExport = useCallback(() => {
@@ -93,8 +81,8 @@ export function useEditorWorkspace(
 
   const closeExportSuccess =
     useCallback(() => {
-      setShowExportSuccess(false);
-    }, []);
+      setDismissedExportId(exportJob?.id ?? null);
+    }, [exportJob?.id]);
 
   return {
     selectedItemId,

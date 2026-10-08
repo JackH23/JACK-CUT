@@ -5,28 +5,14 @@ import { projectService } from "@/services/projectService";
 import type { Project } from "@/lib/project";
 
 export function useEditorProject(projectId: string) {
-  const [project, setProject] = useState<Project | null>(null);
-  const [error, setError] = useState("");
-
+  const [result, setResult] = useState<{ id: string; project: Project | null; error: string } | null>(null);
   useEffect(() => {
     let active = true;
-
-    setProject(null);
-    setError("");
-
-    projectService
-      .getProjectById(projectId)
-      .then((result) => {
-        if (active) setProject(result);
-      })
-      .catch(() => {
-        if (active) setError("Could not load this project.");
-      });
-
-    return () => {
-      active = false;
-    };
+    projectService.getProjectById(projectId)
+      .then(project => { if (active) setResult({ id: projectId, project, error: "" }); })
+      .catch(() => { if (active) setResult({ id: projectId, project: null, error: "Could not load this project." }); });
+    return () => { active = false; };
   }, [projectId]);
-
-  return { project, error };
+  // A route change immediately hides the previous project without an effect reset.
+  return result?.id === projectId ? result : { project: null, error: "" };
 }

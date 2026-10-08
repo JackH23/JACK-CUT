@@ -27,9 +27,7 @@ export function useAnimationOptions() {
     useState<string | null>(null);
 
   const loadAnimationOptions =
-    useCallback(async () => {
-      setLoading(true);
-      setError(null);
+    useCallback(async (isActive: () => boolean) => {
 
       try {
         const response =
@@ -38,22 +36,26 @@ export function useAnimationOptions() {
             DEFAULT_LIMIT,
           );
 
+        if (!isActive()) return;
         setAnimationOptions(
           response.animationOptions,
         );
       } catch (error) {
+        if (!isActive()) return;
         setError(
           error instanceof Error
             ? error.message
             : "Could not load animation options.",
         );
       } finally {
-        setLoading(false);
+        if (isActive()) setLoading(false);
       }
     }, []);
 
   useEffect(() => {
-    loadAnimationOptions();
+    let active = true;
+    void Promise.resolve().then(() => { if (active) return loadAnimationOptions(() => active); });
+    return () => { active = false; };
   }, [loadAnimationOptions]);
 
   return {

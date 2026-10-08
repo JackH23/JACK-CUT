@@ -13,5 +13,7 @@ export type ExportJob = {
 
   error?: string | null;
   downloadUrl?: string | null;
+  downloadAvailable?: boolean;
+  expiresAt?: string | null;
   statusUrl?: string;
 };

@@ -98,6 +98,10 @@ async function uploadMedia(req, res) {
       prepared.push({ file, mediaType, durationSeconds, reference });
     }
     const createdMedia = await sequelize.transaction(async (transaction) => {
+      // Recheck after remote preparation; deletion may have committed meanwhile.
+      if (!await Project.findOne({ where: { id: projectId, user_id: req.user.id }, transaction, lock: transaction.LOCK.SHARE })) {
+        throw Object.assign(new Error("Project was deleted."), { projectDeleted: true });
+      }
       const media = [];
       for (const { file, mediaType, durationSeconds, reference } of prepared) {
         const item = await Media.create(
@@ -133,7 +137,7 @@ async function uploadMedia(req, res) {
   } catch (error) {
     console.error("Upload media failed.");
     if (!committed) await Promise.all(stored.map(reference => storage.remove(reference).catch(() => console.error("Upload rollback cleanup failed."))));
-    return res.status(500).json({ message: "Could not upload media." });
+    return res.status(error.projectDeleted ? 404 : 500).json({ message: error.projectDeleted ? "Project not found." : "Could not upload media." });
   } finally {
     await Promise.all(files.map(file => fs.unlink(file.path).catch(() => {})));
   }

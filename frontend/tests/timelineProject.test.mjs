@@ -5,10 +5,10 @@ import path from 'node:path';
 import ts from 'typescript';
 const frontend=path.resolve(import.meta.dirname,'..');
 function load(file,deps,base='http://localhost:5001') {
- const module={exports:{}};
+ const loadedModule={exports:{}};
  const code=ts.transpileModule(fs.readFileSync(path.join(frontend,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
- new Function('require','module','exports','process',code)(name=>{assert(name in deps,name);return deps[name];},module,module.exports,{env:{NEXT_PUBLIC_API_URL:base}});
- return module.exports;
+ new Function('require','module','exports','process',code)(name=>{assert(name in deps,name);return deps[name];},loadedModule,loadedModule.exports,{env:{NEXT_PUBLIC_API_URL:base}});
+ return loadedModule.exports;
 }
 for(const base of ['http://localhost:5001','https://backend.example.trycloudflare.com'])test('timeline mutation query format on '+base,async()=>{
  const calls=[];const api={delete:async(...args)=>{calls.push(['DELETE',...args]);return {data:{id:'item'}};},patch:async(...args)=>{calls.push(['PATCH',...args]);return {data:{item:{}}};},post:async(...args)=>{calls.push(['POST',...args]);return {data:{item:{}}};}};

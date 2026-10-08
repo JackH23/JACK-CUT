@@ -33,9 +33,7 @@ export function useFontOptions() {
     useState<string | null>(null);
 
   const loadFonts = useCallback(
-    async (currentPage: number) => {
-      setLoading(true);
-      setError(null);
+    async (currentPage: number, isActive: () => boolean) => {
 
       try {
         const response =
@@ -44,32 +42,40 @@ export function useFontOptions() {
             DEFAULT_LIMIT,
           );
 
+        if (!isActive()) return;
         setFonts(response.fonts);
         setTotalPages(response.totalPages);
       } catch (error) {
+        if (!isActive()) return;
         setError(
           error instanceof Error
             ? error.message
             : "Could not load fonts.",
         );
       } finally {
-        setLoading(false);
+        if (isActive()) setLoading(false);
       }
     },
     [],
   );
 
   useEffect(() => {
-    loadFonts(page);
+    let active = true;
+    void Promise.resolve().then(() => { if (active) return loadFonts(page, () => active); });
+    return () => { active = false; };
   }, [page, loadFonts]);
 
   const nextPage = () => {
+    if (page >= totalPages) return;
+    setLoading(true); setError(null);
     setPage((current) =>
       Math.min(current + 1, totalPages),
     );
   };
 
   const previousPage = () => {
+    if (page <= 1) return;
+    setLoading(true); setError(null);
     setPage((current) =>
       Math.max(current - 1, 1),
     );

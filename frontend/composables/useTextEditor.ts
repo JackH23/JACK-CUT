@@ -113,7 +113,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [timelineItems, setTimelineItems, projectId],
   );
 
   const handleUpdateTextFontSize = useCallback(
@@ -173,7 +173,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [timelineItems, setTimelineItems, projectId],
   );
 
   const handleUpdateTextFontWeight = useCallback(
@@ -236,7 +236,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [timelineItems, setTimelineItems, projectId],
   );
 
   const handleUpdateTextFontFamily = useCallback(
@@ -300,7 +300,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [timelineItems, setTimelineItems, projectId],
   );
 
   const handleUpdateTextColor = useCallback(
@@ -364,7 +364,7 @@ export function useTextEditor({
         );
       }
     },
-    [timelineItems, setTimelineItems],
+    [timelineItems, setTimelineItems, projectId],
   );
 
   return {

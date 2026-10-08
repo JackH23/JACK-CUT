@@ -4,7 +4,7 @@ const path = require('node:path');
 const { createExportCleanupService } = require('../services/exportCleanupService');
 const { inspectLocalExportOrphans } = require('../services/exportOrphanInspectionService');
 const now = 1800000000000;
-const Op = { lte: Symbol('lte'), ne: Symbol('ne'), or: Symbol('or') };
+const Op = { lte: Symbol('lte'), ne: Symbol('ne'), or: Symbol('or'), in: Symbol('in') };
 function job(status = 'completed', age = 25, extra = {}) {
   return { id: 'job-one', status, progress: status === 'completed' ? 100 : 45, metrics: { fps: 30 }, completed_at: new Date(now - age * 3600000), output_path: 'r2:/exports/job-one.mp4', cleanup_reference: null, ...extra };
 }
@@ -34,7 +34,7 @@ function harness(rows = [], options = {}) {
   return { service, removed, updates, queries, events, logs, db, model, storage };
 }
 test('active, recent completed and failed exports remain untouched', async () => {
-  const h = harness([job('processing'), job('completed', 23), job('failed')]);
+  const h = harness([job('processing'), job('completed', 23), job('failed', 23)]);
   assert.equal(await h.service.run(), 0); assert.deepEqual(h.removed, []);
   assert.equal(h.service.available(job('completed', 23)), true);
   assert.equal(h.service.available(job('processing')), false);
@@ -135,4 +135,18 @@ test('separate cleanup worker skips an intent held by another recovery worker', 
   const first = h.service.run(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(await other.run(), 0); assert.equal(h.removed.length, 1);
   release(); assert.equal(await first, 1);
+});
+
+test('expired failed and cancelled published outputs clean up while retaining status and progress', async () => {
+  for (const status of ['failed', 'cancelled']) {
+    const row = job(status); const h = harness([row]);
+    assert.equal(await h.service.run(), 1);
+    assert.equal(row.status, status); assert.equal(row.progress, 45);
+    assert.equal(row.output_path, null); assert.equal(row.cleanup_reference, null);
+    assert.deepEqual(row.metrics, { fps: 30 });
+  }
+});
+test('failed and cancelled outputs without a terminal timestamp fail closed', async () => {
+  const h = harness(['failed', 'cancelled'].map(status => job(status, 100, { completed_at: null })));
+  assert.equal(await h.service.run(), 0); assert.deepEqual(h.removed, []);
 });

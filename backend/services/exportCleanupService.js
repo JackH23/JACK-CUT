@@ -7,6 +7,9 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
   function isExpired(job) {
     return job.status === 'completed' && job.completed_at != null && new Date(job.completed_at).getTime() <= now() - retentionMs;
   }
+  function terminalExpired(job) {
+    return ["completed", "failed", "cancelled"].includes(job.status) && job.completed_at != null && new Date(job.completed_at).getTime() <= now() - retentionMs;
+  }
   function available(job) { return job.status === 'completed' && !job.cleanup_reference && Boolean(job.output_path ?? job.outputReference) && !isExpired(job); }
   function safeReference(job, ref = job.output_path) {
     if (typeof ref !== 'string') return false;
@@ -15,7 +18,7 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
     catch { return false; }
   }
   function candidateWhere() {
-    return { status: 'completed', [Op.or]: [
+    return { status: { [Op.in]: ['completed', 'failed', 'cancelled'] }, [Op.or]: [
       { cleanup_reference: { [Op.ne]: null } },
       { completed_at: { [Op.lte]: new Date(now() - retentionMs) }, output_path: { [Op.ne]: null } },
     ] };
@@ -26,7 +29,7 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
     try {
       if (dryRun) {
         const rows = await ExportJob.findAll({ where: candidateWhere(), order: [['completed_at', 'ASC']], limit: 100 });
-        return { dryRun: true, candidates: rows.filter(job => safeReference(job, job.cleanup_reference || job.output_path) && (job.cleanup_reference || isExpired(job))).map(job => ({ id: job.id, reference: job.cleanup_reference || job.output_path, pendingRecovery: Boolean(job.cleanup_reference) })) };
+        return { dryRun: true, candidates: rows.filter(job => safeReference(job, job.cleanup_reference || job.output_path) && (job.cleanup_reference || terminalExpired(job))).map(job => ({ id: job.id, reference: job.cleanup_reference || job.output_path, pendingRecovery: Boolean(job.cleanup_reference) })) };
       }
       // Phase 1 must COMMIT before any object removal. The intent survives restarts,
       // storage errors, failed acknowledgement and changes to the retention setting.
@@ -38,7 +41,7 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
         const claimed = [];
         for (const job of rows) {
           const reference = job.cleanup_reference || job.output_path;
-          if (!safeReference(job, reference) || (!job.cleanup_reference && !isExpired(job))) continue;
+          if (!safeReference(job, reference) || (!job.cleanup_reference && !terminalExpired(job))) continue;
           if (!job.cleanup_reference) await ExportJob.update({ cleanup_reference: reference, output_path: null }, { where: { id: job.id }, transaction, silent: true });
           claimed.push(job.id);
         }
@@ -49,7 +52,7 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
         try {
           // Row lock deduplicates recovery workers; a download's SHARE lock is skipped.
           removed += await sequelize.transaction(async transaction => {
-            const job = await ExportJob.findOne({ where: { id, status: 'completed', cleanup_reference: { [Op.ne]: null } }, transaction, lock: transaction.LOCK.UPDATE, skipLocked: true });
+            const job = await ExportJob.findOne({ where: { id, status: { [Op.in]: ['completed', 'failed', 'cancelled'] }, cleanup_reference: { [Op.ne]: null } }, transaction, lock: transaction.LOCK.UPDATE, skipLocked: true });
             if (!job || !safeReference(job, job.cleanup_reference)) return 0;
             await storage.remove(job.cleanup_reference);
             // If this commit fails, the durable intent still exists. Idempotent remove
