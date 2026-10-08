@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, type Dispatch } from "react";
+import { useCallback, useLayoutEffect, useRef, type Dispatch } from "react";
 
 import type {
   TextStyle,
@@ -19,6 +19,9 @@ type TimelineAction =
 
 type UseAddTextProps = {
   projectId: string;
+  playheadTime: number;
+  ready: boolean;
+  onSelectItem: (id: string) => void;
   tracks: TimelineTrack[];
   timelineItems: TimelineItem[];
   dispatch: Dispatch<TimelineAction>;
@@ -35,12 +38,21 @@ const DEFAULT_TEXT_DURATION = 5;
 
 export function useAddText({
   projectId,
+  playheadTime,
+  ready,
+  onSelectItem,
   tracks,
   timelineItems,
   dispatch,
 }: UseAddTextProps) {
+  const pending = useRef(false);
+  const itemsRef = useRef(timelineItems);
+  useLayoutEffect(() => {
+    itemsRef.current = timelineItems;
+  }, [timelineItems]);
   const handleAddText = useCallback(
     async (style: TextStyle) => {
+      if (!ready || pending.current) return;
       const titleTrack = tracks.find(
         (track) => track.name === "V3 Titles",
       );
@@ -52,22 +64,21 @@ export function useAddText({
         return;
       }
 
-      const lastTextEndTime = timelineItems
+      let startTime = Math.max(0, playheadTime);
+      const occupied = itemsRef.current
         .filter(
           (item) =>
-            item.type === "text" &&
             item.trackId === titleTrack.id,
         )
-        .reduce(
-          (latestEnd, item) =>
-            Math.max(
-              latestEnd,
-              item.startTime + item.duration,
-            ),
-          0,
-        );
+        .sort((a, b) => a.startTime - b.startTime);
 
-      const startTime = lastTextEndTime;
+      for (const item of occupied) {
+        if (startTime < item.startTime + item.duration &&
+            startTime + DEFAULT_TEXT_DURATION > item.startTime) {
+          startTime = item.startTime + item.duration;
+        }
+      }
+      pending.current = true;
 
       dispatch({
         type: "ADD_ITEM_START",
@@ -121,10 +132,10 @@ export function useAddText({
             savedItem.track_id,
 
           startTime:
-            savedItem.start_time,
+            Number(savedItem.start_time),
 
           duration:
-            savedItem.duration,
+            Number(savedItem.duration),
 
           startPosition:
             (savedItem.start_time /
@@ -139,10 +150,12 @@ export function useAddText({
           sourceStart: 0,
         };
 
+        itemsRef.current = [...itemsRef.current, newItem];
         dispatch({
           type: "ADD_ITEM_SUCCESS",
           payload: newItem,
         });
+        onSelectItem(newItem.id);
       } catch (error) {
         dispatch({
           type: "ADD_ITEM_ERROR",
@@ -151,12 +164,16 @@ export function useAddText({
               ? error.message
               : "Could not add text to the timeline.",
         });
+      } finally {
+        pending.current = false;
       }
     },
     [
       projectId,
+      playheadTime,
+      ready,
+      onSelectItem,
       tracks,
-      timelineItems,
       dispatch,
     ],
   );

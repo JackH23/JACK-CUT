@@ -22,6 +22,7 @@ export default function SettingsPanel({
   activeItem,
   onUpdateMediaTransform,
   onDuplicate,
+  onRemoveItem,
   canDuplicate = false,
 
   onUpdateTextFontSize,
@@ -175,6 +176,11 @@ export default function SettingsPanel({
 
           <button
             type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void onRemoveItem(activeItem.id);
+            }}
             className="flex items-center justify-center gap-2 rounded bg-[#24262e] py-2 text-xs font-semibold text-red-400 hover:bg-red-950/40"
           >
             <Trash2 size={15} />

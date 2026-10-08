@@ -199,6 +199,7 @@ function EditorWorkspace({ project }: { project: Project }) {
             />
 
             <SettingsPanel
+              onRemoveItem={handleRemoveTimelineItem}
               onUpdateMediaTransform={handleUpdateMediaTransform}
               activeItem={
                 selectedTimelineItem ??

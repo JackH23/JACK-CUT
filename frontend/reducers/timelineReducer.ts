@@ -3,7 +3,9 @@ import type { TimelineItem } from "@/types/timeline";
 
 export type TimelineState = {
   items: TimelineItem[];
+  removedIds: string[];
   loading: boolean;
+  loaded: boolean;
   adding: boolean;
   error: string | null;
   lastAddedItem: TimelineItem | null;
@@ -11,7 +13,9 @@ export type TimelineState = {
 
 export const initialTimelineState: TimelineState = {
   items: [],
-  loading: false,
+  removedIds: [],
+  loading: true,
+  loaded: false,
   adding: false,
   error: null,
   lastAddedItem: null,
@@ -38,6 +42,9 @@ export function timelineReducer(
       return {
         ...state,
         loading: true,
+        loaded: false,
+        items: [],
+        removedIds: [],
         error: null,
       };
 
@@ -48,8 +55,9 @@ export function timelineReducer(
       return {
         ...state,
         loading: false,
+        loaded: true,
         items: [
-          ...action.payload,
+          ...action.payload.filter(item => !state.removedIds.includes(item.id)),
           ...state.items.filter((item) => !loadedIds.has(item.id)),
         ],
       };
@@ -73,7 +81,7 @@ export function timelineReducer(
       return {
         ...state,
         adding: false,
-        items: [...state.items, action.payload],
+        items: [...state.items.filter(item => item.id !== action.payload.id), action.payload],
         lastAddedItem: action.payload,
       };
 
@@ -107,6 +115,7 @@ export function timelineReducer(
       return {
         ...state,
         items: state.items.filter((item) => item.id !== action.payload),
+        removedIds: [...state.removedIds, action.payload],
         error: null,
       };
 

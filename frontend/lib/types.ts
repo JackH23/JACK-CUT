@@ -21,6 +21,7 @@ export type SettingsPanelProps = {
   activeItem: TimelineItem | null;
   onDuplicate?: () => void;
   canDuplicate?: boolean;
+  onRemoveItem: (itemId: string) => void | Promise<void>;
 
   onUpdateTextFontSize: (
     itemId: string,

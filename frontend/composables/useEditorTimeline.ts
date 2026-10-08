@@ -61,6 +61,9 @@ export function useEditorTimeline(projectId: string) {
 
   const { handleAddText } = useAddText({
     projectId,
+    playheadTime,
+    ready: state.loaded,
+    onSelectItem: setSelectedItemId,
     tracks,
     timelineItems,
     dispatch,
@@ -102,21 +105,26 @@ export function useEditorTimeline(projectId: string) {
     dispatch({ type: "REMOVE_MEDIA", payload: fileId });
   }, []);
 
+  const removalIds = useRef(new Set<string>());
   const handleRemoveTimelineItem = useCallback(
     async (itemId: string) => {
       const item = timelineItems.find(
         (timelineItem) => timelineItem.id === itemId,
       );
 
-      if (!item) return;
+      if (!item || removalIds.current.has(itemId)) return;
+      removalIds.current.add(itemId);
+      let removed = false;
 
       try {
         await timelineService.removeItem(itemId, projectId);
 
+        removed = true;
         dispatch({
           type: "REMOVE_ITEM",
           payload: itemId,
         });
+        setSelectedItemId(current => current === itemId ? null : current);
       } catch (error) {
         dispatch({
           type: "REMOVE_ITEM_ERROR",
@@ -125,6 +133,8 @@ export function useEditorTimeline(projectId: string) {
               ? error.message
               : "Could not remove timeline item.",
         });
+      } finally {
+        if (!removed) removalIds.current.delete(itemId);
       }
     },
     [projectId, timelineItems],
