@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Grid2X2,
   List,
@@ -23,9 +23,9 @@ import TextPanel from "./media-sidebar/TextPanel";
 
 type MediaSidebarProps = {
   projectId: string;
-  onSelectMedia: (file: MediaFile) => void;
+  onSelectMedia: (file: MediaFile) => void | Promise<void>;
   onAddText: (style: TextStyle) => void;
-  onRemoveMedia: (fileId: string) => void;
+  onRemoveMedia: (fileId: string) => void | Promise<void>;
   selectedMediaIds: Set<string>;
 };
 
@@ -40,6 +40,15 @@ export default function MediaSidebar({
 }: MediaSidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("media");
 
+  const [addingMediaId, setAddingMediaId] =
+    useState<string | null>(null);
+
+  const [removingMediaId, setRemovingMediaId] =
+    useState<string | null>(null);
+
+  const addingRef = useRef(false);
+  const removingRef = useRef(false);
+
   const {
     state,
     search,
@@ -48,6 +57,46 @@ export default function MediaSidebar({
     handleFileUpload,
     handleRemoveMedia,
   } = useMediaSidebar(projectId, onRemoveMedia);
+
+  const handleRemoveMediaWithLoading = async (
+    file: MediaFile,
+  ) => {
+    if (removingRef.current || addingRef.current) return;
+
+    removingRef.current = true;
+    setRemovingMediaId(file.id);
+
+    try {
+      await handleRemoveMedia(file);
+    } catch (error) {
+      console.error(
+        "Failed to remove media from project:",
+        error,
+      );
+    } finally {
+      removingRef.current = false;
+      setRemovingMediaId(null);
+    }
+  };
+
+  const handleSelectMedia = async (file: MediaFile) => {
+    if (addingRef.current || removingRef.current) return;
+
+    addingRef.current = true;
+    setAddingMediaId(file.id);
+
+    try {
+      await onSelectMedia(file);
+    } catch (error) {
+      console.error(
+        "Failed to add media to timeline:",
+        error,
+      );
+    } finally {
+      addingRef.current = false;
+      setAddingMediaId(null);
+    }
+  };
 
   return (
     <aside className="flex h-full w-[400px] shrink-0 flex-col border-r border-white/10 bg-[#111218] text-white">
@@ -130,8 +179,10 @@ export default function MediaSidebar({
             <MediaList
               files={filteredFiles}
               selectedMediaIds={selectedMediaIds}
-              onSelectMedia={onSelectMedia}
-              onRemoveMedia={handleRemoveMedia}
+              onSelectMedia={handleSelectMedia}
+              onRemoveMedia={handleRemoveMediaWithLoading}
+              addingMediaId={addingMediaId}
+              removingMediaId={removingMediaId}
             />
           )}
         </>

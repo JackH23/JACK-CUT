@@ -1,11 +1,19 @@
+
 "use client";
 
 import { useState } from "react";
 import type { TimelineItem } from "@/types/timeline";
+
 import EditTextModal from "../EditTextModal";
 import TimelineRow from "./TimelineRow";
 import TimelineClip from "./TimelineClip";
+
 import type { TimelineTracksProps } from "@/lib/types";
+
+type TimelineTracksWithLoadingProps =
+  TimelineTracksProps & {
+    removingItemId?: string | null;
+  };
 
 export default function TimelineTracks({
   selectedItemId,
@@ -24,10 +32,11 @@ export default function TimelineTracks({
   onRemovePointerDown,
   onRemoveDragStart,
   onRemoveClick,
-}: TimelineTracksProps) {
-
+  removingItemId = null,
+}: TimelineTracksWithLoadingProps) {
   const [editingItem, setEditingItem] =
     useState<TimelineItem | null>(null);
+
   return (
     <>
       {tracks.map((track) => (
@@ -49,6 +58,7 @@ export default function TimelineTracks({
                 key={item.id}
                 item={item}
                 selected={selectedItemId === item.id}
+                removing={removingItemId === item.id}
                 onSelectItem={onSelectItem}
                 onEditText={setEditingItem}
                 onClipDragStart={onClipDragStart}

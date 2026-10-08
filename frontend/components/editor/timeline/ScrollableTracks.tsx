@@ -1,12 +1,12 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+
 import TimelineTracks from "./track/TimelineTracks";
 import { useScrollableTracks } from "@/composables/useScrollableTracks";
 import type { TimelineItem, TimelineTrack } from "@/types/timeline";
-import type {
-  MediaAnimationSettings,
-} from "@/lib/mediaAnimation";
+import type { MediaAnimationSettings } from "@/lib/mediaAnimation";
 
 type ScrollableTracksProps = {
   selectedItemId: string | null;
@@ -22,7 +22,7 @@ type ScrollableTracksProps = {
   playheadTime: number;
   isPlaying: boolean; // add
   onItemsChange: Dispatch<SetStateAction<TimelineItem[]>>;
-  onRemoveItem: (itemId: string) => void;
+  onRemoveItem: (itemId: string) => void | Promise<void>;
   onUpdateText: (itemId: string, text: string) => void;
   onPlayheadTimeChange: (position: number) => void;
 };
@@ -42,7 +42,33 @@ export default function ScrollableTracks({
   onUpdateText,
   onPlayheadTimeChange,
 }: ScrollableTracksProps) {
+  // Timeline item removal loading state
+  const [removingItemId, setRemovingItemId] =
+    useState<string | null>(null);
 
+  const removingRef = useRef(false);
+
+  // Remove timeline item
+  const handleRemoveItem = async (itemId: string) => {
+    if (removingRef.current) return;
+
+    removingRef.current = true;
+    setRemovingItemId(itemId);
+
+    try {
+      await onRemoveItem(itemId);
+    } catch (error) {
+      console.error(
+        "Failed to remove timeline item:",
+        error,
+      );
+    } finally {
+      removingRef.current = false;
+      setRemovingItemId(null);
+    }
+  };
+
+  // Timeline interactions
   const {
     timelineRef,
     scrollContainerRef,
@@ -71,7 +97,7 @@ export default function ScrollableTracks({
     playheadTime,
     isPlaying,
     onItemsChange,
-    onRemoveItem,
+    onRemoveItem: handleRemoveItem,
     onPlayheadTimeChange,
   });
 
@@ -144,12 +170,11 @@ export default function ScrollableTracks({
           onResizeStart={handleResizeStart}
           onResizeMove={handleResizeMove}
           onResizeEnd={handleResizeEnd}
-          onAnimationDurationChange={
-            handleAnimationDurationChange
-          }
+          onAnimationDurationChange={handleAnimationDurationChange}
           onRemovePointerDown={handleRemovePointerDown}
           onRemoveDragStart={handleRemoveDragStart}
           onRemoveClick={handleRemoveClick}
+          removingItemId={removingItemId}
         />
 
         {/* Clip snap line */}
