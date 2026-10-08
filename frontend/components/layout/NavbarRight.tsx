@@ -6,6 +6,7 @@ import {
   Share2,
 } from "lucide-react";
 import type { User } from "@/services/authService";
+import LoadingState from "@/components/shared/LoadingState";
 
 type NavbarRightProps = {
   user: User | null;
@@ -36,12 +37,21 @@ export default function NavbarRight({
         onClick={onExport}
         disabled={exporting}
         aria-label={exporting ? "Exporting video" : "Export video"}
-        className="flex items-center gap-2 rounded-md bg-gradient-to-r from-purple-700 to-fuchsia-600 px-4 py-2 text-sm font-semibold shadow-lg shadow-purple-950/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-busy={exporting}
+        className="flex items-center gap-2 rounded-md bg-gradient-to-r from-purple-700 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-950/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        <Share2 size={17} />
-        <span className="hidden sm:inline">
-          {exporting ? "Exporting..." : "Export Video"}
-        </span>
+        {exporting ? (
+          <LoadingState
+            message="Exporting..."
+            size="sm"
+            className="!py-0 [&_span]:!text-white [&_svg]:!text-white"
+          />
+        ) : (
+          <>
+            <Share2 size={17} />
+            <span className="hidden sm:inline">Export Video</span>
+          </>
+        )}
       </button>
 
       <div className="hidden h-6 w-px bg-white/10 md:block" />

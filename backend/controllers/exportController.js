@@ -616,9 +616,11 @@ async function createExport(req, res) {
       } catch (error) {
         console.error("Export finish failed:", error);
 
-        job.status = "failed";
-        job.error =
-          "Could not complete export. Check FFmpeg, storage and database availability.";
+        // Retrying cancellation persistence must not change its outcome to failure.
+        job.status = job.cancelRequested ? "cancelled" : "failed";
+        job.error = job.cancelRequested
+          ? null
+          : "Could not complete export. Check FFmpeg, storage and database availability.";
 
         try {
           await saveExportJob(job);

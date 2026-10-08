@@ -14,6 +14,7 @@ import type {
 
 import type { MediaFile } from "@/lib/media";
 import { useMediaSidebar } from "@/composables/useMediaSidebar";
+import LoadingState from "@/components/shared/LoadingState";
 
 import MediaList from "./media-sidebar/MediaList";
 import MediaUploadControls from "./media-sidebar/MediaUploadControls";
@@ -64,12 +65,6 @@ export default function MediaSidebar({
       {activeTab === "media" && (
         <>
           <MediaUploadControls onFileUpload={handleFileUpload} />
-
-          {state.uploading && (
-            <p className="px-2 py-1 text-sm text-zinc-400">
-              Uploading media...
-            </p>
-          )}
 
           {state.error && (
             <p
@@ -124,12 +119,21 @@ export default function MediaSidebar({
             </div>
           </div>
 
-          <MediaList
-            files={filteredFiles}
-            selectedMediaIds={selectedMediaIds}
-            onSelectMedia={onSelectMedia}
-            onRemoveMedia={handleRemoveMedia}
-          />
+          {state.uploading ? (
+            <div className="flex min-h-[200px] flex-1 items-center justify-center">
+              <LoadingState
+                message="Uploading media..."
+                size="md"
+              />
+            </div>
+          ) : (
+            <MediaList
+              files={filteredFiles}
+              selectedMediaIds={selectedMediaIds}
+              onSelectMedia={onSelectMedia}
+              onRemoveMedia={handleRemoveMedia}
+            />
+          )}
         </>
       )}
 

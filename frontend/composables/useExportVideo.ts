@@ -77,9 +77,12 @@ export function useExportVideo() {
 
       // The backend acknowledges the request before FFmpeg fully stops.
       // Continue polling until the status becomes "cancelled".
-      dispatch({ type: "EXPORT_CANCEL_REQUESTED" });
+      if (currentJobRef.current?.id === job.id && currentJobRef.current.status === "processing") {
+        dispatch({ type: "EXPORT_CANCEL_REQUESTED" });
+      }
     } catch (error) {
       cancellingRef.current = false;
+      if (currentJobRef.current?.id !== job.id || currentJobRef.current.status !== "processing") return;
 
       dispatch({
         type: "EXPORT_CANCEL_ERROR",
@@ -107,6 +110,7 @@ export function useExportVideo() {
         if (!active) return;
 
         consecutiveFailures = 0;
+        currentJobRef.current = job;
 
         if (job.status !== "processing") {
           cancellingRef.current = false;

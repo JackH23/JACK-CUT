@@ -145,7 +145,7 @@ function EditorWorkspace({ project }: { project: Project }) {
       </div>
 
 
-      {(downloadUrl || exportError) && (
+      {(downloadUrl || exportError || exportJob?.status === "cancelled") && (
         <div className="flex items-center gap-3 bg-[#15171e] px-4 py-2 text-sm">
           {downloadUrl && (
             <a
@@ -155,6 +155,10 @@ function EditorWorkspace({ project }: { project: Project }) {
             >
               Download MP4
             </a>
+          )}
+
+          {exportJob?.status === "cancelled" && (
+            <span role="status" className="text-gray-300">Export cancelled</span>
           )}
 
           {exportError && (

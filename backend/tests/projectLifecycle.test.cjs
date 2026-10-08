@@ -41,6 +41,7 @@ function harness(options = {}) {
     },
     findOne: async query => exports.find(row => row.project_id === query.where.project_id && row.status === query.where.status) || null,
     update: async (data, query) => {
+      if (options.update) await options.update(data, query);
       if(Object.hasOwn(data, 'project_id')) { await downloadTail; events.push('detach-history'); }
       for(const row of exports) if((query.where.id && row.id === query.where.id || query.where.project_id && row.project_id === query.where.project_id) && (!query.where.status || row.status === query.where.status)) Object.assign(row, data);
     },
@@ -138,4 +139,38 @@ test('project DELETE route requires real JWT middleware before the controller', 
   let authorized = false;
   await auth(req, response(), () => { authorized = true; });
   assert.equal(authorized, true); assert.equal(req.user.id, 'owner');
+});
+test('cancellation persistence failure retries cancelled without ever writing failed', async () => {
+  const statuses = []; let rejected = false;
+  const h = harness({ update: async data => {
+    if (!data.status) return;
+    statuses.push(data.status);
+    if (data.status === 'cancelled' && !rejected) { rejected = true; throw Error('temporary database error'); }
+  } });
+  await h.exportController.createExport(h.req, response());
+  await h.exportController.cancelExport({ ...h.req, params: { id: exportId } }, response());
+  h.child.emit('error', Error('terminated')); h.child.emit('close', null, 'SIGTERM');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(statuses, ['cancelled', 'cancelled']);
+  const res = response(); await h.exportController.getExport({ ...h.req, params: { id: exportId } }, res);
+  assert.equal(res.body.status, 'cancelled'); assert.equal(res.body.error, null); assert.equal(res.body.downloadAvailable, false); assert.equal(res.body.downloadUrl, null);
+});
+for (const code of [0, 1, null]) test('accepted cancellation wins close code ' + code + ' and duplicate callbacks', async () => {
+  const h = harness(); await h.exportController.createExport(h.req, response());
+  const req = { ...h.req, params: { id: exportId } };
+  await h.exportController.cancelExport(req, response()); await h.exportController.cancelExport(req, response());
+  assert.equal(h.signals.length, 1);
+  h.child.emit('close', code); h.child.emit('error', Error('late error')); h.child.emit('close', 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.exports[0].status, 'cancelled'); assert.equal(h.exports[0].error_message, null);
+  assert.equal(h.events.includes('persist'), false);
+});
+for (const code of [0, 1]) test('uncancelled close preserves ' + (code === 0 ? 'success' : 'failure'), async () => {
+  const h = harness(); await h.exportController.createExport(h.req, response());
+  h.child.emit('close', code); await new Promise(resolve => setImmediate(resolve));
+  const res = response(); await h.exportController.getExport({ ...h.req, params: { id: exportId } }, res);
+  assert.equal(res.body.status, code === 0 ? 'completed' : 'failed');
+  assert.equal(res.body.downloadAvailable, code === 0);
+  if (code === 1) assert.match(res.body.error, /Could not complete export/);
+  else assert.equal(res.body.downloadUrl, '/protected/download');
 });

@@ -67,3 +67,58 @@ for(const job of [{id:'one',status:'completed',downloadUrl:null},{id:'one',statu
  const useExport=load('composables/useExportVideo.ts',{react:{useReducer:()=>[{job},()=>{}],useRef:v=>({current:v}),useEffect(){},useCallback:fn=>fn},axios,'@/services/exportService':{exportService:{getDownloadUrl:()=>{assert.fail('Expired URL fallback');}}},'@/reducers/exportReducer':{exportReducer(){},initialExportState:{}}}).useExportVideo;
  assert.equal(useExport().downloadUrl,null);
 });
+
+function exportPollingHarness(service) {
+ const runner=hooks(),timers=new Map(); let nextTimer=0;
+ const reducer=load('reducers/exportReducer.ts',{});
+ const useExport=load('composables/useExportVideo.ts',{
+  react:runner.react,axios,'@/services/exportService':{exportService:service},'@/reducers/exportReducer':reducer,
+ },{setTimeout:fn=>{const id=++nextTimer;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id)}).useExportVideo;
+ return{render:()=>runner.render(useExport),timers, tick:async()=>{const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();}};
+}
+for(const status of ['cancelled','failed','completed'])test('export polling stops for '+status+' and keeps appropriate error/download state',async()=>{
+ let polls=0;
+ const h=exportPollingHarness({
+  create:async()=>({id:'export',status:'processing'}),
+  get:async()=>{polls++;return{id:'export',status,error:status==='failed'?'Real FFmpeg failure':null,downloadUrl:status==='completed'?'/download':null};},
+  getDownloadUrl:()=>'/fallback',
+ });
+ let view=h.render();await view.startExport('project');view=h.render();assert.equal(h.timers.size,1);
+ await h.tick();view=h.render();assert.equal(h.timers.size,0);assert.equal(polls,1);
+ assert.equal(view.exporting,false);assert.equal(view.exportJob.status,status);
+ assert.equal(view.exportError,status==='failed'?'Real FFmpeg failure':null);
+ assert.equal(view.downloadUrl,status==='completed'?'http://localhost:5001/download':null);
+});
+for(const reject of [false,true])test('late cancellation '+(reject?'error':'acknowledgement')+' cannot overwrite a polled terminal state',async()=>{
+ let settleCancel;
+ const h=exportPollingHarness({
+  create:async()=>({id:'export',status:'processing'}),
+  cancel:()=>new Promise((resolve,rejectPromise)=>{settleCancel=()=>reject?rejectPromise(Error('late failure')):resolve({status:'processing'});}),
+  get:async()=>({id:'export',status:'cancelled',error:null,downloadUrl:null}),getDownloadUrl:()=>'/fallback',
+ });
+ await h.render().startExport('project');let view=h.render();const cancellation=view.cancelExport();h.render();
+ await h.tick();view=h.render();assert.equal(view.exportJob.status,'cancelled');
+ settleCancel();await cancellation;view=h.render();assert.equal(view.cancelling,false);assert.equal(view.exportError,null);assert.equal(h.timers.size,0);
+});
+test('reducer ignores cancellation callbacks after completion',()=>{
+ const {exportReducer}=load('reducers/exportReducer.ts',{});
+ const state={job:{id:'export',status:'completed'},loading:false,cancelling:false,error:null};
+ assert.equal(exportReducer(state,{type:'EXPORT_CANCEL_REQUESTED'}),state);
+ assert.equal(exportReducer(state,{type:'EXPORT_CANCEL_ERROR',payload:'late'}),state);
+});
+test('editor renders Export cancelled without error/success modal or download button',()=>{
+ const empty=()=>null;
+ const deps={
+  'next/link':{__esModule:true,default:empty},
+  react:{...React,use:()=>({projectId:'project'})},
+  '@/composables/useEditorProject':{useEditorProject:()=>({project:{id:'project',name:'Project'},error:null})},
+  '@/composables/useEditorWorkspace':{useEditorWorkspace:()=>({exportJob:{id:'export',status:'cancelled'},exporting:false,cancelling:false,exportError:null,timelineError:null,downloadUrl:null,showExportSuccess:false,timelineItems:[]})},
+  'react/jsx-runtime':jsxRuntime,
+ };
+ const imports=fs.readFileSync(path.join(root,'app/editor/[projectId]/page.tsx'),'utf8').matchAll(/from "(@\/components\/[^"]+)"/g);
+ for(const [,name] of imports)deps[name]={__esModule:true,default:name.endsWith('ErrorModal')?()=>React.createElement('div',null,'Unexpected error modal'):name.endsWith('ExportSuccessModal')?()=>React.createElement('div',null,'Unexpected success modal'):empty};
+ const Page=load('app/editor/[projectId]/page.tsx',deps).default;
+ const html=renderToStaticMarkup(React.createElement(Page,{params:Promise.resolve({projectId:'project'})}));
+ assert.match(html,/role="status"[^>]*>Export cancelled/);
+ assert.doesNotMatch(html,/Something went wrong|Unexpected .* modal|Download MP4/);
+});

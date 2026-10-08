@@ -117,12 +117,14 @@ export function exportReducer(
       };
 
     case "EXPORT_CANCEL_REQUESTED":
+      if (state.job?.status !== "processing") return state;
       return {
         ...state,
         cancelling: true,
       };
 
     case "EXPORT_CANCEL_ERROR":
+      if (state.job?.status !== "processing") return state;
       return {
         ...state,
         cancelling: false,
