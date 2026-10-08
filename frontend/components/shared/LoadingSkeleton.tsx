@@ -1,7 +1,7 @@
 import LoadingState from "@/components/shared/LoadingState";
 
 type LoadingSkeletonProps = {
-  variant?: "editor" | "page" | "card";
+  variant?: "editor" | "page" | "card" | "projects";
   className?: string;
   count?: number;
   withOverlay?: boolean;
@@ -154,6 +154,83 @@ function CardSkeleton({ count }: { count: number }) {
   );
 }
 
+function ProjectsSkeleton({ count }: { count: number }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="mx-auto w-full max-w-[1440px] px-5 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12"
+    >
+      {/* Back navigation */}
+      <SkeletonBlock className="mb-8 h-9 w-32 rounded-full" />
+
+      {/* Heading */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <SkeletonBlock className="h-3 w-40 bg-purple-500/20" />
+          <SkeletonBlock className="mt-4 h-8 w-52" />
+          <SkeletonBlock className="mt-3 h-4 w-full max-w-sm" />
+        </div>
+
+        <SkeletonBlock className="h-14 w-28 shrink-0 rounded-xl" />
+      </div>
+
+      {/* Create new project */}
+      <div className="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-[#191b25]">
+        <div className="flex items-center gap-3 border-b border-white/10 p-5">
+          <SkeletonBlock className="h-11 w-11 rounded-xl bg-purple-500/20" />
+
+          <div className="flex-1">
+            <SkeletonBlock className="h-4 w-40" />
+            <SkeletonBlock className="mt-2 h-3 w-64 max-w-full" />
+          </div>
+        </div>
+
+        <div className="p-5">
+          <SkeletonBlock className="mb-3 h-3 w-28" />
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <SkeletonBlock className="h-11 flex-1 rounded-lg bg-[#101117]" />
+            <SkeletonBlock className="h-11 w-full rounded-lg bg-purple-600/30 sm:w-36" />
+          </div>
+        </div>
+      </div>
+
+      {/* Existing projects */}
+      <div className="mt-10">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <SkeletonBlock className="h-6 w-44" />
+            <SkeletonBlock className="mt-2 h-3 w-36" />
+          </div>
+
+          <SkeletonBlock className="h-7 w-24 rounded-full" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: count }, (_, index) => (
+            <div
+              key={index}
+              className="overflow-hidden rounded-2xl border border-white/10 bg-[#191b25]"
+            >
+              <SkeletonBlock className="aspect-video w-full rounded-none bg-purple-500/10" />
+
+              <div className="p-4">
+                <SkeletonBlock className="h-4 w-3/4" />
+                <SkeletonBlock className="mt-3 h-3 w-1/2" />
+
+                <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
+                  <SkeletonBlock className="h-4 w-24 bg-purple-500/20" />
+                  <SkeletonBlock className="h-8 w-8 rounded-lg" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LoadingSkeleton({
   variant = "page",
   className = "",
@@ -176,6 +253,10 @@ export default function LoadingSkeleton({
 
         {variant === "card" && (
           <CardSkeleton count={count} />
+        )}
+
+        {variant === "projects" && (
+          <ProjectsSkeleton count={count} />
         )}
       </div>
 
