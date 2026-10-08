@@ -48,7 +48,7 @@ export default function TimelineContent({
 
   return (
     <div className="media-scrollbar min-h-0 flex-1 overflow-y-auto">
-      <div className="flex h-full min-w-0 items-stretch">
+      <div className="flex min-h-full min-w-0 items-stretch">
         {/* Track headers */}
         <aside className="w-52 shrink-0 border-r border-white/10 bg-[#111218]">
           <div className="flex h-7 items-center justify-between border-b border-white/10 px-3">
