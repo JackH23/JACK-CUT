@@ -61,6 +61,7 @@ function harness(options = {}) {
     '../models/Project': Project, '../models/ExportJob': ExportJob, '../models/TimelineItem': TimelineItem,
     '../models/Media': { findAll: async () => [{ id: 'source', media_type: 'image', file_path: '/safe/media.png' }] }, '../models/ProjectMedia': ProjectMedia,
     '../services/storage': storage, '../services/exportCleanupService': { getService: () => cleanup }, '../services/fileAccess': { fileUrl: () => '/protected/download' },
+    '../utils/mediaStreams': { hasAudioStream: async () => true },
     'node:fs': { existsSync: () => true, writeFileSync() {} }, 'node:crypto': { randomUUID: () => exportId }, 'node:child_process': { spawn: () => { events.push('spawn'); return child; } },
   });
   const projectController = load('controllers/projectController.js', { '../models/Project': Project, '../models/ExportJob': ExportJob, '../models/TimelineItem': TimelineItem, '../models/ProjectMedia': ProjectMedia, '../config/database': db, './exportController': exportController });

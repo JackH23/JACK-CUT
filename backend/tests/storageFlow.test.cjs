@@ -97,6 +97,7 @@ function exportHarness({ code = 0, downloadFails = false, uploadFails = false, d
     ExportJob: { findByPk: async () => row }, storage: {}, Op: {},
   });
   const controller = load("controllers/exportController.js", {
+    "../utils/mediaStreams": { hasAudioStream: async () => true },
     "node:fs": { existsSync: () => true, writeFileSync() {} }, "node:child_process": { spawn: () => child }, "node:crypto": { randomUUID: () => projectId },
     "../models/TimelineItem": { findAll: async () => [{ item_type: "MEDIA", media_id: "source", start_time: 0, duration: 1, media_scale: 1 }] },
     "../models/Media": { findAll: async () => [{ id: "source", file_path: "r2:/media/source.png", media_type: "image" }] },

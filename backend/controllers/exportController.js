@@ -18,6 +18,9 @@ const { getMediaParentTransform } = require("../utils/mediaLayout");
 const { getTextAnimationSegments, getTextAnimationTags } = require("../utils/textAnimationAss");
 const { getAssFontMetrics } = require("../utils/textFontMetrics");
 
+const { hasAudioStream } = require('../utils/mediaStreams');
+const { failureReason, logExportFailure } = require('../utils/exportDiagnostics');
+
 const jobs = new Map();
 function hasActiveProjectExport(projectId) {
   return [...jobs.values()].some(job => job.projectId === projectId);
@@ -112,6 +115,7 @@ async function createExport(req, res) {
   let workDir;
   let activeJob;
   let handedOff = false;
+  let stage = "reserve_job";
   try {
     const { projectId } = req.body;
 
@@ -161,11 +165,18 @@ async function createExport(req, res) {
       : [];
     const mediaById = new Map(mediaFiles.map((media) => [media.id, media]));
 
+    stage = "prepare_sources";
     workDir = await storage.workspace();
+    const audioStreams = new Map();
     const paths = new Map();
     for (const media of mediaFiles) {
       if (!await ProjectMedia.findOne({ where: { project_id: projectId, media_id: media.id } })) throw new Error("Timeline media is not linked to this project.");
       paths.set(media.id, await storage.materialize(media.file_path, workDir));
+      if (media.media_type === "video") {
+        stage = "probe_streams";
+        audioStreams.set(media.id, await hasAudioStream(paths.get(media.id)));
+        stage = "prepare_sources";
+      }
     }
     const clips = items.map((item) => {
       console.log("EXPORT TIMELINE ITEM", {
@@ -217,6 +228,7 @@ async function createExport(req, res) {
       const clip = {
         itemType: "MEDIA",
         type: media.media_type,
+        hasAudio: media.media_type === "audio" || audioStreams.get(media.id) === true,
         filePath: paths.get(media.id),
 
         start: Number(item.start_time),
@@ -243,7 +255,7 @@ async function createExport(req, res) {
             ? 50
             : Number(item.animation_amount),
       };
-      console.log("EXPORT CLIP", { id: item.id, ...clip });
+      console.log("EXPORT CLIP", { id: item.id, type: clip.type, hasAudio: clip.hasAudio, mediaScale: clip.mediaScale, mediaX: clip.mediaX, mediaY: clip.mediaY, sourceStart: clip.sourceStart });
       return clip;
     });
 
@@ -315,6 +327,7 @@ async function createExport(req, res) {
       args.push("-i", clip.filePath);
     });
 
+    stage = "build_filter_graph";
     const filters = [];
     let currentVideo = "0:v";
     const audioLabels = ["1:a"];
@@ -365,7 +378,7 @@ async function createExport(req, res) {
         console.log("EXPORT MEDIA GEOMETRY", { index, base, animationFilters, localWindow });
       }
 
-      if (clip.type === "audio" || clip.type === "video") {
+      if (clip.hasAudio) {
         const audioLabel = `audio${index}`;
         const delayMs = Math.round(clip.start * 1000);
 
@@ -452,14 +465,13 @@ async function createExport(req, res) {
     );
 
     const filterGraph = filters.join(";");
-    console.log("FFMPEG FILTER GRAPH:", filterGraph);
-    console.log("FFMPEG OUTPUT:", { id, outputPath });
+    console.log("Export render prepared", { jobId: id, encoder: VIDEO_ENCODER, clipCount: clips.length, duration: totalDuration });
 
     args.push(
       "-filter_complex",
       filterGraph,
       "-map",
-      `[${currentVideo}]`,
+      currentVideo === "0:v" ? currentVideo : `[${currentVideo}]`,
       "-map",
       "[outa]",
       "-t",
@@ -487,6 +499,7 @@ async function createExport(req, res) {
       outputPath,
     );
 
+    stage = "spawn_ffmpeg";
     const renderStarted = Date.now();
     const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args);
 
@@ -563,8 +576,8 @@ async function createExport(req, res) {
             )
             .catch((error) => {
               console.error(
-                "Failed to save export progress:",
-                error
+                "Failed to save export progress.",
+                { jobId: id }
               );
             });
         }
@@ -578,7 +591,8 @@ async function createExport(req, res) {
     });
 
     let settled = false;
-    const finish = async (code, spawnError) => {
+    const finish = async (code, spawnError, signal) => {
+      let finishStage = "render";
       if (settled) return;
       settled = true;
       job.finishing = true;
@@ -603,18 +617,20 @@ async function createExport(req, res) {
           throw new Error("FFmpeg rendering failed.");
         }
 
+        finishStage = "persist_output";
         job.outputReference = await storage.persist(
           outputPath,
           `exports/${id}.mp4`,
           "video/mp4",
         );
 
+        finishStage = "save_completed_status";
         job.progress = 100;
         job.status = "completed";
 
         await saveExportJob(job);
       } catch (error) {
-        console.error("Export finish failed:", error);
+        logExportFailure({ jobId: id, stage: finishStage, error: spawnError || error, exitCode: code, signal, reason: finishStage === "render" ? failureReason(stderr, spawnError) : undefined });
 
         // Retrying cancellation persistence must not change its outcome to failure.
         job.status = job.cancelRequested ? "cancelled" : "failed";
@@ -633,7 +649,7 @@ async function createExport(req, res) {
       }
     };
     child.once("error", error => { job.spawnError = error; });
-    child.once("close", code => { void finish(code, job.spawnError); });
+    child.once("close", (code, signal) => { void finish(code, job.spawnError, signal); });
     handedOff = true;
 
     return res.status(202).json({
@@ -648,7 +664,7 @@ async function createExport(req, res) {
       await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
       if (activeJob) jobs.delete(activeJob.id);
     }
-    console.error("Could not start export.");
+    logExportFailure({ jobId: activeJob?.id || null, stage, error });
     return res.status(500).json({ message: "Could not start export." });
   }
 }
@@ -701,7 +717,7 @@ async function getExport(req, res) {
         : null,
     });
   } catch (error) {
-    console.error("Could not load export:", error);
+    logExportFailure({ jobId: req.params.id, stage: "load_status", error });
 
     return res.status(500).json({
       message: "Could not load export.",
@@ -772,7 +788,7 @@ async function cancelExport(req, res) {
       message: "Cancellation requested.",
     });
   } catch (error) {
-    console.error("Could not cancel export:", error);
+    logExportFailure({ jobId: req.params.id, stage: "cancel", error });
 
     return res.status(500).json({
       message: "Could not cancel export.",
