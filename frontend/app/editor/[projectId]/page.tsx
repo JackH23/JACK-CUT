@@ -10,10 +10,10 @@ import PreviewMonitor from "@/components/editor/PreviewMonitor";
 import SettingsPanel from "@/components/editor/SettingsPanel";
 import Timeline from "@/components/editor/Timeline";
 import Navbar from "@/components/layout/Navbar";
-
 import { useEditorProject } from "@/composables/useEditorProject";
 import { useEditorWorkspace } from "@/composables/useEditorWorkspace";
 import type { Project } from "@/lib/project";
+import LoadingSkeleton from "@/components/shared/LoadingSkeleton";
 
 type EditorPageProps = {
   params: Promise<{ projectId: string }>;
@@ -41,9 +41,11 @@ export default function EditorPage({ params }: EditorPageProps) {
 
   if (!project || project.id !== projectId) {
     return (
-      <p role="status" className="min-h-screen bg-[#0d0f15] p-6 text-white">
-        Loading project...
-      </p>
+      <LoadingSkeleton
+        variant="editor"
+        withOverlay
+        message="Loading project..."
+      />
     );
   }
 
