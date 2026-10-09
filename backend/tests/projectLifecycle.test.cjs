@@ -9,7 +9,7 @@ const exportId = '76ec12e5-244b-43e2-b36e-57bec761ade8';
 function load(file, mocks, env = {}) {
   const filename = path.join(sourceRoot, file), loaded = { exports: {} };
   const localRequire = name => Object.hasOwn(mocks, name) ? mocks[name] : name.startsWith('.') ? require(path.resolve(backend, path.dirname(file), name)) : require(require.resolve(name, { paths: [backend] }));
-  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { require: localRequire, module: loaded, exports: loaded.exports, console: { log() {}, error() {} }, process: { env }, Date, setTimeout, clearTimeout, Buffer });
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { require: localRequire, module: loaded, exports: loaded.exports, console: { log() {}, error() {} }, process: { env }, Date, setTimeout, clearTimeout, queueMicrotask, Buffer });
   return loaded.exports;
 }
 function response() { return Object.assign(new EventEmitter(), { code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } }); }
@@ -34,7 +34,7 @@ function harness(options = {}) {
     return projectExists && options.owned !== false ? project : null;
   } };
   const ExportJob = {
-    create: async (data, query) => { assert.ok(query.transaction); events.push('reserve-export'); exports.push({ ...data }); },
+    create: async (data, query) => { assert.ok(query.transaction); events.push('reserve-export'); exports.push({ cancel_requested_at: null, ...data }); },
     findByPk: async (id, query = {}) => {
       if(query.lock === 'SHARE') { downloadTail = new Promise(resolve => query.transaction.releases.push(resolve)); events.push('lock-download'); }
       return exports.find(row => row.id === id) || null;
@@ -43,17 +43,19 @@ function harness(options = {}) {
     update: async (data, query) => {
       if (options.update) await options.update(data, query);
       if(Object.hasOwn(data, 'project_id')) { await downloadTail; events.push('detach-history'); }
-      for(const row of exports) if((query.where.id && row.id === query.where.id || query.where.project_id && row.project_id === query.where.project_id) && (!query.where.status || row.status === query.where.status)) Object.assign(row, data);
+      let count = 0;
+      for(const row of exports) if((query.where.id && row.id === query.where.id || query.where.project_id && row.project_id === query.where.project_id) && (!query.where.status || row.status === query.where.status)) { if (Object.hasOwn(query.where, 'cancel_requested_at') && row.cancel_requested_at !== query.where.cancel_requested_at) continue; Object.assign(row, data); count++; }
+      return [count];
     },
   };
   const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
   child.kill = signal => { signals.push(signal); if(options.killThrows) throw Error('signal failed'); return options.killResult !== false; };
   const cleanup = require(path.join(backend, 'services/exportCleanupService')).createExportCleanupService({ sequelize: db, ExportJob, storage: {}, Op: {} });
   const storage = {
-    workspace: async () => { events.push('prepare'); if(options.prepare) await options.prepare(); return '/scratch/render-test'; },
-    materialize: async () => '/safe/media.png', persist: async () => { events.push('persist'); if(options.persist) await options.persist(); return 'r2:/exports/' + exportId + '.mp4'; },
+    referenceFor: key => 'r2:/' + key, workspace: async () => { events.push('prepare'); if(options.prepare) await options.prepare(); return '/scratch/render-test'; },
+    materialize: async () => { if (options.materialize) await options.materialize(); return '/safe/media.png'; }, persist: async () => { events.push('persist'); if(options.persist) await options.persist(); return 'r2:/exports/' + exportId + '.mp4'; },
     cleanup: async directory => { if(directory) { if(options.cleanup) await options.cleanup(); events.push('scratch-cleanup'); } },
-    serve: async () => { events.push('serve'); }, remove: () => assert.fail('No storage removal in lifecycle tests'),
+    serve: async () => { events.push('serve'); }, remove: async () => { events.push('remove-unpublished'); },
   };
   const TimelineItem = { findAll: async () => options.empty ? [] : [{ item_type: 'MEDIA', media_id: 'source', start_time: 0, duration: 1 }], destroy: async query => { assert.ok(query.transaction); events.push('delete-timeline'); } };
   const ProjectMedia = { findOne: async () => ({}), destroy: async query => { assert.ok(query.transaction); events.push('delete-links'); } };
@@ -62,7 +64,7 @@ function harness(options = {}) {
     '../models/Media': { findAll: async () => [{ id: 'source', media_type: 'image', file_path: '/safe/media.png' }] }, '../models/ProjectMedia': ProjectMedia,
     '../services/storage': storage, '../services/exportCleanupService': { getService: () => cleanup }, '../services/fileAccess': { fileUrl: () => '/protected/download' },
     '../utils/mediaStreams': { hasAudioStream: async () => true },
-    'node:fs': { existsSync: () => true, writeFileSync() {} }, 'node:crypto': { randomUUID: () => exportId }, 'node:child_process': { spawn: () => { events.push('spawn'); return child; } },
+    'node:fs': { existsSync: () => !options.missing, writeFileSync() {} }, 'node:crypto': { randomUUID: () => exportId }, 'node:child_process': { spawn: () => { events.push('spawn'); if (options.spawnError) queueMicrotask(() => { child.emit('error', Object.assign(new Error('sensitive startup details'), { code: 'ENOENT' })); child.emit('close', -2); }); return child; } },
   });
   const projectController = load('controllers/projectController.js', { '../models/Project': Project, '../models/ExportJob': ExportJob, '../models/TimelineItem': TimelineItem, '../models/ProjectMedia': ProjectMedia, '../config/database': db, './exportController': exportController });
   const req = { body: { projectId }, params: { id: projectId }, user: { id: 'owner' } };
@@ -90,7 +92,7 @@ test('reservation commits before preparation; competing project deletion is bloc
   const created = response(); const creation = h.exportController.createExport(h.req, created); await new Promise(resolve => setImmediate(resolve));
   assert.ok(h.events.indexOf('commit') < h.events.indexOf('prepare')); assert.equal(h.exports[0].status, 'processing');
   const deleted = response(); await h.projectController.deleteProject(h.req, deleted); assert.equal(deleted.code, 409); assert.equal(h.exists(), true);
-  release(); await creation; assert.equal(created.code, 202); h.child.emit('close', 1); await new Promise(resolve => setImmediate(resolve));
+  release(); await creation; await new Promise(resolve => setImmediate(resolve)); assert.equal(created.code, 202); h.child.emit('close', 1); await new Promise(resolve => setImmediate(resolve));
 });
 test('export creation after deletion and direct non-owner creation cannot start FFmpeg', async () => {
   const deleted = harness(); await deleted.projectController.deleteProject(deleted.req, response()); const res = response(); await deleted.exportController.createExport(deleted.req, res);
@@ -98,18 +100,33 @@ test('export creation after deletion and direct non-owner creation cannot start 
   const other = harness({ owned: false }); const denied = response(); await other.exportController.createExport(other.req, denied); assert.equal(denied.code, 404); assert.equal(other.exports.length, 0);
 });
 test('cancellation signals only its process and remains processing until close; progress and metrics survive', async () => {
-  const h = harness(); await h.exportController.createExport(h.req, response()); h.child.stdout.emit('data', Buffer.from('out_time=00:00:00.500\n'));
+  const h = harness(); await h.exportController.createExport(h.req, response());
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve)); h.child.stdout.emit('data', Buffer.from('out_time=00:00:00.500\n'));
   const req = { ...h.req, params: { id: exportId } }; const cancelled = response(); await h.exportController.cancelExport(req, cancelled);
   assert.equal(cancelled.code, 202); assert.deepEqual(h.signals, ['SIGTERM']); assert.equal(h.exports[0].status, 'processing'); assert.equal(h.events.includes('scratch-cleanup'), false);
   h.child.emit('close', 1); await new Promise(resolve => setImmediate(resolve));
-  assert.equal(h.exports[0].status, 'cancelled'); assert.equal(h.exports[0].progress, 50); assert.ok(h.exports[0].metrics); assert.equal(h.events.includes('persist'), false); assert.ok(h.events.includes('scratch-cleanup'));
+  assert.equal(h.exports[0].status, 'cancelled'); assert.equal(h.exports[0].progress, 47); assert.ok(h.exports[0].metrics); assert.equal(h.events.includes('persist'), false); assert.ok(h.events.includes('scratch-cleanup'));
 });
-test('failed kill can be retried and finished FFmpeg cannot be cancelled during publishing', async () => {
-  const failed = harness({ killThrows: true }); await failed.exportController.createExport(failed.req, response());
-  for(let attempt=0;attempt<2;attempt++) { const res=response(); await failed.exportController.cancelExport({ ...failed.req, params: { id: exportId } },res); assert.equal(res.code,500); }
-  assert.equal(failed.signals.length,2); failed.child.emit('close',1); await new Promise(resolve=>setImmediate(resolve));
-  let release; const finishing=harness({ persist:()=>new Promise(resolve=>{release=resolve;}) }); await finishing.exportController.createExport(finishing.req,response()); finishing.child.emit('close',0); await new Promise(resolve=>setImmediate(resolve));
-  const res=response(); await finishing.exportController.cancelExport({...finishing.req,params:{id:exportId}},res); assert.equal(res.code,409); assert.equal(finishing.signals.length,0); release(); await new Promise(resolve=>setImmediate(resolve)); assert.equal(finishing.exports[0].status,'completed');
+test('failed kill keeps cancellation pending until process closure confirms it', async () => {
+  const h = harness({ killThrows: true }); await h.exportController.createExport(h.req, response());
+  await new Promise(resolve => setImmediate(resolve));
+  const req = { ...h.req, params: { id: exportId } };
+  for (let attempt = 0; attempt < 2; attempt++) { const res = response(); await h.exportController.cancelExport(req, res); assert.equal(res.code, 202); }
+  assert.equal(h.exports[0].status, 'processing');
+  assert.equal(h.exports[0].stage, 'cancelling');
+  h.child.emit('close', 1); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.exports[0].status, 'cancelled');
+});
+test('cancel during upload waits for transfer settlement and removes unpublished output', async () => {
+  let release; const h = harness({ persist: () => new Promise(resolve => { release = resolve; }) });
+  await h.exportController.createExport(h.req, response()); await new Promise(resolve => setImmediate(resolve));
+  h.child.emit('close', 0); await new Promise(resolve => setImmediate(resolve));
+  const res = response(); await h.exportController.cancelExport({ ...h.req, params: { id: exportId } }, res);
+  assert.equal(res.code, 202); assert.equal(h.exports[0].status, 'processing'); assert.equal(h.signals.length, 0);
+  release(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.exports[0].status, 'cancelled'); assert.equal(h.exports[0].output_path, null);
+  assert.ok(h.events.includes('remove-unpublished'));
 });
 test('unknown processing owner after restart is not marked failed by status reads', async () => {
   const h=harness(); h.exports.push({id:exportId,project_id:projectId,status:'processing',progress:33});
@@ -149,6 +166,7 @@ test('cancellation persistence failure retries cancelled without ever writing fa
     if (data.status === 'cancelled' && !rejected) { rejected = true; throw Error('temporary database error'); }
   } });
   await h.exportController.createExport(h.req, response());
+  await new Promise(resolve => setImmediate(resolve));
   await h.exportController.cancelExport({ ...h.req, params: { id: exportId } }, response());
   h.child.emit('error', Error('terminated')); h.child.emit('close', null, 'SIGTERM');
   await new Promise(resolve => setImmediate(resolve));
@@ -158,6 +176,7 @@ test('cancellation persistence failure retries cancelled without ever writing fa
 });
 for (const code of [0, 1, null]) test('accepted cancellation wins close code ' + code + ' and duplicate callbacks', async () => {
   const h = harness(); await h.exportController.createExport(h.req, response());
+  await new Promise(resolve => setImmediate(resolve));
   const req = { ...h.req, params: { id: exportId } };
   await h.exportController.cancelExport(req, response()); await h.exportController.cancelExport(req, response());
   assert.equal(h.signals.length, 1);
@@ -168,10 +187,43 @@ for (const code of [0, 1, null]) test('accepted cancellation wins close code ' +
 });
 for (const code of [0, 1]) test('uncancelled close preserves ' + (code === 0 ? 'success' : 'failure'), async () => {
   const h = harness(); await h.exportController.createExport(h.req, response());
+  await new Promise(resolve => setImmediate(resolve));
   h.child.emit('close', code); await new Promise(resolve => setImmediate(resolve));
   const res = response(); await h.exportController.getExport({ ...h.req, params: { id: exportId } }, res);
   assert.equal(res.body.status, code === 0 ? 'completed' : 'failed');
   assert.equal(res.body.downloadAvailable, code === 0);
-  if (code === 1) assert.match(res.body.error, /Could not complete export/);
+  if (code === 1) assert.match(res.body.error, /Video rendering failed/);
   else assert.equal(res.body.downloadUrl, '/protected/download');
+});
+test('cancel before FFmpeg starts keeps the job pending until preparation settles and prevents spawn', async () => {
+ let release; const h=harness({prepare:()=>new Promise(resolve=>{release=resolve;})});
+ const created=response();await h.exportController.createExport(h.req,created);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(created.code,202);assert.ok(created.body.id);
+ const req={...h.req,params:{id:exportId}};await h.exportController.cancelExport(req,response());
+ assert.equal(h.exports[0].status,'processing');assert.equal(h.events.includes('spawn'),false);
+ release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.exports[0].status,'cancelled');assert.equal(h.events.includes('spawn'),false);
+ const again=response();await h.exportController.cancelExport(req,again);assert.equal(again.code,200);
+});
+test('missing media fails with a safe actionable error',async()=>{
+ const h=harness({missing:true});await h.exportController.createExport(h.req,response());await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.exports[0].status,'failed');assert.match(h.exports[0].error_message,/source media/);assert.equal(h.events.includes('spawn'),false);
+ assert.ok(!h.exports[0].error_message.includes('/safe/'));
+});
+test('missing FFmpeg fails instead of leaving 0% processing',async()=>{
+ const h=harness({spawnError:true});await h.exportController.createExport(h.req,response());await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.exports[0].status,'failed');assert.match(h.exports[0].error_message,/renderer is unavailable/);
+ assert.ok(!h.exports[0].error_message.includes('sensitive'));
+});
+test('duplicate export requests reuse the reserved job without a second spawn',async()=>{
+ const h=harness();const first=response(),second=response();await h.exportController.createExport(h.req,first);await h.exportController.createExport(h.req,second);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(first.body.id,second.body.id);assert.equal(h.exports.length,1);assert.equal(h.events.filter(e=>e==='spawn').length,1);
+ h.child.emit('close',1);await new Promise(resolve=>setImmediate(resolve));
+});
+test('FFmpeg progress handles fragmented output and reserves 100% for committed completion',async()=>{
+ let release;const h=harness({persist:()=>new Promise(resolve=>{release=resolve;})});await h.exportController.createExport(h.req,response());await new Promise(resolve=>setImmediate(resolve));
+ h.child.stdout.emit('data',Buffer.from('out_time_us=500'));h.child.stdout.emit('data',Buffer.from('000\nprogress=continue\nout_time=00:00:01.000\n'));
+ const req={...h.req,params:{id:exportId}}, rendering=response();await h.exportController.getExport(req,rendering);assert.equal(rendering.body.progress,95);
+ h.child.emit('close',0);await new Promise(resolve=>setImmediate(resolve));const uploading=response();await h.exportController.getExport(req,uploading);assert.equal(uploading.body.progress,95);assert.equal(uploading.body.stage,'uploading');
+ release();await new Promise(resolve=>setImmediate(resolve));const completed=response();await h.exportController.getExport(req,completed);assert.equal(completed.body.progress,100);assert.equal(completed.body.status,'completed');
 });

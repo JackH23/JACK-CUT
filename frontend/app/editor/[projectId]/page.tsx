@@ -14,6 +14,7 @@ import { useEditorProject } from "@/composables/useEditorProject";
 import { useEditorWorkspace } from "@/composables/useEditorWorkspace";
 import type { Project } from "@/lib/project";
 import LoadingSkeleton from "@/components/shared/LoadingSkeleton";
+import { exportStageLabel } from "@/lib/export";
 import ExportProgress from "@/components/shared/ExportProgress";
 
 type EditorPageProps = {
@@ -104,15 +105,15 @@ function EditorWorkspace({ project }: { project: Project }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f15]">
 
-      {exportJob?.status === "processing" && (
+      {exportJob?.status === "processing" && exporting && (
         <ExportProgress
           progress={exportJob.progress}
           message={
             cancelling
               ? "Cancelling export..."
-              : "Rendering video..."
+              : exportStageLabel(exportJob.stage)
           }
-          cancelling={cancelling}
+          cancelling={cancelling || exportJob.cancelRequested}
           onCancel={handleCancelExport}
           overlay
         />

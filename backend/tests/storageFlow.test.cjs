@@ -16,10 +16,10 @@ function storageHarness(env = {}, behavior = {}) {
   const calls = [], clients = [], uploads = [];
   class Command { constructor(input) { this.input = input; } }
   class DeleteCommand extends Command {}
-  class Client { constructor(options) { clients.push(options); } async send(command) { calls.push(command.input); if (behavior.send) return behavior.send(command, DeleteCommand); return { Body: Readable.from([Buffer.from("data")]), ContentLength: 4, ContentType: "video/mp4", ContentRange: "bytes 0-3/10" }; } }
-  class Upload { constructor(options) { uploads.push(options); this.options = options; } async done() { for await (const chunk of this.options.params.Body) { assert.ok(chunk.length); } } }
+  class Client { constructor(options) { clients.push(options); this.config = { endpoint: async () => ({ protocol: 'https:', hostname: 'example.invalid', path: '/' }), requestHandler: {}, requestChecksumCalculation: async () => 'WHEN_REQUIRED' }; } async send(command, options) { calls.push(command.input); if (behavior.send) return behavior.send(command, DeleteCommand, options); return { Body: Readable.from([Buffer.from("data")]), ContentLength: 4, ContentType: "video/mp4", ContentRange: "bytes 0-3/10" }; } }
+  class Upload { constructor(options) { uploads.push(options); this.options = options; } async done() { if (behavior.upload) return behavior.upload(this.options); for await (const chunk of this.options.params.Body) { assert.ok(chunk.length); } } }
   const values = { R2_ACCOUNT_ID: "dummy", R2_ACCESS_KEY_ID: "dummy", R2_SECRET_ACCESS_KEY: "dummy", R2_BUCKET_NAME: "test", R2_ENDPOINT: "https://example.invalid", ...env };
-  const storage = load("services/storage.js", { "@aws-sdk/client-s3": { S3Client: Client, GetObjectCommand: Command, DeleteObjectCommand: DeleteCommand }, "@aws-sdk/lib-storage": { Upload } }, values);
+  const storage = load("services/storage.js", { "@aws-sdk/client-s3": { S3Client: Client, GetObjectCommand: Command, DeleteObjectCommand: DeleteCommand }, "@aws-sdk/lib-storage": { Upload: behavior.nativeUpload ? require("@aws-sdk/lib-storage").Upload : Upload } }, values);
   return { storage, calls, clients, uploads };
 }
 test("R2 transfers use streams and one shared client; temporary cleanup cannot delete persistent files", async () => {
@@ -102,15 +102,16 @@ function exportHarness({ code = 0, downloadFails = false, uploadFails = false, d
     "../models/TimelineItem": { findAll: async () => [{ item_type: "MEDIA", media_id: "source", start_time: 0, duration: 1, media_scale: 1 }] },
     "../models/Media": { findAll: async () => [{ id: "source", file_path: "r2:/media/source.png", media_type: "image" }] },
     "../models/ProjectMedia": { findOne: async () => ({}) }, "../models/Project": { sequelize: { transaction: async callback => callback({ LOCK: { UPDATE: "UPDATE" } }) }, findOne: async () => owned ? {} : null },
-    "../models/ExportJob": { create: async () => { events.push("job-created"); }, update: async data => { if (dbFails && data.status === "completed") throw new Error("db"); Object.assign(row, data); events.push(data.status); }, findByPk: async () => row },
+    "../models/ExportJob": { create: async data => { Object.assign(row, { cancel_requested_at: null, ...data }); events.push("job-created"); }, findOne: async () => null, update: async data => { if (dbFails && data.status === "completed") throw new Error("db"); Object.assign(row, data); events.push(data.status); return [1]; }, findByPk: async () => row },
     "../services/fileAccess": { fileUrl: () => "/protected/download" },
     "../services/exportCleanupService": { getService: () => cleanup },
-    "../services/storage": { workspace: async () => "/scratch/render-one", materialize: async () => { if (downloadFails) throw new Error("download"); return "/scratch/render-one/source.png"; }, persist: async () => { assert.equal(row.status, "processing"); events.push("upload"); if (uploadFails) throw new Error("upload"); return "r2:/exports/" + projectId + ".mp4"; }, cleanup: async dir => { if (dir) events.push("cleanup"); }, serve: async (_, req, res) => { events.push("serve"); if (serve) return serve(req, res); res.emit("finish"); } },
+    "../services/storage": { referenceFor: key => 'r2:/' + key, workspace: async () => "/scratch/render-one", materialize: async () => { if (downloadFails) throw new Error("download"); return "/scratch/render-one/source.png"; }, persist: async () => { assert.equal(row.status, "processing"); events.push("upload"); if (uploadFails) throw new Error("upload"); return "r2:/exports/" + projectId + ".mp4"; }, cleanup: async dir => { if (dir) events.push("cleanup"); }, serve: async (_, req, res) => { events.push("serve"); if (serve) return serve(req, res); res.emit("finish"); } },
   });
   return { controller, child, row, events, code, downloadTransactions };
 }
 test("exports publish only after R2 upload, clean scratch, and survive controller restart via DB metadata", async () => {
   const h = exportHarness(), res = response(); await h.controller.createExport({ body: { projectId }, user: { id: "owner" } }, res); assert.equal(res.code, 202);
+  await new Promise(resolve => setImmediate(resolve));
   h.child.emit("close", 0); await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.row.status, "completed"); assert.ok(h.events.indexOf("upload") < h.events.indexOf("completed")); assert.equal(h.events.at(-1), "cleanup"); assert.ok(h.row.output_path.startsWith("r2:/exports/"));
   const status = response(); await h.controller.getExport({ params: { id: projectId }, user: { id: "owner" } }, status); assert.equal(status.body.downloadUrl, "/protected/download");
@@ -118,8 +119,9 @@ test("exports publish only after R2 upload, clean scratch, and survive controlle
 });
 for (const failure of ["render", "upload", "db", "download"]) test("export " + failure + " failure cleans scratch and never exposes an incomplete output", async () => {
   const h = exportHarness({ uploadFails: failure === "upload", dbFails: failure === "db", downloadFails: failure === "download" }); const res = response(); await h.controller.createExport({ body: { projectId }, user: { id: "owner" } }, res);
+  await new Promise(resolve => setImmediate(resolve));
   if (failure !== "download") { assert.equal(res.code, 202); h.child.emit("close", failure === "render" ? 1 : 0); await new Promise(resolve => setImmediate(resolve)); assert.equal(h.row.status, "failed"); }
-  else assert.equal(res.code, 500);
+  else { assert.equal(res.code, 202); assert.equal(h.row.status, "failed"); }
   assert.equal(h.events.at(-1), "cleanup");
   const denied = response(); await h.controller.downloadExport({ params: { id: projectId }, user: { id: "owner" } }, denied); assert.equal(denied.code, 409);
 });
@@ -199,4 +201,54 @@ test('R2 transfer aborts SDK request when the HTTP client disconnects', async ()
   const transfer = storage.serve('r2:/exports/test.mp4', { headers: {} }, res);
   await new Promise(resolve => setImmediate(resolve)); res.emit('close'); await transfer;
   assert.equal(aborted, true); assert.equal(res.listenerCount('close'), 0);
+});
+
+test('export upload cancellation aborts real SDK requests and waits for acknowledgement', async () => {
+ const base=await fsp.mkdtemp(path.join(os.tmpdir(),'jackcut-upload-cancel-'));
+ try {
+  const source=path.join(base,'export.mp4');await fsp.writeFile(source,'mp4');
+  const abort=new AbortController();let release,started,abortSeen=false;
+  const begun=new Promise(resolve=>{started=resolve;});
+  const h=storageHarness({}, {
+   nativeUpload:true,
+   send:async (_,__,options)=>new Promise((resolve,reject)=>{
+    assert.equal(options.abortSignal,abort.signal);
+    options.abortSignal.addEventListener('abort',()=>{abortSeen=true;release=()=>reject(Object.assign(Error('aborted'),{name:'AbortError'}));},{once:true});started();
+   }),
+  });
+  let settled=false;const transfer=h.storage.persist(source,'exports/test.mp4','video/mp4',{signal:abort.signal}).finally(()=>{settled=true;});
+  await begun;abort.abort();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(abortSeen,true);assert.equal(settled,false);release();await assert.rejects(transfer,/aborted/);
+ } finally {await fsp.rm(base,{recursive:true,force:true});}
+});
+test('source download cancellation aborts the SDK request before rendering can start',async()=>{
+ const abort=new AbortController();let started;const begun=new Promise(resolve=>{started=resolve;});
+ const h=storageHarness({}, {send:async (_,__,options)=>new Promise((resolve,reject)=>{
+  assert.equal(options.abortSignal,abort.signal);options.abortSignal.addEventListener('abort',()=>reject(Error('download aborted')),{once:true});started();
+ })});
+ const work=await h.storage.workspace();
+ try {const transfer=h.storage.materialize('r2:/media/input.mp4',work,{signal:abort.signal});await begun;abort.abort();await assert.rejects(transfer,/download aborted/);}
+ finally {await h.storage.cleanup(work);}
+});
+
+test('native multipart upload cancellation settles all parts and aborts multipart state before returning',async()=>{
+ const base=await fsp.mkdtemp(path.join(os.tmpdir(),'jackcut-multipart-cancel-'));
+ try {
+  const source=path.join(base,'export.mp4');await fsp.writeFile(source,Buffer.alloc(9*1024*1024));
+  const abort=new AbortController();const releases=[];let started,cleanupConfirmed=false;
+  const begun=new Promise(resolve=>{started=resolve;});
+  const h=storageHarness({}, {nativeUpload:true,send:async (command,_,options)=>{
+   const name=command.constructor.name;
+   if(name==='CreateMultipartUploadCommand')return{UploadId:'test-upload'};
+   if(name==='AbortMultipartUploadCommand'){assert.equal(options?.abortSignal,undefined);cleanupConfirmed=true;return{};}
+   if(name==='UploadPartCommand')return new Promise((resolve,reject)=>{
+    if(options.abortSignal.aborted)return reject(Error('part aborted'));
+    options.abortSignal.addEventListener('abort',()=>{releases.push(()=>reject(Error('part aborted')));},{once:true});started();
+   });
+   assert.fail('Cancelled multipart must never complete: '+name);
+  }});
+  let settled=false;const transfer=h.storage.persist(source,'exports/test.mp4','video/mp4',{signal:abort.signal}).finally(()=>{settled=true;});
+  await begun;await new Promise(resolve=>setImmediate(resolve));abort.abort();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(settled,false);for(const release of releases)release();await assert.rejects(transfer,/part aborted|Premature close/);assert.equal(cleanupConfirmed,true);
+ }finally{await fsp.rm(base,{recursive:true,force:true});}
 });

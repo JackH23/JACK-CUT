@@ -109,6 +109,7 @@ test('reducer ignores cancellation callbacks after completion',()=>{
 test('editor renders Export cancelled without error/success modal or download button',()=>{
  const empty=()=>null;
  const deps={
+  '@/lib/export':load('lib/export.ts',{}),
   'next/link':{__esModule:true,default:empty},
   react:{...React,use:()=>({projectId:'project'})},
   '@/composables/useEditorProject':{useEditorProject:()=>({project:{id:'project',name:'Project'},error:null})},
@@ -162,4 +163,23 @@ test('editor unauthorized project redirects to login without exposing project da
   await settle();
   assert.equal(runner.render(() => hook('one')).project, null);
   assert.deepEqual(routes, ['/login']);
+});
+
+test('terminal cancellation response immediately stops polling and closes export state',async()=>{
+ const h=exportPollingHarness({create:async()=>({id:'export',status:'processing',stage:'preparing'}),cancel:async()=>({id:'export',status:'cancelled'}),get:()=>assert.fail('No terminal polling'),getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');let view=h.render();await view.cancelExport();view=h.render();
+ assert.equal(view.exportJob.status,'cancelled');assert.equal(view.exporting,false);assert.equal(view.cancelling,false);assert.equal(h.timers.size,0);
+});
+test('cancellation from another backend instance is displayed while awaiting confirmation',async()=>{
+ const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),get:async()=>({id:'export',status:'processing',stage:'cancelling',cancelRequested:true}),getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();await h.tick();const view=h.render();assert.equal(view.cancelling,true);assert.equal(view.exporting,true);assert.equal(h.timers.size,1);
+});
+test('export stages describe actual preparation, renderer startup, rendering and upload',()=>{
+ const {exportStageLabel}=load('lib/export.ts',{});for(const [stage,label] of Object.entries({preparing:'Preparing media',starting:'Starting renderer',rendering:'Rendering video',uploading:'Uploading MP4',cancelled:'Cancelled',failed:'Failed',completed:'Completed',cancelling:'Cancelling'}))assert.equal(exportStageLabel(stage),label);
+});
+
+test('late in-flight poll cannot reopen a cancelled export',async()=>{
+ let release;const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),cancel:async()=>({id:'export',status:'cancelled'}),get:()=>new Promise(resolve=>{release=resolve;}),getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();const poll=h.tick();await h.render().cancelExport();h.render();
+ release({id:'export',status:'processing',progress:80});await poll;const view=h.render();assert.equal(view.exportJob.status,'cancelled');assert.equal(h.timers.size,0);
 });

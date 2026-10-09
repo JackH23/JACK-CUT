@@ -73,7 +73,13 @@ export function useExportVideo() {
     dispatch({ type: "EXPORT_CANCEL_START" });
 
     try {
-      await exportService.cancel(job.id);
+      const updated = await exportService.cancel(job.id);
+      if (currentJobRef.current?.id === job.id && currentJobRef.current.status === 'processing' && updated.status !== 'processing') {
+        currentJobRef.current = updated;
+        cancellingRef.current = false;
+        dispatch({ type: 'EXPORT_STATUS_UPDATED', payload: updated });
+        return;
+      }
 
       // The backend acknowledges the request before FFmpeg fully stops.
       // Continue polling until the status becomes "cancelled".
@@ -107,7 +113,7 @@ export function useExportVideo() {
     async function checkStatus() {
       try {
         const job = await exportService.get(jobId!);
-        if (!active) return;
+        if (!active || currentJobRef.current?.id !== jobId || currentJobRef.current?.status !== 'processing') return;
 
         consecutiveFailures = 0;
         currentJobRef.current = job;
@@ -125,7 +131,7 @@ export function useExportVideo() {
           timer = setTimeout(checkStatus, 2000);
         }
       } catch (error) {
-        if (!active) return;
+        if (!active || currentJobRef.current?.id !== jobId || currentJobRef.current?.status !== 'processing') return;
 
         const status = axios.isAxiosError(error)
           ? error.response?.status

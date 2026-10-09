@@ -6,15 +6,15 @@ async function create(extra={}){
  const item={id:'media-item',item_type:'MEDIA',media_id:'source',start_time:2,duration:4,source_start:1,
   media_scale:.55,media_x:-65,media_y:-40,animation_preset:'none',animation_amount:50,
   animation_in_preset:'none',animation_in_duration:1,animation_in_amount:50,animation_out_preset:'none',animation_out_duration:1,animation_out_amount:50,...extra};
- let args;const logs=[];const child=new EventEmitter();child.stderr=new EventEmitter();child.stdout=new EventEmitter();
- const mockFs={existsSync:()=>true,mkdirSync(){},writeFileSync(){},renameSync(){}};
+ const row={}; let args, assContent;const logs=[];const child=new EventEmitter();child.stderr=new EventEmitter();child.stdout=new EventEmitter();
+ const mockFs={existsSync:()=>true,mkdirSync(){},writeFileSync(_, content){assContent=content;},renameSync(){}};
  const load=n=>{
   if(n==='../utils/mediaStreams')return {hasAudioStream:async()=>extra.hasAudio !== false};
-  if(n==='../models/ExportJob')return {create:async()=>{},update:async()=>{}};
+  if(n==='../models/ExportJob')return {create:async data=>Object.assign(row,{cancel_requested_at:null,...data}),findOne:async()=>null,findByPk:async()=>row,update:async data=>{Object.assign(row,data);return [1];}};
   if(n==='../models/Project')return {sequelize:{transaction:async callback=>callback({LOCK:{UPDATE:'UPDATE'}})},findOne:async()=>({})};
   if(n==='../models/ProjectMedia')return {findOne:async()=>({})};
   if(n==='../services/fileAccess')return {};
-  if(n==='../services/storage')return {workspace:async()=>root+'/tmp/render-test',materialize:async()=>root+'/uploads/media/source.mp4',persist:async()=> 'r2:/exports/test.mp4',cleanup:async()=>{}};
+  if(n==='../services/storage')return {referenceFor:key=>'r2:/'+key,workspace:async()=>root+'/tmp/render-test',materialize:async()=>root+'/uploads/media/source.mp4',persist:async()=> 'r2:/exports/test.mp4',cleanup:async()=>{}};
   if(n==='../models/TimelineItem')return {findAll:async()=>extra.items || [item]};
   if(n==='../models/Media')return {findAll:async()=>extra.media || [{id:'source',media_type:extra.mediaType || 'video',file_url:'/uploads/media/source.mp4'}]};
   if(n==='sequelize')return {Op:{in:Symbol('in')}};
@@ -26,9 +26,10 @@ async function create(extra={}){
  vm.runInNewContext(fs.readFileSync(path.join(root,'controllers/exportController.js'),'utf8'),{require:load,module:m,exports:m.exports,process:{cwd:()=>root,env:{}},console:{log:(...a)=>logs.push(a),error(){}},Date,Number,String,Map,Set,JSON});
  let response;const res={status(code){assert.equal(code,202);return this;},json(v){response=v;}};
  await m.exports.createExport({body:{projectId:'66ec12e5-244b-43e2-b36e-57bec761ade8'},user:{id:'owner'}},res);
+ await new Promise(resolve=>setImmediate(resolve));
  child.stderr.emit('data',Buffer.from('frame= 180 fps= 30 speed=1x'));
  child.emit('close',0);
- return {videoMap:args[args.indexOf('-map')+1],graph:args[args.indexOf('-filter_complex')+1],clip:logs.find(e=>e[0]==='EXPORT CLIP')?.[1],response};
+ return {args,assContent,videoMap:args[args.indexOf('-map')+1],graph:args[args.indexOf('-filter_complex')+1],clip:logs.find(e=>e[0]==='EXPORT CLIP')?.[1],response};
 }
 test('real controller carries database transform values into a fitted static media graph',async()=>{
  const {graph,clip}=await create();assert.equal(clip.mediaScale,.55);assert.equal(clip.mediaX,-65);assert.equal(clip.mediaY,-40);assert.equal(clip.sourceStart,1);
@@ -79,18 +80,22 @@ test('real FFmpeg renders audio-only and mixed silent/sounding video timelines w
  const scratch=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'jackcut-media-combinations-'));
  const ffmpeg=process.env.FFMPEG_PATH || 'ffmpeg';
  try {
-  const audio=path.join(scratch,'tone.wav'),video=path.join(scratch,'silent.mp4');
+  const audio=path.join(scratch,'tone.wav'),video=path.join(scratch,'silent.mp4'),soundVideo=path.join(scratch,'sound.mp4');
   execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','sine=frequency=440:duration=0.6',audio]);
   execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=purple:s=160x90:r=30:d=0.6','-an','-c:v','libx264',video]);
+  execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=purple:s=160x90:r=30:d=0.6','-f','lavfi','-i','sine=frequency=440:duration=0.6','-c:v','libx264','-c:a','aac',soundVideo]);
   const base={item_type:'MEDIA',start_time:0,duration:0.6,source_start:0,media_scale:1,media_x:0,media_y:0};
   const cases=[
+   {name:'video-with-audio',items:[{...base,id:'v',media_id:'v'}],media:[{id:'v',media_type:'video',file_path:soundVideo}],inputs:[soundVideo],videoLabel:'composed0',hasAudio:true},
+   {name:'video-only',items:[{...base,id:'v',media_id:'v'}],media:[{id:'v',media_type:'video',file_path:video}],inputs:[video],videoLabel:'composed0',hasAudio:false,silent:true},
    {name:'audio-only',items:[{...base,id:'a',media_id:'a'}],media:[{id:'a',media_type:'audio',file_url:audio}],inputs:[audio],videoLabel:'0:v'},
    {name:'mixed',items:[{...base,id:'v',media_id:'v'},{...base,id:'a',media_id:'a'}],media:[{id:'v',media_type:'video',file_url:video},{id:'a',media_type:'audio',file_url:audio}],inputs:[video,audio],videoLabel:'composed0',hasAudio:false},
   ];
   for(const example of cases){
    const {graph,videoMap}=await create(example);
    if(example.name==='audio-only') assert.ok(graph.includes('[2:a]atrim='));
-   else {assert.ok(!graph.includes('[2:a]'));assert.ok(graph.includes('[3:a]atrim='));}
+   else if(example.name==='mixed') {assert.ok(!graph.includes('[2:a]'));assert.ok(graph.includes('[3:a]atrim='));}
+   else assert.equal(graph.includes('[2:a]'),!example.silent);
    const output=path.join(scratch,example.name+'.mp4');
    const args=['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=black:s=1920x1080:r=30:d=0.6','-f','lavfi','-i','anullsrc=r=48000:cl=stereo:d=0.6'];
    for(const input of example.inputs)args.push('-i',input);
@@ -103,7 +108,34 @@ test('real FFmpeg renders audio-only and mixed silent/sounding video timelines w
    const volume=spawnSync(ffmpeg,['-hide_banner','-i',output,'-vn','-af','volumedetect','-f','null','-'],{encoding:'utf8',timeout:30000});
    assert.equal(volume.status,0,volume.stderr);
    const mean=volume.stderr.match(/mean_volume: (-?[\d.]+) dB/);
-   assert.ok(mean && Number(mean[1])>-40,example.name+' must retain the audible source');
+   assert.ok(mean && (example.silent ? Number(mean[1]) < -60 : Number(mean[1])>-40),example.name+' must retain the expected source audio');
+   const playback=spawnSync(ffmpeg,['-v','error','-i',output,'-f','null','-'],{encoding:'utf8',timeout:30000});assert.equal(playback.status,0,playback.stderr);
   }
+ } finally { fs.rmSync(scratch,{recursive:true,force:true}); }
+});
+
+test('real controller exports image storytelling with animated captions to a decodable MP4', async () => {
+ const {execFileSync,spawnSync}=require('node:child_process');
+ const scratch=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'jackcut-story-export-'));
+ const ffmpeg=process.env.FFMPEG_PATH || 'ffmpeg';
+ try {
+  const image=path.join(scratch,'photo.png'), output=path.join(scratch,'story.mp4');
+  execFileSync(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=purple:s=160x90','-frames:v','1',image]);
+  const {args,assContent}=await create({mediaType:'image',items:[
+   {item_type:'MEDIA',media_id:'source',start_time:0,duration:0.6,media_scale:1},
+   {item_type:'TEXT',text_content:'Story caption',start_time:0,duration:0.6,text_x:50,text_y:70,font_family:'Arial',animation_in_preset:'fade',animation_in_duration:0.3,animation_in_amount:100},
+  ]});
+  assert.match(assContent,/Story caption/); assert.match(assContent,/\\1a&H/);
+  fs.writeFileSync(path.join(scratch,'captions.ass'),assContent);
+  const actual=args.map(value=>value.endsWith('/uploads/media/source.mp4')?image:value);
+  actual[actual.indexOf('-filter_complex')+1]=actual[actual.indexOf('-filter_complex')+1].replace(/ass='[^']*'/,"ass='captions.ass'");
+  actual[actual.indexOf('-preset')+1]='ultrafast'; actual[actual.length-1]=output;
+  const rendered=spawnSync(ffmpeg,['-hide_banner','-loglevel','error',...actual],{cwd:scratch,encoding:'utf8',timeout:30000});
+  assert.equal(rendered.status,0,rendered.stderr);
+  const probe=JSON.parse(execFileSync(process.env.FFPROBE_PATH || 'ffprobe',['-v','error','-show_streams','-show_format','-of','json',output],{encoding:'utf8'}));
+  assert.ok(probe.streams.some(s=>s.codec_name==='h264')); assert.ok(probe.streams.some(s=>s.codec_name==='aac'));
+  assert.ok(Math.abs(Number(probe.format.duration)-0.6)<0.08);
+  const decoded=spawnSync(ffmpeg,['-v','error','-i',output,'-f','null','-'],{encoding:'utf8',timeout:30000});
+  assert.equal(decoded.status,0,decoded.stderr);
  } finally { fs.rmSync(scratch,{recursive:true,force:true}); }
 });

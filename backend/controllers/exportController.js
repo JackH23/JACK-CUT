@@ -21,7 +21,8 @@ const { getAssFontMetrics } = require("../utils/textFontMetrics");
 const { hasAudioStream } = require('../utils/mediaStreams');
 const { failureReason, logExportFailure } = require('../utils/exportDiagnostics');
 
-const jobs = new Map();
+const lifecycle = require('../services/exportLifecycle').createExportLifecycle({ ExportJob, Op, sequelize: Project.sequelize });
+const jobs = lifecycle.jobs;
 function hasActiveProjectExport(projectId) {
   return [...jobs.values()].some(job => job.projectId === projectId);
 }
@@ -48,20 +49,7 @@ function parseFFmpegTime(value) {
 
 
 async function saveExportJob(job) {
-  await ExportJob.update(
-    {
-      status: job.status,
-      progress: job.progress ?? 0,
-      output_path: job.outputReference || null,
-      error_message: job.error,
-      metrics: job.metrics || null,
-      completed_at:
-        job.status === "processing" ? null : new Date(),
-    },
-    {
-      where: { id: job.id },
-    }
-  );
+  await lifecycle.finish(job);
 }
 
 async function findExportJob(id, userId) {
@@ -73,7 +61,7 @@ async function findExportJob(id, userId) {
   // PostgreSQL owns durable status; the map contains only active renders.
   return {
     id: row.id, status: row.status, outputReference: row.output_path, error: row.error_message,
-    cleanup_reference: row.cleanup_reference, progress: row.progress, completed_at: row.completed_at, metrics: row.metrics || null
+    cleanup_reference: row.cleanup_reference, progress: row.progress, completed_at: row.completed_at, metrics: row.metrics || null, stage: row.stage, cancelRequested: row.status === "processing" && Boolean(row.cancel_requested_at)
   };
 }
 
@@ -112,10 +100,9 @@ function getTextStyle(clip, index) {
 }
 
 async function createExport(req, res) {
-  let workDir;
   let activeJob;
-  let handedOff = false;
-  let stage = "reserve_job";
+
+  const stage = "reserve_job";
   try {
     const { projectId } = req.body;
 
@@ -129,19 +116,45 @@ async function createExport(req, res) {
     }
 
     const id = randomUUID();
-    const job = { id, projectId, status: "processing", progress: 0, error: null, createdAt: Date.now() };
+    const job = { id, projectId, status: "processing", progress: 0, error: null, createdAt: Date.now(), workerToken: lifecycle.newToken(), stage: "preparing" };
     const reservation = await Project.sequelize.transaction(async transaction => {
       const project = await Project.findOne({ where: { id: projectId, user_id: req.user.id }, transaction, lock: transaction.LOCK.UPDATE });
       if (!project) return { status: 404, message: "Project not found." };
       const items = await TimelineItem.findAll({ where: { project_id: projectId }, order: [["start_time", "ASC"]], transaction });
       if (!items.length) return { status: 400, message: "The timeline is empty." };
-      await ExportJob.create({ id, project_id: projectId, status: "processing", progress: 0 }, { transaction });
+      const existing = await ExportJob.findOne({ where: { project_id: projectId, status: 'processing' }, transaction });
+      if (existing) return { existing };
+      await ExportJob.create({ id, project_id: projectId, status: "processing", progress: 0,
+        worker_token: job.workerToken, heartbeat_at: new Date(), stage: 'preparing' }, { transaction });
       activeJob = job;
-      jobs.set(id, job);
+
       return { items };
     });
+    if (reservation.existing) return res.status(202).json({ id: reservation.existing.id, status: reservation.existing.status, progress: reservation.existing.progress, stage: reservation.existing.stage, cancelRequested: Boolean(reservation.existing.cancel_requested_at) });
     if (!reservation.items) return res.status(reservation.status).json({ message: reservation.message });
     const { items } = reservation;
+    lifecycle.register(job);
+    res.status(202).json({ id, status: job.status, progress: 0, stage: job.stage, statusUrl: '/api/exports/' + id });
+    void renderExport(job, items);
+    return;
+  } catch (error) {
+    if (activeJob) {
+      activeJob.status = 'failed'; activeJob.error = 'Could not start export.';
+      await saveExportJob(activeJob).catch(() => {});
+      lifecycle.release(activeJob);
+    }
+    logExportFailure({ jobId: activeJob?.id, stage, error });
+    return res.status(500).json({ message: 'Could not start export.' });
+  }
+}
+
+async function renderExport(job, items) {
+  const { id, projectId } = job;
+  let workDir;
+  let stage = 'prepare_sources';
+  let handedOff = false;
+  try {
+    await lifecycle.checkpoint(job, 'preparing');
 
     const mediaIds = [
       ...new Set(
@@ -169,15 +182,29 @@ async function createExport(req, res) {
     workDir = await storage.workspace();
     const audioStreams = new Map();
     const paths = new Map();
-    for (const media of mediaFiles) {
-      if (!await ProjectMedia.findOne({ where: { project_id: projectId, media_id: media.id } })) throw new Error("Timeline media is not linked to this project.");
-      paths.set(media.id, await storage.materialize(media.file_path, workDir));
-      if (media.media_type === "video") {
-        stage = "probe_streams";
-        audioStreams.set(media.id, await hasAudioStream(paths.get(media.id)));
-        stage = "prepare_sources";
+    let nextMedia = 0;
+    const concurrency = Math.min(8, Math.max(1, Number(process.env.EXPORT_PREPARE_CONCURRENCY) || 3));
+    const prepare = async () => {
+      while (nextMedia < mediaFiles.length) {
+        const media = mediaFiles[nextMedia++];
+        lifecycle.assertRunning(job);
+        if (!await ProjectMedia.findOne({ where: { project_id: projectId, media_id: media.id } })) throw new Error('Timeline media is not linked to this project.');
+        await lifecycle.checkpoint(job, 'preparing');
+        paths.set(media.id, await storage.materialize(media.file_path, workDir, {
+          signal: job.abort.signal, onProgress: () => { job.lastWorkAt = Date.now(); },
+        }));
+        if (media.media_type === 'video') {
+          stage = 'probe_streams';
+          audioStreams.set(media.id, await hasAudioStream(paths.get(media.id), { signal: job.abort.signal }));
+        }
+        stage = 'prepare_sources';
       }
-    }
+    };
+    // Wait for every transfer to settle before cleaning the shared scratch directory.
+    const prepared = await Promise.allSettled(Array.from({ length: Math.min(concurrency, mediaFiles.length) }, () =>
+      prepare().catch(error => { lifecycle.stop(job, job.stopReason || 'Could not prepare source media. Check the media files and renderer tools.'); throw error; })));
+    const preparationFailure = prepared.find(result => result.status === 'rejected');
+    if (preparationFailure) throw preparationFailure.reason;
     const clips = items.map((item) => {
       console.log("EXPORT TIMELINE ITEM", {
         id: item.id, itemType: item.item_type,
@@ -278,8 +305,8 @@ async function createExport(req, res) {
       job.status = "failed"; job.error = "Invalid timeline duration.";
       await saveExportJob(job);
       await storage.cleanup(workDir);
-      jobs.delete(id);
-      return res.status(400).json({ message: "Invalid timeline duration." });
+      lifecycle.release(job);
+      return;
     }
 
     const OUTPUT_DIR = workDir;
@@ -482,7 +509,7 @@ async function createExport(req, res) {
       ...(VIDEO_ENCODER === "h264_amf"
         ? ["-quality", "balanced"]
         : VIDEO_ENCODER === "libx264"
-          ? ["-preset", "medium", "-crf", "23"]
+          ? ["-preset", process.env.FFMPEG_PRESET || "medium", "-crf", "23"]
           : []),
       "-pix_fmt",
       "yuv420p",
@@ -500,175 +527,205 @@ async function createExport(req, res) {
     );
 
     stage = "spawn_ffmpeg";
-    const renderStarted = Date.now();
-    const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args);
+    await lifecycle.withStartLock(job, () => {
+      const renderStarted = Date.now();
+      const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args, { windowsHide: true });
 
-    job.child = child;
-    job.cancelRequested = false;
+      job.child = child;
+      child.once('spawn', () => { job.stage = 'rendering'; job.lastWorkAt = Date.now(); });
 
-    let progressBuffer = "";
+      let progressBuffer = "";
 
-    // Track PostgreSQL progress updates
-    let lastSavedProgress = 0;
-    let lastSavedAt = Date.now();
-    let progressSaveQueue = Promise.resolve();
+      // Track PostgreSQL progress updates
+      let lastSavedProgress = 0;
+      let lastSavedAt = Date.now();
+      let progressSaveQueue = Promise.resolve();
 
 
-    child.stdout.on("data", (chunk) => {
-      progressBuffer += chunk.toString();
+      child.stdout.on("data", (chunk) => {
+        progressBuffer += chunk.toString();
 
-      const lines = progressBuffer.split(/\r?\n/);
-      progressBuffer = lines.pop() || "";
+        const lines = progressBuffer.split(/\r?\n/);
+        progressBuffer = lines.pop() || "";
 
-      for (const line of lines) {
-        const separator = line.indexOf("=");
+        for (const line of lines) {
+          const separator = line.indexOf("=");
 
-        if (separator === -1) continue;
+          if (separator === -1) continue;
 
-        const key = line.slice(0, separator);
-        const value = line.slice(separator + 1);
+          const key = line.slice(0, separator);
+          const value = line.slice(separator + 1);
 
-        if (key !== "out_time") continue;
+          if (!["out_time", "out_time_us"].includes(key)) continue;
 
-        const seconds = parseFFmpegTime(value);
+          const seconds = key === "out_time_us" ? Number(value) / 1e6 : parseFFmpegTime(value);
 
-        if (seconds === null || totalDuration <= 0) {
-          continue;
-        }
+          if (!Number.isFinite(seconds) || seconds === null || totalDuration <= 0) {
+            continue;
+          }
 
-        const percentage = Math.min(
-          99,
-          Math.max(
-            0,
-            Math.floor((seconds / totalDuration) * 100)
-          )
-        );
-
-        job.progress = Math.max(
-          job.progress,
-          percentage
-        );
-
-        // Save progress to PostgreSQL
-        if (
-          job.progress > lastSavedProgress &&
-          (
-            job.progress - lastSavedProgress >= 5 ||
-            Date.now() - lastSavedAt >= 1000
-          )
-        ) {
-          const progressToSave = job.progress;
-
-          lastSavedProgress = progressToSave;
-          lastSavedAt = Date.now();
-
-          progressSaveQueue = progressSaveQueue
-            .then(() =>
-              ExportJob.update(
-                { progress: progressToSave },
-                {
-                  where: {
-                    id,
-                    status: "processing",
-                  },
-                }
-              )
+          const percentage = Math.min(
+            99,
+            Math.max(
+              0,
+              Math.floor((seconds / totalDuration) * 95)
             )
-            .catch((error) => {
-              console.error(
-                "Failed to save export progress.",
-                { jobId: id }
-              );
-            });
+          );
+
+          if (seconds > (job.lastOutputSeconds || 0)) { job.lastWorkAt = Date.now(); job.lastOutputSeconds = seconds; }
+          job.progress = Math.max(
+            job.progress,
+            percentage
+          );
+
+          // Save progress to PostgreSQL
+          if (
+            job.progress > lastSavedProgress &&
+            (
+              job.progress - lastSavedProgress >= 5 ||
+              Date.now() - lastSavedAt >= 1000
+            )
+          ) {
+            const progressToSave = job.progress;
+
+            lastSavedProgress = progressToSave;
+            lastSavedAt = Date.now();
+
+            progressSaveQueue = progressSaveQueue
+              .then(() =>
+                ExportJob.update(
+                  { progress: progressToSave },
+                  {
+                    where: {
+                      id,
+                      status: "processing", worker_token: job.workerToken,
+                    },
+                  }
+                )
+              )
+              .catch((error) => {
+                console.error(
+                  "Failed to save export progress.",
+                  { jobId: id }
+                );
+              });
+          }
         }
-      }
-    });
+      });
 
-    let stderr = "";
+      let stderr = "";
 
-    child.stderr.on("data", (chunk) => {
-      stderr = (stderr + chunk.toString()).slice(-4000);
-    });
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk.toString()).slice(-4000);
+      });
 
-    let settled = false;
-    const finish = async (code, spawnError, signal) => {
-      let finishStage = "render";
-      if (settled) return;
-      settled = true;
-      job.finishing = true;
-
-      try {
-        // Wait for pending PostgreSQL progress updates
-        await progressSaveQueue;
-
-        const renderSeconds =
-          (Date.now() - renderStarted) / 1000;
-        const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
-        job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames && renderSeconds > 0 ? Number(frames) / renderSeconds : null, speed: renderSeconds > 0 ? totalDuration / renderSeconds : null };
-        if (job.cancelRequested) {
-          job.status = "cancelled";
-          job.error = null;
-
-          await saveExportJob(job);
-          return;
-        }
-
-        if (spawnError || code !== 0) {
-          throw new Error("FFmpeg rendering failed.");
-        }
-
-        finishStage = "persist_output";
-        job.outputReference = await storage.persist(
-          outputPath,
-          `exports/${id}.mp4`,
-          "video/mp4",
-        );
-
-        finishStage = "save_completed_status";
-        job.progress = 100;
-        job.status = "completed";
-
-        await saveExportJob(job);
-      } catch (error) {
-        logExportFailure({ jobId: id, stage: finishStage, error: spawnError || error, exitCode: code, signal, reason: finishStage === "render" ? failureReason(stderr, spawnError) : undefined });
-
-        // Retrying cancellation persistence must not change its outcome to failure.
-        job.status = job.cancelRequested ? "cancelled" : "failed";
-        job.error = job.cancelRequested
-          ? null
-          : "Could not complete export. Check FFmpeg, storage and database availability.";
+      let settled = false;
+      const finish = async (code, spawnError, signal) => {
+        let finishStage = "render";
+        if (settled) return;
+        settled = true;
+        job.finishing = true;
 
         try {
-          await saveExportJob(job);
-        } catch {
-          console.error("Could not persist failed export status.");
-        }
-      } finally {
-        await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
-        jobs.delete(id);
-      }
-    };
-    child.once("error", error => { job.spawnError = error; });
-    child.once("close", (code, signal) => { void finish(code, job.spawnError, signal); });
-    handedOff = true;
+          // Wait for pending PostgreSQL progress updates
+          await progressSaveQueue;
 
-    return res.status(202).json({
-      id,
-      status: job.status,
-      progress: job.progress,
-      statusUrl: `/api/exports/${id}`,
+          const renderSeconds =
+            (Date.now() - renderStarted) / 1000;
+          const frames = [...stderr.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1];
+          job.metrics = { renderSeconds, totalSeconds: (Date.now() - job.createdAt) / 1000, fps: frames && renderSeconds > 0 ? Number(frames) / renderSeconds : null, speed: renderSeconds > 0 ? totalDuration / renderSeconds : null };
+          if (job.cancelRequested) {
+            job.status = "cancelled";
+            job.error = null;
+
+            await saveExportJob(job);
+            return;
+          }
+
+          lifecycle.assertRunning(job);
+          if (spawnError || code !== 0) {
+            throw new Error("FFmpeg rendering failed.");
+          }
+
+          finishStage = "persist_output";
+          job.progress = 95;
+          await lifecycle.checkpoint(job, 'uploading');
+          job.outputReference = storage.referenceFor('exports/' + id + '.mp4');
+          await ExportJob.update({ cleanup_reference: job.outputReference }, { where: { id, status: 'processing', worker_token: job.workerToken } });
+          lifecycle.assertRunning(job);
+          job.outputReference = await storage.persist(
+            outputPath,
+            `exports/${id}.mp4`,
+            "video/mp4",
+            { signal: job.abort.signal, onProgress: () => { job.lastWorkAt = Date.now(); } },
+          );
+          await lifecycle.checkpoint(job);
+
+          finishStage = "save_completed_status";
+          job.status = "completed";
+
+          await saveExportJob(job);
+        } catch (error) {
+          logExportFailure({ jobId: id, stage: finishStage, error: spawnError || error, exitCode: code, signal, reason: finishStage === "render" ? failureReason(stderr, spawnError) : undefined });
+
+          // Retrying cancellation persistence must not change its outcome to failure.
+          job.status = job.cancelRequested ? "cancelled" : "failed";
+          job.error = job.cancelRequested
+            ? null
+            : job.stopReason || exportErrorMessage(finishStage, stderr, spawnError || error);
+
+          try {
+            await saveExportJob(job);
+          } catch {
+            console.error("Could not persist failed export status.");
+          }
+        } finally {
+          await discardUnpublishedOutput(job);
+          await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
+          lifecycle.release(job);
+        }
+      };
+      child.once("error", error => { job.spawnError = error; });
+      child.once("close", (code, signal) => { job.childClosed = true; void finish(code, job.spawnError, signal); });
+      handedOff = true;
     });
+
+    return;
   } catch (error) {
     if (!handedOff) {
-      if (activeJob) { activeJob.status = "failed"; activeJob.error = "Could not start export."; await saveExportJob(activeJob).catch(() => { }); }
-      await storage.cleanup(workDir).catch(() => console.error("Render temporary cleanup failed."));
-      if (activeJob) jobs.delete(activeJob.id);
+      job.status = job.cancelRequested ? 'cancelled' : 'failed';
+      job.error = job.cancelRequested ? null : job.stopReason || exportErrorMessage(stage, '', error);
+      await saveExportJob(job).catch(() => console.error('Could not persist export failure. Lease recovery will retry.'));
+      await discardUnpublishedOutput(job);
+      await storage.cleanup(workDir).catch(() => console.error('Render temporary cleanup failed.'));
+      lifecycle.release(job);
     }
-    logExportFailure({ jobId: activeJob?.id || null, stage, error });
-    return res.status(500).json({ message: "Could not start export." });
+    logExportFailure({ jobId: id, stage, error });
   }
 }
 
+
+
+function exportErrorMessage(stage, stderr, error) {
+  if (stage === 'persist_output') return 'Could not upload the MP4. Check storage availability and try again.';
+  if (stage === 'save_completed_status') return 'Could not save export status. Please try again.';
+  if (stage === 'probe_streams') return error?.code === 'ENOENT' ? 'The media inspection tool is unavailable. Contact support.' : 'Could not inspect source media. Check the media file and try again.';
+  if (stage === 'prepare_sources') return 'Could not load source media. Check that all timeline files are available.';
+  const reason = failureReason(stderr, error?.code ? error : null);
+  return ({ ffmpeg_binary_missing: 'The video renderer is unavailable. Contact support.', missing_input_stream: 'A source media stream is missing. Check the media files.',
+    encoder_unavailable: 'The configured video encoder is unavailable. Contact support.', subtitle_filter_unavailable: 'The subtitle renderer is unavailable. Contact support.',
+    memory_exhausted: 'The renderer ran out of memory. Try a shorter timeline.', scratch_disk_full: 'The renderer ran out of temporary disk space. Contact support.' })[reason] || 'Video rendering failed. Check source media or try a shorter timeline.';
+}
+async function discardUnpublishedOutput(job) {
+  if (!job.outputReference || job.status === 'completed') return;
+  try {
+    const row = await ExportJob.findByPk(job.id);
+    if (row?.status === 'completed') return;
+    await ExportJob.update({ cleanup_reference: job.outputReference }, { where: { id: job.id, status: { [Op.in]: ['failed', 'cancelled'] } }, silent: true });
+    await storage.remove(job.outputReference);
+    await ExportJob.update({ cleanup_reference: null }, { where: { id: job.id }, silent: true });
+  } catch { console.error('Unpublished export output retained for cleanup recovery.'); }
+}
 
 async function getExport(req, res) {
   try {
@@ -705,6 +762,8 @@ async function getExport(req, res) {
       progress,
       error: job.error,
       metrics: job.metrics,
+      stage: job.cancelRequested ? "cancelling" : job.stage,
+      cancelRequested: job.cancelRequested,
       downloadAvailable,
       expiresAt: job.completed_at
         ? new Date(
@@ -753,39 +812,11 @@ async function cancelExport(req, res) {
       });
     }
 
-    const activeJob = jobs.get(job.id);
-
-    if (!activeJob?.child || activeJob.finishing) {
-      return res.status(409).json({
-        message: "Active FFmpeg process not found.",
-      });
-    }
-
-    if (activeJob.cancelRequested) {
-      return res.status(202).json({
-        id: job.id,
-        status: "processing",
-        message: "Cancellation already requested.",
-      });
-    }
-
-    activeJob.cancelRequested = true;
-
-    let stopped;
-    try { stopped = activeJob.child.kill("SIGTERM"); }
-    catch { activeJob.cancelRequested = false; throw new Error("Could not signal render process."); }
-    if (!stopped) {
-      activeJob.cancelRequested = false;
-
-      return res.status(409).json({
-        message: "FFmpeg process already stopped.",
-      });
-    }
-
-    return res.status(202).json({
-      id: job.id,
-      status: "processing",
-      message: "Cancellation requested.",
+    await lifecycle.requestCancel(job.id);
+    const current = await findExportJob(job.id, req.user.id);
+    return res.status(current.status === 'processing' ? 202 : 200).json({
+      id: job.id, status: current.status, stage: current.stage, progress: current.progress,
+      cancelRequested: current.status === 'processing', message: 'Cancellation requested.',
     });
   } catch (error) {
     logExportFailure({ jobId: req.params.id, stage: "cancel", error });
@@ -821,6 +852,7 @@ async function downloadExport(req, res) {
 }
 
 module.exports = {
+  startExportRecovery: lifecycle.start,
   hasActiveProjectExport,
   createExport,
   getExport,

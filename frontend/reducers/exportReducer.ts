@@ -65,6 +65,8 @@ export function exportReducer(
     case "EXPORT_CREATED":
       return {
         ...state,
+        loading: action.payload.status === 'processing',
+        cancelling: Boolean(action.payload.cancelRequested),
         job: {
           ...action.payload,
           progress: normalizeProgress(
@@ -78,6 +80,8 @@ export function exportReducer(
         state.job?.id === action.payload.id
           ? state.job
           : null;
+
+      if (previousJob && previousJob.status !== 'processing' && action.payload.status === 'processing') return state;
 
       const progress =
         action.payload.status === "completed"
@@ -99,7 +103,7 @@ export function exportReducer(
         },
         loading: processing,
         cancelling: processing
-          ? state.cancelling
+          ? state.cancelling || Boolean(action.payload.cancelRequested)
           : false,
         error:
           action.payload.status === "failed"

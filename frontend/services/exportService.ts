@@ -10,6 +10,7 @@ export const exportService = {
     const { data } = await axios.post<ExportJob>(
       EXPORT_URL,
       { projectId },
+      { timeout: 15000 },
     );
 
     return data;
@@ -29,6 +30,8 @@ export const exportService = {
   async cancel(id: string): Promise<ExportJob> {
     const { data } = await axios.post<ExportJob>(
       `${EXPORT_URL}/${encodeURIComponent(id)}/cancel`,
+      {},
+      { timeout: 10000 },
     );
 
     return data;

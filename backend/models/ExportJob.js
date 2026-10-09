@@ -29,6 +29,11 @@ const ExportJob = sequelize.define(
       },
     },
 
+    worker_token: { type: DataTypes.UUID, allowNull: true },
+    heartbeat_at: { type: DataTypes.DATE, allowNull: true },
+    cancel_requested_at: { type: DataTypes.DATE, allowNull: true },
+    stage: { type: DataTypes.STRING(30), allowNull: true },
+
     // Video rendering progress: 0–100%
     progress: {
       type: DataTypes.INTEGER,

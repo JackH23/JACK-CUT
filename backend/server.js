@@ -95,6 +95,11 @@ async function startServer() {
     await sequelize.authenticate();
     await sequelize.sync();
     const exportColumns = await sequelize.getQueryInterface().describeTable("export_jobs");
+    for (const [name, type] of [['worker_token', 'UUID'], ['heartbeat_at', 'DATE'], ['cancel_requested_at', 'DATE'], ['stage', 'STRING']]) {
+      if (!exportColumns[name]) try {
+        await sequelize.getQueryInterface().addColumn('export_jobs', name, { type: require('sequelize').DataTypes[type], allowNull: true });
+      } catch (error) { if (error.original?.code !== '42701') throw error; }
+    }
     if (!exportColumns.metrics) await sequelize.getQueryInterface().addColumn("export_jobs", "metrics", {
       type: require("sequelize").DataTypes.JSONB, allowNull: true,
     });
@@ -104,6 +109,7 @@ async function startServer() {
       });
     } catch (error) { if (error.original?.code !== '42701') throw error; }
     await sequelize.query("CREATE INDEX IF NOT EXISTS export_jobs_cleanup_recovery ON export_jobs (completed_at) WHERE status = 'completed' AND cleanup_reference IS NOT NULL");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS export_jobs_active_heartbeat ON export_jobs (heartbeat_at, created_at) WHERE status = 'processing'");
     // Additive migration for existing databases; never alter or reset other columns.
     const queryInterface = sequelize.getQueryInterface();
     const columns = await queryInterface.describeTable("timeline_items");
@@ -133,6 +139,7 @@ async function startServer() {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server is running on http://localhost:${PORT}`);
       exportCleanup.start();
+      require('./controllers/exportController').startExportRecovery();
     });
   } catch (error) {
     console.error("Server startup failed; verify storage configuration, database connectivity and schema permissions.");

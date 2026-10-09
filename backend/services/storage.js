@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
+const { Transform } = require('node:stream');
 const { pipeline } = require("node:stream/promises");
 const { S3Client, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
@@ -38,19 +39,40 @@ function localPath(reference) {
   if (!directory || !filename || filename === "." || filename === "..") throw new Error("Invalid local storage reference.");
   return path.join(directory, filename);
 }
-async function persist(filePath, key, contentType) {
+function referenceFor(key) {
+  if (!/^(media|exports)[/][a-zA-Z0-9._-]+$/.test(key)) throw new Error('Invalid storage key.');
+  return driver() === 'r2' ? 'r2:/' + key : key.startsWith('media/') ? path.join(ROOT, 'uploads', key) : path.join(ROOT, key);
+}
+async function persist(filePath, key, contentType, { signal, onProgress } = {}) {
+  signal?.throwIfAborted();
   if (!/^(media|exports)\/[a-zA-Z0-9._-]+$/.test(key)) throw new Error("Invalid storage key.");
   if (driver() === "r2") {
     const body = fs.createReadStream(filePath);
     try {
-      const upload = new Upload({ client: getClient(), queueSize: 2, partSize: 8 * 1024 * 1024, leavePartsOnError: false,
+      // Upload.abort() races its internal work. Abort the actual SDK requests
+      // instead, so done() settles only after all parts and abort cleanup settle.
+      const baseClient = getClient();
+      const uploadClient = signal ? { config: baseClient.config, send(command, options) {
+        return baseClient.send(command, { ...options,
+          ...(command.constructor.name === 'AbortMultipartUploadCommand' ? {} : { abortSignal: signal }) });
+      } } : baseClient;
+      const upload = new Upload({ client: uploadClient, queueSize: 2, partSize: 8 * 1024 * 1024, leavePartsOnError: false,
         params: { Bucket: process.env.R2_BUCKET_NAME, Key: key, Body: body, ContentType: contentType } });
-      await upload.done();
+      const abortUpload = () => { body.destroy(); };
+      if (onProgress) upload.on('httpUploadProgress', onProgress);
+      signal?.addEventListener('abort', abortUpload, { once: true });
+      try {
+        signal?.throwIfAborted();
+        await upload.done();
+        // Return the reference even if cancellation races the completed upload;
+        // the caller compensates it after checking its durable cancellation flag.
+      } finally { signal?.removeEventListener('abort', abortUpload); }
       return "r2:/" + key;
     } finally { body.destroy(); }
   }
   const target = key.startsWith("media/") ? path.join(ROOT, "uploads", key) : path.join(ROOT, key);
   await fsp.mkdir(path.dirname(target), { recursive: true });
+  signal?.throwIfAborted();
   if (path.resolve(filePath) !== target) await fsp.copyFile(filePath, target, fs.constants.COPYFILE_EXCL);
   return target;
 }
@@ -66,12 +88,16 @@ async function remove(reference) {
     if (error.code !== 'ENOENT' && error.name !== 'NoSuchKey' && error.code !== 'NoSuchKey') throw error;
   }
 }
-async function materialize(reference, workDir) {
+async function materialize(reference, workDir, { signal, onProgress } = {}) {
+  signal?.throwIfAborted();
   if (!reference.startsWith("r2:/")) return localPath(reference);
   const key = keyFrom(reference);
   const destination = path.join(workDir, path.basename(key));
-  const object = await getClient().send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }));
-  await pipeline(object.Body, fs.createWriteStream(destination, { flags: "wx" }));
+  const object = await getClient().send(new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }), { abortSignal: signal });
+  const meter = onProgress ? [new Transform({ transform(chunk, encoding, callback) {
+    onProgress(chunk.length); callback(null, chunk);
+  } })] : [];
+  await pipeline(object.Body, ...meter, fs.createWriteStream(destination, { flags: "wx" }), ...(signal ? [{ signal }] : []));
   return destination;
 }
 async function workspace() {
@@ -112,4 +138,4 @@ async function serve(reference, req, res, options = {}) {
     res.status(status === 404 ? 404 : status === 416 ? 416 : 502).json({ message: "Stored file is unavailable." });
   } finally { res.off("close", onClose); }
 }
-module.exports = { ROOT, TEMP_ROOT, driver, persist, remove, materialize, workspace, cleanup, serve, localPath, keyFrom };
+module.exports = { ROOT, TEMP_ROOT, driver, referenceFor, persist, remove, materialize, workspace, cleanup, serve, localPath, keyFrom };
