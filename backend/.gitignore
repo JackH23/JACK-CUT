@@ -11,3 +11,6 @@ temp/
 *.job.json.tmp
 scratch/
 render-*/
+
+# Generated FFmpeg benchmark outputs
+/benchmarks/results/
