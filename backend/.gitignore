@@ -13,4 +13,4 @@ scratch/
 render-*/
 
 # Generated FFmpeg benchmark outputs
-/benchmarks/results/
+benchmarks/results/

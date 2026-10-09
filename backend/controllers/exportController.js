@@ -23,12 +23,15 @@ const { failureReason, logExportFailure } = require('../utils/exportDiagnostics'
 
 const lifecycle = require('../services/exportLifecycle').createExportLifecycle({ ExportJob, Op, sequelize: Project.sequelize });
 const jobs = lifecycle.jobs;
+const renderSlots = require('../services/renderSlots').slots;
 function hasActiveProjectExport(projectId) {
   return [...jobs.values()].some(job => job.projectId === projectId);
 }
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const FPS = 30;
+// Bound per-input decode, filter queues and x264 frame threading on small renderers.
+const FFMPEG_THREADS = String(Math.max(1, Math.min(8, Math.floor(Number(process.env.FFMPEG_THREADS) || 1))));
 const VIDEO_ENCODER = process.env.FFMPEG_VIDEO_ENCODER || "libx264";
 
 function parseFFmpegTime(value) {
@@ -153,6 +156,7 @@ async function renderExport(job, items) {
   let workDir;
   let stage = 'prepare_sources';
   let handedOff = false;
+  let releaseRenderer;
   try {
     await lifecycle.checkpoint(job, 'preparing');
 
@@ -317,6 +321,8 @@ async function renderExport(job, items) {
 
     const args = [
       "-y",
+      "-filter_complex_threads", FFMPEG_THREADS,
+      "-filter_threads", FFMPEG_THREADS,
       "-progress",
       "pipe:1",
       "-nostats",
@@ -336,12 +342,11 @@ async function renderExport(job, items) {
     );
 
     mediaClips.forEach((clip) => {
+      args.push("-threads", FFMPEG_THREADS);
       if (clip.type === "image") {
         args.push(
-          "-loop",
-          "1",
-          "-t",
-          String(clip.duration),
+          "-framerate",
+          String(FPS),
         );
       } else {
         // Decode through the source offset, then trim both streams below.
@@ -391,6 +396,7 @@ async function renderExport(job, items) {
           filters.push(`[${inputIndex}:v]${visualFilters.join(",")}[${baseInput}]`);
         }
         const baseFilters = [`scale=${Math.round(base.width)}:${Math.round(base.height)}:force_original_aspect_ratio=decrease`, "format=yuva444p"];
+        if (clip.type === "image") baseFilters.push("loop=loop=-1:size=1:start=0", `trim=duration=${clip.duration}`);
         baseFilters.push("setsar=1", `setpts=PTS+${clip.start}/TB`);
         filters.push(`[${baseInput}]${baseFilters.join(",")}[${prepared}]`);
         filters.push(`[${currentVideo}][${prepared}]overlay=x='${base.centerX}-overlay_w/2':y='${base.centerY}-overlay_h/2':format=auto:eof_action=pass:shortest=0:enable='${active}${animationFilters.length ? `*not(${timelineWindow})` : ""}'[${composed}]`);
@@ -398,6 +404,9 @@ async function renderExport(job, items) {
         if (animationFilters.length) {
           const animated = `animated${index}`, result = `animatedComposed${index}`;
           const normalizedAnimation = [`scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`, "format=yuva444p", `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black@0`, "setsar=1", ...animationFilters];
+          if (clip.type === "image") normalizedAnimation.splice(4, 0, "loop=loop=-1:size=1:start=0", `trim=duration=${clip.duration}`);
+          // Keep full-chroma fractional positioning through composition. Early 4:2:0
+          // overlays round odd coordinates and change chroma at moving edges.
           filters.push(`[${animatedInput}]${normalizedAnimation.join(",")},setpts=PTS+${clip.start}/TB[${animated}]`);
           filters.push(`[${currentVideo}][${animated}]overlay=format=auto:eof_action=pass:shortest=0:enable='${active}*(${timelineWindow})'[${result}]`);
           currentVideo = result;
@@ -506,6 +515,7 @@ async function renderExport(job, items) {
 
       "-c:v",
       VIDEO_ENCODER,
+      "-threads", FFMPEG_THREADS,
       ...(VIDEO_ENCODER === "h264_amf"
         ? ["-quality", "balanced"]
         : VIDEO_ENCODER === "libx264"
@@ -527,6 +537,10 @@ async function renderExport(job, items) {
     );
 
     stage = "spawn_ffmpeg";
+    await lifecycle.checkpoint(job, "starting");
+    job.waitingForRenderer = true;
+    try { releaseRenderer = await renderSlots.acquire(job.abort.signal); }
+    finally { job.waitingForRenderer = false; job.lastWorkAt = Date.now(); }
     await lifecycle.withStartLock(job, () => {
       const renderStarted = Date.now();
       const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", args, { windowsHide: true });
@@ -686,13 +700,14 @@ async function renderExport(job, items) {
         }
       };
       child.once("error", error => { job.spawnError = error; });
-      child.once("close", (code, signal) => { job.childClosed = true; void finish(code, job.spawnError, signal); });
+      child.once("close", (code, signal) => { job.childClosed = true; releaseRenderer?.(); releaseRenderer = null; void finish(code, job.spawnError, signal); });
       handedOff = true;
     });
 
     return;
   } catch (error) {
     if (!handedOff) {
+      releaseRenderer?.();
       job.status = job.cancelRequested ? 'cancelled' : 'failed';
       job.error = job.cancelRequested ? null : job.stopReason || exportErrorMessage(stage, '', error);
       await saveExportJob(job).catch(() => console.error('Could not persist export failure. Lease recovery will retry.'));

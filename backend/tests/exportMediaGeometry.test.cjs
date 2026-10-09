@@ -139,3 +139,17 @@ test('real controller exports image storytelling with animated captions to a dec
   assert.equal(decoded.status,0,decoded.stderr);
  } finally { fs.rmSync(scratch,{recursive:true,force:true}); }
 });
+
+test('still-image branches cache scaled frames before animation while retaining fractional geometry', async () => {
+ const {args,graph}=await create({mediaType:'image',animation_in_preset:'zoom-in',animation_out_preset:'slide-right'});
+ assert.ok(!args.includes('-loop'), 'Do not repeatedly decode the source image');
+ assert.equal(args[args.indexOf('-framerate')+1],'30');
+ assert.ok(graph.includes('scale=1056:594:force_original_aspect_ratio=decrease,format=yuva444p,loop=loop=-1:size=1:start=0,trim=duration=4'));
+ const cached=graph.indexOf('pad=1920:1080');
+ const loop=graph.indexOf('loop=loop=-1:size=1:start=0',cached);
+ assert.ok(cached<loop && loop<graph.indexOf('geq=',loop));
+ assert.ok(graph.includes("enable='lt(t,1)+gte(t,3)'"), 'Animation evaluates clip-local time on repeated frames');
+ assert.ok(graph.includes('setpts=PTS+2/TB[animated0]'));
+ assert.equal(args[args.indexOf('-filter_complex_threads')+1],'1');
+ assert.equal(args[args.lastIndexOf('-threads')+1],'1');
+});
