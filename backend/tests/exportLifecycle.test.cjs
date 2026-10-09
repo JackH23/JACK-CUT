@@ -99,3 +99,9 @@ test('real FFmpeg cancellation confirms child closure before marking cancelled',
   await closed;h.job.childClosed=true;h.job.status='cancelled';await h.worker.finish(h.job);assert.equal(h.rows[0].status,'cancelled');
  } finally {if(!h.job.childClosed)child.kill('SIGKILL');h.worker.release(h.job);}
 });
+
+test('waiting for a render slot does not count as stalled work, but total deadline still applies',async()=>{
+ const h=harness();h.worker.register(h.job);h.job.waitingForRenderer=true;
+ try {h.advance(1001);await new Promise(r=>setTimeout(r,30));assert.equal(h.job.abort.signal.aborted,false);h.advance(1001);await new Promise(r=>setTimeout(r,30));assert.equal(h.job.abort.signal.aborted,true);assert.match(h.job.stopReason,/timed out/);}
+ finally{h.worker.release(h.job);}
+});

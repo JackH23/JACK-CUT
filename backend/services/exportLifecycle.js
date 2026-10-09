@@ -48,7 +48,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   async function tick(job) {
     if (job.ticking || job.done) return;
     if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.');
-    else if (now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
+    else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
     job.ticking = true;
     try { await checkpoint(job); }
     catch { if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.'); }
@@ -61,7 +61,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     // This watchdog remains independent of a hung database heartbeat query.
     job.watchdog = setInterval(() => {
       if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.');
-      else if (now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
+      else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
     }, intervalMs); job.watchdog.unref();
   }
   function release(job) { job.done = true; clearInterval(job.timer); clearInterval(job.watchdog); clearTimeout(job.killTimer); jobs.delete(job.id); }

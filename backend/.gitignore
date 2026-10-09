@@ -11,3 +11,6 @@ temp/
 *.job.json.tmp
 scratch/
 render-*/
+
+# Reproducible export profiling generates only synthetic media and local results
+benchmarks/results/
