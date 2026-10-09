@@ -1,7 +1,7 @@
 // JSON-only, allowlisted metadata. No SQL, tokens, media paths, stderr or error messages.
 const { randomUUID, createHash } = require('node:crypto');
 const instance = randomUUID();
-const events = new Set(['registered','cancel_request_begin','cancel_request_failed','cancel_request_persisted','cancel_owner_resolved','cancel_observed','stop_requested','signal_sent','signal_failed','ffmpeg_spawned','ffmpeg_exit','ffmpeg_close','ffmpeg_error','renderer_wait','renderer_acquired','renderer_released','progress_write_begin','progress_write_end','progress_write_failed','progress_wait_begin','progress_wait_end','terminal_transaction_begin','terminal_lock_acquired','terminal_write_begin','terminal_write_end','terminal_committed','terminal_failed','terminal_preserved','cleanup_begin','cleanup_end','cleanup_failed','unpublished_cleanup_begin','unpublished_cleanup_end','unpublished_cleanup_failed','lease_recovery_begin','lease_recovery_end','lease_recovery_failed','worker_released','heartbeat_failed','heartbeat_pending','cancellation_pending']);
+const events = new Set(['create_new','create_reused','create_rejected_cancelling','registered','cancel_request_begin','cancel_request_failed','cancel_request_persisted','cancel_owner_resolved','cancel_observed','stop_requested','signal_sent','signal_failed','ffmpeg_spawned','ffmpeg_exit','ffmpeg_close','ffmpeg_error','renderer_wait','renderer_acquired','renderer_released','progress_write_begin','progress_write_end','progress_write_failed','progress_wait_begin','progress_wait_end','terminal_transaction_begin','terminal_lock_acquired','terminal_write_begin','terminal_write_end','terminal_committed','terminal_failed','terminal_preserved','cleanup_begin','cleanup_end','cleanup_failed','unpublished_cleanup_begin','unpublished_cleanup_end','unpublished_cleanup_failed','lease_recovery_begin','lease_recovery_end','lease_recovery_failed','worker_released','heartbeat_failed','heartbeat_pending','cancellation_pending']);
 const stages = new Set(['preparing','starting','rendering','uploading','cancelling','cancelled','completed','failed']);
 const phases = new Set(['progress_wait','terminal_lock','terminal_update','terminal_commit','cleanup']);
 const statuses = new Set(['processing','completed','cancelled','failed']);
@@ -37,6 +37,7 @@ function logLifecycleEvent(event, job = {}, detail = {}, logger = console) {
   if (statuses.has(detail.rowStatus)) record.rowStatus = detail.rowStatus;
   if (stages.has(detail.rowStage)) record.rowStage = detail.rowStage;
   if (typeof detail.rowCancelRequested === 'boolean') record.rowCancelRequested = detail.rowCancelRequested;
+  if (['new_export','existing_active','existing_cancel','cancel_endpoint','internal_cancel','durable_cancel','internal_stop','heartbeat_timeout','heartbeat_stall','watchdog_timeout','watchdog_stall','lease_lost','database_error','preparation_error'].includes(detail.trigger)) record.trigger = detail.trigger;
   if (signals.has(detail.signal)) record.signal = detail.signal;
   const code = detail.error?.original?.code || detail.error?.code;
   if (codes.has(code)) record.errorCode = code;

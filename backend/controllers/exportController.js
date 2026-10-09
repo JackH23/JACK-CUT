@@ -126,6 +126,7 @@ async function createExport(req, res) {
       const items = await TimelineItem.findAll({ where: { project_id: projectId }, order: [["start_time", "ASC"]], transaction });
       if (!items.length) return { status: 400, message: "The timeline is empty." };
       const existing = await ExportJob.findOne({ where: { project_id: projectId, status: 'processing' }, transaction });
+      if (existing?.cancel_requested_at || existing?.stage === 'cancelling') return { blocked: existing };
       if (existing) return { existing };
       await ExportJob.create({ id, project_id: projectId, status: "processing", progress: 0,
         worker_token: job.workerToken, heartbeat_at: new Date(), stage: 'preparing' }, { transaction });
@@ -133,10 +134,16 @@ async function createExport(req, res) {
 
       return { items };
     });
+    if (reservation.blocked) {
+      lifecycle.trace('create_rejected_cancelling', { id: reservation.blocked.id, status: 'processing', stage: reservation.blocked.stage, progress: reservation.blocked.progress, cancelRequested: Boolean(reservation.blocked.cancel_requested_at) }, { trigger: 'existing_cancel' });
+      return res.status(409).json({ code: 'EXPORT_CANCELLATION_PENDING', message: 'The previous export is still cancelling. Wait for cancellation to finish before starting another export.' });
+    }
+    if (reservation.existing) lifecycle.trace('create_reused', { id: reservation.existing.id, status: reservation.existing.status, stage: reservation.existing.stage, progress: reservation.existing.progress, cancelRequested: Boolean(reservation.existing.cancel_requested_at) }, { trigger: 'existing_active' });
     if (reservation.existing) return res.status(202).json({ id: reservation.existing.id, status: reservation.existing.status, progress: reservation.existing.progress, stage: reservation.existing.stage, cancelRequested: Boolean(reservation.existing.cancel_requested_at) });
     if (!reservation.items) return res.status(reservation.status).json({ message: reservation.message });
     const { items } = reservation;
     lifecycle.register(job);
+    lifecycle.trace('create_new', job, { trigger: 'new_export' });
     res.status(202).json({ id, status: job.status, progress: 0, stage: job.stage, statusUrl: '/api/exports/' + id });
     void renderExport(job, items);
     return;
@@ -206,7 +213,7 @@ async function renderExport(job, items) {
     };
     // Wait for every transfer to settle before cleaning the shared scratch directory.
     const prepared = await Promise.allSettled(Array.from({ length: Math.min(concurrency, mediaFiles.length) }, () =>
-      prepare().catch(error => { lifecycle.stop(job, job.stopReason || 'Could not prepare source media. Check the media files and renderer tools.'); throw error; })));
+      prepare().catch(error => { lifecycle.stop(job, job.stopReason || 'Could not prepare source media. Check the media files and renderer tools.', 'preparation_error'); throw error; })));
     const preparationFailure = prepared.find(result => result.status === 'rejected');
     if (preparationFailure) throw preparationFailure.reason;
     const clips = items.map((item) => {
@@ -840,7 +847,7 @@ async function cancelExport(req, res) {
       });
     }
 
-    if (job.status === 'processing') await lifecycle.requestCancel(job.id);
+    if (job.status === 'processing') await lifecycle.requestCancel(job.id, 'cancel_endpoint');
     // Return authoritative status/download metadata even if completion won.
     // Repeated requests on terminal jobs are idempotent, not HTTP 409 errors.
     const current = await findExportJob(job.id, req.user.id);

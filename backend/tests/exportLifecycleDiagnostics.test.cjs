@@ -16,3 +16,10 @@ test('logger failures cannot prevent lifecycle work and database codes contain n
  let record;logLifecycleEvent('terminal_failed',{id},{error:{name:'SequelizeDatabaseError',original:{code:'55P03',sql:'SECRET_SQL'}}},{info:line=>{record=JSON.parse(line);}});
  assert.equal(record.errorCode,'55P03');assert.equal(record.errorName,'SequelizeDatabaseError');assert.ok(!JSON.stringify(record).includes('SECRET'));
 });
+
+test('lifecycle origins are allowlisted and distinguish export reuse, HTTP cancellation and timeout',()=>{
+ for(const [event,trigger] of [['create_rejected_cancelling','existing_cancel'],['cancel_request_begin','cancel_endpoint'],['stop_requested','watchdog_timeout']]){
+  let record;logLifecycleEvent(event,{id},{trigger,requestBody:'SECRET'},{info:line=>record=JSON.parse(line)});assert.equal(record.trigger,trigger);assert.ok(!JSON.stringify(record).includes('SECRET'));
+ }
+ let record;logLifecycleEvent('stop_requested',{id},{trigger:'SECRET'},{info:line=>record=JSON.parse(line)});assert.equal(record.trigger,undefined);
+});

@@ -66,10 +66,14 @@ for (const mode of ['stalled', 'timeout']) test(mode + ' watchdog terminates onl
   const h = harness(mode === 'timeout' ? { EXPORT_STALL_TIMEOUT_MS: 5000 } : {}), signals = [];
   h.job.child = { kill: signal => { signals.push(signal); return true; } }; h.worker.register(h.job);
   try {
-    h.advance(mode === 'stalled' ? 1001 : 2001); await delay(55);
+    h.advance(mode === 'stalled' ? 1001 : 2001);
+    const signalDeadline = Date.now() + 2000;
+    while (signals.length < 2 && Date.now() < signalDeadline) await delay(10);
     assert.ok(h.job.abort.signal.aborted); assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
     assert.match(h.job.stopReason, mode === 'stalled' ? /stalled/ : /timed out/);
     assert.equal(h.rows[0].status, 'processing');
+    assert.equal(h.rows[0].cancel_requested_at, null); assert.equal(Boolean(h.job.cancelRequested), false);
+    assert.ok(h.traces.some(t=>t.event==='stop_requested'&&/_(timeout|stall)$/.test(t.trigger)));
     h.job.childClosed = true; h.job.status = 'failed'; h.job.error = h.job.stopReason; await h.worker.finish(h.job);
     assert.equal(h.rows[0].status, 'failed');
   } finally { h.worker.release(h.job); }

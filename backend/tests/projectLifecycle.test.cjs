@@ -242,3 +242,15 @@ test('a pending progress write cannot delay confirmed cancellation or reopen a t
  assert.equal(h.exports[0].status,'cancelled');assert.equal(h.exports[0].error_message,null);assert.ok(h.events.includes('scratch-cleanup'));
  release();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.exports[0].status,'cancelled');
 });
+
+test('new export does not attach to a previously cancelling processing job', async()=>{
+ const h=harness();const requested=new Date();h.exports.push({id:exportId,project_id:projectId,status:'processing',stage:'cancelling',progress:3,cancel_requested_at:requested});
+ const res=response();await h.exportController.createExport(h.req,res);
+ assert.equal(res.code,409);assert.equal(res.body.code,'EXPORT_CANCELLATION_PENDING');assert.equal(h.exports.length,1);assert.equal(h.exports[0].cancel_requested_at,requested);assert.equal(h.events.includes('spawn'),false);
+});
+
+test('a terminal previous cancellation permits a new uncancelled export',async()=>{
+ const h=harness();const previous={id:'86ec12e5-244b-43e2-b36e-57bec761ade8',project_id:projectId,status:'cancelled',stage:'cancelled',progress:3,cancel_requested_at:new Date()};h.exports.push(previous);
+ const res=response();await h.exportController.createExport(h.req,res);assert.equal(res.code,202);assert.notEqual(res.body.id,previous.id);assert.equal(h.exports.length,2);assert.equal(h.exports[1].cancel_requested_at,null);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(h.signals.length,0);h.child.emit('close',1);await new Promise(resolve=>setImmediate(resolve));assert.equal(previous.status,'cancelled');
+});

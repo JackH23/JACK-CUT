@@ -22,7 +22,7 @@ function hooks() {
   useCallback:fn=>fn,
   useEffect(fn,deps){const i=cursor++;if(!cells[i]||deps.some((dep,j)=>!Object.is(dep,cells[i].deps[j]))){cells[i]?.cleanup?.();effects.push(()=>{cells[i]={deps,cleanup:fn()};});}},
  };
- return{react,render:fn=>{cursor=0;const result=fn();effects.splice(0).forEach(effect=>effect());return result;}};
+ return{react,unmount:()=>cells.forEach(cell=>cell?.cleanup?.()),render:fn=>{cursor=0;const result=fn();effects.splice(0).forEach(effect=>effect());return result;}};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const axios={isAxiosError:error=>Boolean(error?.axiosError)};
@@ -76,7 +76,7 @@ function exportPollingHarness(service) {
  const useExport=load('composables/useExportVideo.ts',{
   react:runner.react,axios,'@/services/exportService':{exportService:service},'@/reducers/exportReducer':reducer,
  },{setTimeout:fn=>{const id=++nextTimer;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id)}).useExportVideo;
- return{render:()=>runner.render(useExport),timers, tick:async()=>{const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();}};
+ return{render:()=>runner.render(useExport),unmount:()=>runner.unmount(),timers, tick:async()=>{const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();}};
 }
 for(const status of ['cancelled','failed','completed'])test('export polling stops for '+status+' and keeps appropriate error/download state',async()=>{
  let polls=0;
@@ -224,4 +224,15 @@ test('export API passes the polling abort signal and encodes job IDs',async()=>{
  const calls=[],signal=new AbortController().signal;
  const service=load('services/exportService.ts',{'./api':{api:{get:async(url,config)=>{calls.push({url,config});return{data:{id:'one',status:'cancelled'}};},post:async(url,body,config)=>{calls.push({url,body,config});return{data:{id:'one',status:'cancelled'}};}}}}).exportService;
  await service.get('one /',signal);await service.cancel('one /');assert.equal(calls[0].config.signal,signal);assert.match(calls[0].url,/one%20%2F$/);assert.match(calls[1].url,/one%20%2F\/cancel$/);assert.equal(calls.length,2);
+});
+
+test('cancelling-job conflict explains the error, starts no polling/cancel, and permits retry after terminal settlement',async()=>{
+ let creates=0,cancels=0;const message='The previous export is still cancelling. Wait for cancellation to finish before starting another export.';
+ const h=exportPollingHarness({create:async()=>{if(++creates===1)throw{axiosError:true,response:{status:409,data:{code:'EXPORT_CANCELLATION_PENDING',message}}};return{id:'new',status:'processing',cancelRequested:false};},get:async()=>({id:'new',status:'completed',progress:100}),cancel:async()=>{cancels++;},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');let view=h.render();assert.equal(view.exportError,message);assert.equal(view.exporting,false);assert.equal(view.cancelling,false);assert.equal(view.exportJob,null);assert.equal(h.timers.size,0);assert.equal(cancels,0);
+ await view.startExport('project');view=h.render();assert.equal(view.exportJob.id,'new');assert.equal(view.exportError,null);assert.equal(view.cancelling,false);await h.tick();assert.equal(h.render().exportJob.status,'completed');assert.equal(cancels,0);
+});
+test('normal polling, rerenders and component cleanup never call the cancellation endpoint',async()=>{
+ let cancels=0,signal;const h=exportPollingHarness({create:async()=>({id:'new',status:'processing',cancelRequested:false}),get:async(_,s)=>{signal=s;return{id:'new',status:'processing',stage:'rendering',progress:3,cancelRequested:false};},cancel:async()=>{cancels++;},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');for(let i=0;i<5;i++)h.render();await h.tick();assert.equal(h.render().cancelling,false);h.unmount();assert.equal(signal.aborted,true);assert.equal(h.timers.size,0);assert.equal(cancels,0);
 });

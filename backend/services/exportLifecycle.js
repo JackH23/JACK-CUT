@@ -18,10 +18,10 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       trace('signal_sent', job, { signal, killAccepted, childKilled: Boolean(job.child.killed), signalAttempts: job.signalAttempts });
     } catch (error) { trace('signal_failed', job, { signal, error, signalAttempts: job.signalAttempts }); }
   }
-  function stop(job, reason) {
+  function stop(job, reason, trigger = 'internal_stop') {
     if (job.abort.signal.aborted) return;
     job.stopReason = reason;
-    trace('stop_requested', job);
+    trace('stop_requested', job, { trigger });
     job.abort.abort();
     if (job.child && !job.childClosed) {
       signalChild(job, 'SIGTERM');
@@ -45,8 +45,8 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   async function checkpoint(job, stage) {
     assertRunning(job);
     const row = await ExportJob.findByPk(job.id);
-    if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.');
-    else if (row.cancel_requested_at) { job.cancelRequested = true; job.cancelObservedAt ??= now(); trace('cancel_observed', job); stop(job, 'Cancellation requested.'); }
+    if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
+    else if (row.cancel_requested_at) { job.cancelRequested = true; job.cancelObservedAt ??= now(); trace('cancel_observed', job); stop(job, 'Cancellation requested.', 'durable_cancel'); }
     assertRunning(job);
     if (stage) { job.stage = stage; job.lastWorkAt = now(); }
     await ExportJob.update({ stage: job.stage, progress: job.progress, heartbeat_at: new Date(now()) }, { where: { ...owned(job), cancel_requested_at: null } });
@@ -57,8 +57,8 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     await sequelize.transaction(async transaction => {
       assertRunning(job);
       const row = await ExportJob.findByPk(job.id, { transaction, lock: transaction.LOCK.UPDATE });
-      if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.');
-      else if (row.cancel_requested_at) { job.cancelRequested = true; stop(job, 'Cancellation requested.'); }
+      if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
+      else if (row.cancel_requested_at) { job.cancelRequested = true; stop(job, 'Cancellation requested.', 'durable_cancel'); }
       assertRunning(job);
       job.stage = 'starting'; job.lastWorkAt = now();
       await ExportJob.update({ stage: job.stage, heartbeat_at: new Date(now()) }, { where: owned(job), transaction });
@@ -68,8 +68,8 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   }
   async function tick(job) {
     if (job.ticking || job.done) return;
-    if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.');
-    else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
+    if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'heartbeat_timeout');
+    else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.', 'heartbeat_stall');
     job.ticking = true; job.heartbeatStartedAt = now();
     try {
       // Aborting render/transfer work must not abort the lease for its shutdown.
@@ -77,7 +77,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       if (job.abort.signal.aborted) await ExportJob.update({ heartbeat_at: new Date(now()) }, { where: owned(job) });
       else await checkpoint(job);
     }
-    catch (error) { trace('heartbeat_failed', job, { error }); if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.'); }
+    catch (error) { trace('heartbeat_failed', job, { error }); if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.', 'database_error'); }
     finally { job.ticking = false; }
   }
   function register(job) {
@@ -87,8 +87,8 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     // This watchdog remains independent of a hung database heartbeat query.
     job.watchdog = setInterval(() => {
       diagnosePending(job);
-      if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.');
-      else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
+      if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'watchdog_timeout');
+      else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.', 'watchdog_stall');
     }, intervalMs); job.watchdog.unref();
   }
   function release(job) { job.done = true; clearInterval(job.timer); clearInterval(job.watchdog); clearTimeout(job.killTimer); jobs.delete(job.id); trace('worker_released', job); }
@@ -126,9 +126,9 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       job.finalizationPhase = null;
     } catch (error) { trace('terminal_failed', job, { error, durationMs: now() - started }); throw error; }
   }
-  async function requestCancel(id) {
+  async function requestCancel(id, trigger = 'internal_cancel') {
     const started = now(), local = jobs.get(id), diagnosticJob = local || { id };
-    trace('cancel_request_begin', diagnosticJob);
+    trace('cancel_request_begin', diagnosticJob, { trigger });
     try {
       // PostgreSQL returns the owner with the successful mutation. An extra SELECT
       // must not delay local signalling after cancellation is already durable.
@@ -143,7 +143,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       if (job && row?.status === 'processing' && row.worker_token === job.workerToken && row.cancel_requested_at) {
         job.cancelRequested = true; job.cancelObservedAt ??= now();
         trace('cancel_observed', job);
-        stop(job, 'Cancellation requested.');
+        stop(job, 'Cancellation requested.', 'durable_cancel');
       }
     } catch (error) { trace('cancel_request_failed', diagnosticJob, { error, durationMs: now() - started }); throw error; }
   }
