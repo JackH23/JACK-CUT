@@ -50,7 +50,12 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.');
     else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.');
     job.ticking = true;
-    try { await checkpoint(job); }
+    try {
+      // Aborting render/transfer work must not abort the lease for its shutdown.
+      // Keep ownership alive until close, status persistence and cleanup settle.
+      if (job.abort.signal.aborted) await ExportJob.update({ heartbeat_at: new Date(now()) }, { where: owned(job) });
+      else await checkpoint(job);
+    }
     catch { if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.'); }
     finally { job.ticking = false; }
   }
@@ -66,36 +71,51 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   }
   function release(job) { job.done = true; clearInterval(job.timer); clearInterval(job.watchdog); clearTimeout(job.killTimer); jobs.delete(job.id); }
   async function finish(job) {
-    // Completion is fenced atomically against cancellation, expired leases and terminal rows.
-    if (job.status === 'completed') {
-      const [count] = await ExportJob.update({ status: 'completed', stage: 'completed', progress: 100,
-        output_path: job.outputReference, cleanup_reference: null, error_message: null, metrics: job.metrics || null, completed_at: new Date(now()) },
-        { where: { ...owned(job), cancel_requested_at: null } });
-      if (count) return;
-      const row = await ExportJob.findByPk(job.id);
-      if (row?.status === 'completed') return;
-      if (!row || TERMINAL.has(row.status)) { job.status = row?.status || 'failed'; return; }
-      job.cancelRequested = Boolean(row.cancel_requested_at);
-      job.status = job.cancelRequested ? 'cancelled' : 'failed';
-    }
-    await ExportJob.update({ status: job.status, stage: job.status, progress: Math.min(job.progress || 0, 99),
-      output_path: null, error_message: job.status === 'cancelled' ? null : job.error,
-      metrics: job.metrics || null, completed_at: new Date(now()) }, { where: owned(job) });
+    // Serialize every terminal outcome with cancel's row UPDATE, not just success.
+    await sequelize.transaction(async transaction => {
+      const row = await ExportJob.findByPk(job.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!row || TERMINAL.has(row.status) || row.worker_token !== job.workerToken) {
+        job.status = row && TERMINAL.has(row.status) ? row.status : 'failed';
+        job.error = row?.error_message || null;
+        return;
+      }
+      if (row.cancel_requested_at || job.cancelRequested) {
+        job.cancelRequested = true; job.status = 'cancelled'; job.error = null;
+      }
+      const completed = job.status === 'completed';
+      await ExportJob.update({ status: job.status, stage: job.status,
+        progress: completed ? 100 : Math.min(job.progress || 0, 99),
+        output_path: completed ? job.outputReference : null,
+        ...(completed ? { cleanup_reference: null } : {}),
+        error_message: completed || job.status === 'cancelled' ? null : job.error,
+        metrics: job.metrics || null, completed_at: new Date(now()) },
+        { where: owned(job), transaction });
+    });
   }
   async function requestCancel(id) {
     await ExportJob.update({ cancel_requested_at: new Date(now()), stage: 'cancelling' },
       { where: { id, status: 'processing', cancel_requested_at: null } });
-    const job = jobs.get(id);
-    if (job) { job.cancelRequested = true; stop(job, 'Cancellation requested.'); }
+    const job = jobs.get(id), row = await ExportJob.findByPk(id);
+    // Completion may have won the UPDATE race. Never stop a terminal winner.
+    if (job && row?.status === 'processing' && row.worker_token === job.workerToken && row.cancel_requested_at) {
+      job.cancelRequested = true; stop(job, 'Cancellation requested.');
+    }
   }
   async function reconcile() {
     const expired = new Date(now() - leaseMs), deadline = new Date(now() - timeoutMs);
+    const expiredLease = [
+      { heartbeat_at: { [Op.lt]: expired } },
+      { heartbeat_at: null, created_at: { [Op.lt]: expired } },
+    ];
+    // A lost owner's durable cancellation is a cancelled outcome. Fencing prevents
+    // late publication; a live owner keeps heartbeating until shutdown settles.
+    await ExportJob.update({ status: 'cancelled', stage: 'cancelled', completed_at: new Date(now()),
+      output_path: null, error_message: null },
+      { where: { status: 'processing', cancel_requested_at: { [Op.ne]: null }, [Op.or]: expiredLease } });
     await ExportJob.update({ status: 'failed', stage: 'failed', completed_at: new Date(now()),
       error_message: 'The rendering worker stopped responding or the export timed out. Please export again.' },
-      { where: { status: 'processing', [Op.or]: [
-        { heartbeat_at: { [Op.lt]: expired } },
-        { heartbeat_at: null, created_at: { [Op.lt]: expired } },
-        { created_at: { [Op.lt]: deadline } },
+      { where: { status: 'processing', cancel_requested_at: null, [Op.or]: [
+        ...expiredLease, { created_at: { [Op.lt]: deadline } },
       ] } });
   }
   let recoveryTimer;

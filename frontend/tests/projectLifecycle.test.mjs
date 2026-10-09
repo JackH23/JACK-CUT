@@ -183,3 +183,43 @@ test('late in-flight poll cannot reopen a cancelled export',async()=>{
  await h.render().startExport('project');h.render();const poll=h.tick();await h.render().cancelExport();h.render();
  release({id:'export',status:'processing',progress:80});await poll;const view=h.render();assert.equal(view.exportJob.status,'cancelled');assert.equal(h.timers.size,0);
 });
+
+test('transient status failures while cancelling do not open an error modal or stop confirmation polling',async()=>{
+ const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),cancel:async()=>({id:'export',status:'processing',cancelRequested:true}),get:async()=>{throw{axiosError:true,response:{status:503,data:{message:'Temporary outage'}}};},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();await h.render().cancelExport();h.render();
+ for(let i=0;i<7;i++){await h.tick();const view=h.render();assert.equal(view.exportError,null);assert.equal(view.cancelling,true);assert.equal(h.timers.size,1);}
+});
+
+test('rapid repeated cancel clicks send one request, stop polling on confirmation, and permit another export',async()=>{
+ let cancels=0,creates=0,release;
+ const h=exportPollingHarness({create:async()=>({id:'export'+(++creates),status:'processing'}),cancel:()=>{cancels++;return new Promise(resolve=>{release=resolve;});},get:async()=>({id:'export1',status:'cancelled',error:null}),getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();const first=h.render().cancelExport();await h.render().cancelExport();assert.equal(cancels,1);
+ h.render();await h.tick();let view=h.render();assert.equal(view.exportJob.status,'cancelled');assert.equal(h.timers.size,0);assert.equal(view.exportError,null);
+ await view.startExport('project');view=h.render();assert.equal(creates,2);assert.equal(view.exportJob.id,'export2');
+ release({id:'export1',status:'processing',cancelRequested:true});await first;view=h.render();assert.equal(view.exportJob.id,'export2');assert.equal(view.cancelling,false);
+});
+
+for(const fail of [false,true])test('cancel confirmation aborts an in-flight poll and ignores its late '+(fail?'error':'status'),async()=>{
+ let release,signal;
+ const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),cancel:async()=>({id:'export',status:'cancelled'}),get:(_,s)=>{signal=s;return new Promise((resolve,reject)=>{release=()=>fail?reject({axiosError:true,response:{status:500}}):resolve({id:'export',status:'processing'});});},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();const pending=h.tick();await h.render().cancelExport();h.render();assert.equal(signal.aborted,true);
+ release();await pending;const view=h.render();assert.equal(view.exportJob.status,'cancelled');assert.equal(view.exportError,null);assert.equal(h.timers.size,0);
+});
+
+test('cancel request transport timeout waits for confirmed cancellation without resending',async()=>{
+ let cancels=0;const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),cancel:async()=>{cancels++;throw{axiosError:true,code:'ECONNABORTED'};},get:async()=>({id:'export',status:'cancelled',error:null}),getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();await h.render().cancelExport();let view=h.render();assert.equal(view.cancelling,true);assert.equal(view.exportError,null);await view.cancelExport();assert.equal(cancels,1);
+ await h.tick();view=h.render();assert.equal(view.exportJob.status,'cancelled');assert.equal(view.exportError,null);assert.equal(h.timers.size,0);
+});
+
+test('remote cancellation stays cancelling through polling outages and cannot send another cancel',async()=>{
+ let gets=0;const h=exportPollingHarness({create:async()=>({id:'export',status:'processing'}),cancel:()=>assert.fail('Already requested remotely'),get:async()=>{if(++gets===1)return{id:'export',status:'processing',cancelRequested:true};if(gets<8)throw{axiosError:true,response:{status:503}};return{id:'export',status:'cancelled'};},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');h.render();await h.tick();await h.render().cancelExport();
+ for(let i=0;i<7;i++){await h.tick();assert.equal(h.render().exportError,null);}assert.equal(h.render().exportJob.status,'cancelled');assert.equal(h.timers.size,0);
+});
+
+test('export API passes the polling abort signal and encodes job IDs',async()=>{
+ const calls=[],signal=new AbortController().signal;
+ const service=load('services/exportService.ts',{'./api':{api:{get:async(url,config)=>{calls.push({url,config});return{data:{id:'one',status:'cancelled'}};},post:async(url,body,config)=>{calls.push({url,body,config});return{data:{id:'one',status:'cancelled'}};}}}}).exportService;
+ await service.get('one /',signal);await service.cancel('one /');assert.equal(calls[0].config.signal,signal);assert.match(calls[0].url,/one%20%2F$/);assert.match(calls[1].url,/one%20%2F\/cancel$/);assert.equal(calls.length,2);
+});

@@ -29,7 +29,8 @@ async function capture(mode='optimized',duration=60,render=false){
   '../models/Project':{sequelize:{transaction:async cb=>cb({LOCK:{UPDATE:'UPDATE'}})},findOne:async()=>({})},
   '../models/TimelineItem':{findAll:async()=>items},'../models/Media':{findAll:async()=>media},'../models/ProjectMedia':{findOne:async()=>({})},
   '../services/storage':{workspace:async()=>dir,materialize:async ref=>ref,referenceFor:key=>'r2:/'+key,persist:async()=> 'r2:/exports/fixture.mp4',cleanup:async()=>{}},
-  '../services/fileAccess':{}, 'node:child_process':{spawn:(_,a)=>{args=a;
+  '../services/fileAccess':{fileUrl:()=>'/fixture-download'},
+  '../services/exportCleanupService':{getService:()=>({available:()=>false})}, 'node:child_process':{spawn:(_,a)=>{args=a;
    if(render){
     args[args.length-1]=path.join(dir,mode+'.mp4');
     fs.writeFileSync(path.join(dir,mode+'-controller-progress.log'),'');fs.writeFileSync(path.join(dir,mode+'-controller-stderr.log'),'');

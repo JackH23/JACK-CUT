@@ -612,7 +612,7 @@ async function renderExport(job, items) {
                   {
                     where: {
                       id,
-                      status: "processing", worker_token: job.workerToken,
+                      status: "processing", worker_token: job.workerToken, cancel_requested_at: null,
                     },
                   }
                 )
@@ -642,7 +642,17 @@ async function renderExport(job, items) {
 
         try {
           // Wait for pending PostgreSQL progress updates
-          await progressSaveQueue;
+          if (!job.abort.signal.aborted) {
+            // Progress writes are fenced. A stuck write must not block cancel's
+            // terminal status after the child has closed.
+            let stopWaiting;
+            const stopped = new Promise(resolve => {
+              stopWaiting = resolve;
+              job.abort.signal.addEventListener('abort', stopWaiting, { once: true });
+            });
+            try { await Promise.race([progressSaveQueue, stopped]); }
+            finally { job.abort.signal.removeEventListener('abort', stopWaiting); }
+          }
 
           const renderSeconds =
             (Date.now() - renderStarted) / 1000;
@@ -813,26 +823,13 @@ async function cancelExport(req, res) {
       });
     }
 
-    if (job.status === "cancelled") {
-      return res.json({
-        id: job.id,
-        status: "cancelled",
-        message: "Export already cancelled.",
-      });
-    }
-
-    if (job.status !== "processing") {
-      return res.status(409).json({
-        message: "Only processing exports can be cancelled.",
-      });
-    }
-
-    await lifecycle.requestCancel(job.id);
+    if (job.status === 'processing') await lifecycle.requestCancel(job.id);
+    // Return authoritative status/download metadata even if completion won.
+    // Repeated requests on terminal jobs are idempotent, not HTTP 409 errors.
     const current = await findExportJob(job.id, req.user.id);
-    return res.status(current.status === 'processing' ? 202 : 200).json({
-      id: job.id, status: current.status, stage: current.stage, progress: current.progress,
-      cancelRequested: current.status === 'processing', message: 'Cancellation requested.',
-    });
+    if (!current) return res.status(404).json({ message: 'Export not found.' });
+    res.status(current.status === 'processing' ? 202 : 200);
+    return getExport(req, res);
   } catch (error) {
     logExportFailure({ jobId: req.params.id, stage: "cancel", error });
 

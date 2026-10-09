@@ -227,3 +227,18 @@ test('FFmpeg progress handles fragmented output and reserves 100% for committed 
  h.child.emit('close',0);await new Promise(resolve=>setImmediate(resolve));const uploading=response();await h.exportController.getExport(req,uploading);assert.equal(uploading.body.progress,95);assert.equal(uploading.body.stage,'uploading');
  release();await new Promise(resolve=>setImmediate(resolve));const completed=response();await h.exportController.getExport(req,completed);assert.equal(completed.body.progress,100);assert.equal(completed.body.status,'completed');
 });
+
+for(const status of ['completed','failed','cancelled'])test('cancel endpoint returns terminal '+status+' idempotently with authoritative metadata',async()=>{
+ const h=harness();h.exports.push({id:exportId,project_id:projectId,status,progress:status==='completed'?100:40,completed_at:new Date(),error_message:status==='failed'?'Existing failure':null,output_path:status==='completed'?'r2:/exports/one.mp4':null});
+ for(let i=0;i<2;i++){const res=response();await h.exportController.cancelExport({...h.req,params:{id:exportId}},res);assert.equal(res.code,200);assert.equal(res.body.status,status);assert.equal(res.body.error,status==='failed'?'Existing failure':null);assert.equal(res.body.downloadAvailable,status==='completed');}
+ assert.equal(h.signals.length,0);
+});
+
+test('a pending progress write cannot delay confirmed cancellation or reopen a terminal row',async()=>{
+ let release;const h=harness({update:async data=>{if(Object.keys(data).length===1&&Object.hasOwn(data,'progress'))await new Promise(resolve=>{release=resolve;});}});
+ await h.exportController.createExport(h.req,response());await new Promise(resolve=>setImmediate(resolve));
+ h.child.stdout.emit('data',Buffer.from('out_time=00:00:00.500\n'));await new Promise(resolve=>setImmediate(resolve));assert.ok(release);
+ await h.exportController.cancelExport({...h.req,params:{id:exportId}},response());h.child.emit('close',null,'SIGTERM');await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.exports[0].status,'cancelled');assert.equal(h.exports[0].error_message,null);assert.ok(h.events.includes('scratch-cleanup'));
+ release();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.exports[0].status,'cancelled');
+});

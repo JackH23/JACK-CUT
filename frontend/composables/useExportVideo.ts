@@ -22,6 +22,12 @@ function getExportError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function isTransientExportError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  return status === undefined || status === 408 || status === 429 || status >= 500;
+}
+
 export function useExportVideo() {
   const [state, dispatch] = useReducer(exportReducer, initialExportState);
 
@@ -66,7 +72,7 @@ export function useExportVideo() {
     const job = currentJobRef.current;
 
     if (!job || job.status !== "processing") return;
-    if (cancellingRef.current) return;
+    if (cancellingRef.current || job.cancelRequested) return;
 
     cancellingRef.current = true;
 
@@ -87,9 +93,14 @@ export function useExportVideo() {
         dispatch({ type: "EXPORT_CANCEL_REQUESTED" });
       }
     } catch (error) {
-      cancellingRef.current = false;
       if (currentJobRef.current?.id !== job.id || currentJobRef.current.status !== "processing") return;
-
+      // The request may have committed before a timeout/transport error.
+      // Keep confirmation polling and never send a second ambiguous request.
+      if (isTransientExportError(error)) {
+        dispatch({ type: "EXPORT_CANCEL_REQUESTED" });
+        return;
+      }
+      cancellingRef.current = false;
       dispatch({
         type: "EXPORT_CANCEL_ERROR",
         payload: getExportError(
@@ -106,21 +117,22 @@ export function useExportVideo() {
   useEffect(() => {
     if (!jobId || jobStatus !== "processing") return;
 
+    const polling = new AbortController();
     let active = true;
     let consecutiveFailures = 0;
     let timer: ReturnType<typeof setTimeout>;
 
     async function checkStatus() {
+      if (!active || currentJobRef.current?.id !== jobId || currentJobRef.current?.status !== 'processing') return;
       try {
-        const job = await exportService.get(jobId!);
+        const job = await exportService.get(jobId!, polling.signal);
         if (!active || currentJobRef.current?.id !== jobId || currentJobRef.current?.status !== 'processing') return;
 
         consecutiveFailures = 0;
         currentJobRef.current = job;
 
-        if (job.status !== "processing") {
-          cancellingRef.current = false;
-        }
+        if (job.status !== "processing") cancellingRef.current = false;
+        else if (job.cancelRequested) cancellingRef.current = true;
 
         dispatch({
           type: "EXPORT_STATUS_UPDATED",
@@ -133,19 +145,11 @@ export function useExportVideo() {
       } catch (error) {
         if (!active || currentJobRef.current?.id !== jobId || currentJobRef.current?.status !== 'processing') return;
 
-        const status = axios.isAxiosError(error)
-          ? error.response?.status
-          : undefined;
-
-        const transient =
-          axios.isAxiosError(error) &&
-          (status === undefined ||
-            status === 408 ||
-            status === 429 ||
-            status >= 500);
-
-        if (transient && consecutiveFailures < 5) {
-          consecutiveFailures += 1;
+        const transient = isTransientExportError(error);
+        // Confirmation must survive a slow shutdown/restart. Keep GET polling
+        // with bounded backoff while cancelling; never synthesize CANCELLED.
+        if (transient && (cancellingRef.current || consecutiveFailures < 5)) {
+          consecutiveFailures = Math.min(consecutiveFailures + 1, 5);
 
           timer = setTimeout(
             checkStatus,
@@ -171,6 +175,7 @@ export function useExportVideo() {
     return () => {
       active = false;
       clearTimeout(timer);
+      polling.abort();
     };
   }, [jobId, jobStatus]);
 

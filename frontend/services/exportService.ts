@@ -17,10 +17,10 @@ export const exportService = {
   },
 
   // Get export status and rendering progress
-  async get(id: string): Promise<ExportJob> {
+  async get(id: string, signal?: AbortSignal): Promise<ExportJob> {
     const { data } = await axios.get<ExportJob>(
       `${EXPORT_URL}/${encodeURIComponent(id)}`,
-      { timeout: 10000 },
+      { timeout: 10000, signal },
     );
 
     return data;
