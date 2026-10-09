@@ -207,3 +207,40 @@ Recovery requires a running updated backend and reachable PostgreSQL. During a c
 Images are decoded once, scaled/padded once per static/animated branch, then repeated with FFmpeg's single-frame loop filter. Animation GEQ, full-chroma alpha composition, subtitles, timing and final 1080p/30fps libx264 medium CRF 23 output are preserved. Full-resolution animated branches still consume substantial memory; the limit is not a promise for arbitrary timelines.
 
 The measured Windows Node-plus-FFmpeg 60-second/10-image/10-caption export completed in a 1,024 MiB Job Object with an 809.8 MiB peak committed allocation. Database and object storage were mocked. This does not establish that the entire Northflank Linux container fits in 1 GiB. Start staging at **2 vCPU / 2 GiB RAM**, with one renderer and `FFMPEG_THREADS=1`, then measure total cgroup peak including database connections, R2 transfer buffers and concurrent API traffic. Validate the deployed FFmpeg build and the user's real project before considering a 1 GiB allocation. See `EXPORT_MEMORY_REPORT.md` for reproducible tests and exact results. No production resource changes are applied by this patch.
+
+## Bounded PostgreSQL waits and cleanup operations (local readiness fix)
+
+Every PostgreSQL pool connection now sets server-side `lock_timeout` from
+`DB_LOCK_TIMEOUT_MS` (default 5000 ms) and `statement_timeout` from
+`DB_STATEMENT_TIMEOUT_MS` (default 30000 ms). Values must be positive integers
+no greater than 2147483647, with lock timeout strictly below statement timeout.
+This covers terminal SELECT FOR UPDATE / UPDATE / COMMIT, cancel requests,
+progress and heartbeat writes, recovery and cleanup queries. Startup migrations
+also use these limits: inspect slow DDL before raising a staging budget.
+
+Connection establishment is bounded at 10000 ms and pool acquisition at 15000 ms.
+There is no client-side query Promise.race, global transaction lifetime or new
+idle-in-transaction timeout. Downloads and object deletion can hold a transaction
+while awaiting I/O; SQL deadlines do not limit that I/O. A database network
+partition or indefinitely stalled storage still requires staging fault testing.
+Reconnect/restart the backend to apply changed connection settings, then verify
+SHOW lock_timeout and SHOW statement_timeout through its application role.
+The existing fenced terminal retry and expired-owner recovery remain in place;
+a rejected cancel mutation must never be reported as confirmed cancellation.
+
+`EXPORT_CLEANUP_INTERVAL_MS` is supported, defaults to 60000 ms, and must be a
+positive integer <=2147483647. Retained-output deletion remains opt-in through
+`EXPORT_CLEANUP_ENABLED=true`; the interval does not change immediate render
+workspace cleanup, retention policy, download protection or deletion scope.
+
+The Docker context now includes only `backend/scripts/exportCleanup.js` from
+scripts, and the image build checks its presence. This read-only operational CLI
+is useful before enabling deletion and does not run server startup/migrations:
+
+```sh
+npm run cleanup:dry-run
+```
+
+Run it only with verified staging database/bucket configuration while validating
+staging. It rejects apply arguments. Packaging is locally inspected and covered
+by a regression; the Linux image has not yet been built or executed.

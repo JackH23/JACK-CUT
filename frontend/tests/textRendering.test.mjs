@@ -37,20 +37,25 @@ function preview(props) {
 }
 
 async function exportText(items) {
-  let ass, args;
+  let ass, args, row, child;
+  const lifecycleModule = require("../../backend/services/exportLifecycle");
   const controller = load("backend/controllers/exportController.js", {
     "node:fs": { mkdirSync() {}, renameSync() {}, writeFileSync(file, value) { if(file.endsWith(".ass")) ass = value; } },
     "../utils/clipAnimationFilter": require("../../backend/utils/clipAnimationFilter"),
+    "../utils/mediaStreams": require("../../backend/utils/mediaStreams"),
+    "../utils/exportDiagnostics": require("../../backend/utils/exportDiagnostics"),
+    "../services/exportLifecycle": lifecycleModule,
+    "../services/renderSlots": require("../../backend/services/renderSlots"),
     "../utils/mediaLayout": require("../../backend/utils/mediaLayout"),
     "../utils/textAnimationAss": require("../../backend/utils/textAnimationAss"),
     "../utils/textFontMetrics": require("../../backend/utils/textFontMetrics"),
     "node:path": path, "node:crypto": { randomUUID: () => "test-export" },
-    "node:child_process": { spawn(_binary, values) { args = values; const child = new EventEmitter(); child.stderr = new EventEmitter(); child.stdout = new EventEmitter(); return child; } },
+    "node:child_process": { spawn(_binary, values) { args = values; child = new EventEmitter(); child.stderr = new EventEmitter(); child.stdout = new EventEmitter(); return child; } },
     sequelize: { Op: { in: Symbol("in") } },
     "../../frontend/lib/textLayout.json": layout,
     "../models/TimelineItem": { findAll: async () => items },
     "../models/Media": {},
-    "../models/ExportJob": { create: async values => ({ ...values, save: async () => {} }), update: async () => {} },
+    "../models/ExportJob": { create: async values => (row = { ...values }), findOne: async () => null, findByPk: async () => row, update: async values => { Object.assign(row, values); return [1]; } },
     "../models/Project": { sequelize: { transaction: async fn => fn({ LOCK: { UPDATE: "UPDATE" } }) }, findOne: async () => ({ id: "66ec12e5-244b-43e2-b36e-57bec761ade8" }) },
     "../models/ProjectMedia": {},
     "../services/fileAccess": {},
@@ -60,6 +65,10 @@ async function exportText(items) {
   const response = { status(value) { status = value; return this; }, json() { return this; } };
   await controller.createExport({ user: { id: "owner" }, body: { projectId: "66ec12e5-244b-43e2-b36e-57bec761ade8" } }, response);
   assert.equal(status, 202);
+  for (let i = 0; !args && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.ok(args, "The real controller must reach FFmpeg command construction");
+  child.emit("close", 1);
+  await new Promise(resolve => setImmediate(resolve));
   return { ass, args };
 }
 

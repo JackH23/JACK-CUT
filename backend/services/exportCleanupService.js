@@ -1,7 +1,9 @@
 const path = require('node:path');
-function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = process.env, now = Date.now, logger = console }) {
+function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = process.env, now = Date.now, logger = console, timers = require('node:timers') }) {
   const hours = Number(env.EXPORT_RETENTION_HOURS ?? 24);
   if (!Number.isFinite(hours) || hours <= 0) throw new Error('EXPORT_RETENTION_HOURS must be positive.');
+  const intervalMs = Number(env.EXPORT_CLEANUP_INTERVAL_MS ?? 60000);
+  if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || intervalMs > 2147483647) throw new Error('EXPORT_CLEANUP_INTERVAL_MS must be a positive integer <= 2147483647.');
   const retentionMs = hours * 3600000;
   let running = false, timer;
   function isExpired(job) {
@@ -74,10 +76,10 @@ function createExportCleanupService({ sequelize, ExportJob, storage, Op, env = p
   function start() {
     // Deletion is opt-in. Dry-run CLI supplies the report without a recurring query loop.
     if (timer || env.EXPORT_CLEANUP_ENABLED !== 'true') return;
-    timer = setInterval(() => { void run().catch(() => logger.error('Export cleanup failed; no uncommitted deletion intents were executed.')); }, 60000);
+    timer = timers.setInterval(() => { void run().catch(() => logger.error('Export cleanup failed; no uncommitted deletion intents were executed.')); }, intervalMs);
     timer.unref();
   }
-  function stop() { clearInterval(timer); timer = undefined; }
+  function stop() { timers.clearInterval(timer); timer = undefined; }
   return { run, start, stop, isExpired, available, withDownload, retentionMs };
 }
 let singleton;

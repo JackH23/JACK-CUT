@@ -40,3 +40,8 @@ frontend/lib/*
 **/*.pem
 **/*.key
 **/*.p12
+
+# Read-only operational inspection CLI; no test or benchmark scripts.
+!backend/scripts/
+backend/scripts/*
+!backend/scripts/exportCleanup.js

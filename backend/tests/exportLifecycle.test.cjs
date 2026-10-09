@@ -15,16 +15,16 @@ function matches(row, where) {
 }
 function harness(env = {}) {
   let clock = 100_000;
-  const rows = [], writes = [];
+  const rows = [], writes = [], traces = [];
   const model = {
     findByPk: async id => rows.find(row => row.id === id),
-    update: async (data, { where }) => { writes.push(data); let count = 0; for (const row of rows) if (matches(row, where)) { Object.assign(row, data); count++; } return [count]; },
+    update: async (data, { where, returning }) => { writes.push(data); const affected=[]; for (const row of rows) if (matches(row, where)) { Object.assign(row, data); affected.push({...row}); } return returning ? [affected.length, affected] : [affected.length]; },
   };
-  const create = () => createExportLifecycle({ ExportJob: model, Op, sequelize: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) }, env: { EXPORT_LEASE_TIMEOUT_MS: 60, EXPORT_STALL_TIMEOUT_MS: 1000, EXPORT_TIMEOUT_MS: 2000, EXPORT_KILL_GRACE_MS: 15, ...env }, now: () => clock });
+  const create = () => createExportLifecycle({ ExportJob: model, Op, sequelize: { transaction: async callback => callback({ LOCK: { UPDATE: 'UPDATE' } }) }, env: { EXPORT_LEASE_TIMEOUT_MS: 60, EXPORT_STALL_TIMEOUT_MS: 1000, EXPORT_TIMEOUT_MS: 2000, EXPORT_KILL_GRACE_MS: 15, ...env }, now: () => clock, trace: (event, job = {}, detail = {}) => traces.push({event,id:job.id,phase:job.finalizationPhase,...detail}) });
   const worker = create();
   const job = { id: 'one', workerToken: 'owner', status: 'processing', progress: 0, createdAt: clock };
   rows.push({ id: job.id, worker_token: 'owner', status: 'processing', cancel_requested_at: null, heartbeat_at: new Date(clock), created_at: new Date(clock) });
-  return { worker, create, job, rows, writes, model, advance: ms => { clock += ms; } };
+  return { worker, create, job, rows, writes, traces, model, advance: ms => { clock += ms; } };
 }
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 test('another instance persists cancellation; owner observes it before starting FFmpeg', async () => {
@@ -148,4 +148,60 @@ test('recovery cancels only expired cancellation leases and never a live shuttin
  await h.worker.reconcile();assert.equal(h.rows[0].status,'processing');
  h.advance(61);await h.worker.reconcile();assert.equal(h.rows[0].status,'cancelled');assert.equal(h.rows[0].error_message,null);
  h.job.status='completed';h.job.outputReference='r2:/exports/late.mp4';await h.worker.finish(h.job);assert.equal(h.job.status,'cancelled');assert.equal(h.rows[0].output_path,null);
+});
+
+test('a persisted local cancel signals FFmpeg without waiting for a redundant owner read',async()=>{
+ const h=harness(),signals=[];h.worker.register(h.job);h.job.child={kill:s=>{signals.push(s);return true;}};
+ const find=h.model.findByPk;let release;
+ h.model.findByPk=()=>new Promise(resolve=>{release=()=>resolve(h.rows[0]);});
+ const cancel=h.worker.requestCancel('one');
+ try {await delay(10);assert.ok(h.rows[0].cancel_requested_at);assert.deepEqual([...signals],['SIGTERM']);}
+ finally {release?.();await cancel;h.model.findByPk=find;h.job.childClosed=true;h.worker.release(h.job);}
+});
+
+test('owner diagnostics distinguish remote reception from local observation and signal results',async()=>{
+ const h=harness();h.worker.register(h.job);h.job.child={pid:123,kill:()=>false};
+ try {await h.create().requestCancel('one');assert.equal(h.traces.find(t=>t.event==='cancel_owner_resolved').ownerRelation,'not_local');assert.equal(h.traces.some(t=>t.event==='signal_sent'),false);
+ await assert.rejects(h.worker.checkpoint(h.job),/Cancellation requested/);
+ assert.ok(h.traces.some(t=>t.event==='cancel_observed'));assert.ok(h.traces.some(t=>t.event==='signal_sent'&&t.signal==='SIGTERM'&&t.killAccepted===false));
+ await delay(25);assert.ok(h.traces.some(t=>t.event==='signal_sent'&&t.signal==='SIGKILL'));h.job.childClosed=true;h.job.status='cancelled';await h.worker.finish(h.job);
+ assert.ok(h.traces.findIndex(t=>t.event==='terminal_lock_acquired')<h.traces.findIndex(t=>t.event==='terminal_committed'));}
+ finally{h.worker.release(h.job);}
+});
+
+test('a returned foreign owner is never signalled by the receiving process',async()=>{
+ const h=harness(),signals=[];h.worker.register(h.job);h.job.child={kill:s=>signals.push(s)};h.rows[0].worker_token='different-owner';
+ try {await h.worker.requestCancel('one');assert.deepEqual(signals,[]);assert.equal(h.traces.find(t=>t.event==='cancel_owner_resolved').ownerRelation,'token_mismatch');assert.equal(h.job.abort.signal.aborted,false);}
+ finally{h.worker.release(h.job);}
+});
+
+test('completion winner produces no signal and preserves its terminal diagnostic',async()=>{
+ const h=harness();h.job.status='completed';h.job.outputReference='r2:/exports/one.mp4';await h.worker.finish(h.job);await h.worker.requestCancel('one');
+ assert.equal(h.traces.some(t=>t.event==='signal_sent'),false);assert.ok(h.traces.some(t=>t.event==='cancel_request_persisted'&&t.affectedRows===0));assert.equal(h.rows[0].status,'completed');
+});
+
+test('a blocked terminal row lock is visible while cancellation remains safely pending',async()=>{
+ const h=harness();h.worker.register(h.job);await h.worker.requestCancel('one');h.job.childClosed=true;h.job.status='cancelled';
+ const find=h.model.findByPk;let unlock;h.model.findByPk=()=>new Promise(resolve=>{unlock=()=>resolve(h.rows[0]);});
+ const finishing=h.worker.finish(h.job);
+ try {h.advance(10001);await delay(30);assert.equal(h.rows[0].status,'processing');assert.ok(h.traces.some(t=>t.event==='cancellation_pending'&&t.phase==='terminal_lock'));assert.equal(h.traces.some(t=>t.event==='terminal_committed'),false);unlock();await finishing;assert.equal(h.rows[0].status,'cancelled');assert.ok(h.traces.some(t=>t.event==='terminal_committed'));}
+ finally {h.model.findByPk=find;h.worker.release(h.job);}
+});
+
+test('signal exceptions are diagnosed and retain cancellation until closure',async()=>{
+ const h=harness();h.worker.register(h.job);h.job.child={kill:()=>{throw Object.assign(Error('private'),{code:'EPERM'});}};
+ try {await h.worker.requestCancel('one');assert.equal(h.rows[0].status,'processing');assert.ok(h.traces.some(t=>t.event==='signal_failed'&&t.signal==='SIGTERM'&&t.error.code==='EPERM'));await delay(25);assert.ok(h.traces.some(t=>t.event==='signal_failed'&&t.signal==='SIGKILL'));h.job.childClosed=true;h.job.status='cancelled';await h.worker.finish(h.job);assert.equal(h.rows[0].status,'cancelled');}
+ finally {h.worker.release(h.job);}
+});
+
+test('a rejected SIGTERM escalates to actual SIGKILL and native FFmpeg closure',async()=>{
+ const {spawn}=require('node:child_process'),{once}=require('node:events');
+ const h=harness({EXPORT_LEASE_TIMEOUT_MS:5000,EXPORT_STALL_TIMEOUT_MS:10000});h.worker.register(h.job);
+ const child=spawn(process.env.FFMPEG_PATH||'ffmpeg',['-hide_banner','-loglevel','error','-threads','1','-re','-f','lavfi','-i','color=s=64x64:r=10:d=10','-c:v','libx264','-threads','1','-progress','pipe:1','-f','null','-'],{windowsHide:true});
+ const nativeKill=child.kill.bind(child);child.kill=signal=>signal==='SIGTERM'?false:nativeKill(signal);h.job.child=child;
+ const closed=once(child,'close');child.stderr.resume();
+ try {await once(child.stdout,'data',{signal:AbortSignal.timeout(5000)});await h.worker.requestCancel('one');assert.equal(h.rows[0].status,'processing');await closed;h.job.childClosed=true;
+ assert.ok(h.traces.some(t=>t.event==='signal_sent'&&t.signal==='SIGTERM'&&t.killAccepted===false));assert.ok(h.traces.some(t=>t.event==='signal_sent'&&t.signal==='SIGKILL'&&t.killAccepted===true));
+ h.job.status='cancelled';await h.worker.finish(h.job);assert.equal(h.rows[0].status,'cancelled');}
+ finally {if(!h.job.childClosed)nativeKill('SIGKILL');h.worker.release(h.job);}
 });

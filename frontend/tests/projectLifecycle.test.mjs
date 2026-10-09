@@ -59,7 +59,9 @@ test('project service uses shared authenticated API with encoded IDs',async()=>{
 });
 test('delete errors are visible inside the modal and controls are disabled without changing layout',()=>{
  const props={name:'',setName(){},projects:[{id:'one',name:'One'}],loading:false,creating:false,error:'Active export prevents deletion',handleCreate(){},projectToDelete:{id:'one',name:'One'},deleting:true,requestDelete(){},cancelDelete(){},confirmDelete(){}};
- const realComponent=load('app/projects/page.tsx',{react:React,'react/jsx-runtime':jsxRuntime,'next/link':()=>null,'next/navigation':{useSearchParams:()=>new URLSearchParams()},'lucide-react':{ArrowLeft:()=>null,ArrowRight:()=>null,Clapperboard:()=>null,FolderOpen:()=>null,Plus:()=>null,Video:()=>null,LoaderCircle:()=>null,Trash2:()=>null},'@/composables/useProjectsPage':{useProjectsPage:()=>props},'@/components/shared/LoadingSkeleton':()=>null}).default;
+ const componentDeps={react:React,'react/jsx-runtime':jsxRuntime,'next/link':()=>null,'lucide-react':{ArrowLeft:()=>null,ArrowRight:()=>null,Clapperboard:()=>null,FolderOpen:()=>null,Plus:()=>null,Video:()=>null,LoaderCircle:()=>null,Trash2:()=>null}};
+ const components=Object.fromEntries(['ProjectsHeader','CreateProject','ExistingProjects','DeleteProjectModal'].map(name=>['@/components/projects/'+name,load('components/projects/'+name+'.tsx',componentDeps).default]));
+ const realComponent=load('app/projects/page.tsx',{react:React,'react/jsx-runtime':jsxRuntime,'next/link':()=>null,'next/navigation':{useSearchParams:()=>new URLSearchParams()},'lucide-react':{ArrowLeft:()=>null,ArrowRight:()=>null,Clapperboard:()=>null,FolderOpen:()=>null,Plus:()=>null,Video:()=>null,LoaderCircle:()=>null,Trash2:()=>null},'@/composables/useProjectsPage':{useProjectsPage:()=>props},'@/components/shared/LoadingSkeleton':()=>null,...components}).default;
  const html=renderToStaticMarkup(React.createElement(realComponent));
  assert.match(html,/inert=""/);assert.match(html,/role="alertdialog"/);assert.ok(html.indexOf('Active export prevents deletion')>html.indexOf('role="alertdialog"'));assert.match(html,/disabled=""/);assert.match(html,/bg-\[#191b25\]/);
 });

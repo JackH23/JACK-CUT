@@ -25,7 +25,7 @@ async function capture(mode='optimized',duration=60,render=false){
  }
  const row={};let cancellationRequestedAt,childClosedAt;let child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();let args;
  const mocks={
-  '../models/ExportJob':{create:async v=>Object.assign(row,{cancel_requested_at:null,...v}),findOne:async()=>null,findByPk:async()=>row,update:async v=>{Object.assign(row,v);return[1];}},
+  '../models/ExportJob':{create:async v=>Object.assign(row,{cancel_requested_at:null,...v}),findOne:async()=>null,findByPk:async()=>row,update:async (v,options)=>{Object.assign(row,v);return options?.returning?[1,[{...row}]]:[1];}},
   '../models/Project':{sequelize:{transaction:async cb=>cb({LOCK:{UPDATE:'UPDATE'}})},findOne:async()=>({})},
   '../models/TimelineItem':{findAll:async()=>items},'../models/Media':{findAll:async()=>media},'../models/ProjectMedia':{findOne:async()=>({})},
   '../services/storage':{workspace:async()=>dir,materialize:async ref=>ref,referenceFor:key=>'r2:/'+key,persist:async()=> 'r2:/exports/fixture.mp4',cleanup:async()=>{}},

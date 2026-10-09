@@ -150,3 +150,11 @@ test('failed and cancelled outputs without a terminal timestamp fail closed', as
   const h = harness(['failed', 'cancelled'].map(status => job(status, 100, { completed_at: null })));
   assert.equal(await h.service.run(), 0); assert.deepEqual(h.removed, []);
 });
+test('cleanup scheduling honors validated interval, is idempotent and remains opt-in',()=>{
+ let scheduled=0,stopped=0,interval;
+ const timers={setInterval:(callback,ms)=>{scheduled++;interval=ms;return {unref(){}};},clearInterval:()=>{stopped++;}};
+ const service=createExportCleanupService({sequelize:{},ExportJob:{},storage:{},Op,env:{EXPORT_CLEANUP_ENABLED:'true',EXPORT_CLEANUP_INTERVAL_MS:'2500'},timers});
+ service.start();service.start();assert.equal(scheduled,1);assert.equal(interval,2500);service.stop();assert.equal(stopped,1);
+ const disabled=createExportCleanupService({sequelize:{},ExportJob:{},storage:{},Op,env:{EXPORT_CLEANUP_ENABLED:'false'},timers});disabled.start();assert.equal(scheduled,1);
+ for(const value of ['0','-1','NaN','1.5','2147483648'])assert.throws(()=>createExportCleanupService({sequelize:{},ExportJob:{},storage:{},Op,env:{EXPORT_CLEANUP_INTERVAL_MS:value}}));
+});

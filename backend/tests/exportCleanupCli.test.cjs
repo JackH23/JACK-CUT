@@ -46,3 +46,10 @@ test('CLI supports old schema without migration and fails closed on DB error', a
 test('CLI rejects apply before connecting to database', async () => {
   const h = await runCli({ args: ['--apply'] }); assert.equal(h.process.exitCode, 1); assert.deepEqual(h.events, []);
 });
+
+test('production context packages only the operational CLI and the image checks its presence',()=>{
+ const ignore=fs.readFileSync(path.resolve(__dirname,'../../.dockerignore'),'utf8');
+ assert.match(ignore,/!backend\/scripts\/\r?\nbackend\/scripts\/\*\r?\n!backend\/scripts\/exportCleanup\.js/);
+ const docker=fs.readFileSync(path.resolve(__dirname,'../Dockerfile'),'utf8');
+ assert.ok(docker.includes("assert(fs.existsSync('scripts/exportCleanup.js'))"));
+});
