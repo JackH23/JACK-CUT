@@ -209,3 +209,10 @@ test('a rejected SIGTERM escalates to actual SIGKILL and native FFmpeg closure',
  h.job.status='cancelled';await h.worker.finish(h.job);assert.equal(h.rows[0].status,'cancelled');}
  finally {if(!h.job.childClosed)nativeKill('SIGKILL');h.worker.release(h.job);}
 });
+
+for(const operation of ['cancel_expired','fail_expired']) test('recovery identifies and propagates failed '+operation+' UPDATE',async()=>{
+ const h=harness(),error=Object.assign(new Error('private SQL detail'),{name:'SequelizeDatabaseError',original:{code:'23514'}});let calls=0;
+ h.model.update=async()=>{calls++;if(calls===(operation==='cancel_expired'?1:2))throw error;return [0];};
+ await assert.rejects(h.worker.reconcile(),e=>e===error);assert.equal(calls,operation==='cancel_expired'?1:2);
+ assert.ok(h.traces.some(t=>t.event==='lease_recovery_query_failed'&&t.recoveryOperation===operation&&t.error===error));
+});

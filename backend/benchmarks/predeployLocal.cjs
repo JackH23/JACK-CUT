@@ -35,6 +35,16 @@ async function main(){
  fs.writeFileSync(path.join(dir,'browser-auth.json'),JSON.stringify({email,password,token,refreshToken:auth.refreshToken}),{flag:'wx'});
  const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'results','optimized-command.json')));
  const Media=require('../models/Media'),ProjectMedia=require('../models/ProjectMedia'),Item=require('../models/TimelineItem'),Track=require('../models/TimelineTrack'),Job=require('../models/ExportJob');
+ if(process.env.PREDEPLOY_VALIDATE_STATUS_MIGRATION==='true'){
+  // Only this uniquely created loopback DB; never a production connection.
+  await sequelize.query("ALTER TABLE public.export_jobs ADD CONSTRAINT export_jobs_status_check CHECK (status IN ('processing','completed','failed'))");
+  const fixture=await Job.create({id:randomUUID(),status:'processing',stage:'cancelling',progress:3,heartbeat_at:new Date(Date.now()-60000),cancel_requested_at:new Date(),worker_token:randomUUID()});
+  const recovery=require('../services/exportLifecycle').createExportLifecycle({ExportJob:Job,Op:require('sequelize').Op,sequelize});
+  await assert.rejects(recovery.reconcile(),e=>e.original?.code==='23514'&&e.original?.constraint==='export_jobs_status_check');
+  await sequelize.query(fs.readFileSync(path.join(root,'scripts/migrations/20261010-export-jobs-cancelled.sql'),'utf8'));
+  await recovery.reconcile();assert.equal((await Job.findByPk(fixture.id)).status,'cancelled');
+  evidence.scenarios.push({label:'Staging schema defect and migration: expired cancellation recovers',id:fixture.id,result:'PASS'});save();
+ }
  await Track.create({id:'predeploy-video',name:'Test Video',type:'video',color:'#ffffff',sort_order:0});
  const media=[];
  for(const source of manifest.media){const id=randomUUID(),filename=id+'.png',dest=path.join(root,'uploads','media',filename);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(source.file_path,dest,fs.constants.COPYFILE_EXCL);media.push(await Media.create({id,original_name:filename,file_name:filename,file_path:dest,file_url:'/test',mime_type:'image/png',media_type:'image',file_size:fs.statSync(dest).size}));}
@@ -42,8 +52,9 @@ async function main(){
  const simple=await project('simple',true),story=await project('story');
  evidence.projectIds={simple,story};evidence.authentication='PASS';evidence.projectListing=(await api('/projects')).projects.length;save();
  async function complete(projectId,label,duration){const start=Date.now(),job=await api('/exports',{projectId});const result=await terminal(job.id);assert.equal(result.row.status,'completed');assert(result.states.every(state=>!state.cancelRequested&&state.stage!=='cancelling'),'Export without a cancel request must never enter cancellation');assert.equal(result.row.progress,100);const row=await Job.findByPk(job.id);assert.equal(row.status,'completed');const validation=validate(row.output_path,duration);const cleanupWaitMs=await clean();const record={label,id:job.id,result:'PASS',elapsedMs:Date.now()-start,states:result.states,validation,cleanupWaitMs};evidence.scenarios.push(record);save();console.log(JSON.stringify({event:'complete',label,id:job.id,elapsedMs:record.elapsedMs}));return record;}
- await complete(simple,'A simple export',5);
- await complete(story,'B storytelling 10 images + 10 animated subtitles',60);
+ if(process.env.PREDEPLOY_SKIP_COMPLETION_FIXTURES!=='true')await complete(simple,'A simple export',5);
+ if(process.env.PREDEPLOY_SKIP_COMPLETION_FIXTURES!=='true')await complete(story,'B storytelling 10 images + 10 animated subtitles',60);
+ else {evidence.completionFixturesSkipped=true;save();}
  async function cancelJob(id,label,p=port,repeat=false){const at=Date.now();const replies=repeat?await Promise.all([1,2,3].map(()=>api('/exports/'+id+'/cancel',{},p))):[await api('/exports/'+id+'/cancel',{},p)];assert(replies.every(r=>r.cancelRequested||r.status==='cancelled'));const result=await terminal(id,30000);assert.equal(result.row.status,'cancelled');assert.equal(result.row.error,null);assert(!result.row.downloadUrl);const row=await Job.findByPk(id);assert.equal(row.status,'cancelled');assert(row.cancel_requested_at);assert.equal(row.output_path,null);const cleanupWaitMs=await clean();evidence.scenarios.push({label,id,result:'PASS',cancelToConfirmedMs:Date.now()-at,replies:replies.map(r=>({status:r.status,stage:r.stage,cancelRequested:r.cancelRequested})),states:result.states,cleanupWaitMs});save();return result;}
  let job=await api('/exports',{projectId:story});await rendering(job.id);await cancelJob(job.id,'C/D active repeated cancellation',port,true);
  await complete(simple,'E export after cancellation',5);

@@ -273,3 +273,17 @@ Three newly created local databases, uniquely named fixture media and MP4s were 
 - Review existing TLS certificate verification bypass and lack of parent-process drain handling. Deliver exact uncommitted source through a later authorized artifact workflow; Git HEAD builds still omit these local fixes.
 
 No deployment was performed or authorized. All local requested checks passed; staging validation is still required before production.
+
+## 2026-10-10 CHECK constraint staging preparation
+
+Current actual checkout remains Jack at base 1c1c8f3b152192bcc8062b421fd3e39041cedc85 plus preserved uncommitted fixes. No remote access/change, commit/push/deployment/resource creation or branch/worktree switch. See STAGING_CHECK_CONSTRAINT_VALIDATION.md for exact Neon staging SQL preflight/execution/verification, Northflank configuration, source delivery, production backups/locking/rollback and approval boundaries.
+
+- Migration unchanged; fresh disposable PG validation lease_schema_1791575305594: nine PASS including all row values, unrelated constraints, columns/indexes/triggers, repeat migration and bounded rollback.
+- Backend 233/233 and frontend 129/129 PASS; no failures/skips.
+- Fresh 60sec/10 image/10 subtitle MP4 completed, all 1800 frames decoded and visually validated (SSIM 1.0), no full black frames, no automatic cancellation. FFmpeg 420.480s; measured Windows peak committed memory 944.0508 MiB under 1024 MiB, sampled working set 921.8047 MiB.
+- Combined constrained replay then FAILED with an unclassified fetch failed after successful output validation. No OOM cause proved. This remains a sequential stability investigation item; do not report the complete constrained replay PASS.
+- Separate cancellation replay predeploy_1791575626161: eight PASS, active/repeated 582ms, cross-process 1068ms, queued/row-lock/native-failure and export-after-cancel verified. Focused predeploy_1791575737363: four PASS, actual 409 for cancelling job, migrated recovery and new actual MP4 on the same project. These independent runs were not resource-measured.
+- One redundant test replay was aborted after correcting its skip option; only owned synthetic processes stopped, fixture data retained. No fake terminal rows.
+- Offline exact-source artifact: staging-source-1791575119683/jackcut-staging-source.tar.gz (in backend/benchmarks/results), SHA256 f3f291acbbb9edd5db6f3a195c9b91cde4ea0cd3e9bb847f16b52c11784679c7; manifest SHA256 05c0f91cf92fede9a038ead746e369c73370beb951402f30214641f98680fc71. 53 files; archive extraction/source verification PASS. Includes uncommitted runtime fixes and operator migration, excludes secrets/media. Image build remains unexecuted.
+
+Ready to seek approval for isolated staging validation; NOT ready to claim production deployment acceptance. Linux/image identity, Neon role/schema/lock behavior, R2, cgroup metrics, current deployed revision and the sequential transport failure remain unverified. Applying backend diagnostics alone does not expand the database CHECK. Remote migration/image publication/deployment/resources require explicit approval.

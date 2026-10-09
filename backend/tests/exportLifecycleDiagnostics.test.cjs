@@ -23,3 +23,11 @@ test('lifecycle origins are allowlisted and distinguish export reuse, HTTP cance
  }
  let record;logLifecycleEvent('stop_requested',{id},{trigger:'SECRET'},{info:line=>record=JSON.parse(line)});assert.equal(record.trigger,undefined);
 });
+
+for (const [code,category] of [['23514','check_violation'],['42703','undefined_column'],['57014','query_cancelled_or_statement_timeout'],['55P03','lock_unavailable']]) test('safe PostgreSQL diagnostics '+code,()=>{
+ let record;logLifecycleEvent('lease_recovery_query_failed',{}, {recoveryOperation:'cancel_expired',error:{name:'SequelizeDatabaseError',original:{code,severity:'ERROR',table:'export_jobs',constraint:'export_jobs_status_check',column:'status',message:'SECRET_MESSAGE',detail:'SECRET_ROW_VALUES',where:'SECRET_PARAMETERS',sql:'SECRET_SQL'},parameters:['SECRET_PASSWORD']}}, {info:line=>record=JSON.parse(line)});
+ assert.equal(record.sqlState,code);assert.equal(record.databaseError,category);assert.equal(record.recoveryOperation,'cancel_expired');assert.equal(record.databaseConstraint,'export_jobs_status_check');assert.ok(!JSON.stringify(record).includes('SECRET'));
+});
+test('unrecognized database identifiers and operation labels are omitted',()=>{
+ let record;logLifecycleEvent('lease_recovery_query_failed',{}, {recoveryOperation:'SECRET_OPERATION',error:{original:{code:'SECRET_CODE',severity:'SECRET',table:'SECRET',constraint:'SECRET',column:'SECRET'}}},{info:line=>record=JSON.parse(line)});assert.ok(!JSON.stringify(record).includes('SECRET'));assert.equal(record.sqlState,undefined);
+});

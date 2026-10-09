@@ -147,6 +147,11 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       }
     } catch (error) { trace('cancel_request_failed', diagnosticJob, { error, durationMs: now() - started }); throw error; }
   }
+  // Identify the failing UPDATE without logging SQL or its bound parameters.
+  async function recoveryUpdate(recoveryOperation, values, options) {
+    try { return await ExportJob.update(values, options); }
+    catch (error) { trace('lease_recovery_query_failed', {}, { recoveryOperation, error }); throw error; }
+  }
   let lastRecoveryDiagnosticAt;
   async function reconcile() {
     const expired = new Date(now() - leaseMs), deadline = new Date(now() - timeoutMs);
@@ -158,10 +163,10 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     // late publication; a live owner keeps heartbeating until shutdown settles.
     const reportRecovery = lastRecoveryDiagnosticAt == null || now() - lastRecoveryDiagnosticAt >= 30000;
     if (reportRecovery) { lastRecoveryDiagnosticAt = now(); trace('lease_recovery_begin'); }
-    const [cancelledRows] = await ExportJob.update({ status: 'cancelled', stage: 'cancelled', completed_at: new Date(now()),
+    const [cancelledRows] = await recoveryUpdate('cancel_expired', { status: 'cancelled', stage: 'cancelled', completed_at: new Date(now()),
       output_path: null, error_message: null },
       { where: { status: 'processing', cancel_requested_at: { [Op.ne]: null }, [Op.or]: expiredLease } });
-    const [failedRows] = await ExportJob.update({ status: 'failed', stage: 'failed', completed_at: new Date(now()),
+    const [failedRows] = await recoveryUpdate('fail_expired', { status: 'failed', stage: 'failed', completed_at: new Date(now()),
       error_message: 'The rendering worker stopped responding or the export timed out. Please export again.' },
       { where: { status: 'processing', cancel_requested_at: null, [Op.or]: [
         ...expiredLease, { created_at: { [Op.lt]: deadline } },
