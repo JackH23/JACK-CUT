@@ -244,3 +244,17 @@ npm run cleanup:dry-run
 Run it only with verified staging database/bucket configuration while validating
 staging. It rejects apply arguments. Packaging is locally inspected and covered
 by a regression; the Linux image has not yet been built or executed.
+
+### Immutable export deadlines (2026-10-10)
+
+Before deploying this revision, explicitly apply scripts/migrations/20261010-export-job-deadline.sql to isolated staging, then to production only with operator approval. It adds a nullable deadline_at timestamp without rewriting existing jobs. Startup refuses an existing table missing this column; it does not automatically add it.
+
+New reservations persist the creating worker's total deadline in the same transaction as the ownership token. Owner watchdogs and upgraded recovery processes honor that deadline. Legacy NULL rows retain the configured total-timeout fallback. Queue/preparation/render/upload time still counts toward the total limit. Heartbeat expiry, cancellation, stall protection and ownership fencing remain independent.
+
+Every API/backend replica starts recovery, including instances that are not rendering. Drain active exports before rollout, and retire every old backend revision sharing this database before submitting new work: old code ignores deadline_at and can still apply its 30-minute default. Apply the intended timeout and lease configuration to every backend service/replica, not just the renderer. Values are captured at module initialization; restart is required after changing them.
+
+For this installation, retain EXPORT_TIMEOUT_MS=7200000, EXPORT_STALL_TIMEOUT_MS=300000, EXPORT_LEASE_TIMEOUT_MS=90000 and EXPORT_KILL_GRACE_MS=5000 on all backend processes. Retain the user's render concurrency/thread settings. This is not a throughput guarantee.
+
+Safely verify on isolated staging with mocked/fault-injected lifecycle tests first. On a separately approved staging render, check deadline_at at reservation and monitor past 30 minutes with fresh heartbeats. Cancellation must still stop the child and prevent publication; stale owners must fail, and the two-hour deadline must still terminate work. Correlate lifecycle_configured and lease_recovered by jobId, instance and hashed lease. Recovery logs include recoveryReason, recoveryAtMs, effectiveDeadlineAtMs, effectiveTimeoutMs, deadlineSource and the recovery process timeoutMs/leaseMs. Do not use PID alone across containers.
+
+The deadline migration and startup validator reject an existing column with an incompatible type, NOT NULL or a default. IF NOT EXISTS is not sufficient to validate schema compatibility. No automatic repair is performed; investigate mismatches before retrying.

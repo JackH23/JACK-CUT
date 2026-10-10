@@ -27,10 +27,11 @@ function logLifecycleEvent(event, job = {}, detail = {}, logger = console) {
     heartbeatBusy: Boolean(job.ticking),
     phase: phases.has(job.finalizationPhase) ? job.finalizationPhase : null,
   };
-  for (const field of ['timeoutMs','stallMs','leaseMs','killGraceMs','intervalMs','durationMs','ageMs','heartbeatAgeMs','progressWriteAgeMs','pendingProgressWrites','affectedRows','cancelledRows','failedRows','exitCode','signalAttempts']) {
+  for (const field of ['recoveryAtMs','effectiveDeadlineAtMs','effectiveTimeoutMs','timeoutMs','stallMs','leaseMs','killGraceMs','intervalMs','durationMs','ageMs','heartbeatAgeMs','progressWriteAgeMs','pendingProgressWrites','affectedRows','cancelledRows','failedRows','exitCode','signalAttempts']) {
     if (typeof detail[field] === 'number' && Number.isFinite(detail[field])) record[field] = detail[field];
   }
   if (['cancelled_expired','total_and_heartbeat_expired','total_timeout','heartbeat_expired'].includes(detail.recoveryReason)) record.recoveryReason = detail.recoveryReason;
+  if (['persisted','legacy_config'].includes(detail.deadlineSource)) record.deadlineSource = detail.deadlineSource;
   if (typeof detail.killAccepted === 'boolean') record.killAccepted = detail.killAccepted;
   if (typeof detail.childKilled === 'boolean') record.childKilled = detail.childKilled;
   if (['local','not_local','token_mismatch','missing_row'].includes(detail.ownerRelation)) record.ownerRelation = detail.ownerRelation;
@@ -55,7 +56,7 @@ function logLifecycleEvent(event, job = {}, detail = {}, logger = console) {
     if (['ERROR','FATAL','PANIC'].includes(pg.severity)) record.databaseSeverity = pg.severity;
     if (pg.table === 'export_jobs') record.databaseTable = pg.table;
     if (['export_jobs_status_check','export_jobs_progress_check','export_jobs_pkey','export_jobs_project_id_fkey'].includes(pg.constraint)) record.databaseConstraint = pg.constraint;
-    if (['id','status','output_path','error_message','created_at','updated_at','completed_at','project_id','metrics','cleanup_reference','progress','worker_token','heartbeat_at','cancel_requested_at','stage'].includes(pg.column)) record.databaseColumn = pg.column;
+    if (['deadline_at','id','status','output_path','error_message','created_at','updated_at','completed_at','project_id','metrics','cleanup_reference','progress','worker_token','heartbeat_at','cancel_requested_at','stage'].includes(pg.column)) record.databaseColumn = pg.column;
   }
   if (['cancel_expired','fail_expired'].includes(detail.recoveryOperation)) record.recoveryOperation = detail.recoveryOperation;
   if (errorNames.has(detail.error?.name)) record.errorName = detail.error.name;

@@ -120,6 +120,7 @@ async function createExport(req, res) {
 
     const id = randomUUID();
     const job = { id, projectId, status: "processing", progress: 0, error: null, createdAt: Date.now(), workerToken: lifecycle.newToken(), stage: "preparing" };
+    job.deadlineAt = Number(lifecycle.deadlineAt(job.createdAt));
     const reservation = await Project.sequelize.transaction(async transaction => {
       const project = await Project.findOne({ where: { id: projectId, user_id: req.user.id }, transaction, lock: transaction.LOCK.UPDATE });
       if (!project) return { status: 404, message: "Project not found." };
@@ -129,7 +130,7 @@ async function createExport(req, res) {
       if (existing?.cancel_requested_at || existing?.stage === 'cancelling') return { blocked: existing };
       if (existing) return { existing };
       await ExportJob.create({ id, project_id: projectId, status: "processing", progress: 0,
-        worker_token: job.workerToken, heartbeat_at: new Date(), stage: 'preparing' }, { transaction });
+        worker_token: job.workerToken, heartbeat_at: new Date(), deadline_at: new Date(job.deadlineAt), stage: 'preparing' }, { transaction });
       activeJob = job;
 
       return { items };

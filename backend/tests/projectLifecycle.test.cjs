@@ -63,9 +63,10 @@ function harness(options = {}) {
     '../models/Project': Project, '../models/ExportJob': ExportJob, '../models/TimelineItem': TimelineItem,
     '../models/Media': { findAll: async () => [{ id: 'source', media_type: 'image', file_path: '/safe/media.png' }] }, '../models/ProjectMedia': ProjectMedia,
     '../services/storage': storage, '../services/exportCleanupService': { getService: () => cleanup }, '../services/fileAccess': { fileUrl: () => '/protected/download' },
+    '../services/exportLifecycle': { createExportLifecycle: args => require('../services/exportLifecycle').createExportLifecycle({ ...args, env: options.env || process.env }) },
     '../utils/mediaStreams': { hasAudioStream: async () => true },
     'node:fs': { existsSync: () => !options.missing, writeFileSync() {} }, 'node:crypto': { randomUUID: () => exportId }, 'node:child_process': { spawn: () => { events.push('spawn'); if (options.spawnError) queueMicrotask(() => { child.emit('error', Object.assign(new Error('sensitive startup details'), { code: 'ENOENT' })); child.emit('close', -2); }); return child; } },
-  });
+  }, options.env || {});
   const projectController = load('controllers/projectController.js', { '../models/Project': Project, '../models/ExportJob': ExportJob, '../models/TimelineItem': TimelineItem, '../models/ProjectMedia': ProjectMedia, '../config/database': db, './exportController': exportController });
   const req = { body: { projectId }, params: { id: projectId }, user: { id: 'owner' } };
   return { projectController, exportController, req, events, exports, child, signals, exists: () => projectExists };
@@ -253,4 +254,12 @@ test('a terminal previous cancellation permits a new uncancelled export',async()
  const h=harness();const previous={id:'86ec12e5-244b-43e2-b36e-57bec761ade8',project_id:projectId,status:'cancelled',stage:'cancelled',progress:3,cancel_requested_at:new Date()};h.exports.push(previous);
  const res=response();await h.exportController.createExport(h.req,res);assert.equal(res.code,202);assert.notEqual(res.body.id,previous.id);assert.equal(h.exports.length,2);assert.equal(h.exports[1].cancel_requested_at,null);
  await new Promise(resolve=>setImmediate(resolve));assert.equal(h.signals.length,0);h.child.emit('close',1);await new Promise(resolve=>setImmediate(resolve));assert.equal(previous.status,'cancelled');
+});
+
+test('export reservation persists its creator deadline atomically and duplicate reuse cannot change it',async()=>{
+ const h=harness({env:{EXPORT_TIMEOUT_MS:'7200000'}});const before=Date.now();
+ await h.exportController.createExport(h.req,response());const deadline=h.exports[0].deadline_at;
+ assert.ok(deadline instanceof Date);assert.ok(Number(deadline)>=before+7200000);assert.ok(Number(deadline)<=Date.now()+7200000);
+ await h.exportController.createExport(h.req,response());assert.equal(h.exports.length,1);assert.equal(Number(h.exports[0].deadline_at),Number(deadline));
+ await new Promise(resolve=>setImmediate(resolve));h.child.emit('close',1);await new Promise(resolve=>setImmediate(resolve));
 });

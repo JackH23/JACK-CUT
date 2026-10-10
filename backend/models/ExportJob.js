@@ -30,6 +30,8 @@ const ExportJob = sequelize.define(
     },
 
     worker_token: { type: DataTypes.UUID, allowNull: true },
+    // Immutable total deadline, set by the creating worker; shared by recovery.
+    deadline_at: { type: DataTypes.DATE, allowNull: true },
     heartbeat_at: { type: DataTypes.DATE, allowNull: true },
     cancel_requested_at: { type: DataTypes.DATE, allowNull: true },
     stage: { type: DataTypes.STRING(30), allowNull: true },
