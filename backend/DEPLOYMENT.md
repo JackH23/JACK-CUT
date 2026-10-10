@@ -244,3 +244,25 @@ npm run cleanup:dry-run
 Run it only with verified staging database/bucket configuration while validating
 staging. It rejects apply arguments. Packaging is locally inspected and covered
 by a regression; the Linux image has not yet been built or executed.
+
+### Immutable export deadlines (2026-10-10)
+
+Before deploying this revision, explicitly apply scripts/migrations/20261010-export-job-deadline.sql to isolated staging, then to production only with operator approval. It adds a nullable deadline_at timestamp without rewriting existing jobs. Startup refuses an existing table missing this column; it does not automatically add it.
+
+New reservations persist the creating worker's total deadline in the same transaction as the ownership token. Owner watchdogs and upgraded recovery processes honor that deadline. Legacy NULL rows retain the configured total-timeout fallback. Queue/preparation/render/upload time still counts toward the total limit. Heartbeat expiry, cancellation, stall protection and ownership fencing remain independent.
+
+Every API/backend replica starts recovery, including instances that are not rendering. Drain active exports before rollout, and retire every old backend revision sharing this database before submitting new work: old code ignores deadline_at and can still apply its 30-minute default. Apply the intended timeout and lease configuration to every backend service/replica, not just the renderer. Values are captured at module initialization; restart is required after changing them.
+
+For this installation, retain EXPORT_TIMEOUT_MS=7200000, EXPORT_STALL_TIMEOUT_MS=300000, EXPORT_LEASE_TIMEOUT_MS=90000 and EXPORT_KILL_GRACE_MS=5000 on all backend processes. Retain the user's render concurrency/thread settings. This is not a throughput guarantee.
+
+Safely verify on isolated staging with mocked/fault-injected lifecycle tests first. On a separately approved staging render, check deadline_at at reservation and monitor past 30 minutes with fresh heartbeats. Cancellation must still stop the child and prevent publication; stale owners must fail, and the two-hour deadline must still terminate work. Correlate lifecycle_configured and lease_recovered by jobId, instance and hashed lease. Recovery logs include recoveryReason, recoveryAtMs, effectiveDeadlineAtMs, effectiveTimeoutMs, deadlineSource and the recovery process timeoutMs/leaseMs. Do not use PID alone across containers.
+
+The deadline migration and startup validator reject an existing column with an incompatible type, NOT NULL or a default. IF NOT EXISTS is not sufficient to validate schema compatibility. No automatic repair is performed; investigate mismatches before retrying.
+
+### Export submission maintenance guard
+
+EXPORT_SUBMISSIONS_PAUSED defaults to false. Only a trimmed, case-insensitive true enables it. The guard applies after authentication and project authorization on POST /api/exports; authorized submissions receive HTTP 503 with code EXPORT_SUBMISSIONS_PAUSED. Status, cancellation, downloads, and already-accepted jobs remain outside the guard. A repeated submission that would rediscover an existing job is also rejected; use its status endpoint instead.
+
+The guard reads the running process environment per request. Updating Northflank configuration is not a restart-free toggle: verify replacement/restart behavior in staging. Do not restart containers with active exports to enable it. First establish a separately approved admission freeze and drain accepted requests/jobs, or review a restart-free control design separately. A request admitted before activation can still commit; the flag alone is not a global drain barrier.
+
+The frontend displays a maintenance notice and does not automatically retry submissions. No Retry-After is sent because reopening time is unknown; retry manually after maintenance. The guard adds no database schema dependency, but this staging revision still requires the explicit deadline_at migration before production startup.

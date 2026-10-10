@@ -11,6 +11,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   const intervalMs = Math.min(2000, leaseMs / 3);
   const jobs = new Map();
   trace('lifecycle_configured', {}, { timeoutMs, stallMs, leaseMs, killGraceMs, intervalMs });
+  function deadlineAt(createdAt) { return new Date(createdAt + timeoutMs); }
   function owned(job) { return { id: job.id, status: 'processing', worker_token: job.workerToken }; }
   function signalChild(job, signal) {
     job.signalAttempts = (job.signalAttempts || 0) + 1;
@@ -47,7 +48,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) {
       trace('lease_rejected', job, { ownerRelation: !row ? 'missing_row' : row.worker_token !== job.workerToken ? 'token_mismatch' : 'local', rowStatus: row?.status, rowStage: row?.stage,
         rowCancelRequested: Boolean(row?.cancel_requested_at), ownerLease: fingerprint(row?.worker_token),
-        ageMs: row?.created_at ? now() - Number(new Date(row.created_at)) : now() - job.createdAt,
+        ageMs: (row?.createdAt || row?.created_at) ? now() - Number(new Date(row.createdAt || row.created_at)) : now() - job.createdAt,
         heartbeatAgeMs: row?.heartbeat_at ? now() - Number(new Date(row.heartbeat_at)) : undefined, timeoutMs, leaseMs });
       stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
     } else if (row.cancel_requested_at) { job.cancelRequested = true; job.cancelObservedAt ??= now(); trace('cancel_observed', job); stop(job, 'Cancellation requested.', 'durable_cancel'); }
@@ -85,7 +86,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   }
   async function tick(job) {
     if (job.ticking || job.done) return;
-    if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'heartbeat_timeout');
+    if (now() >= job.deadlineAt) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'heartbeat_timeout');
     else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.', 'heartbeat_stall');
     job.ticking = true; job.heartbeatStartedAt = now();
     try {
@@ -98,13 +99,14 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     finally { job.ticking = false; }
   }
   function register(job) {
+    job.deadlineAt ??= Number(deadlineAt(job.createdAt));
     job.abort = new AbortController(); job.lastWorkAt = now(); job.stage = 'preparing';
     jobs.set(job.id, job); trace('registered', job);
     job.timer = setInterval(() => { void tick(job); }, intervalMs); job.timer.unref();
     // This watchdog remains independent of a hung database heartbeat query.
     job.watchdog = setInterval(() => {
       diagnosePending(job);
-      if (now() - job.createdAt >= timeoutMs) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'watchdog_timeout');
+      if (now() >= job.deadlineAt) stop(job, 'Export timed out. Try a shorter timeline or contact support.', 'watchdog_timeout');
       else if (!job.waitingForRenderer && now() - job.lastWorkAt >= stallMs) stop(job, 'Export stalled. Please export again.', 'watchdog_stall');
     }, intervalMs); job.watchdog.unref();
   }
@@ -171,7 +173,10 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   }
   let lastRecoveryDiagnosticAt;
   async function reconcile() {
-    const expired = new Date(now() - leaseMs), deadline = new Date(now() - timeoutMs);
+    const recoveryAt = now();
+    const expired = new Date(recoveryAt - leaseMs), deadline = new Date(recoveryAt - timeoutMs);
+    // New jobs carry their creator's immutable deadline. A different process's
+    // environment must never shorten it. Legacy rows retain the bounded fallback.
     const expiredLease = [
       { heartbeat_at: { [Op.lt]: expired } },
       { heartbeat_at: null, created_at: { [Op.lt]: expired } },
@@ -186,14 +191,18 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     const [failedRows, failedRecords] = await recoveryUpdate('fail_expired', { status: 'failed', stage: 'failed', completed_at: new Date(now()),
       error_message: 'The rendering worker stopped responding or the export timed out. Please export again.' },
       { where: { status: 'processing', cancel_requested_at: null, [Op.or]: [
-        ...expiredLease, { created_at: { [Op.lt]: deadline } },
+        ...expiredLease, { deadline_at: { [Op.lt]: new Date(recoveryAt) } },
+        { deadline_at: null, created_at: { [Op.lt]: deadline } },
       ] }, returning: true });
     for (const row of [...(cancelledRecords || []), ...(failedRecords || [])]) {
-      const ageMs = now() - Number(new Date(row.created_at));
-      const heartbeatAgeMs = now() - Number(new Date(row.heartbeat_at || row.created_at));
-      const totalExpired = ageMs > timeoutMs, heartbeatExpired = heartbeatAgeMs > leaseMs;
+      const createdAt = Number(new Date(row.createdAt || row.created_at));
+      const effectiveDeadlineAtMs = row.deadline_at ? Number(new Date(row.deadline_at)) : createdAt + timeoutMs;
+      const ageMs = recoveryAt - createdAt;
+      const heartbeatAgeMs = recoveryAt - Number(new Date(row.heartbeat_at || row.createdAt || row.created_at));
+      const totalExpired = recoveryAt > effectiveDeadlineAtMs, heartbeatExpired = heartbeatAgeMs > leaseMs;
       trace('lease_recovered', { id: row.id, workerToken: row.worker_token, status: row.status, progress: row.progress }, {
-        ageMs, heartbeatAgeMs, timeoutMs, leaseMs,
+        ageMs, heartbeatAgeMs, timeoutMs, leaseMs, recoveryAtMs: recoveryAt, effectiveDeadlineAtMs,
+        effectiveTimeoutMs: effectiveDeadlineAtMs - createdAt, deadlineSource: row.deadline_at ? 'persisted' : 'legacy_config',
         recoveryReason: row.status === 'cancelled' ? 'cancelled_expired' : totalExpired && heartbeatExpired ? 'total_and_heartbeat_expired' : totalExpired ? 'total_timeout' : 'heartbeat_expired' });
     }
     if (reportRecovery || cancelledRows || failedRows) trace('lease_recovery_end', {}, { cancelledRows, failedRows });
@@ -210,6 +219,6 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     };
     void recover(); recoveryTimer = setInterval(recover, intervalMs); recoveryTimer.unref();
   }
-  return { jobs, trace, register, checkpoint, withStartLock, assertRunning, stop, release, finish, requestCancel, reconcile, start, timeoutMs, stallMs, leaseMs, intervalMs, newToken: randomUUID };
+  return { jobs, trace, register, checkpoint, withStartLock, assertRunning, stop, release, finish, requestCancel, reconcile, start, timeoutMs, stallMs, leaseMs, intervalMs, deadlineAt, newToken: randomUUID };
 }
 module.exports = { createExportLifecycle };

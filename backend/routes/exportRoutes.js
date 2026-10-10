@@ -12,10 +12,11 @@ const router = express.Router();
 
 const auth = require("../middleware/authMiddleware");
 const access = require("../middleware/projectAccess");
+const exportSubmissionGuard = require("../middleware/exportSubmissionGuard");
 const { fileAuth } = require("../services/fileAccess");
 
 // Create a new export
-router.post("/", auth, access, createExport);
+router.post("/", auth, access, exportSubmissionGuard, createExport);
 
 // Get export status and progress
 router.get("/:id", auth, getExport);

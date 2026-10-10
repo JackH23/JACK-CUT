@@ -33,3 +33,7 @@ test('unrecognized database identifiers and operation labels are omitted',()=>{
 });
 
 test('lease diagnostics expose effective bounds and recovery reasons without raw owner credentials',()=>{let record;logLifecycleEvent('lease_recovered',{id,workerToken:'SECRET_OWNER'},{timeoutMs:1800000,leaseMs:90000,heartbeatAgeMs:1635,recoveryReason:'total_timeout',rawToken:'SECRET'}, {info:s=>record=JSON.parse(s)});assert.equal(record.recoveryReason,'total_timeout');assert.equal(record.leaseMs,90000);assert.ok(!JSON.stringify(record).includes('SECRET'));logLifecycleEvent('lifecycle_configured',{}, {timeoutMs:7200000,leaseMs:90000,intervalMs:2000}, {info:s=>record=JSON.parse(s)});assert.equal(record.timeoutMs,7200000);assert.equal(record.intervalMs,2000);});
+
+test('recovery logs include the effective immutable deadline and recovery instant',()=>{
+ let record;logLifecycleEvent('lease_recovered',{id},{deadlineSource:'persisted',effectiveDeadlineAtMs:7300000,effectiveTimeoutMs:7200000,recoveryAtMs:1900001,timeoutMs:1800000,recoveryReason:'heartbeat_expired'}, {info:s=>record=JSON.parse(s)});assert.equal(record.effectiveDeadlineAtMs,7300000);assert.equal(record.effectiveTimeoutMs,7200000);assert.equal(record.recoveryAtMs,1900001);assert.equal(record.deadlineSource,'persisted');assert.equal(record.timeoutMs,1800000);
+});

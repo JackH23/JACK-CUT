@@ -15,3 +15,47 @@ test('fresh-heartbeat deadline recovery explicitly reports total timeout',async(
 
 test('a recovery process with an older 30-minute setting fences a healthy 120-minute owner',async()=>{const h=fixture({EXPORT_TIMEOUT_MS:7200000});try{const old=createExportLifecycle({ExportJob:h.model,Op,sequelize:{transaction:async fn=>fn({LOCK:{UPDATE:'UPDATE'}})},env:{EXPORT_TIMEOUT_MS:1800000,EXPORT_LEASE_TIMEOUT_MS:90000},now:()=>h.job.createdAt+1800001,trace:()=>{}});h.advance(1800001);await h.worker.checkpoint(h.job);assert.equal(h.worker.timeoutMs,7200000);await old.reconcile();assert.equal(h.rows[0].status,'failed');await assert.rejects(h.worker.checkpoint(h.job),/lease/);}finally{h.worker.release(h.job);}});
 test('delayed heartbeat SELECT followed by concurrent recovery is rejected at the fenced update',async()=>{const h=fixture({EXPORT_TIMEOUT_MS:7200000});try{let release;const base=h.model.findByPk;let first=true;h.model.findByPk=async id=>{if(!first)return base(id);first=false;const snapshot={...h.rows[0]};await new Promise(r=>release=r);return snapshot;};const pending=h.worker.checkpoint(h.job);await new Promise(r=>setImmediate(r));h.advance(90001);await h.worker.reconcile();release();await assert.rejects(pending,/lease/);assert.equal(h.rows[0].status,'failed');}finally{h.worker.release(h.job);}});
+
+for (const [ownerTimeout,recoveryTimeout] of [[7200000,1800000],[1800000,7200000]]) test('persisted deadline wins over conflicting recovery configuration '+ownerTimeout+'/'+recoveryTimeout,async()=>{
+ const h=fixture({EXPORT_TIMEOUT_MS:ownerTimeout});
+ try {
+  h.rows[0].deadline_at=h.worker.deadlineAt(h.job.createdAt);
+  const peer=createExportLifecycle({ExportJob:h.model,Op,sequelize:{},env:{EXPORT_TIMEOUT_MS:recoveryTimeout,EXPORT_LEASE_TIMEOUT_MS:90000},now:()=>h.job.createdAt+1800001,trace:(event,job,detail)=>h.traces.push({event,detail})});
+  h.advance(1800001);await h.worker.checkpoint(h.job);await peer.reconcile();
+  assert.equal(h.rows[0].status,ownerTimeout===7200000?'processing':'failed');
+  if(ownerTimeout===1800000){const log=h.traces.find(t=>t.event==='lease_recovered').detail;assert.equal(log.deadlineSource,'persisted');assert.equal(log.effectiveTimeoutMs,ownerTimeout);assert.equal(log.timeoutMs,recoveryTimeout);assert.equal(log.effectiveDeadlineAtMs,h.job.createdAt+ownerTimeout);assert.equal(log.recoveryReason,'total_timeout');}
+ } finally {h.worker.release(h.job);}
+});
+test('persisted 120-minute deadline expires after two hours even with fresh heartbeat',async()=>{
+ const h=fixture({EXPORT_TIMEOUT_MS:7200000});try{h.rows[0].deadline_at=h.worker.deadlineAt(h.job.createdAt);h.advance(7200001);await h.worker.checkpoint(h.job);await h.worker.reconcile();assert.equal(h.rows[0].status,'failed');assert.equal(h.traces.find(t=>t.event==='lease_recovered').detail.deadlineSource,'persisted');}finally{h.worker.release(h.job);}
+});
+test('persisted future deadline does not suppress expired-heartbeat recovery',async()=>{
+ const h=fixture({EXPORT_TIMEOUT_MS:7200000});try{h.rows[0].deadline_at=h.worker.deadlineAt(h.job.createdAt);h.advance(90001);await h.worker.reconcile();assert.equal(h.rows[0].status,'failed');assert.equal(h.traces.find(t=>t.event==='lease_recovered').detail.recoveryReason,'heartbeat_expired');}finally{h.worker.release(h.job);}
+});
+test('legacy recovery identifies its configuration-derived fallback deadline',async()=>{
+ const h=fixture();try{h.advance(1800001);await h.worker.checkpoint(h.job);await h.worker.reconcile();const log=h.traces.find(t=>t.event==='lease_recovered').detail;assert.equal(log.deadlineSource,'legacy_config');assert.equal(log.effectiveDeadlineAtMs,h.job.createdAt+1800000);}finally{h.worker.release(h.job);}
+});
+
+test('actual PostgreSQL query generator gates the configured fallback on a NULL deadline',async()=>{
+ const {Sequelize}=require('sequelize');const db=new Sequelize('fixture','fixture','fixture',{dialect:'postgres',logging:false});
+ let generated;const model={update:async(values,options)=>{if(values.status==='failed')generated=db.getQueryInterface().queryGenerator.whereQuery(options.where);return [0,[]];}};
+ const peer=createExportLifecycle({ExportJob:model,Op,sequelize:db,env:{EXPORT_TIMEOUT_MS:1800000,EXPORT_LEASE_TIMEOUT_MS:90000},now:()=>1900001,trace:()=>{}});
+ try{await peer.reconcile();assert.match(generated,/"deadline_at" < /);assert.ok(generated.includes('("deadline_at" IS NULL AND "created_at" < '));assert.match(generated,/"status" = 'processing'/);assert.match(generated,/"cancel_requested_at" IS NULL/);}finally{await db.close();}
+});
+
+test('recovery diagnostics read timestamps from real underscored Sequelize instances',async()=>{
+ const {Sequelize,DataTypes}=require('sequelize');const db=new Sequelize('fixture','fixture','fixture',{dialect:'postgres',logging:false});
+ const Job=db.define('Fixture',{heartbeat_at:DataTypes.DATE,deadline_at:DataTypes.DATE,status:DataTypes.STRING,progress:DataTypes.INTEGER,worker_token:DataTypes.STRING},{underscored:true,timestamps:true});
+ const row=Job.build({id:1,createdAt:new Date(100000),heartbeat_at:new Date(1900000),deadline_at:new Date(1900000),status:'failed',progress:51,worker_token:'owner'});const traces=[];
+ const peer=createExportLifecycle({ExportJob:{update:async values=>values.status==='failed'?[1,[row]]:[0,[]]},Op,sequelize:db,env:{EXPORT_TIMEOUT_MS:7200000,EXPORT_LEASE_TIMEOUT_MS:90000},now:()=>1900001,trace:(event,job,detail)=>traces.push({event,detail})});
+ try{await peer.reconcile();const detail=traces.find(t=>t.event==='lease_recovered').detail;assert.equal(detail.ageMs,1800001);assert.equal(detail.effectiveTimeoutMs,1800000);assert.equal(detail.recoveryReason,'total_timeout');assert.equal(detail.heartbeatAgeMs,1);}finally{await db.close();}
+});
+
+test('simulated recovery-process restart honors persisted deadlines and preserves completed rows',async()=>{
+ const h=fixture({EXPORT_TIMEOUT_MS:7200000});try{
+  h.rows[0].deadline_at=h.worker.deadlineAt(h.job.createdAt);h.rows.push({id:'finished',status:'completed',created_at:new Date(h.job.createdAt),heartbeat_at:new Date(h.job.createdAt),deadline_at:new Date(h.job.createdAt+1),progress:100,output_path:'fixture-output'});
+  h.advance(1800001);await h.worker.checkpoint(h.job);h.worker.release(h.job);
+  const recovered=createExportLifecycle({ExportJob:h.model,Op,sequelize:{},env:{EXPORT_TIMEOUT_MS:1800000,EXPORT_LEASE_TIMEOUT_MS:90000},now:()=>h.job.createdAt+1800001,trace:()=>{}});
+  assert.equal(recovered.jobs.size,0);await recovered.reconcile();assert.equal(h.rows[0].status,'processing');assert.equal(h.rows[1].status,'completed');assert.equal(h.rows[1].output_path,'fixture-output');
+ }finally{h.worker.release(h.job);}
+});

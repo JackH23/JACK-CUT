@@ -14,3 +14,5 @@ render-*/
 
 # Generated FFmpeg benchmark outputs
 benchmarks/results/
+# Private staging credentials; never commit
+.env.staging.local

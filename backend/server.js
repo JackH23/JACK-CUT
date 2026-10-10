@@ -95,6 +95,7 @@ async function startServer() {
     await sequelize.authenticate();
     await sequelize.sync();
     const exportColumns = await sequelize.getQueryInterface().describeTable("export_jobs");
+    require('./utils/exportDeadlineSchema').assertExportDeadlineSchema(exportColumns);
     for (const [name, type] of [['worker_token', 'UUID'], ['heartbeat_at', 'DATE'], ['cancel_requested_at', 'DATE'], ['stage', 'STRING']]) {
       if (!exportColumns[name]) try {
         await sequelize.getQueryInterface().addColumn('export_jobs', name, { type: require('sequelize').DataTypes[type], allowNull: true });
