@@ -9,7 +9,8 @@
     "lint": "eslint",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "deploy:staging": "opennextjs-cloudflare build && wrangler deploy --config wrangler.staging.jsonc"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "latest",
