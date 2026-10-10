@@ -236,3 +236,16 @@ test('normal polling, rerenders and component cleanup never call the cancellatio
  let cancels=0,signal;const h=exportPollingHarness({create:async()=>({id:'new',status:'processing',cancelRequested:false}),get:async(_,s)=>{signal=s;return{id:'new',status:'processing',stage:'rendering',progress:3,cancelRequested:false};},cancel:async()=>{cancels++;},getDownloadUrl:()=>'/fallback'});
  await h.render().startExport('project');for(let i=0;i<5;i++)h.render();await h.tick();assert.equal(h.render().cancelling,false);h.unmount();assert.equal(signal.aborted,true);assert.equal(h.timers.size,0);assert.equal(cancels,0);
 });
+
+for (const message of [undefined, 'Generic upstream failure']) test('maintenance submission has explicit notice, no automatic retry, and permits manual reopening retry: ' + message, async () => {
+ let creates=0,cancels=0;
+ const h=exportPollingHarness({create:async()=>{if(++creates===1)throw{axiosError:true,response:{status:503,data:{code:'EXPORT_SUBMISSIONS_PAUSED',message}}};return{id:'new',status:'processing'};},get:async()=>({id:'new',status:'completed',progress:100}),cancel:async()=>{cancels++;},getDownloadUrl:()=>'/fallback'});
+ await h.render().startExport('project');let view=h.render();
+ assert.match(view.exportError,/Video exports are temporarily paused for maintenance/);assert.equal(view.exporting,false);assert.equal(view.exportJob,null);assert.equal(h.timers.size,0);
+ for(let i=0;i<3;i++)h.render();await settle();assert.equal(creates,1);assert.equal(cancels,0);
+ await view.startExport('project');view=h.render();assert.equal(creates,2);assert.equal(view.exportError,null);assert.equal(view.exportJob.id,'new');await h.tick();assert.equal(h.render().exportJob.status,'completed');h.unmount();
+});
+test('unrelated submission 503 preserves its actual backend message',async()=>{
+ const h=exportPollingHarness({create:async()=>{throw{axiosError:true,response:{status:503,data:{code:'OTHER_ERROR',message:'Renderer temporarily unavailable'}}};}});
+ await h.render().startExport('project');assert.equal(h.render().exportError,'Renderer temporarily unavailable');assert.equal(h.timers.size,0);h.unmount();
+});

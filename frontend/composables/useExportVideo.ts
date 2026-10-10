@@ -61,7 +61,12 @@ export function useExportVideo() {
     } catch (error) {
       dispatch({
         type: "EXPORT_ERROR",
-        payload: getExportError(error, "Could not start video export."),
+        payload:
+          axios.isAxiosError(error) &&
+          error.response?.status === 503 &&
+          error.response?.data?.code === "EXPORT_SUBMISSIONS_PAUSED"
+            ? "Video exports are temporarily paused for maintenance. Existing exports can continue. Please try again later."
+            : getExportError(error, "Could not start video export."),
       });
     } finally {
       startingRef.current = false;

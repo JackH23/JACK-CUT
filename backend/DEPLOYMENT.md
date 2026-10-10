@@ -258,3 +258,11 @@ For this installation, retain EXPORT_TIMEOUT_MS=7200000, EXPORT_STALL_TIMEOUT_MS
 Safely verify on isolated staging with mocked/fault-injected lifecycle tests first. On a separately approved staging render, check deadline_at at reservation and monitor past 30 minutes with fresh heartbeats. Cancellation must still stop the child and prevent publication; stale owners must fail, and the two-hour deadline must still terminate work. Correlate lifecycle_configured and lease_recovered by jobId, instance and hashed lease. Recovery logs include recoveryReason, recoveryAtMs, effectiveDeadlineAtMs, effectiveTimeoutMs, deadlineSource and the recovery process timeoutMs/leaseMs. Do not use PID alone across containers.
 
 The deadline migration and startup validator reject an existing column with an incompatible type, NOT NULL or a default. IF NOT EXISTS is not sufficient to validate schema compatibility. No automatic repair is performed; investigate mismatches before retrying.
+
+### Export submission maintenance guard
+
+EXPORT_SUBMISSIONS_PAUSED defaults to false. Only a trimmed, case-insensitive true enables it. The guard applies after authentication and project authorization on POST /api/exports; authorized submissions receive HTTP 503 with code EXPORT_SUBMISSIONS_PAUSED. Status, cancellation, downloads, and already-accepted jobs remain outside the guard. A repeated submission that would rediscover an existing job is also rejected; use its status endpoint instead.
+
+The guard reads the running process environment per request. Updating Northflank configuration is not a restart-free toggle: verify replacement/restart behavior in staging. Do not restart containers with active exports to enable it. First establish a separately approved admission freeze and drain accepted requests/jobs, or review a restart-free control design separately. A request admitted before activation can still commit; the flag alone is not a global drain barrier.
+
+The frontend displays a maintenance notice and does not automatically retry submissions. No Retry-After is sent because reopening time is unknown; retry manually after maintenance. The guard adds no database schema dependency, but this staging revision still requires the explicit deadline_at migration before production startup.
