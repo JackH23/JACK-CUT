@@ -10,6 +10,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   const killGraceMs = positive(env.EXPORT_KILL_GRACE_MS, 5000);
   const intervalMs = Math.min(2000, leaseMs / 3);
   const jobs = new Map();
+  trace('lifecycle_configured', {}, { timeoutMs, stallMs, leaseMs, killGraceMs, intervalMs });
   function owned(job) { return { id: job.id, status: 'processing', worker_token: job.workerToken }; }
   function signalChild(job, signal) {
     job.signalAttempts = (job.signalAttempts || 0) + 1;
@@ -20,7 +21,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
   }
   function stop(job, reason, trigger = 'internal_stop') {
     if (job.abort.signal.aborted) return;
-    job.stopReason = reason;
+    job.stopReason = reason; job.stopTrigger = trigger;
     trace('stop_requested', job, { trigger });
     job.abort.abort();
     if (job.child && !job.childClosed) {
@@ -42,14 +43,31 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     }
   }
   function assertRunning(job) { if (job.abort.signal.aborted) throw new Error(job.stopReason || 'Export stopped.'); }
+  function verifyOwner(job, row) {
+    if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) {
+      trace('lease_rejected', job, { ownerRelation: !row ? 'missing_row' : row.worker_token !== job.workerToken ? 'token_mismatch' : 'local', rowStatus: row?.status, rowStage: row?.stage,
+        rowCancelRequested: Boolean(row?.cancel_requested_at), ownerLease: fingerprint(row?.worker_token),
+        ageMs: row?.created_at ? now() - Number(new Date(row.created_at)) : now() - job.createdAt,
+        heartbeatAgeMs: row?.heartbeat_at ? now() - Number(new Date(row.heartbeat_at)) : undefined, timeoutMs, leaseMs });
+      stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
+    } else if (row.cancel_requested_at) { job.cancelRequested = true; job.cancelObservedAt ??= now(); trace('cancel_observed', job); stop(job, 'Cancellation requested.', 'durable_cancel'); }
+    assertRunning(job);
+  }
   async function checkpoint(job, stage) {
     assertRunning(job);
     const row = await ExportJob.findByPk(job.id);
-    if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
-    else if (row.cancel_requested_at) { job.cancelRequested = true; job.cancelObservedAt ??= now(); trace('cancel_observed', job); stop(job, 'Cancellation requested.', 'durable_cancel'); }
+    verifyOwner(job, row);
     assertRunning(job);
     if (stage) { job.stage = stage; job.lastWorkAt = now(); }
-    await ExportJob.update({ stage: job.stage, progress: job.progress, heartbeat_at: new Date(now()) }, { where: { ...owned(job), cancel_requested_at: null } });
+    const started = now();
+    const [affectedRows] = await ExportJob.update({ stage: job.stage, progress: job.progress, heartbeat_at: new Date(now()) }, { where: { ...owned(job), cancel_requested_at: null } });
+    if (affectedRows !== 1 || now() - started >= 1000) trace('heartbeat_write_result', job, { affectedRows, durationMs: now() - started });
+    if (affectedRows !== 1) {
+      // Cancellation/recovery can commit between the ownership read and fenced write.
+      // Never treat a no-op as successful renewal or keep rendering under a revoked lease.
+      verifyOwner(job, await ExportJob.findByPk(job.id));
+      stop(job, 'Could not renew the export lease. Please export again.', 'database_error');
+    }
     assertRunning(job);
   }
   async function withStartLock(job, start) {
@@ -57,8 +75,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     await sequelize.transaction(async transaction => {
       assertRunning(job);
       const row = await ExportJob.findByPk(job.id, { transaction, lock: transaction.LOCK.UPDATE });
-      if (!row || row.status !== 'processing' || row.worker_token !== job.workerToken) stop(job, 'The rendering worker lost its export lease. Please export again.', 'lease_lost');
-      else if (row.cancel_requested_at) { job.cancelRequested = true; stop(job, 'Cancellation requested.', 'durable_cancel'); }
+      verifyOwner(job, row);
       assertRunning(job);
       job.stage = 'starting'; job.lastWorkAt = now();
       await ExportJob.update({ stage: job.stage, heartbeat_at: new Date(now()) }, { where: owned(job), transaction });
@@ -77,7 +94,7 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
       if (job.abort.signal.aborted) await ExportJob.update({ heartbeat_at: new Date(now()) }, { where: owned(job) });
       else await checkpoint(job);
     }
-    catch (error) { trace('heartbeat_failed', job, { error }); if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.', 'database_error'); }
+    catch (error) { trace('heartbeat_failed', job, { error, trigger: job.stopTrigger || 'database_error' }); if (!job.abort.signal.aborted) stop(job, 'Could not maintain the export database connection. Please export again.', 'database_error'); }
     finally { job.ticking = false; }
   }
   function register(job) {
@@ -163,14 +180,22 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     // late publication; a live owner keeps heartbeating until shutdown settles.
     const reportRecovery = lastRecoveryDiagnosticAt == null || now() - lastRecoveryDiagnosticAt >= 30000;
     if (reportRecovery) { lastRecoveryDiagnosticAt = now(); trace('lease_recovery_begin'); }
-    const [cancelledRows] = await recoveryUpdate('cancel_expired', { status: 'cancelled', stage: 'cancelled', completed_at: new Date(now()),
+    const [cancelledRows, cancelledRecords] = await recoveryUpdate('cancel_expired', { status: 'cancelled', stage: 'cancelled', completed_at: new Date(now()),
       output_path: null, error_message: null },
-      { where: { status: 'processing', cancel_requested_at: { [Op.ne]: null }, [Op.or]: expiredLease } });
-    const [failedRows] = await recoveryUpdate('fail_expired', { status: 'failed', stage: 'failed', completed_at: new Date(now()),
+      { where: { status: 'processing', cancel_requested_at: { [Op.ne]: null }, [Op.or]: expiredLease }, returning: true });
+    const [failedRows, failedRecords] = await recoveryUpdate('fail_expired', { status: 'failed', stage: 'failed', completed_at: new Date(now()),
       error_message: 'The rendering worker stopped responding or the export timed out. Please export again.' },
       { where: { status: 'processing', cancel_requested_at: null, [Op.or]: [
         ...expiredLease, { created_at: { [Op.lt]: deadline } },
-      ] } });
+      ] }, returning: true });
+    for (const row of [...(cancelledRecords || []), ...(failedRecords || [])]) {
+      const ageMs = now() - Number(new Date(row.created_at));
+      const heartbeatAgeMs = now() - Number(new Date(row.heartbeat_at || row.created_at));
+      const totalExpired = ageMs > timeoutMs, heartbeatExpired = heartbeatAgeMs > leaseMs;
+      trace('lease_recovered', { id: row.id, workerToken: row.worker_token, status: row.status, progress: row.progress }, {
+        ageMs, heartbeatAgeMs, timeoutMs, leaseMs,
+        recoveryReason: row.status === 'cancelled' ? 'cancelled_expired' : totalExpired && heartbeatExpired ? 'total_and_heartbeat_expired' : totalExpired ? 'total_timeout' : 'heartbeat_expired' });
+    }
     if (reportRecovery || cancelledRows || failedRows) trace('lease_recovery_end', {}, { cancelledRows, failedRows });
   }
   let recoveryTimer;
@@ -185,6 +210,6 @@ function createExportLifecycle({ ExportJob, Op, sequelize, env = process.env, no
     };
     void recover(); recoveryTimer = setInterval(recover, intervalMs); recoveryTimer.unref();
   }
-  return { jobs, trace, register, checkpoint, withStartLock, assertRunning, stop, release, finish, requestCancel, reconcile, start, timeoutMs, newToken: randomUUID };
+  return { jobs, trace, register, checkpoint, withStartLock, assertRunning, stop, release, finish, requestCancel, reconcile, start, timeoutMs, stallMs, leaseMs, intervalMs, newToken: randomUUID };
 }
 module.exports = { createExportLifecycle };

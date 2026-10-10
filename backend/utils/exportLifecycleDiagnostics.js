@@ -1,7 +1,7 @@
 // JSON-only, allowlisted metadata. No SQL, tokens, media paths, stderr or error messages.
 const { randomUUID, createHash } = require('node:crypto');
 const instance = randomUUID();
-const events = new Set(['create_new','create_reused','create_rejected_cancelling','registered','cancel_request_begin','cancel_request_failed','cancel_request_persisted','cancel_owner_resolved','cancel_observed','stop_requested','signal_sent','signal_failed','ffmpeg_spawned','ffmpeg_exit','ffmpeg_close','ffmpeg_error','renderer_wait','renderer_acquired','renderer_released','progress_write_begin','progress_write_end','progress_write_failed','progress_wait_begin','progress_wait_end','terminal_transaction_begin','terminal_lock_acquired','terminal_write_begin','terminal_write_end','terminal_committed','terminal_failed','terminal_preserved','cleanup_begin','cleanup_end','cleanup_failed','unpublished_cleanup_begin','unpublished_cleanup_end','unpublished_cleanup_failed','lease_recovery_begin','lease_recovery_end','lease_recovery_failed','lease_recovery_query_failed','worker_released','heartbeat_failed','heartbeat_pending','cancellation_pending']);
+const events = new Set(['lifecycle_configured','lease_rejected','lease_recovered','heartbeat_write_result','create_new','create_reused','create_rejected_cancelling','registered','cancel_request_begin','cancel_request_failed','cancel_request_persisted','cancel_owner_resolved','cancel_observed','stop_requested','signal_sent','signal_failed','ffmpeg_spawned','ffmpeg_exit','ffmpeg_close','ffmpeg_error','renderer_wait','renderer_acquired','renderer_released','progress_write_begin','progress_write_end','progress_write_failed','progress_wait_begin','progress_wait_end','terminal_transaction_begin','terminal_lock_acquired','terminal_write_begin','terminal_write_end','terminal_committed','terminal_failed','terminal_preserved','cleanup_begin','cleanup_end','cleanup_failed','unpublished_cleanup_begin','unpublished_cleanup_end','unpublished_cleanup_failed','lease_recovery_begin','lease_recovery_end','lease_recovery_failed','lease_recovery_query_failed','worker_released','heartbeat_failed','heartbeat_pending','cancellation_pending']);
 const stages = new Set(['preparing','starting','rendering','uploading','cancelling','cancelled','completed','failed']);
 const phases = new Set(['progress_wait','terminal_lock','terminal_update','terminal_commit','cleanup']);
 const statuses = new Set(['processing','completed','cancelled','failed']);
@@ -27,9 +27,10 @@ function logLifecycleEvent(event, job = {}, detail = {}, logger = console) {
     heartbeatBusy: Boolean(job.ticking),
     phase: phases.has(job.finalizationPhase) ? job.finalizationPhase : null,
   };
-  for (const field of ['durationMs','ageMs','heartbeatAgeMs','progressWriteAgeMs','pendingProgressWrites','affectedRows','cancelledRows','failedRows','exitCode','signalAttempts']) {
+  for (const field of ['timeoutMs','stallMs','leaseMs','killGraceMs','intervalMs','durationMs','ageMs','heartbeatAgeMs','progressWriteAgeMs','pendingProgressWrites','affectedRows','cancelledRows','failedRows','exitCode','signalAttempts']) {
     if (typeof detail[field] === 'number' && Number.isFinite(detail[field])) record[field] = detail[field];
   }
+  if (['cancelled_expired','total_and_heartbeat_expired','total_timeout','heartbeat_expired'].includes(detail.recoveryReason)) record.recoveryReason = detail.recoveryReason;
   if (typeof detail.killAccepted === 'boolean') record.killAccepted = detail.killAccepted;
   if (typeof detail.childKilled === 'boolean') record.childKilled = detail.childKilled;
   if (['local','not_local','token_mismatch','missing_row'].includes(detail.ownerRelation)) record.ownerRelation = detail.ownerRelation;
