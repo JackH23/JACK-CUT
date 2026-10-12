@@ -25,7 +25,7 @@ export default function ProjectModal({
     projectService
       .getAll()
       .then((result) => {
-        if (active) setProjects(result);
+        if (active) setProjects(result.projects);
       })
       .catch((err) => {
         if (active) {
