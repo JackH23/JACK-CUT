@@ -1,8 +1,16 @@
-
-import type { Project } from "@/lib/project";
+import type {
+  GetProjectsResponse,
+  Project,
+} from "@/lib/project";
 
 export type ProjectsState = {
   projects: Project[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
   loading: boolean;
   creating: boolean;
   error: string;
@@ -10,6 +18,12 @@ export type ProjectsState = {
 
 export const initialProjectsState: ProjectsState = {
   projects: [],
+  total: 0,
+  page: 1,
+  limit: 12,
+  totalPages: 0,
+  hasNextPage: false,
+  hasPreviousPage: false,
   loading: true,
   creating: false,
   error: "",
@@ -17,7 +31,10 @@ export const initialProjectsState: ProjectsState = {
 
 type ProjectsAction =
   | { type: "LOAD_START" }
-  | { type: "LOAD_SUCCESS"; payload: Project[] }
+  | {
+      type: "LOAD_SUCCESS";
+      payload: GetProjectsResponse;
+    }
   | { type: "LOAD_ERROR"; payload: string }
   | { type: "CREATE_START" }
   | { type: "CREATE_SUCCESS" }
@@ -41,7 +58,13 @@ export function projectsReducer(
     case "LOAD_SUCCESS":
       return {
         ...state,
-        projects: action.payload,
+        projects: action.payload.projects,
+        total: action.payload.total,
+        page: action.payload.page,
+        limit: action.payload.limit,
+        totalPages: action.payload.totalPages,
+        hasNextPage: action.payload.hasNextPage,
+        hasPreviousPage: action.payload.hasPreviousPage,
         loading: false,
         error: "",
       };
@@ -74,16 +97,33 @@ export function projectsReducer(
       };
 
     case "DELETE_START":
-      return { ...state, error: "" };
-
-    case "DELETE_SUCCESS":
       return {
         ...state,
-        projects: state.projects.filter(
-          (project) => project.id !== action.payload,
-        ),
         error: "",
       };
+
+    case "DELETE_SUCCESS": {
+      const projects = state.projects.filter(
+        (project) => project.id !== action.payload,
+      );
+
+      const wasVisible = projects.length < state.projects.length;
+      const total = Math.max(
+        0,
+        state.total - (wasVisible ? 1 : 0),
+      );
+      const totalPages = Math.ceil(total / state.limit);
+
+      return {
+        ...state,
+        projects,
+        total,
+        totalPages,
+        hasNextPage: state.page < totalPages,
+        hasPreviousPage: state.page > 1,
+        error: "",
+      };
+    }
 
     case "DELETE_ERROR":
       return {

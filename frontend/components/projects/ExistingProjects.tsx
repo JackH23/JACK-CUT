@@ -16,6 +16,7 @@ type Project = {
 
 type ExistingProjectsProps = {
   projects: Project[];
+  total: number;
   loading: boolean;
   deleting: boolean;
   onRequestDelete: (project: Project) => void;
@@ -23,6 +24,7 @@ type ExistingProjectsProps = {
 
 export default function ExistingProjects({
   projects,
+  total,
   loading,
   deleting,
   onRequestDelete,
@@ -46,7 +48,7 @@ export default function ExistingProjects({
         <span className="rounded-full border border-white/10 bg-[#191b25] px-4 py-2 text-xs text-zinc-300">
           {loading
             ? "Loading..."
-            : `${projects.length} projects`}
+            : `Showing ${projects.length} of ${total} projects`}
         </span>
       </div>
 

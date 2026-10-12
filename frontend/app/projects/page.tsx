@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useProjectsPage } from "@/composables/useProjectsPage";
 
 import LoadingSkeleton from "@/components/shared/LoadingSkeleton";
+import Pagination from "@/components/shared/Pagination";
 import ProjectsHeader from "@/components/projects/ProjectsHeader";
 import CreateProject from "@/components/projects/CreateProject";
 import ExistingProjects from "@/components/projects/ExistingProjects";
@@ -29,9 +30,14 @@ export default function ProjectsPage() {
     name,
     setName,
     projects,
+    total,
+    page,
+    totalPages,
     loading,
     creating,
     error,
+    nextPage,
+    previousPage,
     handleCreate,
     projectToDelete,
     deleting,
@@ -40,30 +46,21 @@ export default function ProjectsPage() {
     confirmDelete,
   } = useProjectsPage();
 
-  if (loading && !projectToDelete) {
-    return (
-      <main className="projects-page min-h-screen bg-[#0d0f15] text-white">
-        <LoadingSkeleton variant="projects" count={4} />
-      </main>
-    );
-  }
-
   return (
     <main className="projects-page min-h-screen bg-[#0d0f15] text-white">
       <Suspense fallback={null}>
         <FocusCreateProject ready={!loading} />
       </Suspense>
+
       <div
         className="mx-auto w-full max-w-[1440px] px-5 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12"
         inert={Boolean(projectToDelete)}
       >
-        {/* Page header */}
         <ProjectsHeader
-          totalProjects={projects.length}
+          totalProjects={total}
           loading={loading}
         />
 
-        {/* Create project */}
         <CreateProject
           name={name}
           setName={setName}
@@ -80,16 +77,33 @@ export default function ProjectsPage() {
           </p>
         )}
 
-        {/* Existing projects */}
-        <ExistingProjects
-          projects={projects}
-          loading={loading}
-          deleting={deleting}
-          onRequestDelete={requestDelete}
-        />
+        <div aria-busy={loading}>
+          {loading ? (
+            <LoadingSkeleton variant="projects" count={4} />
+          ) : (
+            <ExistingProjects
+              projects={projects}
+              total={total}
+              loading={loading}
+              deleting={deleting}
+              onRequestDelete={requestDelete}
+            />
+          )}
+        </div>
+
+        <div inert={loading || deleting}>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPrevious={previousPage}
+            onNext={nextPage}
+            className={`mt-8 ${
+              loading || deleting ? "opacity-50" : ""
+            }`}
+          />
+        </div>
       </div>
 
-      {/* Delete confirmation modal */}
       <DeleteProjectModal
         project={projectToDelete}
         deleting={deleting}

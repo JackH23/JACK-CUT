@@ -5,6 +5,12 @@ export type Project = {
 
 export type GetProjectsResponse = {
   projects: Project[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 };
 
 export type CreateProjectResponse = {

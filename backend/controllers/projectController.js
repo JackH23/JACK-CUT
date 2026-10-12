@@ -37,15 +37,57 @@ async function createProject(req, res) {
 
 async function getProjects(req, res) {
   try {
-    const projects = await Project.findAll({
-      where: { user_id: req.user.id },
-      order: [["created_at", "DESC"]],
-    });
+    const page = Math.max(
+      parseInt(req.query.page, 10) || 1,
+      1,
+    );
 
-    return res.json({ projects });
+    const limit = Math.min(
+      Math.max(
+        parseInt(req.query.limit, 10) || 12,
+        1,
+      ),
+      100,
+    );
+
+    const offset = (page - 1) * limit;
+
+    if (!Number.isSafeInteger(offset)) {
+      return res.status(400).json({
+        message: "Page number is too large.",
+      });
+    }
+
+    const { count, rows } =
+      await Project.findAndCountAll({
+        where: {
+          user_id: req.user.id,
+        },
+        order: [
+          ["created_at", "DESC"],
+          ["id", "DESC"],
+        ],
+        limit,
+        offset,
+      });
+
+    const totalPages = Math.ceil(count / limit);
+
+    return res.status(200).json({
+      projects: rows,
+      total: count,
+      page,
+      limit,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    });
   } catch (error) {
     console.error("Get projects error:", error);
-    return res.status(500).json({ message: "Could not load projects." });
+
+    return res.status(500).json({
+      message: "Could not load projects.",
+    });
   }
 }
 
