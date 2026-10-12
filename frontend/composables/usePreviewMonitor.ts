@@ -43,47 +43,34 @@ export function usePreviewMonitor({
       ? previewItem.file ?? null
       : null;
 
-  /*
-   * Find separate audio clips currently
-   * underneath the playhead.
-   */
+  const previewItemId = previewItem?.id;
+  const previewFileId = previewFile?.id;
+  const previewUrl = previewFile?.url;
+  const previewType = previewFile?.type;
+  const clipStart = previewItem?.startTime ?? 0;
+  const sourceStart = previewItem?.sourceStart ?? 0;
+  const isPlaying = playback.isPlaying;
+
   const activeSoundItems = useMemo(
     () =>
-      items.filter((item) => {
-        if (
-          item.type !== "media" ||
-          !item.file
-        ) {
-          return false;
-        }
-
-        return (
-          item.file.type === "audio" &&
+      items.filter(
+        (item) =>
+          item.type === "media" &&
+          item.file?.type === "audio" &&
           playheadSeconds >= item.startTime &&
-          playheadSeconds <
-          item.startTime + item.duration
-        );
-      }),
+          playheadSeconds < item.startTime + item.duration,
+      ),
     [items, playheadSeconds],
   );
 
-  /*
-   * Find text clips currently underneath
-   * the playhead.
-   */
   const activeTextItems = useMemo(
     () =>
-      items.filter((item) => {
-        if (item.type !== "text") {
-          return false;
-        }
-
-        return (
+      items.filter(
+        (item) =>
+          item.type === "text" &&
           playheadSeconds >= item.startTime &&
-          playheadSeconds <
-          item.startTime + item.duration
-        );
-      }),
+          playheadSeconds < item.startTime + item.duration,
+      ),
     [items, playheadSeconds],
   );
 
@@ -92,106 +79,114 @@ export function usePreviewMonitor({
 
     if (
       !video ||
-      !previewItem ||
-      previewItem.type !== "media" ||
-      previewFile?.type !== "video"
+      previewType !== "video" ||
+      video.readyState < 1
     ) {
       return;
     }
 
-    const sourceTime = Math.max(
+    let targetTime = Math.max(
       0,
-      playheadSeconds -
-      previewItem.startTime +
-      previewItem.sourceStart,
+      playheadSeconds - clipStart + sourceStart,
     );
 
+    if (!Number.isFinite(targetTime)) return;
+
+    if (Number.isFinite(video.duration)) {
+      targetTime = Math.min(
+        targetTime,
+        Math.max(0, video.duration - 0.001),
+      );
+    }
+
+    const tolerance = isPlaying ? 0.5 : 0.04;
+
     if (
-      video.readyState >= HTMLMediaElement.HAVE_METADATA &&
-      Math.abs(video.currentTime - sourceTime) >
-      (playback.isPlaying ? 0.5 : 0.04)
+      !video.seeking &&
+      Math.abs(video.currentTime - targetTime) > tolerance
     ) {
-      video.currentTime = sourceTime;
+      video.currentTime = targetTime;
     }
   }, [
-    previewItem,
-    previewFile,
+    previewType,
     playheadSeconds,
-    playback.isPlaying,
+    clipStart,
+    sourceStart,
+    isPlaying,
   ]);
 
   useEffect(() => {
     syncVideoTime();
-  }, [syncVideoTime]);
+  }, [syncVideoTime, previewItemId, previewUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
 
-    if (!video || previewFile?.type !== "video") {
-      return;
-    }
+    if (!video || previewType !== "video") return;
 
     let disposed = false;
     let playPending = false;
 
     const requestPlayback = () => {
-      if (disposed || !playback.isPlaying) return;
-      if (!video.paused || playPending) return;
+      if (
+        disposed ||
+        !isPlaying ||
+        !video.paused ||
+        playPending
+      ) {
+        return;
+      }
 
       playPending = true;
 
-      void video.play()
+      void video
+        .play()
         .catch((error: unknown) => {
+          if (disposed) return;
+
           if (
             error instanceof DOMException &&
-            (error.name === "AbortError" ||
-              error.name === "NotAllowedError")
+            error.name === "AbortError"
           ) {
             return;
           }
 
-          console.error("Video playback failed:", error);
+          console.error("Preview playback failed:", error);
         })
         .finally(() => {
           playPending = false;
         });
     };
 
-    const handleCanPlay = () => {
-      requestPlayback();
-    };
+    video.addEventListener("canplay", requestPlayback);
 
-    video.addEventListener("canplay", handleCanPlay);
-
-    if (playback.isPlaying) {
+    if (isPlaying) {
       requestPlayback();
-    } else if (!video.paused) {
+    } else {
       video.pause();
     }
 
     return () => {
       disposed = true;
-      video.removeEventListener("canplay", handleCanPlay);
+      video.removeEventListener("canplay", requestPlayback);
+      video.pause();
     };
   }, [
-    playback.isPlaying,
-    previewFile?.id,
-    previewFile?.type,
+    isPlaying,
+    previewItemId,
+    previewFileId,
+    previewUrl,
+    previewType,
   ]);
 
   return {
     ...playback,
-
     videoRef,
     previewFile,
     previewItem,
-
     playheadSeconds,
-
     activeSoundItems,
     activeTextItems,
-
-    handleVideoLoadedMetadata:
-      syncVideoTime,
+    handleVideoLoadedMetadata: syncVideoTime,
   };
 }

@@ -19,5 +19,12 @@ function fileAuth(kind) {
     } catch { res.status(401).json({ message: "Authentication required or file link expired. Reload the project to renew it." }); }
   };
 }
-function mediaUrl(req, media) { return req.protocol + "://" + req.get("host") + fileUrl(req, "media", media.id); }
+function mediaUrl(req, media) {
+  const baseUrl = (
+    process.env.PUBLIC_API_URL ||
+    `${req.protocol}://${req.get("host")}`
+  ).replace(/\/+$/, "");
+
+  return baseUrl + fileUrl(req, "media", media.id);
+}
 module.exports = { fileUrl, fileAuth, mediaUrl };

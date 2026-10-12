@@ -168,13 +168,12 @@ export default function PreviewMonitor({
             {previewFile?.type === "video" && (
               <video
                 ref={videoRef}
-                key={previewFile.id}
+                key={`${previewItem.id}:${previewFile.id}`}
                 src={previewFile.url}
                 muted={isMuted}
                 playsInline
-                onLoadedMetadata={
-                  handleVideoLoadedMetadata
-                }
+                preload="auto"
+                onLoadedMetadata={handleVideoLoadedMetadata}
                 style={mediaAnimationStyle}
                 className="h-full w-full object-contain"
               />
