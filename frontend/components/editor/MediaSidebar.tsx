@@ -8,6 +8,7 @@ import MediaPanel from "./media-sidebar/MediaPanel";
 import MediaTypeTabs from "./media-sidebar/MediaTypeTabs";
 import TextPanel from "./media-sidebar/TextPanel";
 import AudioPanel from "./media-sidebar/AudioPanel";
+import FXPanel, { type FXPreset } from "./media-sidebar/FXPanel";
 
 // Keeps existing SidebarTab imports working.
 export type { SidebarTab } from "@/composables/useMediaSidebarController";
@@ -18,6 +19,8 @@ type MediaSidebarProps = {
   onAddText: (style: TextStyle) => void;
   onRemoveMedia: (fileId: string) => void | Promise<void>;
   selectedMediaIds: Set<string>;
+  selectedEffectId?: string | null;
+  onSelectEffect?: (effect: FXPreset) => void;
 };
 
 export default function MediaSidebar({
@@ -26,6 +29,8 @@ export default function MediaSidebar({
   onAddText,
   onRemoveMedia,
   selectedMediaIds,
+  selectedEffectId,
+  onSelectEffect,
 }: MediaSidebarProps) {
   const {
     activeTab,
@@ -86,9 +91,10 @@ export default function MediaSidebar({
       )}
 
       {activeTab === "fx" && (
-        <div className="p-4 text-sm text-zinc-400">
-          Effects tools coming soon.
-        </div>
+        <FXPanel
+          selectedEffectId={selectedEffectId}
+          onSelectEffect={onSelectEffect}
+        />
       )}
     </aside>
   );
