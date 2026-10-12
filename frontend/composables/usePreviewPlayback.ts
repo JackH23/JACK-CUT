@@ -1,6 +1,12 @@
+
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const FRAME_RATE = 30;
 
@@ -12,7 +18,6 @@ type UsePreviewPlaybackOptions = {
 
 function formatTime(value: number) {
   const safeValue = Math.max(0, value);
-
   const hours = Math.floor(safeValue / 3600);
   const minutes = Math.floor((safeValue % 3600) / 60);
   const seconds = Math.floor(safeValue % 60);
@@ -30,72 +35,102 @@ export function usePreviewPlayback({
 }: UsePreviewPlaybackOptions) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+
   const playheadRef = useRef(playheadTime);
-  const onPositionChangeRef = useRef(onPlayheadTimeChange);
+  const lastPublishedRef = useRef(playheadTime);
+  const callbackRef = useRef(onPlayheadTimeChange);
+  const isPlayingRef = useRef(false);
 
   useEffect(() => {
-    onPositionChangeRef.current = onPlayheadTimeChange;
+    callbackRef.current = onPlayheadTimeChange;
   }, [onPlayheadTimeChange]);
 
+  // Synchronize external playhead updates while paused.
+  // Avoid overwriting the active playback clock.
   useEffect(() => {
-    playheadRef.current = playheadTime;
-  }, [isPlaying, playheadTime]);
+    if (!isPlayingRef.current) {
+      playheadRef.current = playheadTime;
+      lastPublishedRef.current = playheadTime;
+    }
+  }, [playheadTime]);
 
   useEffect(() => {
+    isPlayingRef.current = isPlaying;
+
     if (!isPlaying || duration <= 0) return;
 
-    let frameId: number;
+    let frameId = 0;
     let previousTime: number | null = null;
 
-    const tick = (time: number) => {
-      if (previousTime !== null) {
-        const elapsedSeconds = (time - previousTime) / 1000;
-
-        playheadRef.current = Math.min(
-          duration,
-          playheadRef.current + elapsedSeconds,
-        );
-
-        onPositionChangeRef.current(playheadRef.current);
-
-        if (playheadRef.current >= duration) {
-          setIsPlaying(false);
-          return;
-        }
+    const tick = (timestamp: number) => {
+      if (previousTime === null) {
+        previousTime = timestamp;
       }
 
-      previousTime = time;
+      const elapsedSeconds = Math.max(
+        0,
+        (timestamp - previousTime) / 1000,
+      );
+
+      previousTime = timestamp;
+
+      const nextTime = Math.min(
+        duration,
+        playheadRef.current + elapsedSeconds,
+      );
+
+      playheadRef.current = nextTime;
+
+      if (
+        nextTime > lastPublishedRef.current
+      ) {
+        lastPublishedRef.current = nextTime;
+        callbackRef.current(nextTime);
+      }
+
+      if (nextTime >= duration) {
+        setIsPlaying(false);
+        return;
+      }
+
       frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);
 
-    return () => cancelAnimationFrame(frameId);
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
   }, [duration, isPlaying]);
 
   const handlePlayPause = useCallback(() => {
     if (duration <= 0) return;
 
-    if (!isPlaying && playheadTime >= duration) {
-      playheadRef.current = 0;
-      onPlayheadTimeChange(0);
-    } else {
-      playheadRef.current = playheadTime;
+    if (!isPlaying) {
+      const startTime =
+        playheadTime >= duration
+          ? 0
+          : playheadTime;
+
+      playheadRef.current = startTime;
+      lastPublishedRef.current = startTime;
+
+      if (playheadTime >= duration) {
+        callbackRef.current(0);
+      }
     }
 
     setIsPlaying((current) => !current);
-  }, [duration, isPlaying, onPlayheadTimeChange, playheadTime]);
+  }, [duration, isPlaying, playheadTime]);
 
   const handleMuteToggle = useCallback(() => {
     setIsMuted((current) => !current);
   }, []);
 
-  const elapsed = playheadTime;
-
   return {
     isPlaying,
     isMuted,
-    currentTime: formatTime(elapsed),
+    currentTime: formatTime(playheadTime),
     totalTime: formatTime(duration),
     handlePlayPause,
     handleMuteToggle,

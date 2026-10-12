@@ -77,7 +77,6 @@ export default function PreviewMonitor({
     totalTime,
     playheadSeconds,
 
-    activeSoundItems,
     activeTextItems,
 
     handleVideoLoadedMetadata,
@@ -157,29 +156,29 @@ export default function PreviewMonitor({
 
         {previewItem && previewFile && ["image", "video"].includes(previewFile.type) && (
           <EditableMediaOverlay key={previewItem.id} item={previewItem} selected={selectedItemId === previewItem.id} time={playheadSeconds} onSelect={() => onSelectItem(previewItem.id)} onTransform={onUpdateMediaTransform}>
-        {previewFile?.type === "image" && (
-          <img
-            src={previewFile.url}
-            alt={previewFile.name}
-            style={mediaAnimationStyle}
-            className="h-full w-full object-contain"
-          />
-        )}
+            {previewFile?.type === "image" && (
+              <img
+                src={previewFile.url}
+                alt={previewFile.name}
+                style={mediaAnimationStyle}
+                className="h-full w-full object-contain"
+              />
+            )}
 
-        {previewFile?.type === "video" && (
-          <video
-            ref={videoRef}
-            key={previewFile.id}
-            src={previewFile.url}
-            muted={isMuted}
-            playsInline
-            onLoadedMetadata={
-              handleVideoLoadedMetadata
-            }
-            style={mediaAnimationStyle}
-            className="h-full w-full object-contain"
-          />
-        )}
+            {previewFile?.type === "video" && (
+              <video
+                ref={videoRef}
+                key={previewFile.id}
+                src={previewFile.url}
+                muted={isMuted}
+                playsInline
+                onLoadedMetadata={
+                  handleVideoLoadedMetadata
+                }
+                style={mediaAnimationStyle}
+                className="h-full w-full object-contain"
+              />
+            )}
 
           </EditableMediaOverlay>
         )}
@@ -245,17 +244,21 @@ export default function PreviewMonitor({
         )}
       </VideoCanvas>
 
-      {activeSoundItems.map((item) => (
-        <TimelineSound
-          key={item.id}
-          item={item}
-          playheadSeconds={
-            playheadSeconds
-          }
-          isPlaying={isPlaying}
-          isMuted={isMuted}
-        />
-      ))}
+      {items
+        .filter(
+          (item) =>
+            item.type === "media" &&
+            item.file?.type === "audio"
+        )
+        .map((item) => (
+          <TimelineSound
+            key={item.id}
+            item={item}
+            playheadSeconds={playheadSeconds}
+            isPlaying={isPlaying}
+            isMuted={isMuted}
+          />
+        ))}
 
       <PlaybackControls
         isPlaying={isPlaying}
@@ -305,6 +308,17 @@ function TimelineSound({
       src={item.file.url}
       muted={isMuted}
       preload="auto"
+      onError={(event) => {
+        const audio = event.currentTarget;
+
+        console.error("Audio loading failed:", {
+          source: audio.currentSrc,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+          errorCode: audio.error?.code,
+          message: audio.error?.message,
+        });
+      }}
     />
   );
 }

@@ -61,7 +61,7 @@ export function usePreviewMonitor({
           item.file.type === "audio" &&
           playheadSeconds >= item.startTime &&
           playheadSeconds <
-            item.startTime + item.duration
+          item.startTime + item.duration
         );
       }),
     [items, playheadSeconds],
@@ -81,7 +81,7 @@ export function usePreviewMonitor({
         return (
           playheadSeconds >= item.startTime &&
           playheadSeconds <
-            item.startTime + item.duration
+          item.startTime + item.duration
         );
       }),
     [items, playheadSeconds],
@@ -102,14 +102,14 @@ export function usePreviewMonitor({
     const sourceTime = Math.max(
       0,
       playheadSeconds -
-        previewItem.startTime +
-        previewItem.sourceStart,
+      previewItem.startTime +
+      previewItem.sourceStart,
     );
 
     if (
-      Math.abs(
-        video.currentTime - sourceTime,
-      ) > (playback.isPlaying ? 0.35 : 0.001)
+      video.readyState >= HTMLMediaElement.HAVE_METADATA &&
+      Math.abs(video.currentTime - sourceTime) >
+      (playback.isPlaying ? 0.5 : 0.04)
     ) {
       video.currentTime = sourceTime;
     }
@@ -127,16 +127,56 @@ export function usePreviewMonitor({
   useEffect(() => {
     const video = videoRef.current;
 
-    if (!video) return;
+    if (!video || previewFile?.type !== "video") {
+      return;
+    }
+
+    let disposed = false;
+    let playPending = false;
+
+    const requestPlayback = () => {
+      if (disposed || !playback.isPlaying) return;
+      if (!video.paused || playPending) return;
+
+      playPending = true;
+
+      void video.play()
+        .catch((error: unknown) => {
+          if (
+            error instanceof DOMException &&
+            (error.name === "AbortError" ||
+              error.name === "NotAllowedError")
+          ) {
+            return;
+          }
+
+          console.error("Video playback failed:", error);
+        })
+        .finally(() => {
+          playPending = false;
+        });
+    };
+
+    const handleCanPlay = () => {
+      requestPlayback();
+    };
+
+    video.addEventListener("canplay", handleCanPlay);
 
     if (playback.isPlaying) {
-      void video.play().catch(console.error);
-    } else {
+      requestPlayback();
+    } else if (!video.paused) {
       video.pause();
     }
+
+    return () => {
+      disposed = true;
+      video.removeEventListener("canplay", handleCanPlay);
+    };
   }, [
     playback.isPlaying,
-    previewFile,
+    previewFile?.id,
+    previewFile?.type,
   ]);
 
   return {
