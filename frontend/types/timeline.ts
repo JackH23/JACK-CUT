@@ -30,6 +30,9 @@ type TimelineItemFields = {
   mediaX?: number;
   mediaY?: number;
 
+  // Media effect
+  effectPreset?: string;
+
   // Animation
   animationPreset?: string;
   animationAmount?: number;

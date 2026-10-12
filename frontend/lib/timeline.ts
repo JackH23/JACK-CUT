@@ -54,6 +54,9 @@ export type TimelineItemUpdateInput = {
   textX?: number;
   textY?: number;
 
+  // Media effect sent in PATCH requests
+  effectPreset?: string;
+
   // Text style
   fontSize?: number;
   fontWeight?: number;
@@ -96,6 +99,9 @@ export type AddTimelineItemResponse = {
     // Text position
     text_x: number | null;
     text_y: number | null;
+
+    // Backend model response uses snake_case
+    effect_preset?: string;
 
     // Text style
     font_size: number | null;
@@ -153,6 +159,9 @@ export type SavedTimelineItem = {
   mediaScale?: number;
   mediaX?: number;
   mediaY?: number;
+
+  // GET timeline response uses camelCase
+  effectPreset?: string;
 
   // Animation
   animationPreset: string;

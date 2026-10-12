@@ -29,6 +29,7 @@ export function useEditorWorkspace(
     selectedMediaIds,
 
     handleUpdateAnimation,
+    handleUpdateEffect,
     handleUpdateMediaTransform,
 
     handleSelectMedia,
@@ -105,6 +106,7 @@ export function useEditorWorkspace(
     handleUpdateTextPosition,
 
     handleUpdateAnimation,
+    handleUpdateEffect,
     handleUpdateMediaTransform,
 
     // Text styling

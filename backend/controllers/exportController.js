@@ -17,6 +17,9 @@ const { getClipAnimationFilters, getClipAnimationWindow } = require("../utils/cl
 const { getMediaParentTransform } = require("../utils/mediaLayout");
 const { getTextAnimationSegments, getTextAnimationTags } = require("../utils/textAnimationAss");
 const { getAssFontMetrics } = require("../utils/textFontMetrics");
+const {
+  getMediaEffectFilters,
+} = require("../utils/mediaEffectFilter");
 
 const { hasAudioStream } = require('../utils/mediaStreams');
 const { failureReason, logExportFailure } = require('../utils/exportDiagnostics');
@@ -279,6 +282,7 @@ async function renderExport(job, items) {
         mediaScale: Number(item.media_scale ?? 1),
         mediaX: Number(item.media_x ?? 0),
         mediaY: Number(item.media_y ?? 0),
+        effectPreset: item.effect_preset ?? "none",
 
         animationInPreset: item.animation_in_preset ?? null,
         animationInDuration: item.animation_in_duration ?? null,
@@ -392,6 +396,7 @@ async function renderExport(job, items) {
           `trim=start=${sourceStart}:duration=${clip.duration}`,
           "setpts=PTS-STARTPTS",
           `fps=${FPS}`,
+          ...getMediaEffectFilters(clip.effectPreset),
         ];
         // Fast static branch outside animation windows. Animations sample the
         // uncut source using the composed base+animation inverse map, so a

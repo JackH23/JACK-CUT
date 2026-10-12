@@ -9,6 +9,7 @@ import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
 import type { PlaybackCoordinator } from "@/lib/playbackCoordinator";
 import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
+import { getMediaEffectFilter } from "@/lib/mediaEffect";
 import type { MediaFile } from "@/lib/media";
 
 import EditableMediaOverlay from "./EditableMediaOverlay";
@@ -137,6 +138,15 @@ export default function PreviewMonitor({
       })
       : {};
 
+  const mediaPreviewStyle = {
+    ...mediaAnimationStyle,
+    filter: getMediaEffectFilter(
+      previewItem?.type === "media"
+        ? previewItem.effectPreset
+        : "none",
+    ),
+  };
+
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
       <PreviewHeader
@@ -164,7 +174,7 @@ export default function PreviewMonitor({
               <img
                 src={previewFile.url}
                 alt={previewFile.name}
-                style={mediaAnimationStyle}
+                style={mediaPreviewStyle}
                 className="h-full w-full object-contain"
               />
             )}
@@ -178,7 +188,7 @@ export default function PreviewMonitor({
                 playsInline
                 preload="auto"
 
-                style={mediaAnimationStyle}
+                style={mediaPreviewStyle}
                 className="h-full w-full object-contain"
               />
             )}
@@ -271,8 +281,8 @@ export default function PreviewMonitor({
 }
 
 type TimelineSoundProps = { item: TimelineItem; coordinator: PlaybackCoordinator; isMuted: boolean };
-function TimelineSound({item, coordinator, isMuted}: TimelineSoundProps) {
-  const {audioRef} = useTimelineSound({item, coordinator});
+function TimelineSound({ item, coordinator, isMuted }: TimelineSoundProps) {
+  const { audioRef } = useTimelineSound({ item, coordinator });
   if (item.type !== "media" || item.file?.type !== "audio") return null;
   return <audio ref={audioRef} src={item.file.url} muted={isMuted} preload="auto" />;
 }

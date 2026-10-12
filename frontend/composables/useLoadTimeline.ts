@@ -59,6 +59,8 @@ export function useLoadTimeline({
                     mediaScale: item.mediaScale ?? 1,
                     mediaX: item.mediaX ?? 0,
                     mediaY: item.mediaY ?? 0,
+                    // Restore the saved media effect
+                    effectPreset: item.effectPreset ?? "none",
                     animationInPreset: item.animationInPreset,
                     animationInDuration: item.animationInDuration,
                     animationInAmount: item.animationInAmount,

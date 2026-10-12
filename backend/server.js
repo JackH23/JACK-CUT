@@ -38,6 +38,8 @@ const fontOptionRoutes =
   require("./routes/fontOptionRoutes");
 const animationOptionRoutes =
   require("./routes/animationOptionRoutes");
+const effectOptionRoutes =
+  require("./routes/effectOptionRoutes");
 
 const app = express();
 
@@ -76,6 +78,11 @@ app.get("/health", (_req, res) => {
 app.get("/", (req, res) => {
   res.json({ message: "JackCut backend is running" });
 });
+
+app.use(
+  "/api/effect-options",
+  effectOptionRoutes,
+);
 
 app.use((error, _req, res, _next) => {
   if (error.name === "MulterError") {

@@ -91,6 +91,17 @@ const TimelineItem = sequelize.define(
     media_x: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0 },
     media_y: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0 },
 
+    // Media effect
+    effect_preset: {
+      type: DataTypes.STRING(100),
+      allowNull: false,
+      defaultValue: "none",
+      references: {
+        model: "effect_options",
+        key: "value",
+      },
+    },
+
     // Animation
     animation_preset: {
       type: DataTypes.STRING(100),

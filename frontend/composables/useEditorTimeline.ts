@@ -91,12 +91,59 @@ export function useEditorTimeline(projectId: string) {
     setTimelineItems,
   });
 
+  const [effectError, setEffectError] = useState<string | null>(null);
+  const effectSavePending = useRef(false);
+
+  const handleUpdateEffect = useCallback(
+    async (id: string, effectPreset: string) => {
+      const item = timelineItems.find((item) => item.id === id);
+
+      if (
+        !item ||
+        item.type !== "media" ||
+        !item.file ||
+        !["image", "video"].includes(item.file.type) ||
+        effectSavePending.current
+      ) {
+        return;
+      }
+
+      effectSavePending.current = true;
+      setEffectError(null);
+
+      try {
+        await timelineService.updateItem(
+          id,
+          { effectPreset },
+          projectId,
+        );
+
+        setTimelineItems((items) =>
+          items.map((item) =>
+            item.id === id
+              ? { ...item, effectPreset }
+              : item,
+          ),
+        );
+      } catch (error) {
+        setEffectError(
+          error instanceof Error
+            ? error.message
+            : "Could not save the effect.",
+        );
+      } finally {
+        effectSavePending.current = false;
+      }
+    },
+    [projectId, timelineItems, setTimelineItems],
+  );
+
   const transformSaves = useRef(new Map<string, Promise<unknown>>());
   const handleUpdateMediaTransform = useCallback((id: string, values: { mediaScale: number; mediaX: number; mediaY: number }, persist = true) => {
     setTimelineItems(items => items.map(item => item.id === id ? { ...item, ...values } : item));
     if (!persist) return;
     const previous = transformSaves.current.get(id) ?? Promise.resolve();
-    const save = previous.catch(() => {}).then(() => timelineService.updateItem(id, values, projectId));
+    const save = previous.catch(() => { }).then(() => timelineService.updateItem(id, values, projectId));
     transformSaves.current.set(id, save);
     void save.catch(error => { console.error("Could not save media transform", error); window.alert("Could not save media size. Reload to restore saved values."); }).finally(() => { if (transformSaves.current.get(id) === save) transformSaves.current.delete(id); });
   }, [projectId, setTimelineItems]);
@@ -234,12 +281,13 @@ export function useEditorTimeline(projectId: string) {
     handleUpdateTextColor,
 
     handleUpdateAnimation,
+    handleUpdateEffect,
     handleUpdateMediaTransform,
 
     handleRemoveMedia,
 
     addingTimelineItem: state.adding,
-    timelineError: animationError ?? state.error,
+    timelineError: effectError ?? animationError ?? state.error,
     handleRemoveTimelineItem,
   };
 }

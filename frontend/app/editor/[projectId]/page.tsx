@@ -80,6 +80,7 @@ function EditorWorkspace({ project }: { project: Project }) {
     handleUpdateTextColor,
 
     handleUpdateAnimation,
+    handleUpdateEffect,
     handleUpdateMediaTransform,
 
     handleRemoveTimelineItem,
@@ -101,6 +102,14 @@ function EditorWorkspace({ project }: { project: Project }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const currentError = exportError || timelineError;
+  const selectedEffectItem =
+    selectedTimelineItem?.type === "media" &&
+    (
+      selectedTimelineItem.file?.type === "image" ||
+      selectedTimelineItem.file?.type === "video"
+    )
+      ? selectedTimelineItem
+      : null;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0d0f15]">
@@ -181,6 +190,21 @@ function EditorWorkspace({ project }: { project: Project }) {
               onAddText={handleAddText}
               onRemoveMedia={handleRemoveMedia}
               selectedMediaIds={selectedMediaIds}
+              selectedEffectId={
+                selectedEffectItem
+                  ? selectedEffectItem.effectPreset ?? "none"
+                  : null
+              }
+              onSelectEffect={
+                selectedEffectItem
+                  ? (effect) => {
+                      void handleUpdateEffect(
+                        selectedEffectItem.id,
+                        effect.id,
+                      );
+                    }
+                  : undefined
+              }
             />
 
             <PreviewMonitor
