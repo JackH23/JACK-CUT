@@ -50,6 +50,7 @@ export default function ClipMediaPreview({ item }: { item: TimelineItem }) {
         file && (
           <video
             src={file.url}
+            preload="metadata"
             muted
             draggable={false}
             className="pointer-events-none h-full w-full select-none object-cover opacity-70"

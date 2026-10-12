@@ -71,6 +71,7 @@ export default function MediaList({
               {file.type === "video" && (
                 <video
                   src={file.url}
+                  preload="metadata"
                   muted
                   className="h-full w-full object-cover"
                 />

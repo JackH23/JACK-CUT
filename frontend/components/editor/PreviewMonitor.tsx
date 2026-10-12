@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import { usePreviewMonitor } from "@/composables/usePreviewMonitor";
+import type { PlaybackCoordinator } from "@/lib/playbackCoordinator";
 import { useTimelineSound } from "@/composables/useTimelineSound";
 import type { TimelineItem } from "@/types/timeline";
 import type { MediaFile } from "@/lib/media";
@@ -79,7 +80,10 @@ export default function PreviewMonitor({
 
     activeTextItems,
 
-    handleVideoLoadedMetadata,
+    coordinator,
+    activeSoundItems,
+    playbackError,
+    handleRetry,
     handlePlayPause,
     handleMuteToggle,
   } = usePreviewMonitor({
@@ -155,7 +159,7 @@ export default function PreviewMonitor({
         )}
 
         {previewItem && previewFile && ["image", "video"].includes(previewFile.type) && (
-          <EditableMediaOverlay key={previewItem.id} item={previewItem} selected={selectedItemId === previewItem.id} time={playheadSeconds} onSelect={() => onSelectItem(previewItem.id)} onTransform={onUpdateMediaTransform}>
+          <EditableMediaOverlay key={previewFile.id} item={previewItem} selected={selectedItemId === previewItem.id} time={playheadSeconds} onSelect={() => onSelectItem(previewItem.id)} onTransform={onUpdateMediaTransform}>
             {previewFile?.type === "image" && (
               <img
                 src={previewFile.url}
@@ -168,12 +172,12 @@ export default function PreviewMonitor({
             {previewFile?.type === "video" && (
               <video
                 ref={videoRef}
-                key={`${previewItem.id}:${previewFile.id}`}
+                key={previewFile.id}
                 src={previewFile.url}
                 muted={isMuted}
                 playsInline
                 preload="auto"
-                onLoadedMetadata={handleVideoLoadedMetadata}
+
                 style={mediaAnimationStyle}
                 className="h-full w-full object-contain"
               />
@@ -243,22 +247,15 @@ export default function PreviewMonitor({
         )}
       </VideoCanvas>
 
-      {items
-        .filter(
-          (item) =>
-            item.type === "media" &&
-            item.file?.type === "audio"
-        )
-        .map((item) => (
-          <TimelineSound
-            key={item.id}
-            item={item}
-            playheadSeconds={playheadSeconds}
-            isPlaying={isPlaying}
-            isMuted={isMuted}
-          />
-        ))}
-
+      {activeSoundItems.map(item => (
+        <TimelineSound key={item.id} item={item} coordinator={coordinator} isMuted={isMuted} />
+      ))}
+      {playbackError && (
+        <div role="alert" className="flex items-center justify-between gap-2 bg-red-950 px-4 py-2 text-sm">
+          <span>{playbackError}</span>
+          <button type="button" onClick={handleRetry} className="rounded bg-white/20 px-3 py-1">Retry playback</button>
+        </div>
+      )}
       <PlaybackControls
         isPlaying={isPlaying}
         isMuted={isMuted}
@@ -273,51 +270,9 @@ export default function PreviewMonitor({
   );
 }
 
-type TimelineSoundProps = {
-  item: TimelineItem;
-  playheadSeconds: number;
-  isPlaying: boolean;
-  isMuted: boolean;
-};
-
-function TimelineSound({
-  item,
-  playheadSeconds,
-  isPlaying,
-  isMuted,
-}: TimelineSoundProps) {
-  const { audioRef } =
-    useTimelineSound({
-      item,
-      playheadSeconds,
-      isPlaying,
-    });
-
-  if (
-    item.type !== "media" ||
-    !item.file ||
-    item.file.type !== "audio"
-  ) {
-    return null;
-  }
-
-  return (
-    <audio
-      ref={audioRef}
-      src={item.file.url}
-      muted={isMuted}
-      preload="auto"
-      onError={(event) => {
-        const audio = event.currentTarget;
-
-        console.error("Audio loading failed:", {
-          source: audio.currentSrc,
-          readyState: audio.readyState,
-          networkState: audio.networkState,
-          errorCode: audio.error?.code,
-          message: audio.error?.message,
-        });
-      }}
-    />
-  );
+type TimelineSoundProps = { item: TimelineItem; coordinator: PlaybackCoordinator; isMuted: boolean };
+function TimelineSound({item, coordinator, isMuted}: TimelineSoundProps) {
+  const {audioRef} = useTimelineSound({item, coordinator});
+  if (item.type !== "media" || item.file?.type !== "audio") return null;
+  return <audio ref={audioRef} src={item.file.url} muted={isMuted} preload="auto" />;
 }
