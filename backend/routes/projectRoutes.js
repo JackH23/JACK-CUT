@@ -6,6 +6,7 @@ const {
   createProject,
   getProjects,
   getProject,
+  updateProject,
   deleteProject,
 } = require("../controllers/projectController");
 
@@ -22,6 +23,9 @@ router.get("/", getProjects);
 
 // Get a single project
 router.get("/:id", getProject);
+
+// Update project name
+router.patch("/:id", updateProject);
 
 // Delete a project belonging to the user
 router.delete("/:id", deleteProject);

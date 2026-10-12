@@ -139,10 +139,61 @@ async function deleteProject(req, res) {
   }
 }
 
+async function updateProject(req, res) {
+  if (!isUuid(req.params.id)) {
+    return res.status(400).json({
+      message: "Valid project ID required.",
+    });
+  }
+
+  const name = req.body?.name;
+
+  if (
+    typeof name !== "string" ||
+    !name.trim() ||
+    name.trim().length > 255
+  ) {
+    return res.status(400).json({
+      message:
+        "Project name is required and must be at most 255 characters.",
+    });
+  }
+
+  try {
+    const [updatedCount, updatedProjects] = await Project.update(
+      { name: name.trim() },
+      {
+        where: {
+          id: req.params.id,
+          user_id: req.user.id,
+        },
+        returning: true,
+      },
+    );
+
+    if (updatedCount === 0) {
+      return res.status(404).json({
+        message: "Project not found.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Project name updated.",
+      project: updatedProjects[0],
+    });
+  } catch (error) {
+    console.error("Update project error:", error);
+
+    return res.status(500).json({
+      message: "Could not update project name.",
+    });
+  }
+}
 
 module.exports = {
   createProject,
   getProjects,
   getProject,
+  updateProject,
   deleteProject,
 };

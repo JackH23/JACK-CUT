@@ -32,16 +32,19 @@ export const initialProjectsState: ProjectsState = {
 type ProjectsAction =
   | { type: "LOAD_START" }
   | {
-      type: "LOAD_SUCCESS";
-      payload: GetProjectsResponse;
-    }
+    type: "LOAD_SUCCESS";
+    payload: GetProjectsResponse;
+  }
   | { type: "LOAD_ERROR"; payload: string }
   | { type: "CREATE_START" }
   | { type: "CREATE_SUCCESS" }
   | { type: "CREATE_ERROR"; payload: string }
   | { type: "DELETE_START" }
   | { type: "DELETE_SUCCESS"; payload: string }
-  | { type: "DELETE_ERROR"; payload: string };
+  | { type: "DELETE_ERROR"; payload: string }
+  | { type: "UPDATE_START" }
+  | { type: "UPDATE_SUCCESS"; payload: Project }
+  | { type: "UPDATE_ERROR"; payload: string };
 
 export function projectsReducer(
   state: ProjectsState,
@@ -126,6 +129,29 @@ export function projectsReducer(
     }
 
     case "DELETE_ERROR":
+      return {
+        ...state,
+        error: action.payload,
+      };
+
+    case "UPDATE_START":
+      return {
+        ...state,
+        error: "",
+      };
+
+    case "UPDATE_SUCCESS":
+      return {
+        ...state,
+        projects: state.projects.map((project) =>
+          project.id === action.payload.id
+            ? { ...project, name: action.payload.name }
+            : project,
+        ),
+        error: "",
+      };
+
+    case "UPDATE_ERROR":
       return {
         ...state,
         error: action.payload,

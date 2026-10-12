@@ -46,6 +46,21 @@ export const projectService = {
     return data.project;
   },
 
+  async updateName(
+    id: string,
+    name: string,
+  ): Promise<Project> {
+    const { data } = await api.patch<{
+      message: string;
+      project: Project;
+    }>(
+      `/projects/${encodeURIComponent(id)}`,
+      { name: name.trim() },
+    );
+
+    return data.project;
+  },
+
   async delete(id: string): Promise<DeleteProjectResponse> {
     const { data } = await api.delete<DeleteProjectResponse>(
       `/projects/${encodeURIComponent(id)}`,

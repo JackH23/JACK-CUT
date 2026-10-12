@@ -58,6 +58,13 @@ export function useProjectsPage() {
   const creatingRef = useRef(false);
   const changingPageRef = useRef(false);
 
+  const [projectToRename, setProjectToRename] =
+    useState<Project | null>(null);
+
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const renamingRef = useRef(false);
+
   useEffect(() => {
     let active = true;
 
@@ -123,7 +130,9 @@ export function useProjectsPage() {
       !state.hasNextPage ||
       changingPageRef.current ||
       deletingRef.current ||
-      projectToDelete
+      renamingRef.current ||
+      projectToDelete ||
+      projectToRename
     ) {
       return;
     }
@@ -136,6 +145,7 @@ export function useProjectsPage() {
     state.hasNextPage,
     state.page,
     projectToDelete,
+    projectToRename,
   ]);
 
   const previousPage = useCallback(() => {
@@ -144,7 +154,9 @@ export function useProjectsPage() {
       !state.hasPreviousPage ||
       changingPageRef.current ||
       deletingRef.current ||
-      projectToDelete
+      renamingRef.current ||
+      projectToDelete ||
+      projectToRename
     ) {
       return;
     }
@@ -157,6 +169,7 @@ export function useProjectsPage() {
     state.hasPreviousPage,
     state.page,
     projectToDelete,
+    projectToRename,
   ]);
 
   async function handleCreate(
@@ -166,7 +179,16 @@ export function useProjectsPage() {
 
     const trimmedName = name.trim();
 
-    if (!trimmedName || creatingRef.current) return;
+    if (
+      !trimmedName ||
+      creatingRef.current ||
+      deletingRef.current ||
+      renamingRef.current ||
+      projectToDelete ||
+      projectToRename
+    ) {
+      return;
+    }
 
     creatingRef.current = true;
     dispatch({ type: "CREATE_START" });
@@ -202,8 +224,10 @@ export function useProjectsPage() {
     (project: Project) => {
       if (
         deletingRef.current ||
+        renamingRef.current ||
         changingPageRef.current ||
-        state.loading
+        state.loading ||
+        projectToRename
       ) {
         return;
       }
@@ -211,7 +235,7 @@ export function useProjectsPage() {
       dispatch({ type: "DELETE_START" });
       setProjectToDelete(project);
     },
-    [state.loading],
+    [state.loading, projectToRename],
   );
 
   const cancelDelete = useCallback(() => {
@@ -277,6 +301,97 @@ export function useProjectsPage() {
     router,
   ]);
 
+  const requestRename = useCallback(
+    (project: Project) => {
+      if (
+        state.loading ||
+        changingPageRef.current ||
+        creatingRef.current ||
+        deletingRef.current ||
+        renamingRef.current ||
+        projectToDelete ||
+        projectToRename
+      ) {
+        return;
+      }
+
+      dispatch({ type: "UPDATE_START" });
+      setRenameName(project.name);
+      setProjectToRename(project);
+    },
+    [state.loading, projectToDelete, projectToRename],
+  );
+
+  const cancelRename = useCallback(() => {
+    if (renamingRef.current) return;
+
+    setProjectToRename(null);
+    setRenameName("");
+    dispatch({ type: "UPDATE_START" });
+  }, []);
+
+  async function handleRename(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!projectToRename || renamingRef.current) return;
+
+    const trimmedName = renameName.trim();
+
+    if (!trimmedName || trimmedName.length > 255) {
+      dispatch({
+        type: "UPDATE_ERROR",
+        payload:
+          "Project name is required and must be at most 255 characters.",
+      });
+      return;
+    }
+
+    if (trimmedName === projectToRename.name) {
+      cancelRename();
+      return;
+    }
+
+    renamingRef.current = true;
+    setRenaming(true);
+    dispatch({ type: "UPDATE_START" });
+
+    try {
+      const project = await projectService.updateName(
+        projectToRename.id,
+        trimmedName,
+      );
+
+      dispatch({
+        type: "UPDATE_SUCCESS",
+        payload: project,
+      });
+
+      setProjectToRename(null);
+      setRenameName("");
+    } catch (cause: unknown) {
+      if (
+        axios.isAxiosError(cause) &&
+        cause.response?.status === 401
+      ) {
+        router.replace("/login");
+        return;
+      }
+
+      dispatch({
+        type: "UPDATE_ERROR",
+        payload: getErrorMessage(
+          cause,
+          "Could not update project name.",
+        ),
+      });
+    } finally {
+      renamingRef.current = false;
+      setRenaming(false);
+    }
+  }
+
   return {
     name,
     setName,
@@ -302,5 +417,13 @@ export function useProjectsPage() {
     requestDelete,
     cancelDelete,
     confirmDelete,
+
+    projectToRename,
+    renameName,
+    setRenameName,
+    renaming,
+    requestRename,
+    cancelRename,
+    handleRename,
   };
 }

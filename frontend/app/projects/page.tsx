@@ -11,6 +11,7 @@ import ProjectsHeader from "@/components/projects/ProjectsHeader";
 import CreateProject from "@/components/projects/CreateProject";
 import ExistingProjects from "@/components/projects/ExistingProjects";
 import DeleteProjectModal from "@/components/projects/DeleteProjectModal";
+import RenameProjectModal from "@/components/projects/RenameProjectModal";
 
 function FocusCreateProject({ ready }: { ready: boolean }) {
   const searchParams = useSearchParams();
@@ -44,6 +45,13 @@ export default function ProjectsPage() {
     requestDelete,
     cancelDelete,
     confirmDelete,
+    projectToRename,
+    renameName,
+    setRenameName,
+    renaming,
+    requestRename,
+    cancelRename,
+    handleRename,
   } = useProjectsPage();
 
   return (
@@ -54,7 +62,7 @@ export default function ProjectsPage() {
 
       <div
         className="mx-auto w-full max-w-[1440px] px-5 py-8 sm:px-8 sm:py-10 lg:px-12 lg:py-12"
-        inert={Boolean(projectToDelete)}
+        inert={Boolean(projectToDelete || projectToRename)}
       >
         <ProjectsHeader
           totalProjects={total}
@@ -68,7 +76,7 @@ export default function ProjectsPage() {
           handleCreate={handleCreate}
         />
 
-        {error && !projectToDelete && (
+        {error && !projectToDelete && !projectToRename && (
           <p
             role="alert"
             className="mb-6 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300"
@@ -87,6 +95,7 @@ export default function ProjectsPage() {
               loading={loading}
               deleting={deleting}
               onRequestDelete={requestDelete}
+              onRequestRename={requestRename}
             />
           )}
         </div>
@@ -103,6 +112,16 @@ export default function ProjectsPage() {
           />
         </div>
       </div>
+
+      <RenameProjectModal
+        project={projectToRename}
+        name={renameName}
+        setName={setRenameName}
+        renaming={renaming}
+        error={error}
+        onCancel={cancelRename}
+        onSubmit={handleRename}
+      />
 
       <DeleteProjectModal
         project={projectToDelete}

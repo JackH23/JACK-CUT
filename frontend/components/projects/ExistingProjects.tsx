@@ -4,15 +4,13 @@ import Link from "next/link";
 import {
   ArrowRight,
   Clapperboard,
+  Pencil,
   Plus,
   Trash2,
   Video,
 } from "lucide-react";
 
-type Project = {
-  id: string;
-  name: string;
-};
+import type { Project } from "@/lib/project";
 
 type ExistingProjectsProps = {
   projects: Project[];
@@ -20,6 +18,7 @@ type ExistingProjectsProps = {
   loading: boolean;
   deleting: boolean;
   onRequestDelete: (project: Project) => void;
+  onRequestRename: (project: Project) => void;
 };
 
 export default function ExistingProjects({
@@ -28,9 +27,15 @@ export default function ExistingProjects({
   loading,
   deleting,
   onRequestDelete,
+  onRequestRename,
 }: ExistingProjectsProps) {
+  const isBusy = loading || deleting;
+
   return (
-    <section id="existing-projects">
+    <section
+      id="existing-projects"
+      aria-labelledby="existing-projects-title"
+    >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2
@@ -72,7 +77,8 @@ export default function ExistingProjects({
             onClick={() =>
               document.getElementById("project-name")?.focus()
             }
-            className="mt-6 flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold transition hover:bg-purple-500"
+            disabled={isBusy}
+            className="mt-6 flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={17} />
             Create Your First Project
@@ -111,7 +117,7 @@ export default function ExistingProjects({
                   Video editing project
                 </p>
 
-                <div className="mt-5 flex items-center justify-between gap-2 border-t border-white/10 pt-4">
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4">
                   <Link
                     href={`/editor/${project.id}`}
                     className="inline-flex items-center gap-2 text-sm font-medium text-purple-400 transition hover:text-purple-300"
@@ -120,16 +126,29 @@ export default function ExistingProjects({
                     <ArrowRight size={16} />
                   </Link>
 
-                  <button
-                    type="button"
-                    onClick={() => onRequestDelete(project)}
-                    disabled={deleting}
-                    aria-label={`Delete ${project.name}`}
-                    title="Delete project"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Trash2 size={17} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onRequestRename(project)}
+                      disabled={isBusy}
+                      aria-label={`Rename ${project.name}`}
+                      title="Rename project"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-purple-500/10 hover:text-purple-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Pencil size={17} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onRequestDelete(project)}
+                      disabled={isBusy}
+                      aria-label={`Delete ${project.name}`}
+                      title="Delete project"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </article>
