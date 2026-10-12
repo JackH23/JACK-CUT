@@ -6,6 +6,16 @@ const sequelize = require("../config/database");
 const { hasActiveProjectExport } = require("./exportController");
 const isUuid = value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
+function isDuplicateProjectName(error) {
+  return (
+    error?.name === "SequelizeUniqueConstraintError" &&
+    (
+      error?.original?.constraint === "projects_user_name_unique" ||
+      error?.parent?.constraint === "projects_user_name_unique"
+    )
+  );
+}
+
 async function createProject(req, res) {
   try {
     const name = req.body?.name;
@@ -30,8 +40,18 @@ async function createProject(req, res) {
       },
     });
   } catch (error) {
+    if (isDuplicateProjectName(error)) {
+      return res.status(409).json({
+        message:
+          "You already have a project with this name. Choose another name.",
+      });
+    }
+
     console.error("Create project error:", error);
-    return res.status(500).json({ message: "Could not create project." });
+
+    return res.status(500).json({
+      message: "Could not create project.",
+    });
   }
 }
 
@@ -182,6 +202,13 @@ async function updateProject(req, res) {
       project: updatedProjects[0],
     });
   } catch (error) {
+    if (isDuplicateProjectName(error)) {
+      return res.status(409).json({
+        message:
+          "You already have a project with this name. Choose another name.",
+      });
+    }
+
     console.error("Update project error:", error);
 
     return res.status(500).json({
