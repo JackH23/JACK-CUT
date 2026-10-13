@@ -68,3 +68,57 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+.logo-scene {
+  perspective: 500px;
+}
+
+.logo-float {
+  animation: logo-float 3s ease-in-out infinite;
+}
+
+.logo-rotate {
+  animation: logo-rotate 5s linear infinite;
+  will-change: transform;
+}
+
+.logo-glow {
+  animation: logo-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes logo-rotate {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes logo-float {
+  0%, 100% {
+    transform: translateY(0) rotateZ(-4deg);
+  }
+  50% {
+    transform: translateY(-8px) rotateZ(4deg);
+  }
+}
+
+@keyframes logo-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgb(249 115 22 / 45%));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgb(249 115 22 / 85%))
+      brightness(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-float,
+  .logo-rotate,
+  .logo-glow {
+    animation: none;
+    will-change: auto;
+  }
+}

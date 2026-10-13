@@ -1,11 +1,8 @@
 
 "use client";
 
-import {
-  Film,
-  LoaderCircle,
-  X,
-} from "lucide-react";
+import Image from "next/image";
+import { LoaderCircle, X } from "lucide-react";
 
 type ExportProgressProps = {
   progress?: number | null;
@@ -39,11 +36,18 @@ export default function ExportProgress({
       className="w-full max-w-md rounded-2xl border border-white/10 bg-[#191b25] p-6 text-white shadow-2xl"
     >
       <div className="mb-6 flex items-center gap-3">
-        <div className="rounded-xl bg-purple-500/10 p-3">
-          <Film
-            size={24}
-            className="text-purple-400"
-          />
+        <div className="logo-scene h-14 w-14 shrink-0">
+          <div className="logo-float h-full w-full">
+            <div className="logo-rotate relative h-full w-full">
+              <Image
+                src="/icon/jackcut-3d.png"
+                alt="JACK-CUT logo"
+                fill
+                sizes="56px"
+                className="logo-glow object-contain"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1">
