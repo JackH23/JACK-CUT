@@ -144,7 +144,7 @@ for(const event of ['finish','close']) test('project deletion waits for active d
 test('project DELETE route requires real JWT middleware before the controller', async () => {
   const jwt = require('jsonwebtoken'), secret = 'project-route-test-only';
   const auth = load('middleware/authMiddleware.js', { '../models/User': { findByPk: async id => id === 'owner' ? { id } : null } }, { JWT_SECRET: secret });
-  const controllers = { createProject() {}, getProjects() {}, getProject() {}, deleteProject() {} };
+  const controllers = { createProject() {}, getProjects() {}, getProject() {}, updateProject() {}, deleteProject() {} };
   const router = load('routes/projectRoutes.js', { '../middleware/authMiddleware': auth, '../controllers/projectController': controllers });
   assert.equal(router.stack[0].handle, auth);
   const route = router.stack.find(layer => layer.route?.methods.delete);

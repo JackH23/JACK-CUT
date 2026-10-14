@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>JACK-CUT read-only benchmark capture</title>
+<style>body{font:16px system-ui;max-width:1000px;margin:32px auto;padding:16px}button,a{margin:8px;padding:10px}textarea{width:100%;height:420px}pre{white-space:pre-wrap}</style>
+<h1>Read-only benchmark capture</h1><p>Local diagnostic only. GET requests use the existing signed-in application session. No project writes, exports, refresh requests or credential output.</p>
+<button id="capture">Capture exact timeline</button><button id="audio" disabled>Download referenced audio</button><a id="audio-link" hidden download="21-Ethereal-Relaxation-600s.wav">Save captured audio</a>
+<a id="snapshot-link" hidden download="jackcut-authenticated-capture.json">Save sanitized snapshot</a><pre id="status">Ready</pre><textarea id="snapshot" readonly aria-label="Sanitized timeline snapshot"></textarea>
+<script>
+(() => {
+ const status=document.getElementById('status'),out=document.getElementById('snapshot'),audioButton=document.getElementById('audio');
+ if(!['localhost','127.0.0.1'].includes(location.hostname)){status.textContent='Localhost only';return;}
+ const projectId='dd992cea-76b0-4476-aa42-f7283d421c7c',jobId='3a3b2e9a-b187-4cc9-b6a7-fe23d2d82eda',api='http://localhost:5001';
+ const fields=['id','projectId','itemType','mediaId','textContent','textStyle','textX','textY','fontSize','fontWeight','fontFamily','textColor','mediaScale','mediaX','mediaY','effectPreset','animationInPreset','animationInDuration','animationInAmount','animationOutPreset','animationOutDuration','animationOutAmount','animationPreset','animationAmount','trackId','startTime','duration','sourceStart'];
+ let captured,rawTimeline,audio;
+ async function get(route){const token=localStorage.getItem('accessToken');if(!token)throw Error('Sign in through the existing app first');const response=await fetch(api+route,{method:'GET',redirect:'error',headers:{Authorization:'Bearer '+token}});if(!response.ok)throw Error('Application GET returned HTTP '+response.status);return response;}
+ const json=async route=>(await get(route)).json();
+ const cleanItems=items=>items.map(item=>Object.fromEntries(fields.map(field=>[field,item[field]??null])));
+ document.getElementById('capture').onclick=async()=>{try{
+ status.textContent='Reading exact saved project and timeline';
+ const p=await json('/api/projects/'+projectId),t=await json('/api/timeline/items?projectId='+projectId),m=await json('/api/media?projectId='+projectId);
+ if(p.project?.id!==projectId||t.total!==t.items?.length||t.items.some(i=>i.projectId!==projectId))throw Error('Incomplete project identity or timeline');
+ rawTimeline=cleanItems(t.items);const ids=new Set(rawTimeline.filter(i=>i.itemType==='MEDIA').map(i=>i.mediaId));
+ const assets=m.media.filter(a=>ids.has(a.id)).map(a=>({id:a.id,name:a.name,type:a.type,size:a.size,mimeType:a.mimeType,durationSeconds:a.durationSeconds}));
+ if(assets.length!==ids.size)throw Error('Referenced asset missing');
+ let jobRead={readable:false};try{const j=await json('/api/exports/'+jobId);jobRead={readable:true,id:j.id,status:j.status,progress:j.progress,stage:j.stage,metrics:Object.fromEntries(['renderSeconds','totalSeconds','fps','speed'].filter(k=>typeof j.metrics?.[k]==='number').map(k=>[k,j.metrics[k]]))};}catch{jobRead={readable:false,reason:'Job not readable through current application session'};}
+ const reread=cleanItems((await json('/api/timeline/items?projectId='+projectId)).items);if(JSON.stringify(reread)!==JSON.stringify(rawTimeline))throw Error('Timeline changed during capture');
+ captured={captureVersion:1,apiOrigin:api,projectId,jobId,project:{id:p.project.id,name:p.project.name,updatedAt:p.project.updatedAt??null},capturedAt:new Date().toISOString(),items:rawTimeline,media:assets,jobRead,productionAssociationVerified:false};
+ out.value=JSON.stringify(captured,null,2);const snapshotLink=document.getElementById('snapshot-link');snapshotLink.href=URL.createObjectURL(new Blob([out.value],{type:'application/json'}));snapshotLink.hidden=false;audio=assets.find(a=>a.type==='audio');audioButton.disabled=!audio;
+ status.textContent='Captured '+rawTimeline.length+' exact timeline items and '+assets.length+' referenced assets; credentials and signed URLs excluded';
+ }catch{status.textContent='Capture failed: session, identity, API access or stable timeline required';}};
+ audioButton.onclick=async()=>{try{
+ audioButton.disabled=true;status.textContent='Downloading audio through authenticated GET';const response=await get('/api/media/'+audio.id+'/content');
+ const reader=response.body.getReader(),chunks=[];let bytes=0;
+ while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);bytes+=value.byteLength;status.textContent='Audio download: '+bytes+' / '+audio.size+' bytes';}
+ if(bytes!==Number(audio.size))throw Error('Audio size mismatch');
+ const encoded=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){encoded.set(chunk,offset);offset+=chunk.length;}
+ const digest=await crypto.subtle.digest('SHA-256',encoded);captured.audioCapture={id:audio.id,bytes,sha256:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')};
+ const reread=cleanItems((await json('/api/timeline/items?projectId='+projectId)).items);if(JSON.stringify(reread)!==JSON.stringify(rawTimeline))throw Error('Timeline changed during audio capture');
+ out.value=JSON.stringify(captured,null,2);document.getElementById('snapshot-link').href=URL.createObjectURL(new Blob([out.value],{type:'application/json'}));const link=document.getElementById('audio-link');link.href=URL.createObjectURL(new Blob(chunks,{type:audio.mimeType}));link.hidden=false;
+ status.textContent='Audio complete and hashed. Save captured audio; timeline is unchanged.';
+ }catch{status.textContent='Audio capture failed: session, API access, size or stable timeline required';audioButton.disabled=false;}};
+})();
+</script></html>
+

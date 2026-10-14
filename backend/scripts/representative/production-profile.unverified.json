@@ -1,0 +1,23 @@
+{
+  "evidence": "User-supplied last-known configuration; NOT verified on failing deployment",
+  "platform": null,
+  "architecture": null,
+  "cpuModel": null,
+  "cpuCores": 2,
+  "ramBytes": 4294967296,
+  "ffmpegVersionSha256": null,
+  "ffprobeVersionSha256": null,
+  "nodeVersion": null,
+  "fontFingerprint": null,
+  "settings": {"threads": 1, "prepareConcurrency": 2, "preset": null, "encoder": null},
+  "maxConcurrentRenders": 1,
+  "concurrency": 1,
+  "exportTimeoutMs": 7200000,
+  "lastKnownStallTimeoutMs": 300000,
+  "lastKnownLeaseTimeoutMs": 90000,
+  "baselineRef": null,
+  "isolatedExecutionConfirmed": false,
+  "projectJobAssociationVerified": false,
+  "failureTimeSnapshotVerified": false,
+  "renderTieOrderVerified": false
+}

@@ -1,0 +1,456 @@
+{
+  "baselineCommit": "d21b5c5b505eb3f195a76066f722657601130e81",
+  "branch": "Jack",
+  "timeoutMs": 7200000,
+  "hardware": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12400F",
+    "logicalCPUs": 12,
+    "memoryGiB": 31.833412170410156
+  },
+  "rows": [
+    {
+      "name": "fade-in",
+      "before": {
+        "mode": "before",
+        "preset": "fade-in",
+        "duration": 3,
+        "seconds": 10.911,
+        "benchmark": "bench: maxrss=458924KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/before-fade-in.mp4"
+      },
+      "after": {
+        "mode": "verified",
+        "preset": "fade-in",
+        "duration": 3,
+        "seconds": 3.937,
+        "benchmark": "bench: maxrss=449724KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/verified-fade-in.mp4"
+      }
+    },
+    {
+      "name": "zoom-in",
+      "before": {
+        "mode": "before",
+        "preset": "zoom-in",
+        "duration": 3,
+        "seconds": 22.712,
+        "benchmark": "bench: maxrss=476936KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/before-zoom-in.mp4"
+      },
+      "after": {
+        "mode": "verified",
+        "preset": "zoom-in",
+        "duration": 3,
+        "seconds": 17.896,
+        "benchmark": "bench: maxrss=476836KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/verified-zoom-in.mp4"
+      }
+    },
+    {
+      "name": "slide-right",
+      "before": {
+        "mode": "before",
+        "preset": "slide-right",
+        "duration": 3,
+        "seconds": 21.771,
+        "benchmark": "bench: maxrss=476532KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/before-slide-right.mp4"
+      },
+      "after": {
+        "mode": "verified",
+        "preset": "slide-right",
+        "duration": 3,
+        "seconds": 16.692,
+        "benchmark": "bench: maxrss=476528KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/verified-slide-right.mp4"
+      }
+    },
+    {
+      "name": "large",
+      "before": {
+        "mode": "before",
+        "preset": "large",
+        "duration": 3,
+        "seconds": 26.693,
+        "benchmark": "bench: maxrss=1256960KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/before-large.mp4"
+      },
+      "after": {
+        "mode": "verified",
+        "preset": "large",
+        "duration": 3,
+        "seconds": 7.57,
+        "benchmark": "bench: maxrss=1049132KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/verified-large.mp4"
+      }
+    },
+    {
+      "name": "10-minute fixture",
+      "before": {
+        "mode": "long-before",
+        "preset": "mixed-600",
+        "duration": 600,
+        "seconds": 503.802,
+        "benchmark": "bench: maxrss=567352KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/long-before-mixed-600.mp4"
+      },
+      "after": {
+        "mode": "long-after",
+        "preset": "mixed-600",
+        "duration": 600,
+        "seconds": 519.462,
+        "benchmark": "bench: maxrss=567040KiB",
+        "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/long-after-mixed-600.mp4"
+      }
+    }
+  ],
+  "matrixBefore": [
+    {
+      "mode": "matrix-before",
+      "preset": "fade0",
+      "duration": 0.6,
+      "seconds": 0.656,
+      "benchmark": "bench: maxrss=228280KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade0.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fade1",
+      "duration": 0.6,
+      "seconds": 3.08,
+      "benchmark": "bench: maxrss=232524KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade1.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fade25",
+      "duration": 0.6,
+      "seconds": 3.279,
+      "benchmark": "bench: maxrss=232500KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade25.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fade50",
+      "duration": 0.6,
+      "seconds": 3.346,
+      "benchmark": "bench: maxrss=232332KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade50.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fade75",
+      "duration": 0.6,
+      "seconds": 3.355,
+      "benchmark": "bench: maxrss=232248KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade75.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fade100",
+      "duration": 0.6,
+      "seconds": 3.324,
+      "benchmark": "bench: maxrss=232228KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fade100.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "legacy",
+      "duration": 0.6,
+      "seconds": 4.996,
+      "benchmark": "bench: maxrss=232436KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-legacy.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "transformed",
+      "duration": 0.6,
+      "seconds": 8.098,
+      "benchmark": "bench: maxrss=230468KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-transformed.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "overlap",
+      "duration": 0.6,
+      "seconds": 4.377,
+      "benchmark": "bench: maxrss=232320KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-overlap.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "video",
+      "duration": 0.6,
+      "seconds": 3.61,
+      "benchmark": "bench: maxrss=323520KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-video.mp4"
+    },
+    {
+      "mode": "matrix-before",
+      "preset": "fx",
+      "duration": 0.6,
+      "seconds": 3.328,
+      "benchmark": "bench: maxrss=248580KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-before-fx.mp4"
+    }
+  ],
+  "matrixAfter": [
+    {
+      "mode": "matrix-after",
+      "preset": "fade0",
+      "duration": 0.6,
+      "seconds": 0.683,
+      "benchmark": "bench: maxrss=228028KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade0.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fade1",
+      "duration": 0.6,
+      "seconds": 0.918,
+      "benchmark": "bench: maxrss=229220KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade1.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fade25",
+      "duration": 0.6,
+      "seconds": 1.298,
+      "benchmark": "bench: maxrss=228680KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade25.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fade50",
+      "duration": 0.6,
+      "seconds": 1.345,
+      "benchmark": "bench: maxrss=229120KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade50.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fade75",
+      "duration": 0.6,
+      "seconds": 1.324,
+      "benchmark": "bench: maxrss=229408KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade75.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fade100",
+      "duration": 0.6,
+      "seconds": 1.273,
+      "benchmark": "bench: maxrss=229588KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fade100.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "legacy",
+      "duration": 0.6,
+      "seconds": 1.408,
+      "benchmark": "bench: maxrss=230384KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-legacy.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "transformed",
+      "duration": 0.6,
+      "seconds": 4.82,
+      "benchmark": "bench: maxrss=246300KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-transformed.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "overlap",
+      "duration": 0.6,
+      "seconds": 1.251,
+      "benchmark": "bench: maxrss=229116KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-overlap.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "video",
+      "duration": 0.6,
+      "seconds": 1.463,
+      "benchmark": "bench: maxrss=274088KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-video.mp4"
+    },
+    {
+      "mode": "matrix-after",
+      "preset": "fx",
+      "duration": 0.6,
+      "seconds": 1.185,
+      "benchmark": "bench: maxrss=240116KiB",
+      "output": "C:\\Users\\User\\.codex\\worktrees\\2abe\\JACK-CUT\\export-benchmark/matrix-after-fx.mp4"
+    }
+  ],
+  "comparisons": [
+    {
+      "name": "fade-in",
+      "before": "before",
+      "after": "verified",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "zoom-in",
+      "before": "before",
+      "after": "verified",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "slide-right",
+      "before": "before",
+      "after": "verified",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "large",
+      "before": "before",
+      "after": "verified",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade0",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade1",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade25",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade50",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade75",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fade100",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "legacy",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "transformed",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "overlap",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "video",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "fx",
+      "before": "matrix-before",
+      "after": "matrix-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    },
+    {
+      "name": "mixed-600",
+      "before": "long-before",
+      "after": "long-after",
+      "identical": true,
+      "metadataMatched": true,
+      "psnr": "PSNR y:inf u:inf v:inf average:inf min:inf max:inf",
+      "status": 0
+    }
+  ],
+  "validation": {
+    "duration": 600,
+    "video": {
+      "codec": "h264",
+      "width": 1920,
+      "height": 1080,
+      "frames": 18000,
+      "fps": "30/1"
+    },
+    "audio": {
+      "codec": "aac",
+      "channels": 1,
+      "duration": 600,
+      "meanVolumeDb": -21.1
+    },
+    "fullDecodeExitCode": 0
+  },
+  "tests": {
+    "total": 287,
+    "passed": 287,
+    "failed": 0
+  },
+  "productionVerified": false
+}

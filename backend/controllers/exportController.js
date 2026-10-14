@@ -13,7 +13,7 @@ const Project = require("../models/Project");
 const ProjectMedia = require("../models/ProjectMedia");
 const storage = require("../services/storage");
 const { fileUrl } = require("../services/fileAccess");
-const { getClipAnimationFilters, getClipAnimationWindow } = require("../utils/clipAnimationFilter");
+const { getClipAnimationConfig, getClipAnimationFilters, getClipAnimationWindow, getClipFadeExpression, getClipFadeCommands } = require("../utils/clipAnimationFilter");
 const { getMediaParentTransform } = require("../utils/mediaLayout");
 const { getTextAnimationSegments, getTextAnimationTags } = require("../utils/textAnimationAss");
 const { getAssFontMetrics } = require("../utils/textFontMetrics");
@@ -388,7 +388,9 @@ async function renderExport(job, items) {
         const composed = `composed${index}`;
         const sourceStart = clip.type === "video" ? clip.sourceStart : 0;
         const base = getMediaParentTransform(clip, WIDTH, HEIGHT);
-        const animationFilters = getClipAnimationFilters(clip, { width: WIDTH, height: HEIGHT });
+        const fadeExpressionForClip = getClipFadeExpression(clip);
+        const directFade = fadeExpressionForClip && base.scale === 1 && base.offsetX === 0 && base.offsetY === 0;
+        const animationFilters = directFade ? [] : getClipAnimationFilters(clip, { width: WIDTH, height: HEIGHT });
         const localWindow = getClipAnimationWindow(clip);
         const timelineWindow = localWindow.replace(/\bt\b/g, `(t-${clip.start})`);
         const active = `between(t,${clip.start},${clip.start + clip.duration})`;
@@ -410,17 +412,60 @@ async function renderExport(job, items) {
         }
         const baseFilters = [`scale=${Math.round(base.width)}:${Math.round(base.height)}:force_original_aspect_ratio=decrease`, "format=yuva444p"];
         if (clip.type === "image") baseFilters.push("loop=loop=-1:size=1:start=0", `trim=duration=${clip.duration}`);
+        if (directFade) {
+          const commandsPath = path.join(workDir, 'fade-' + index + '.cmd');
+          const target = 'lutyuv@fade' + index;
+          fs.writeFileSync(commandsPath, getClipFadeCommands(clip, FPS, target), 'utf8');
+          const escapedCommandsPath = commandsPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+          baseFilters.push(`sendcmd=f='${escapedCommandsPath}'`, `${target}=y=val:u=val:v=val:a=val:enable='${localWindow}'`);
+        }
         baseFilters.push("setsar=1", `setpts=PTS+${clip.start}/TB`);
         filters.push(`[${baseInput}]${baseFilters.join(",")}[${prepared}]`);
         filters.push(`[${currentVideo}][${prepared}]overlay=x='${base.centerX}-overlay_w/2':y='${base.centerY}-overlay_h/2':format=auto:eof_action=pass:shortest=0:enable='${active}${animationFilters.length ? `*not(${timelineWindow})` : ""}'[${composed}]`);
         currentVideo = composed;
         if (animationFilters.length) {
           const animated = `animated${index}`, result = `animatedComposed${index}`;
-          const normalizedAnimation = [`scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`, "format=yuva444p", `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black@0`, "setsar=1", ...animationFilters];
+          const cfg = getClipAnimationConfig(clip);
+          const splitFade = !cfg.legacy && base.scale === 1 && base.offsetX === 0 && base.offsetY === 0 &&
+            cfg.animationInDuration + cfg.animationOutDuration <= clip.duration &&
+            ['In', 'Out'].filter(phase => cfg['animation' + phase + 'Preset'].startsWith('fade-')).length === 1;
+          const fadeExpression = getClipFadeExpression(clip);
+          if (splitFade && !fadeExpression) {
+            const spatialClip = { ...clip };
+            for (const phase of ['In', 'Out']) if (cfg['animation' + phase + 'Preset'].startsWith('fade-')) spatialClip['animation' + phase + 'Preset'] = 'none';
+            animationFilters.splice(0, animationFilters.length, ...getClipAnimationFilters(spatialClip, { width: WIDTH, height: HEIGHT }));
+          }
+          const normalizedAnimation = [`scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`, "format=yuva444p", `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black@0`, "setsar=1", ...(fadeExpression ? [] : animationFilters)];
           if (clip.type === "image") normalizedAnimation.splice(4, 0, "loop=loop=-1:size=1:start=0", `trim=duration=${clip.duration}`);
+          if (splitFade && !fadeExpression) {
+            const commandsPath = path.join(workDir, 'fade-' + index + '.cmd');
+            const target = 'lutyuv@fade' + index;
+            fs.writeFileSync(commandsPath, getClipFadeCommands(clip, FPS, target), 'utf8');
+            const escapedCommandsPath = commandsPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+            const fadeClip = { ...clip };
+            for (const phase of ['In', 'Out']) if (!cfg['animation' + phase + 'Preset'].startsWith('fade-')) fadeClip['animation' + phase + 'Preset'] = 'none';
+            normalizedAnimation.push(`sendcmd=f='${escapedCommandsPath}'`, `${target}=y=val:u=val:v=val:a=val:enable='${getClipAnimationWindow(fadeClip)}'`);
+          }
           // Keep full-chroma fractional positioning through composition. Early 4:2:0
           // overlays round odd coordinates and change chroma at moving edges.
-          filters.push(`[${animatedInput}]${normalizedAnimation.join(",")},setpts=PTS+${clip.start}/TB[${animated}]`);
+          if (fadeExpression && clip.type === 'image') {
+            // Cache the fixed color transform once. Alpha still samples the
+            // unrounded source on each frame, then multiplies opacity, preserving
+            // fractional transforms and transparent edges exactly.
+            const color = 'fadeColor' + index, alpha = 'fadeAlpha' + index;
+            const colorSource = color + 'Source', alphaSource = alpha + 'Source';
+            const normalize = normalizedAnimation.filter(filter => !filter.startsWith('loop=') && !filter.startsWith('trim='));
+            filters.push(`[${animatedInput}]${normalize.join(',')},split=2[${colorSource}][${alphaSource}]`);
+            const geometry = getClipAnimationFilters(clip, { width: WIDTH, height: HEIGHT }, true);
+            const repeat = ['loop=loop=-1:size=1:start=0', `trim=duration=${clip.duration}`];
+            filters.push(`[${colorSource}]${[...geometry, ...repeat].join(',')}[${color}]`);
+            const alphaExpression = animationFilters.at(-1).match(/:a='(.*)':enable=/)[1].replace(/alpha\(/g, 'lum(');
+            filters.push(`[${alphaSource}]alphaextract,${repeat.join(',')},geq=lum='${alphaExpression}':enable='${localWindow}'[${alpha}]`);
+            filters.push(`[${color}][${alpha}]alphamerge=enable='${localWindow}',setpts=PTS+${clip.start}/TB[${animated}]`);
+          } else {
+            if (fadeExpression) normalizedAnimation.push(...animationFilters);
+            filters.push(`[${animatedInput}]${normalizedAnimation.join(",")},setpts=PTS+${clip.start}/TB[${animated}]`);
+          }
           filters.push(`[${currentVideo}][${animated}]overlay=format=auto:eof_action=pass:shortest=0:enable='${active}*(${timelineWindow})'[${result}]`);
           currentVideo = result;
         }

@@ -1,6 +1,7 @@
 const {
   getMediaAnimationSettings,
   getMediaAnimationExpressions,
+  getMediaAnimationState,
 } = require('../../frontend/lib/mediaAnimation');
 const { getMediaParentTransform } = require('./mediaLayout');
 
@@ -21,7 +22,27 @@ function getClipAnimationWindow(clip) {
   return windows.join('+') || '0';
 }
 
-function getClipAnimationFilters(clip, canvas = { width: 1920, height: 1080 }) {
+// Fade strength is a product, including overlapping and partial fades.
+// Expose it separately so the controller can sample only the alpha plane.
+function getClipFadeCommands(clip, fps, target) {
+  const commands = [];
+  let previousOpacity;
+  for (let frame = 0; frame <= Math.ceil(Number(clip.duration) * fps); frame++) {
+    const opacity = getMediaAnimationState(clip, frame / fps).opacity;
+    if (opacity === previousOpacity) continue;
+    previousOpacity = opacity;
+    // Fire just before the frame timestamp to avoid decimal timebase rounding.
+    commands.push(Math.max(0, frame / fps - 0.000001).toFixed(6) + ' ' + target + ' a val*' + opacity + ';');
+  }
+  return commands.join('\n');
+}
+
+function getClipFadeExpression(clip) {
+  const { opacity, scale, offset } = getMediaAnimationExpressions(clip);
+  return scale === 1 && offset === 0 && opacity !== 1 ? opacity : null;
+}
+
+function getClipAnimationFilters(clip, canvas = { width: 1920, height: 1080 }, geometryOnly = false) {
   const base = getMediaParentTransform(clip, canvas.width, canvas.height);
   const transformed = base.scale !== 1 || base.offsetX !== 0 || base.offsetY !== 0;
   const settings = getMediaAnimationSettings(clip);
@@ -38,8 +59,12 @@ function getClipAnimationFilters(clip, canvas = { width: 1920, height: 1080 }) {
     return [...first, ...(first.length ? last.filter(filter => filter !== 'format=yuva444p') : last)];
   }
 
-  const { opacity, scale, offset } = getMediaAnimationExpressions(clip);
-  if (opacity === 1 && scale === 1 && offset === 0) return [];
+  let { opacity, scale, offset } = getMediaAnimationExpressions(clip);
+  if (geometryOnly) {
+    opacity = 1;
+    if (!transformed) return [];
+  }
+  if (!geometryOnly && opacity === 1 && scale === 1 && offset === 0) return [];
   const spatial = transformed || scale !== 1 || offset !== 0;
   const zoom = base.scale !== 1 || scale !== 1;
 
@@ -65,7 +90,7 @@ function getClipAnimationFilters(clip, canvas = { width: 1920, height: 1080 }) {
 
   return ['format=yuva444p',
     "geq=lum='" + color('lum') + "':cb='" + color('cb') + "':cr='" + color('cr') +
-    "':a='" + alphaExpression + "':enable='" + getClipAnimationWindow(clip) + "'"];
+    "':a='" + alphaExpression + "':enable='" + (geometryOnly ? '1' : getClipAnimationWindow(clip)) + "'"];
 }
 
-module.exports = { getClipAnimationConfig, getClipAnimationFilters, getClipAnimationWindow };
+module.exports = { getClipAnimationConfig, getClipAnimationFilters, getClipAnimationWindow, getClipFadeExpression, getClipFadeCommands };
