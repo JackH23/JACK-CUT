@@ -12,6 +12,7 @@ type Options = {
     onPlayheadTimeChange: (position: number) => void;
 };
 export function usePreviewMonitor({ activeItem, items, duration, playheadTime, onPlayheadTimeChange }: Options) {
+    const imageRef = useRef<HTMLImageElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const boundary = Math.min(duration, ...items.flatMap(item => [item.startTime, item.startTime + item.duration]).filter(time => time > playheadTime + .000001));
     const playback = usePreviewPlayback({ duration, playheadTime, boundary, onPlayheadTimeChange });
@@ -25,10 +26,12 @@ export function usePreviewMonitor({ activeItem, items, duration, playheadTime, o
     const end = (activeItem?.startTime ?? 0) + (activeItem?.duration ?? 0);
     const coordinator = playback.coordinator;
     useLayoutEffect(() => {
+        if (imageRef.current && type === "image")
+            return coordinator.registerImage(imageRef.current, label);
         if (videoRef.current && type === "video")
             return coordinator.register(videoRef.current, offset, end, label);
     }, [coordinator, itemId, fileId, url, type, offset, end, label]);
     const activeSoundItems = useMemo(() => items.filter(item => item.type === "media" && item.file?.type === "audio" && playheadTime >= item.startTime && playheadTime < item.startTime + item.duration), [items, playheadTime]);
     const activeTextItems = useMemo(() => items.filter(item => item.type === "text" && playheadTime >= item.startTime && playheadTime < item.startTime + item.duration), [items, playheadTime]);
-    return { ...playback, videoRef, previewFile, previewItem: activeItem, playheadSeconds: playheadTime, activeSoundItems, activeTextItems };
+    return { ...playback, videoRef, imageRef, previewFile, previewItem: activeItem, playheadSeconds: playheadTime, activeSoundItems, activeTextItems };
 }

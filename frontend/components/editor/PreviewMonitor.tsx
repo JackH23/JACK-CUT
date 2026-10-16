@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -70,11 +71,13 @@ export default function PreviewMonitor({
 
   const {
     videoRef,
+    imageRef,
     previewFile,
     previewItem,
 
     isPlaying,
     isMuted,
+    isBuffering, volume, setVolume, isLooping, handleSeek, handleStep, handleLoopToggle,
     currentTime,
     totalTime,
     playheadSeconds,
@@ -95,6 +98,19 @@ export default function PreviewMonitor({
     playheadTime,
     onPlayheadTimeChange,
   });
+
+  const monitorRef = useRef<HTMLElement>(null);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const expand = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await monitorRef.current?.requestFullscreen();
+      setFullscreenError(null);
+    } catch { setFullscreenError("Fullscreen is unavailable in this browser."); }
+  };
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = volume / 100;
+  }, [volume, previewFile?.id, videoRef]);
 
   // Snap guide state
   const [
@@ -148,11 +164,12 @@ export default function PreviewMonitor({
   };
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
+    <section ref={monitorRef} data-preview-monitor className="flex min-w-0 flex-1 flex-col bg-[#0b0c11] text-white">
       <PreviewHeader
         title="Program Monitor"
+        onFullscreenClick={expand}
         colorSpace="REC.709-A"
-        resolution="3840 Ã— 2160 (16:9)"
+        resolution="3840 × 2160 (16:9)"
         zoomLabel="Fit to Window (48%)"
       />
 
@@ -162,16 +179,11 @@ export default function PreviewMonitor({
           showHorizontalGuide
         }
       >
-        {!previewFile && (
-          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            Select an uploaded file to preview
-          </div>
-        )}
-
         {previewItem && previewFile && ["image", "video"].includes(previewFile.type) && (
           <EditableMediaOverlay key={previewFile.id} item={previewItem} selected={selectedItemId === previewItem.id} time={playheadSeconds} onSelect={() => onSelectItem(previewItem.id)} onTransform={onUpdateMediaTransform}>
             {previewFile?.type === "image" && (
               <img
+                ref={imageRef}
                 src={previewFile.url}
                 alt={previewFile.name}
                 style={mediaPreviewStyle}
@@ -258,8 +270,11 @@ export default function PreviewMonitor({
       </VideoCanvas>
 
       {activeSoundItems.map(item => (
-        <TimelineSound key={item.id} item={item} coordinator={coordinator} isMuted={isMuted} />
+        <TimelineSound key={item.id} item={item} coordinator={coordinator} isMuted={isMuted} volume={volume} />
       ))}
+      {isBuffering && <div role="status" className="bg-amber-950 px-4 py-1 text-sm">Buffering preview… Playback will resume automatically.</div>}
+      {fullscreenError && <div role="status">{fullscreenError}</div>}
+      <input type="range" aria-label="Preview seek" min={0} max={duration} step={0.001} value={Math.min(playheadTime, duration)} onChange={event => handleSeek(Number(event.target.value))} className="w-full accent-purple-400" />
       {playbackError && (
         <div role="alert" className="flex items-center justify-between gap-2 bg-red-950 px-4 py-2 text-sm">
           <span>{playbackError}</span>
@@ -271,8 +286,16 @@ export default function PreviewMonitor({
         isMuted={isMuted}
         currentTime={currentTime}
         totalTime={totalTime}
-        volume={70}
-        volumeDb="-6"
+        volume={volume}
+        volumeDb={volume > 0 ? (20 * Math.log10(volume / 100)).toFixed(1) : "-∞"}
+        onVolumeChange={setVolume}
+        isLooping={isLooping}
+        onLoopToggle={handleLoopToggle}
+        onJumpToBeginning={() => handleSeek(0)}
+        onJumpToEnd={() => handleSeek(duration)}
+        onPreviousFrame={() => handleStep(-1)}
+        onNextFrame={() => handleStep(1)}
+        onExpand={expand}
         onPlayPause={handlePlayPause}
         onMuteToggle={handleMuteToggle}
       />
@@ -280,9 +303,10 @@ export default function PreviewMonitor({
   );
 }
 
-type TimelineSoundProps = { item: TimelineItem; coordinator: PlaybackCoordinator; isMuted: boolean };
-function TimelineSound({ item, coordinator, isMuted }: TimelineSoundProps) {
+type TimelineSoundProps = { item: TimelineItem; coordinator: PlaybackCoordinator; isMuted: boolean; volume: number };
+function TimelineSound({ item, coordinator, isMuted, volume }: TimelineSoundProps) {
   const { audioRef } = useTimelineSound({ item, coordinator });
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume / 100; }, [audioRef, volume]);
   if (item.type !== "media" || item.file?.type !== "audio") return null;
   return <audio ref={audioRef} src={item.file.url} muted={isMuted} preload="auto" />;
 }

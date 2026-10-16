@@ -1,5 +1,5 @@
-
 "use client";
+import VideoThumbnail from "@/components/editor/VideoThumbnail";
 
 import {
   AudioLines,
@@ -69,12 +69,7 @@ export default function MediaList({
               )}
 
               {file.type === "video" && (
-                <video
-                  src={file.url}
-                  preload="metadata"
-                  muted
-                  className="h-full w-full object-cover"
-                />
+                <VideoThumbnail src={file.url} className="h-full w-full object-cover" />
               )}
 
               {file.type === "audio" && (

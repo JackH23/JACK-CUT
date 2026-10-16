@@ -16,6 +16,8 @@ type Track = {
 export class PlaybackCoordinator {
     position = 0;
     playing = false;
+    looping = false;
+    get isBuffering() { return this.playing && this.buffering && !this.error && !this.suspended; }
     suspended = false;
     error: string | null = null;
     private bufferTimeout = false;
@@ -27,6 +29,12 @@ export class PlaybackCoordinator {
         tracePlayback("coordinator:state", { phase, reason, timeline: this.position, tracks: Array.from(this.tracks, track => ({ label: track.label, ...mediaSnapshot(track.media as HTMLMediaElement, track.offset) })) });
     }
     private tracks = new Set<Track>();
+    private images = new Map<HTMLImageElement, string>();
+    registerImage(image: HTMLImageElement, label: string) {
+        this.images.set(image, label);
+        if (!image.complete) { this.buffering = true; this.pauseAll("image-loading"); }
+        return () => { this.images.delete(image); };
+    }
     private previous: number | null = null;
     private waitingSince: number | null = null;
     private movingSince: number | null = null;
@@ -70,8 +78,10 @@ export class PlaybackCoordinator {
         this.waitingSince = null;
         this.movingSince = null;
     }
+    toggleLoop() { this.looping = !this.looping; return this.looping; }
     setPlaying(playing: boolean) {
         this.playing = playing;
+        this.waitingSince = null;
         this.state(playing ? "starting" : "paused", "user");
         this.previous = null;
         this.movingSince = null;
@@ -88,6 +98,7 @@ export class PlaybackCoordinator {
             this.pauseAll("hidden");
     }
     retry() {
+        for (const image of this.images.keys()) if (image.complete && !image.naturalWidth) image.src = image.src;
         for (const track of this.tracks)
             if (track.media.error)
                 track.media.load();
@@ -102,6 +113,11 @@ export class PlaybackCoordinator {
                 track.media.pause();
             }
         }
+    }
+    private clock(track: Track) {
+        const time = track.media.currentTime - track.offset;
+        // Container duration and saved clip duration can differ by a fraction of a frame.
+        return track.media.ended && Math.abs(time - track.end) < .15 ? track.end : time;
     }
     private fail(message: string) {
         this.state("error", "media-failure");
@@ -120,6 +136,10 @@ export class PlaybackCoordinator {
             return this.position;
 
         let ready = true;
+        for (const [image, label] of this.images) {
+            if (!image.complete) ready = false;
+            else if (!image.naturalWidth) { this.fail(`Unable to display ${label}. Retry playback.`); return this.position; }
+        }
         for (const track of this.tracks) {
             const media = track.media;
             if (media.error) {
@@ -145,8 +165,8 @@ export class PlaybackCoordinator {
             // HAVE_CURRENT_DATA can recover while paused without a canplay event.
             // Resume with headroom; tolerate a short decoder readiness dip while running.
             const threshold = Math.min(this.buffering ? 5 : .2, remaining);
-            if (track.waiting && (media.readyState >= 3 || ahead >= track.waitingAhead + Math.min(5, remaining))) track.waiting = false;
-            if (track.target !== null || media.seeking || track.waiting || (!atEnd && (media.readyState < 2 || (this.playing && ahead < threshold))))
+            if (track.waiting && (media.readyState >= 3 || ahead >= Math.min(track.waitingAhead + 5, remaining) - .025)) track.waiting = false;
+            if (track.target !== null || media.seeking || track.waiting || (!atEnd && (media.readyState < 2 || (this.playing && ahead + .025 < threshold))))
                 ready = false;
         }
         if (!ready) {
@@ -168,10 +188,10 @@ export class PlaybackCoordinator {
             return this.position;
         this.buffering = false;
         this.state("running", "buffer-headroom-restored");
-        const slowest = this.tracks.size ? Math.min(...Array.from(this.tracks, track => track.media.currentTime - track.offset)) : this.position;
+        const slowest = this.tracks.size ? Math.min(...Array.from(this.tracks, track => this.clock(track))) : this.position;
         for (const track of this.tracks) {
             // Hold a leading decoder until the slower decoder catches up, without seeks.
-            const lead = track.media.currentTime - track.offset - slowest;
+            const lead = this.clock(track) - slowest;
             const rate = lead > .05 ? Math.max(.95, 1 - lead * .2) : 1;
             if (Math.abs(track.media.playbackRate - rate) > .005) track.media.playbackRate = rate;
             // Small drift uses rate correction. Large drift holds with distinct release threshold.
@@ -191,7 +211,7 @@ export class PlaybackCoordinator {
             tracePlayback("coordinator:resume", { reason: "ready", label: track.label, timeline: this.position, ...mediaSnapshot(track.media as HTMLMediaElement, track.offset) });
             void track.media.play().then(() => {
                 if (!this.tracks.has(track) || !this.playing || this.suspended || generation !== track.generation) {
-                    if (!this.tracks.has(track) || !this.playing || this.suspended)
+                    if (!this.tracks.has(track) || !this.playing || this.suspended || this.buffering)
                         track.media.pause();
                 }
             }).catch((error: unknown) => {
@@ -206,7 +226,7 @@ export class PlaybackCoordinator {
         }
         let next = this.position + elapsed;
         if (this.tracks.size)
-            next = Math.min(...Array.from(this.tracks, track => track.media.currentTime - track.offset));
+            next = Math.min(...Array.from(this.tracks, track => this.clock(track)));
         next = Math.min(duration, boundary, ...Array.from(this.tracks, track => track.end), Math.max(this.position, next));
         if (next > this.position)
             this.movingSince = now;
@@ -216,8 +236,10 @@ export class PlaybackCoordinator {
                 this.fail("Playback stopped advancing. Retry to resume from this position.");
         }
         this.position = next;
-        if (next >= duration)
-            this.setPlaying(false);
+        if (next >= duration) {
+            if (this.looping && duration > 0) this.seek(0);
+            else this.setPlaying(false);
+        }
         return this.position;
     }
 }

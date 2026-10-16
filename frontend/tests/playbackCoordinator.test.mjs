@@ -96,3 +96,29 @@ test('native waiting freezes both clocks despite a misleading buffered range',()
  ahead=6.5;c.tick(48,100);assert.equal(v.plays,2);assert.equal(a.plays,2);assert.deepEqual(v.seeks,[]);
  unregister();assert.equal(listeners.size,0);
 });
+test('an ended decoder within endpoint tolerance releases the clip boundary',()=>{
+ const c=new PlaybackCoordinator(),v=media();v.duration=9.98;c.register(v,0,10,'rounded clip');c.setPlaying(true);c.tick(0,20,10);v.currentTime=9.98;v.seeking=false;v.ended=true;c.tick(16,20,10);assert.equal(c.position,10);
+});
+test('waiting near the end can recover with all remaining media buffered',()=>{
+ const c=new PlaybackCoordinator(),v=media();const listeners=new Map();let ahead=2;
+ v.duration=2;v.readyState=2;v.buffered={length:1,start:()=>0,end:()=>ahead};v.addEventListener=(n,f)=>listeners.set(n,f);
+ c.register(v,0,2,'short');c.setPlaying(true);v.readyState=4;c.tick(0,2);ahead=1.4;v.readyState=2;listeners.get('waiting')();c.tick(16,2);ahead=2;c.tick(32,2);assert.equal(v.paused,false);
+});
+
+test('loop seeks to zero with playback intent preserved; disabled loop stops',()=>{
+ const c=new PlaybackCoordinator();c.toggleLoop();c.seek(.99);c.setPlaying(true);c.tick(0,1);c.tick(20,1);assert.equal(c.position,0);assert.equal(c.playing,true);c.toggleLoop();c.seek(.99);c.tick(40,1);c.tick(60,1);assert.equal(c.position,1);assert.equal(c.playing,false);
+});
+test('image loading holds synchronized audio and recovers automatically',()=>{
+ const c=new PlaybackCoordinator(),a=media(),image={complete:false,naturalWidth:0};c.register(a,0,10,'audio');const off=c.registerImage(image,'still');c.setPlaying(true);c.tick(0,10);assert.equal(c.isBuffering,true);assert.equal(a.paused,true);assert.equal(c.position,0);image.complete=true;image.naturalWidth=100;c.tick(16,10);assert.equal(a.paused,false);assert.equal(c.isBuffering,false);c.setPlaying(false);assert.equal(c.isBuffering,false);off();
+});
+test('failed image exposes a useful recoverable error',()=>{
+ const c=new PlaybackCoordinator();const image={complete:true,naturalWidth:0,src:'still.png'};const off=c.registerImage(image,'missing still');c.tick(0,10);assert.match(c.error,/missing still/);off();c.retry();c.tick(16,10);assert.equal(c.error,null);
+});
+
+test('intentional pause time does not consume the buffering timeout',()=>{
+ const c=new PlaybackCoordinator(),v=media();v.readyState=0;c.register(v,0,100,'video');c.setPlaying(true);c.tick(0,100);c.setPlaying(false);c.tick(60000,100);c.setPlaying(true);c.tick(60016,100);assert.equal(c.error,null);assert.equal(c.isBuffering,true);
+});
+
+test('fully empty intervals advance on the coordinator clock and pause freezes them',()=>{
+ const c=new PlaybackCoordinator();c.seek(27);c.setPlaying(true);c.tick(0,80,30);for(let n=1;n<=40;n++)c.tick(n*100,80,30);assert.equal(c.position,30);c.setPlaying(false);c.tick(9000,80,40);assert.equal(c.position,30);c.setPlaying(true);c.tick(10000,80,40);c.tick(10100,80,40);assert.equal(c.position,30.1);
+});

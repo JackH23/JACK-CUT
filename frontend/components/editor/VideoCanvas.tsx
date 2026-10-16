@@ -21,7 +21,7 @@ export default function VideoCanvas({
 }: VideoCanvasProps) {
   return (
     <div
-      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#050609] p-6"
+      data-preview-stage className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#050609] p-6"
     >
 
       {showVerticalGuide && (
@@ -32,9 +32,11 @@ export default function VideoCanvas({
         <div className="pointer-events-none absolute left-0 right-0 top-1/2 z-20 h-px -translate-y-1/2 bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
       )}
       <div
-        className="relative w-[70%] max-w-[746px] shrink-0"
+        data-preview-frame className="relative shrink-0"
         style={{
           aspectRatio,
+          width: `min(100%, calc((100cqh - 3rem) * ${aspectRatio}))`,
+          maxHeight: "100%",
 
         }}
       >

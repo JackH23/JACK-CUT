@@ -122,3 +122,6 @@ body {
     will-change: auto;
   }
 }
+/* Size the complete composited preview against both available dimensions. */
+[data-preview-stage] { container-type: size; }
+[data-preview-monitor]:fullscreen { width: 100vw; height: 100vh; }

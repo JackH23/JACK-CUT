@@ -1,3 +1,4 @@
+import VideoThumbnail from "@/components/editor/VideoThumbnail";
 import { Type } from "lucide-react";
 import type { TimelineItem } from "@/types/timeline";
 
@@ -48,13 +49,7 @@ export default function ClipMediaPreview({ item }: { item: TimelineItem }) {
       {/* VIDEO */}
       {clipType === "video" &&
         file && (
-          <video
-            src={file.url}
-            preload="metadata"
-            muted
-            draggable={false}
-            className="pointer-events-none h-full w-full select-none object-cover opacity-70"
-          />
+          <VideoThumbnail src={file.url} className="pointer-events-none h-full w-full select-none object-cover opacity-70" />
         )}
 
       {/* AUDIO */}

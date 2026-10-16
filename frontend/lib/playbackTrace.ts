@@ -11,7 +11,8 @@ export function mediaSnapshot(media: HTMLMediaElement, offset = offsets.get(medi
   if (media.buffered) for (let i = 0; i < media.buffered.length; i++) {
     if (media.currentTime >= media.buffered.start(i) && media.currentTime <= media.buffered.end(i)) ahead = media.buffered.end(i) - media.currentTime;
   }
-  return { trackLabel: offsets.get(media)?.label, currentTime: media.currentTime, timelineTime: media.currentTime - offset, readyState: media.readyState, ahead, seeking: media.seeking, paused: media.paused, error: media.error?.code ?? null };
+  const videoFrames = typeof HTMLVideoElement !== "undefined" && media instanceof HTMLVideoElement ? media.getVideoPlaybackQuality().totalVideoFrames : null;
+  return { videoFrames, trackLabel: offsets.get(media)?.label, currentTime: media.currentTime, timelineTime: media.currentTime - offset, readyState: media.readyState, volume: media.volume, muted: media.muted, ahead, seeking: media.seeking, paused: media.paused, error: media.error?.code ?? null };
 }
 export function installPlaybackTrace(timeline: () => number) {
   if (process.env.NODE_ENV !== 'development' || !new URLSearchParams(location.search).has('playbackTrace')) return () => {};

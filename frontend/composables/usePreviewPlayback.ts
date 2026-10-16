@@ -10,11 +10,14 @@ type Options = {
 };
 function formatTime(value: number) {
     const time = Math.max(0, value);
-    return [Math.floor(time / 3600), Math.floor(time % 3600 / 60), Math.floor(time % 60), Math.floor(time % 1 * 30)].map(part => String(part).padStart(2, "0")).join(":");
+    return [Math.floor(time / 3600), Math.floor(time % 3600 / 60), Math.floor(time % 60), Math.floor(time % 1 * 30 + 1e-6)].map(part => String(part).padStart(2, "0")).join(":");
 }
 export function usePreviewPlayback({ duration, playheadTime, boundary = duration, onPlayheadTimeChange }: Options) {
     const [coordinator] = useState(() => { const controller = new PlaybackCoordinator(); controller.seek(playheadTime); return controller; });
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isBuffering, setIsBuffering] = useState(false);
+    const [volume, setVolume] = useState(70);
+    const [isLooping, setIsLooping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [playbackError, setPlaybackError] = useState<string | null>(null);
     const latest = useRef({ duration, boundary, onPlayheadTimeChange });
@@ -37,6 +40,7 @@ export function usePreviewPlayback({ duration, playheadTime, boundary = duration
                 published.current = next;
                 latest.current.onPlayheadTimeChange(next);
             }
+            setIsBuffering(current => current === coordinator.isBuffering ? current : coordinator.isBuffering);
             setPlaybackError(current => current === coordinator.error ? current : coordinator.error);
             setIsPlaying(current => current === coordinator.playing ? current : coordinator.playing);
             frame = requestAnimationFrame(tick);
@@ -55,6 +59,20 @@ export function usePreviewPlayback({ duration, playheadTime, boundary = duration
         coordinator.setPlaying(!coordinator.playing);
         setIsPlaying(coordinator.playing);
     }, [coordinator, duration]);
+    const handleSeek = useCallback((position: number) => {
+        const target = Math.min(latest.current.duration, Math.max(0, position));
+        coordinator.seek(target);
+        published.current = target;
+        latest.current.onPlayheadTimeChange(target);
+    }, [coordinator]);
+    const handleStep = useCallback((frames: number) => {
+        coordinator.setPlaying(false);
+        setIsPlaying(false);
+        handleSeek(coordinator.position + frames / 30);
+    }, [coordinator, handleSeek]);
+    const handleLoopToggle = useCallback(() => {
+        setIsLooping(coordinator.toggleLoop());
+    }, [coordinator]);
     const handleRetry = useCallback(() => { coordinator.retry(); coordinator.setPlaying(true); setIsPlaying(true); setPlaybackError(null); }, [coordinator]);
-    return { coordinator, isPlaying, isMuted, playbackError, handleRetry, currentTime: formatTime(playheadTime), totalTime: formatTime(duration), handlePlayPause, handleMuteToggle: () => setIsMuted(current => !current) };
+    return { coordinator, isPlaying, isMuted, isBuffering, volume, setVolume, isLooping, handleSeek, handleStep, handleLoopToggle, playbackError, handleRetry, currentTime: formatTime(playheadTime), totalTime: formatTime(duration), handlePlayPause, handleMuteToggle: () => setIsMuted(current => !current) };
 }
