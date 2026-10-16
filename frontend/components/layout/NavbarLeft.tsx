@@ -4,7 +4,7 @@ import { Cloud, Redo2, Undo2, Video } from "lucide-react";
 
 export default function NavbarLeft() {
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center gap-1 sm:gap-3">
       {/* JackCut branding */}
       <div className="flex shrink-0 items-center gap-2">
         <Image
@@ -20,12 +20,12 @@ export default function NavbarLeft() {
           JackCut
         </span>
 
-        <span className="rounded border border-white/10 bg-white/10 px-2 py-1 text-xs font-semibold tracking-wider text-purple-200">
+        <span className="hidden rounded border border-white/10 sm:inline bg-white/10 px-2 py-1 text-xs font-semibold tracking-wider text-purple-200">
           STUDIO
         </span>
       </div>
 
-      <div className="h-6 w-px bg-white/10" />
+      <div className="hidden h-6 w-px bg-white/10 sm:block" />
 
       {/* Undo / Redo */}
       <div className="flex items-center gap-1">

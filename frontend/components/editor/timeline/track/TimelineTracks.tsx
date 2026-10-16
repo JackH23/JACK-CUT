@@ -22,6 +22,7 @@ export default function TimelineTracks({
   tracks,
   onTrackDragOver,
   onTrackDrop,
+  onClipPointerDown, onClipPointerMove, onClipPointerUp,
   onClipDragStart,
   onClipDragEnd,
   onUpdateText,
@@ -42,6 +43,7 @@ export default function TimelineTracks({
       {tracks.map((track) => (
         <TimelineRow
           key={track.id}
+          data-track-id={track.id}
           onDragOver={(event) =>
             onTrackDragOver(event, track)
           }
@@ -61,6 +63,7 @@ export default function TimelineTracks({
                 removing={removingItemId === item.id}
                 onSelectItem={onSelectItem}
                 onEditText={setEditingItem}
+                onClipPointerDown={onClipPointerDown} onClipPointerMove={onClipPointerMove} onClipPointerUp={onClipPointerUp}
                 onClipDragStart={onClipDragStart}
                 onClipDragEnd={onClipDragEnd}
                 onResizeStart={onResizeStart}

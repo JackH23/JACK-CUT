@@ -16,6 +16,7 @@ export function useTimelinePlayhead({
   duration,
   onTimeChange,
 }: UseTimelinePlayheadOptions) {
+  const gesture = useRef<{x:number;y:number;moved:boolean}|null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [isDraggingPlayhead, setIsDraggingPlayhead] =
     useState(false);
@@ -41,6 +42,7 @@ export function useTimelinePlayhead({
   };
 
   const handleTimelineClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (gesture.current?.moved) return;
     // Keep clip editing, dragging and controls separate from background seeking.
     if ((event.target as HTMLElement).closest("[draggable], button")) return;
     updatePlayheadTime(event);
@@ -76,6 +78,8 @@ export function useTimelinePlayhead({
   };
 
   return {
+    handleRulerPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => { gesture.current={x:event.clientX,y:event.clientY,moved:false}; },
+    handleRulerPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => { const start=gesture.current;if(start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)>6)start.moved=true; },
     timelineRef,
     handleTimelineClick,
     isDraggingPlayhead,

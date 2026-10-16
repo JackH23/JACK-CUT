@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
+import { Plus } from "lucide-react";
+import TrackHeader from "./track/TrackHeader";
 import TimelineTracks from "./track/TimelineTracks";
 import { useScrollableTracks } from "@/composables/useScrollableTracks";
 import type { TimelineItem, TimelineTrack } from "@/types/timeline";
@@ -77,6 +79,7 @@ export default function ScrollableTracks({
     positionedItems,
     snapLinePosition,
     isDraggingPlayhead,
+    handleClipPointerDown, handleClipPointerMove, handleClipPointerUp,
     startClipDrag,
     endClipDrag,
     handleTrackDragOver,
@@ -87,6 +90,7 @@ export default function ScrollableTracks({
     handleRemovePointerDown,
     handleRemoveDragStart,
     handleRemoveClick,
+    handleRulerPointerDown, handleRulerPointerMove,
     handleTimelineClick,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,
@@ -135,16 +139,37 @@ export default function ScrollableTracks({
   return (
     <div
       ref={scrollContainerRef}
-      className="min-w-0 flex-1 self-stretch overflow-x-auto"
+      data-timeline-scroll
+      role="region" aria-label="Timeline tracks" tabIndex={0}
+      className="timeline-scroll media-scrollbar min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain"
     >
+      <div className="grid min-h-full" style={{
+        gridTemplateColumns: `var(--timeline-header-width) ${Math.max(1, displayDuration * 20)}px`,
+        width: `calc(var(--timeline-header-width) + ${Math.max(1, displayDuration * 20)}px)`,
+        minWidth: "100%",
+      }}>
+        <aside data-track-headers className="sticky left-0 z-[70] border-r border-white/10 bg-[#111218]">
+          <div className="sticky top-0 z-[80] flex h-7 items-center justify-between border-b border-white/10 bg-[#111218] px-2 text-[10px] text-zinc-400">
+            <span>TRACKS</span><Plus size={14} aria-hidden="true" />
+          </div>
+          {tracks.map(track => <TrackHeader key={track.id} name={track.name} color={track.color} isAudio={track.type === "audio"} />)}
+          <button type="button" aria-label="Add Audio/Video Track" className="m-1 flex min-h-10 items-center gap-1 rounded bg-[#24262e] px-2 text-[10px] text-zinc-300"><Plus size={14} />Add track</button>
+        </aside>
       <div
+        data-timeline-canvas
         ref={timelineRef}
-        onClick={handleTimelineClick}
-        style={{ width: `${displayDuration * 20}px` }}
+        style={{
+          width: `${Math.max(1, displayDuration * 20)}px`,
+        }}
         className="relative min-h-full"
       >
         {/* Time ruler */}
-        <div className="sticky top-0 z-20 h-7 border-b border-white/10 bg-[#15171e] font-mono text-[10px] text-zinc-400">
+        <div
+          data-timeline-ruler
+          onPointerDown={handleRulerPointerDown} onPointerMove={handleRulerPointerMove}
+          onClick={handleTimelineClick}
+          className="sticky top-0 z-50 h-7 border-b border-white/10 bg-[#15171e] font-mono text-[10px] text-zinc-400"
+        >
           {timelineTimes.map((time, index) => (
             <div
               key={time}
@@ -165,6 +190,7 @@ export default function ScrollableTracks({
           onUpdateText={onUpdateText}
           onTrackDragOver={handleTrackDragOver}
           onTrackDrop={handleDrop}
+          onClipPointerDown={handleClipPointerDown} onClipPointerMove={handleClipPointerMove} onClipPointerUp={handleClipPointerUp}
           onClipDragStart={startClipDrag}
           onClipDragEnd={endClipDrag}
           onResizeStart={handleResizeStart}
@@ -190,19 +216,35 @@ export default function ScrollableTracks({
         {/* Draggable playhead */}
         <div
           style={{ left: `${displayPlayheadPosition}%` }}
-          onPointerDown={handlePlayheadPointerDown}
-          onPointerMove={handlePlayheadPointerMove}
-          onPointerUp={handlePlayheadPointerUp}
-          onPointerCancel={handlePlayheadPointerUp}
-          className={`absolute bottom-0 top-0 z-30 w-0.5 -translate-x-1/2 touch-none cursor-ew-resize bg-orange-300 shadow-[0_0_8px_#fdba74] ${isDraggingPlayhead ? "shadow-[0_0_14px_#fdba74]" : ""
-            }`}
+          className={`pointer-events-none absolute bottom-0 top-0 z-[60] w-0.5 -translate-x-1/2 bg-orange-300 ${
+            isDraggingPlayhead
+              ? "shadow-[0_0_14px_#fdba74]"
+              : "shadow-[0_0_8px_#fdba74]"
+          }`}
         >
-          <div className="absolute -left-2 top-0 rounded-b bg-orange-300 px-1 py-0.5 text-[10px] font-bold text-black">
-            ▶
+          {/* Larger touch target around the ruler handle. */}
+          <div
+            data-playhead-handle
+            role="slider" tabIndex={0} aria-label="Timeline playhead"
+            aria-valuemin={0} aria-valuemax={displayDuration} aria-valuenow={playheadTime}
+            onKeyDown={event => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              onPlayheadTimeChange(Math.min(displayDuration, Math.max(0, playheadTime + (event.key === "ArrowRight" ? 1 : -1) / 30)));
+            }}
+            onPointerDown={handlePlayheadPointerDown}
+            onPointerMove={handlePlayheadPointerMove}
+            onPointerUp={handlePlayheadPointerUp}
+            onPointerCancel={handlePlayheadPointerUp}
+            onClick={(event) => event.stopPropagation()}
+            className="pointer-events-auto sticky top-0 -ml-4 flex h-7 w-8 touch-none cursor-ew-resize items-start justify-center"
+          >
+            <span className="rounded-b bg-orange-300 px-1 py-0.5 text-[10px] font-bold text-black">
+              ▶
+            </span>
           </div>
-
-          <div className="absolute -left-3 bottom-0 top-0 w-6" />
         </div>
+      </div>
       </div>
     </div>
   );

@@ -125,3 +125,34 @@ body {
 /* Size the complete composited preview against both available dimensions. */
 [data-preview-stage] { container-type: size; }
 [data-preview-monitor]:fullscreen { width: 100vw; height: 100vh; }
+
+/* One scroll owner keeps headers, ruler, clips and pointer coordinates aligned. */
+.timeline-scroll { --timeline-header-width: 104px; scrollbar-gutter: auto; }
+@media (min-width: 640px) { .timeline-scroll { --timeline-header-width: 160px; } }
+@media (min-width: 1024px) { .timeline-scroll { --timeline-header-width: 208px; } }
+[data-preview-monitor] { container: preview / inline-size; }
+[data-preview-monitor] > header, [data-preview-monitor] > input { flex-shrink: 0; }
+@container preview (max-width: 600px) {
+  .preview-playback-controls { height: 88px; grid-template-columns: 1fr auto; grid-template-rows: 28px 44px; gap: 4px; padding: 4px 8px; }
+  .preview-timecode { grid-area: 1 / 1; gap: 4px; }
+  .preview-transport { grid-area: 2 / 1 / 3 / -1; }
+  .preview-audio-controls { grid-area: 1 / 2; gap: 4px; }
+  .preview-audio-controls > div { display: flex; }
+  .preview-audio-controls input { width: 48px; }
+  .preview-audio-controls span { display: none; }
+}
+@media (max-width: 1279px) {
+  .editor-shell > header { height: 48px; flex-shrink: 0; }
+  .editor-preview [data-preview-monitor] > header { height: 36px; padding-inline: 8px; }
+  .editor-panel-nav button { min-height: 36px; }
+}
+/* Short landscape uses the width for preview and timeline, not page scrolling. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1279px) {
+  .editor-workspace { display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 54%); grid-template-rows: 42px minmax(0, 1fr); }
+  .editor-main { grid-area: 1 / 1 / -1 / 2; }
+  .editor-panel-nav { grid-area: 1 / 2; }
+  .editor-mobile-panel, .editor-timeline { grid-area: 2 / 2; height: 100%; }
+  .editor-preview { height: 100%; }
+}
+
+@container preview (max-width: 600px) { [data-preview-stage] { padding: 8px; } }

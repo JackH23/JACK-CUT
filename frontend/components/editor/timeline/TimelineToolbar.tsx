@@ -10,7 +10,7 @@ import {
 
 export default function TimelineToolbar() {
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 bg-[#171920] px-3">
+    <header className="flex h-12 min-w-max shrink-0 gap-3 items-center justify-between border-b border-white/10 bg-[#171920] px-3">
       {/* Editing tools */}
       <div className="flex items-center gap-1">
         <ToolbarButton label="Select">

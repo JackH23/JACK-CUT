@@ -10,6 +10,7 @@ import {
   type SetStateAction,
 } from "react";
 
+import { useTimelinePointerMove } from "@/composables/useTimelinePointerMove";
 import { useTimelinePlayhead } from "@/composables/useTimelinePlayhead";
 import { useTimelineResize } from "@/composables/useTimelineResize";
 import { useTimelineDrag } from "@/composables/useTimelineDrag";
@@ -62,6 +63,7 @@ export function useScrollableTracks({
   const {
     timelineRef,
     isDraggingPlayhead,
+    handleRulerPointerDown, handleRulerPointerMove,
     handleTimelineClick,
     handlePlayheadPointerDown,
     handlePlayheadPointerMove,
@@ -87,6 +89,7 @@ export function useScrollableTracks({
     onDragExtensionChange: setDragExtension,
   });
 
+  const pointerMove = useTimelinePointerMove({ items, displayDuration, timelineRef, onItemsChange, onDragExtensionChange: setDragExtension });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -97,7 +100,10 @@ export function useScrollableTracks({
     if (!container || !timeline) return;
 
     const playheadX = (playheadTime / displayDuration) * timeline.clientWidth;
-    const viewportCenter = container.clientWidth / 2;
+    // The shared scroller includes a sticky header column. Coordinates still
+    // come from the exact 20px/s canvas, never from the whole grid width.
+    const headerWidth = timeline.getBoundingClientRect().left - container.getBoundingClientRect().left + container.scrollLeft;
+    const viewportCenter = (container.clientWidth - headerWidth) / 2;
     const playheadInViewport = playheadX - container.scrollLeft;
 
     if (playheadInViewport >= viewportCenter) {
@@ -106,7 +112,7 @@ export function useScrollableTracks({
   }, [isPlaying, playheadTime, displayDuration, timelineRef]);
 
   const visibleSnapLinePosition =
-    resizeSnapLinePosition ??
+    pointerMove.pointerSnapLine ?? resizeSnapLinePosition ??
     dragSnapLinePosition;
 
   const handleRemovePointerDown = (
@@ -133,6 +139,8 @@ export function useScrollableTracks({
   };
 
   return {
+    ...pointerMove,
+    handleRulerPointerDown, handleRulerPointerMove,
     scrollContainerRef,
     timelineRef,
     displayDuration,

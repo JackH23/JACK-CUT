@@ -3,11 +3,10 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import type { TimelineItem } from "@/types/timeline";
+import type { MediaAnimationSettings } from "@/lib/mediaAnimation";
+
 import TimelineContent from "./timeline/TimelineContent";
 import TimelineToolbar from "./timeline/TimelineToolbar";
-import type {
-  MediaAnimationSettings,
-} from "@/lib/mediaAnimation";
 
 type TimelineProps = {
   selectedItemId: string | null;
@@ -38,8 +37,17 @@ export default function Timeline({
   onPlayheadTimeChange,
 }: TimelineProps) {
   return (
-    <section className="flex h-[320px] shrink-0 flex-col border-t border-white/10 bg-[#0c0d12] text-white">
-      <TimelineToolbar />
+    <section
+      aria-label="Timeline"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden border-t border-white/10 bg-[#0c0d12] text-white xl:h-[320px] xl:flex-none"
+    >
+      {/* Keep toolbar accessible without squeezing the tracks. */}
+      <div className="min-w-0 shrink-0 overflow-x-auto overscroll-x-contain">
+        <TimelineToolbar />
+      </div>
+
+      {/* Give the content the remaining available height. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&>*]:min-h-0 [&>*]:min-w-0 [&>*]:flex-1">
         <TimelineContent
           selectedItemId={selectedItemId}
           onSelectItem={onSelectItem}
@@ -52,6 +60,7 @@ export default function Timeline({
           isPlaying={isPlaying}
           onPlayheadTimeChange={onPlayheadTimeChange}
         />
+      </div>
     </section>
   );
 }

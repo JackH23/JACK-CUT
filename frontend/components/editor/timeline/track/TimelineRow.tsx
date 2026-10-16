@@ -14,6 +14,7 @@ export default function TimelineRow({
 }: TimelineRowProps) {
   return (
     <div
+      data-timeline-row
       {...props}
       className={`relative h-14 border-b border-white/5 ${className}`}
     >

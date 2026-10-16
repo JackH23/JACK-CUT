@@ -54,8 +54,8 @@ export default function PlaybackControls({
   onSettings,
 }: PlaybackControlsProps) {
   return (
-    <footer className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-white/10 bg-[#15171e] px-4">
-      <div className="flex items-center gap-2 justify-self-start font-mono text-xs">
+    <footer className="preview-playback-controls grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-t border-white/10 bg-[#15171e] px-4">
+      <div className="preview-timecode flex items-center gap-2 justify-self-start font-mono text-xs">
         <span className="text-purple-300">{currentTime}</span>
 
         <span className="hidden text-zinc-500 2xl:inline">/</span>
@@ -72,7 +72,7 @@ export default function PlaybackControls({
         </button>
       </div>
 
-      <div className="flex items-center gap-1 justify-self-center">
+      <div className="preview-transport flex items-center gap-1 justify-self-center">
         <button
           type="button"
           aria-label="Jump to beginning"
@@ -135,7 +135,7 @@ export default function PlaybackControls({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 justify-self-end">
+      <div className="preview-audio-controls flex items-center gap-2 justify-self-end">
         <button
           type="button"
           aria-label={isMuted ? "Unmute" : "Mute"}

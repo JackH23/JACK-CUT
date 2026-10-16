@@ -35,7 +35,7 @@ export default function VideoCanvas({
         data-preview-frame className="relative shrink-0"
         style={{
           aspectRatio,
-          width: `min(100%, calc((100cqh - 3rem) * ${aspectRatio}))`,
+          width: `min(100%, calc(100cqh * ${aspectRatio}))`,
           maxHeight: "100%",
 
         }}

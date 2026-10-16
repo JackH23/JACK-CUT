@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useRef } from "react";
 import { X } from "lucide-react";
 
 import type { TimelineItem } from "@/types/timeline";
@@ -13,6 +14,7 @@ import TimelineAnimationRegions from "./TimelineAnimationRegions";
 
 type TimelineClipProps = Pick<
   TimelineTracksProps,
+  | "onClipPointerDown" | "onClipPointerMove" | "onClipPointerUp"
   | "onClipDragStart"
   | "onClipDragEnd"
   | "onResizeStart"
@@ -36,6 +38,7 @@ export default function TimelineClip({
   removing = false,
   onSelectItem,
   onEditText,
+  onClipPointerDown, onClipPointerMove, onClipPointerUp,
   onClipDragStart,
   onClipDragEnd,
   onResizeStart,
@@ -46,6 +49,7 @@ export default function TimelineClip({
   onRemoveClick,
   onAnimationDurationChange,
 }: TimelineClipProps) {
+  const pointerType = useRef("mouse");
   const isText = item.type === "text";
 
   const file =
@@ -71,11 +75,12 @@ export default function TimelineClip({
       onFocus={() => {
         if (!removing) onSelectItem(item.id);
       }}
-      onPointerDown={() => {
+      onPointerDown={(event) => {
+        pointerType.current = event.pointerType;
         if (!removing) onSelectItem(item.id);
       }}
       onDragStart={(event) => {
-        if (removing) {
+        if (removing || pointerType.current === "touch") {
           event.preventDefault();
           return;
         }
@@ -114,6 +119,10 @@ export default function TimelineClip({
             : "border-purple-500 bg-indigo-950"
       }`}
     >
+      {selected && !removing && <button type="button" draggable={false} aria-label={`Move ${clipName}`} title="Drag to move clip; swipe elsewhere to scroll"
+        onPointerDown={event => onClipPointerDown(event, item)} onPointerMove={onClipPointerMove} onPointerUp={onClipPointerUp} onPointerCancel={onClipPointerUp} onLostPointerCapture={onClipPointerUp}
+        onClick={event => event.stopPropagation()} className="absolute left-1/2 top-0 z-30 h-6 w-8 -translate-x-1/2 touch-none rounded bg-black/80 text-white">↔</button>}
+      {selected && isText && !removing && <button type="button" draggable={false} aria-label={`Edit ${clipName}`} onClick={event=>{event.stopPropagation();onEditText(item);}} className="absolute bottom-0 left-1/2 z-30 -translate-x-1/2 rounded bg-black/80 px-2 text-[10px] text-white">Edit text</button>}
       {/* Left resize handle */}
       {!removing && (
         <ClipResizeHandle
